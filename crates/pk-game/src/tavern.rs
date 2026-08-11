@@ -1807,6 +1807,7 @@ fn tavern_frame(
                         .iter()
                         .map(|s| PlateRow {
                             label: s.label().to_string(),
+                            icon: s.item_id().to_string(),
                             worn: l.worn(*s),
                             base: s.base(),
                             price: s.price(),

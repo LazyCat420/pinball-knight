@@ -37,6 +37,20 @@ impl GearSlot {
         }
     }
 
+    /// The ITEM ID — the key `ITEM_PAINTS` (and so the baked icon set) files
+    /// this piece's sprite under, and the id `items.ts` uses on the ground.
+    ///
+    /// Not derived from `label()` by lowercasing: they agree today for all
+    /// three, and a fourth piece whose label is not its id would then draw the
+    /// wrong sprite, silently. The mapping is the table's business.
+    pub fn item_id(self) -> &'static str {
+        match self {
+            GearSlot::Helmet => "helmet",
+            GearSlot::Armor => "armor",
+            GearSlot::Boots => "boots",
+        }
+    }
+
     /// `GEAR[s].absorb` — damage the piece soaks over its lifetime.
     ///
     /// ⚠️ **Boots are 0 and that is not "no gear", it is "does not absorb".**

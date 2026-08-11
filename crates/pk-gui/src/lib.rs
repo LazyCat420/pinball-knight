@@ -31,6 +31,7 @@
 //!   answer clicks `offset` pixels off (im.ts's debug-console war story).
 
 pub mod font;
+pub mod icons;
 pub mod im;
 pub mod painter;
 pub mod palette;

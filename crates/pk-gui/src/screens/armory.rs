@@ -62,6 +62,9 @@ use crate::theme::{Ui, GRID};
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlateRow {
     pub label: String,
+    /// The item id its sprite is filed under — `GearSlot::item_id`, which is
+    /// the same key `ITEM_PAINTS` and the baked icon set use.
+    pub icon: String,
     /// Remaining soak.
     pub worn: i32,
     /// What a full piece of this slot holds (`absorb || 1`).
@@ -133,6 +136,10 @@ const HEAD_H: f64 = 14.0;
 const HEAD_GAP: f64 = 4.0;
 /// Icon, label, state line. Two 8px lines at 2/12 with 2 of bottom air.
 const PLATE_ROW_H: f64 = 22.0;
+/// The gear chip inside a plate row. 18 is an exact quarter of the icons' 72px
+/// native size (and 36 device pixels at zoom 2), where 16 would snap down to
+/// 12 — see [`crate::im::draw_icon`]. The oracle's chip is 26 in a 34px row.
+const ICON_PX_ROW: f64 = 18.0;
 /// Swatch, label, blurb. Same two-line budget.
 const STYLE_ROW_H: f64 = 22.0;
 /// Between rows. Below 2 the wells merge into one long trough.
@@ -282,14 +289,23 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     for (i, row) in v.plate.iter().enumerate() {
         let r = cut_top(&mut body, PLATE_ROW_H);
         well(f, &r, None);
-        // The oracle draws `itemIcon(s) ?? glyph("shield", …)` here; the icon
-        // set is P3 art, so the slot keeps a square and paints the set's tone
-        // into it rather than leaving a hole the layout forgets. 16 rather than
-        // 26 because the row is 22 tall now — and 16 is an EXACT half of the
-        // 32px sprites that will eventually land in it (`exact_icon_size`),
-        // where 26 was a resample that deletes rows and columns.
-        let chip = rect(r.x + 3.0, r.y + 3.0, 16.0, 16.0);
-        crate::im::fill_rect(f, &chip, Ui::WELL_EDGE);
+        // THE GEAR ITSELF — `itemIcon(s)`, baked from the game's own
+        // `FramePaint` (see [`crate::icons`]). This chip WAS a flat square of
+        // `WELL_EDGE`, and the player's report was exactly that: "we still
+        // don't see all the armors". The rows were all there; the armour was
+        // not.
+        //
+        // 18 and not 16: the icons are 72px native and `draw_icon` only blits
+        // at exact ratios, so 18 is a clean quarter (and 36 device pixels at
+        // zoom 2) where 16 would have been snapped down to 12.
+        let chip = rect(r.x + 2.0, r.y + 2.0, ICON_PX_ROW, ICON_PX_ROW);
+        match crate::icons::icon(&row.icon) {
+            Some(ic) => crate::im::draw_icon(f, ic, chip.x, chip.y, chip.w),
+            // The oracle falls back to `glyph("shield", …)`. The procedural
+            // glyph set is not baked yet, so an unbaked id gets the well it
+            // always had — visibly a hole, which is the honest answer.
+            None => crate::im::fill_rect(f, &chip, Ui::WELL_EDGE),
+        }
         text(
             f,
             &row.label,
@@ -490,6 +506,7 @@ mod tests {
             plate: vec![
                 PlateRow {
                     label: "Helmet".into(),
+                    icon: "helmet".into(),
                     worn: 0,
                     base: 3,
                     price: 45,
@@ -497,6 +514,7 @@ mod tests {
                 },
                 PlateRow {
                     label: "Armor".into(),
+                    icon: "armor".into(),
                     worn: 2,
                     base: 5,
                     price: 70,
@@ -504,6 +522,7 @@ mod tests {
                 },
                 PlateRow {
                     label: "Boots".into(),
+                    icon: "boots".into(),
                     worn: 1,
                     base: 1,
                     price: 40,
@@ -873,6 +892,38 @@ mod tests {
             wild <= bottom + STYLE_ROW_H,
             "clamped to {wild}, and the end of the content is {bottom}"
         );
+    }
+
+    /// THE SECOND THING THE PLAYER REPORTED: *"we still don't see all the
+    /// armors."* Every row was on the plate and the gear was a flat square.
+    ///
+    /// Driven by DIFFERENCE rather than by sampling a hard-coded chip: paint
+    /// the counter once with the real ids and once with ids nothing is baked
+    /// for, and the two frames must not be the same picture. A coordinate probe
+    /// would re-derive the layout (and go stale with it); this asks the only
+    /// question that matters — is the gear on the sheet, or is it the fallback?
+    #[test]
+    fn the_plate_rows_paint_the_gear_and_not_a_hole() {
+        let real = paint_view(&shipped_view(), 0, &mut 0.0);
+        let mut blank = shipped_view();
+        for row in &mut blank.plate {
+            row.icon = "no-such-item".into();
+        }
+        let fallback = paint_view(&blank, 0, &mut 0.0);
+        assert_ne!(
+            real.digest(),
+            fallback.digest(),
+            "the counter paints the same thing with and without an icon id — \
+             the gear is not being drawn"
+        );
+        // …and the icons are the game's own art, not a tint: the helmet chip
+        // has to carry more than the two tones a well and its edge can make.
+        for id in ["helmet", "armor", "boots"] {
+            assert!(
+                crate::icons::icon(id).is_some(),
+                "no baked icon for {id} — the fixture above proves nothing"
+            );
+        }
     }
 
     #[test]

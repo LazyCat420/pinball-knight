@@ -472,7 +472,44 @@ pub fn wrap(f: &UiFrame, s: &str, max: f64, size: u32) -> Vec<String> {
     lines
 }
 
-// ── Icon sizing (blits themselves are P4/P5 scope) ────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
+/// Draw an icon centred in a square box, at an exact integer ratio —
+/// `im.ts drawIcon`.
+///
+/// ⚠️ **THE RATIO IS CHOSEN IN DEVICE SPACE, NOT UI SPACE.** The oracle picks
+/// `exactIconSize(icon.width, size)` and lets the canvas transform scale the
+/// result, because a canvas transform is continuous. Ours is not: a UI pixel is
+/// `zoom` device pixels, and `exact_icon_size(72, 8) = 8` at zoom 2 would ask
+/// for 16 device pixels off a 72px source — 72/16 = 4.5, so nearest sampling
+/// would delete every other row unevenly, which is precisely the artefact
+/// `exact_icon_size` exists to prevent. Snapping `size * zoom` instead keeps
+/// the ratio exact where the pixels actually land, and costs at most a slightly
+/// smaller chip.
+///
+/// The centring rounds the same way at both scales, so an icon does not shift
+/// inside its box when the window changes zoom.
+pub fn draw_icon(f: &mut UiFrame, icon: &crate::icons::Icon, x: f64, y: f64, size: f64) {
+    let z = f.zoom as i64;
+    let d = exact_icon_size(icon.w as i64, (px(size) * z).max(0));
+    if d <= 0 {
+        return;
+    }
+    let box_x = px(x) * z;
+    let box_y = (px(y) - f.shift) * z;
+    let slack = px(size) * z - d;
+    f.p.blit_rgba(
+        &icon.rgba,
+        icon.w,
+        icon.h,
+        box_x + slack / 2,
+        box_y + slack / 2,
+        d,
+        d,
+        f.global_alpha,
+        f.device_clip,
+    );
+}
 
 /// The largest size ≤ `want` at which `native` divides EXACTLY — a fractional
 /// nearest-neighbour resample DELETES whole rows and columns.

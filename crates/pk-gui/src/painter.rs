@@ -185,6 +185,79 @@ impl Painter {
         }
     }
 
+    /// Blit an RGBA8 source into a device rect, NEAREST, src-over.
+    ///
+    /// This is `drawImage(src, dx, dy, dw, dh)` with `imageSmoothingEnabled =
+    /// false`: each destination pixel takes the source texel under its CENTRE,
+    /// `floor((i + 0.5) * sw / dw)`. Callers are expected to have chosen `dw`
+    /// so the ratio is exact (see `exact_icon_size`) — this does not enforce it,
+    /// because enforcing it here would make a legitimate 1:1 blit of a
+    /// non-square source a panic.
+    ///
+    /// Colour is copied straight; there is no tint. Item icons are already the
+    /// game's own palette, and multiplying a 32-entry indexed palette by a UI
+    /// colour walks it off its own ramp — the failure `palette-source.ts`'s
+    /// `shadeDown` exists to prevent.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_rgba(
+        &mut self,
+        src: &[u8],
+        sw: u32,
+        sh: u32,
+        dx: i64,
+        dy: i64,
+        dw: i64,
+        dh: i64,
+        alpha: f64,
+        clip: Option<DeviceClip>,
+    ) {
+        if dw <= 0 || dh <= 0 || sw == 0 || sh == 0 {
+            return;
+        }
+        let alpha = alpha.clamp(0.0, 1.0);
+        for row in 0..dh {
+            let py = dy + row;
+            if py < 0 || py >= self.h as i64 {
+                continue;
+            }
+            let sy = ((row as f64 + 0.5) * sh as f64 / dh as f64).floor() as i64;
+            let sy = sy.clamp(0, sh as i64 - 1);
+            for col in 0..dw {
+                let px = dx + col;
+                if px < 0 || px >= self.w as i64 {
+                    continue;
+                }
+                if let Some((cx0, cy0, cx1, cy1)) = clip {
+                    if px < cx0 || px >= cx1 || py < cy0 || py >= cy1 {
+                        continue;
+                    }
+                }
+                let sx = ((col as f64 + 0.5) * sw as f64 / dw as f64).floor() as i64;
+                let sx = sx.clamp(0, sw as i64 - 1);
+                let s = ((sy * sw as i64 + sx) * 4) as usize;
+                let c = Rgba {
+                    r: src[s],
+                    g: src[s + 1],
+                    b: src[s + 2],
+                    a: src[s + 3],
+                };
+                if c.a == 0 {
+                    continue;
+                }
+                let sa = (c.a as f64 / 255.0) * alpha;
+                let i = ((py * self.w as i64 + px) * 4) as usize;
+                if sa >= 1.0 {
+                    self.buf[i] = c.r;
+                    self.buf[i + 1] = c.g;
+                    self.buf[i + 2] = c.b;
+                    self.buf[i + 3] = 255;
+                } else {
+                    blend(&mut self.buf[i..i + 4], c, sa);
+                }
+            }
+        }
+    }
+
     pub fn pixel(&self, x: u32, y: u32) -> Rgba {
         let i = ((y * self.w + x) * 4) as usize;
         Rgba {
@@ -255,6 +328,43 @@ mod tests {
         assert_eq!(p.pixel(1, 1), Rgba::hex(0xffffff));
         assert_eq!(p.pixel(2, 2), Rgba::hex(0xffffff));
         assert_eq!(p.pixel(3, 3), Rgba::TRANSPARENT);
+    }
+
+    #[test]
+    fn a_nearest_blit_halves_by_taking_every_other_texel() {
+        // 4x4 source, two columns of two colours; blitted at 2x2 the centre
+        // rule takes texels 1 and 3 — the second of each pair, which is what
+        // `imageSmoothingEnabled = false` does in the browser.
+        let mut src = Vec::new();
+        for _ in 0..4 {
+            for x in 0..4 {
+                let v = if x % 2 == 0 { 10 } else { 200 };
+                src.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        let mut p = Painter::new(2, 2);
+        p.blit_rgba(&src, 4, 4, 0, 0, 2, 2, 1.0, None);
+        assert_eq!(p.pixel(0, 0).r, 200);
+        assert_eq!(p.pixel(1, 0).r, 200);
+    }
+
+    #[test]
+    fn a_blit_respects_the_clip_and_transparent_texels() {
+        let src = [
+            0, 0, 0, 0, // transparent
+            255, 0, 0, 255, //
+            0, 255, 0, 255, //
+            0, 0, 255, 255,
+        ];
+        let mut p = Painter::new(2, 2);
+        p.blit_rgba(&src, 2, 2, 0, 0, 2, 2, 1.0, Some((0, 0, 2, 1)));
+        assert_eq!(
+            p.pixel(0, 0),
+            Rgba::TRANSPARENT,
+            "a clear texel draws nothing"
+        );
+        assert_eq!(p.pixel(1, 0), Rgba::hex(0xff0000));
+        assert_eq!(p.pixel(0, 1), Rgba::TRANSPARENT, "below the clip");
     }
 
     #[test]
