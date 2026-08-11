@@ -18,6 +18,7 @@
 //! game is gated on that boolean, so it is modelled here as a plain struct the
 //! shell loads and saves, and the rules below are total functions over it.
 
+pub mod alchemist;
 pub mod armory;
 
 /// A purchase's answer — the oracle's `ActionResult`, which is a message to

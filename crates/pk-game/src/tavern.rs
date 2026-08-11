@@ -43,8 +43,15 @@ use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
 use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
 use crate::{camera_offset, AppState, DungeonCamera, KnightArt, VIEW_H};
+use pk_core::economy::alchemist::{
+    brew, buy_flask, buy_potion, can_craft, Satchel, POTION_STOCK, PRICE_FLASK, REAGENT_IDS,
+    RECIPES,
+};
 use pk_core::economy::armory::{Loadout, ELEMENTAL_STYLE_IDS, GEAR_SLOTS, PRICE_REPAIR_GEAR};
 use pk_core::economy::Wallet;
+use pk_gui::screens::alchemist::{
+    AlchTab, AlchemistAction, AlchemistView, PouchChip, RecipeRow, ShelfRow,
+};
 use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
@@ -244,6 +251,16 @@ pub struct TavernRes {
     /// the 1:1 plan's track F).
     pub loadout: Loadout,
     pub wallet: Wallet,
+    /// The run's belt, pouch and flasks — the alchemist's half of the economy.
+    /// RUN-scoped in the oracle (`reagents.ts`), so it lives beside the loadout
+    /// and not in the wallet.
+    pub satchel: Satchel,
+    /// Which half of the alchemist's counter is open, and which recipe its
+    /// detail strip is describing. Both belong to THIS VISIT, exactly like the
+    /// oracle's `TavernUi.alchTab` — a screen that owned them would forget the
+    /// tab every time the sheet repainted.
+    pub alch_tab: AlchTab,
+    pub alch_selected: usize,
     /// The counter's last `ActionResult`, flashed under its heading.
     pub shop_message: Option<String>,
     pub stats: TavernStats,
@@ -765,12 +782,37 @@ fn setup_tavern(
         // persisted wallet; until the port has one, an empty purse would grey
         // out every button on the counter and make it untestable by hand.
         wallet: Wallet::new(1200),
+        // A stocked pouch until the dungeon's drops are wired (P4): an empty
+        // brew book is a screen nobody can tell from a broken one. The counts
+        // are a DEV STOCK and are marked as such wherever they are read.
+        satchel: dev_satchel(),
+        alch_tab: AlchTab::Shelf,
+        alch_selected: 0,
         shop_message: None,
         stats,
         diorama,
         ball_angle: 0.0,
         keepers: keeper_states,
     });
+}
+
+/// A pouch with something in it, until the dungeon's reagent drops are wired.
+///
+/// ⚠️ **DEV STOCK, NOT A RULE.** `ENEMY_DROPS` (reagents.ts) is what fills a
+/// real pouch and it is P4 — until then the brew book would be sixteen greyed
+/// tiles, which is indistinguishable from a broken screen. Two of everything
+/// and two flasks makes the cheap half of the book craftable and leaves the
+/// Elixir (a Grim Bone, an Ectoplasm, two Slime Gel, TWO flasks and 40g)
+/// showing what "not yet" looks like.
+fn dev_satchel() -> Satchel {
+    let mut s = Satchel {
+        flasks: 2,
+        ..Satchel::default()
+    };
+    for id in REAGENT_IDS {
+        s.add_reagent(id, 2);
+    }
+    s
 }
 
 /// Station props — every number is props.ts verbatim; secondary dressing is
@@ -1766,14 +1808,58 @@ fn tavern_frame(
             }
         }
     }
+    // ── The alchemist's action, on the same contract ──
+    // Applied BEFORE its view is rebuilt, so a purchase shows on the belt in
+    // the frame the button was pressed.
+    if let Some(action) = layer.alchemist_action.take() {
+        let TavernRes {
+            satchel,
+            wallet,
+            shop_message,
+            open_panel,
+            alch_tab,
+            alch_selected,
+            ..
+        } = &mut *res;
+        match action {
+            AlchemistAction::Tab(t) => {
+                *alch_tab = t;
+                // The tab is not an outcome — leaving the last purchase's
+                // message up while the player browses is how the oracle reads.
+            }
+            AlchemistAction::BuyPotion(i) => {
+                if let Some(id) = POTION_STOCK.get(i) {
+                    *shop_message = buy_potion(*id, satchel, wallet);
+                }
+            }
+            AlchemistAction::BuyFlask => {
+                *shop_message = buy_flask(satchel, wallet);
+            }
+            AlchemistAction::Select(i) => *alch_selected = i,
+            AlchemistAction::Brew(id) => {
+                // `brew` returns None for an id no recipe answers to — a
+                // different outcome from "missing materials", and it must not
+                // blank the last real message.
+                if let Some(m) = brew(&id, satchel, wallet) {
+                    *shop_message = Some(m);
+                }
+            }
+            AlchemistAction::Close => {
+                *open_panel = None;
+                *shop_message = None;
+            }
+        }
+    }
     match res.open_panel {
         None => {
             layer.close(ScreenId::RunSummary);
             layer.close(ScreenId::StationPanel);
             layer.close(ScreenId::Armory);
+            layer.close(ScreenId::Alchemist);
             set_view(&mut views.summary, None);
             set_view(&mut views.panel, None);
             set_view(&mut views.armory, None);
+            set_view(&mut views.alchemist, None);
         }
         Some(Panel::Summary) => {
             set_view(
@@ -1832,6 +1918,84 @@ fn tavern_frame(
                 }),
             );
             layer.open(ScreenId::Armory);
+        }
+        // The alchemist. Same shape as the armorer: the screen is handed rows
+        // that are already resolved, and it does no rules of its own.
+        Some(Panel::Vendor("bar")) => {
+            let gold = res.wallet.balance();
+            let s = &res.satchel;
+            set_view(
+                &mut views.alchemist,
+                Some(AlchemistView {
+                    gold,
+                    tab: res.alch_tab,
+                    shelf: POTION_STOCK
+                        .iter()
+                        .map(|id| ShelfRow {
+                            label: id.label().to_string(),
+                            blurb: id.description().to_string(),
+                            icon: id.item_id().to_string(),
+                            price: id.price(),
+                            affordable: gold >= id.price(),
+                            on_belt: s.count(*id),
+                        })
+                        .collect(),
+                    flask_price: PRICE_FLASK,
+                    flask_affordable: gold >= PRICE_FLASK,
+                    flasks: s.flasks,
+                    // Only what you HAVE. A strip of fourteen chips reading
+                    // zero is a wall of nothing, and the empty case has its own
+                    // line saying where reagents come from.
+                    pouch: REAGENT_IDS
+                        .iter()
+                        .filter(|id| s.reagents(**id) > 0)
+                        .map(|id| PouchChip {
+                            icon: id.item_id().to_string(),
+                            count: s.reagents(*id),
+                            swatch: id.swatch(),
+                            label: id.label().to_string(),
+                        })
+                        .collect(),
+                    recipes: RECIPES
+                        .iter()
+                        .map(|r| RecipeRow {
+                            id: r.id.to_string(),
+                            label: r.label.to_string(),
+                            icon: match r.output {
+                                pk_core::economy::alchemist::RecipeOutput::Potion(p) => {
+                                    p.item_id().to_string()
+                                }
+                                // The catalyst has no sprite of its own — it is
+                                // not a ground item — so the bootstrap recipe
+                                // wears its INPUT, the glass shard it is made
+                                // of. Better a true picture of the material
+                                // than a borrowed picture of a potion.
+                                pk_core::economy::alchemist::RecipeOutput::Flask => {
+                                    "glass".to_string()
+                                }
+                            },
+                            // The oracle's have/need line, verbatim in shape:
+                            // every input as `have/need`, then the flask cost,
+                            // then the gold fee if there is one.
+                            needs: r
+                                .inputs
+                                .iter()
+                                .map(|(id, n)| format!("{} {}/{}", id.label(), s.reagents(*id), n))
+                                .chain(
+                                    (r.flasks > 0)
+                                        .then(|| format!("flask {}/{}", s.flasks, r.flasks)),
+                                )
+                                .chain((r.gold > 0).then(|| format!("{}g", r.gold)))
+                                .collect::<Vec<_>>()
+                                .join("  "),
+                            craftable: can_craft(r, s, gold),
+                        })
+                        .collect(),
+                    selected: res.alch_selected.min(RECIPES.len() - 1),
+                    message: res.shop_message.clone(),
+                }),
+            );
+            layer.open(ScreenId::Alchemist);
         }
         Some(panel) => {
             let (title, blurb, body, accent) = match panel {

@@ -40,6 +40,7 @@ use bevy::window::PrimaryWindow;
 
 use pk_gui::im::{empty_ui_input, Pointer};
 use pk_gui::root::{paint_stack, UiStats};
+use pk_gui::screens::alchemist::{paint_alchemist, AlchemistAction, AlchemistView};
 use pk_gui::screens::armory::{paint_armory, ArmoryAction, ArmoryView};
 use pk_gui::screens::intro::{
     paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
@@ -72,6 +73,8 @@ pub enum ScreenId {
     IntroChrome,
     /// The armorer's counter — "Manage Loadout".
     Armory,
+    /// The alchemist's counter — "Trade": the shelf and the brew book.
+    Alchemist,
 }
 
 /// WHAT the open screens say. Filled by whoever owns the scene, read here.
@@ -88,6 +91,7 @@ pub struct GuiViews {
     pub panel: Option<PanelView>,
     pub intro: Option<IntroChromeView>,
     pub armory: Option<ArmoryView>,
+    pub alchemist: Option<AlchemistView>,
 }
 
 /// Assign only if the value actually differs.
@@ -123,6 +127,8 @@ pub struct GuiLayer {
     pub skip_pressed: bool,
     /// What the armorer's counter was asked to do this frame.
     pub armory_action: Option<ArmoryAction>,
+    /// …and the alchemist's. One frame's worth, like every other action here.
+    pub alchemist_action: Option<AlchemistAction>,
     /// Has the texture got pixels on it that the stack no longer accounts for?
     ///
     /// Set by every paint, taken by the first idle frame. Without it, closing
@@ -201,7 +207,12 @@ impl GuiLayer {
             // vendor screens are modal over the walkable tavern, and a sheet
             // you can walk away from while it is open is how `openStation`
             // and the stack drift apart.
-            ScreenId::Armory => ScreenEntry::new(id, true).with_design(600.0, 338.0, 2),
+            // Both counters are modal over the walkable room and both were
+            // authored in the same box, so they zoom together — two vendor
+            // sheets at different scales read as two different games.
+            ScreenId::Armory | ScreenId::Alchemist => {
+                ScreenEntry::new(id, true).with_design(600.0, 338.0, 2)
+            }
         };
         self.stack.push(entry);
     }
@@ -283,6 +294,7 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         closed: None,
         skip_pressed: false,
         armory_action: None,
+        alchemist_action: None,
         dirty: false,
         views_gen: 0,
         last_pointer: None,
@@ -500,6 +512,7 @@ fn paint_gui(
     let mut closed = None;
     let mut skipped = false;
     let mut armory_action = None;
+    let mut alchemist_action = None;
     let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, entry| {
         match id {
             ScreenId::StationPrompt => {
@@ -530,6 +543,11 @@ fn paint_gui(
                     armory_action = paint_armory(f, v, &mut entry.scroll);
                 }
             }
+            ScreenId::Alchemist => {
+                if let Some(v) = &views.alchemist {
+                    alchemist_action = paint_alchemist(f, v, &mut entry.scroll);
+                }
+            }
             ScreenId::IntroChrome => {
                 if let Some(v) = &views.intro {
                     // SKIP is not a CLOSE: the scene ends the sequence, and the
@@ -558,6 +576,7 @@ fn paint_gui(
     // One frame's worth, like `closed` — the scene reads it and acts. A latch
     // would buy the same plate again on the frame after the purchase.
     layer.armory_action = armory_action;
+    layer.alchemist_action = alchemist_action;
     if result.painted {
         layer.dirty = true;
         upload(&mut images, &layer);
@@ -705,6 +724,7 @@ mod tests {
             closed: None,
             skip_pressed: false,
             armory_action: None,
+            alchemist_action: None,
             dirty: false,
             views_gen: 0,
             last_pointer: None,

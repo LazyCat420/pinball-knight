@@ -66,9 +66,23 @@ const PORT = Number(a.port);
 const STATIONS = {
   table: { x: 0.0, z: 0.0, label: "Review Run" },
   armory: { x: -4.8, z: 2.8, label: "Manage Loadout" },
+  bar: { x: 4.8, z: -2.6, label: "Trade" },
+  forge: { x: -4.8, z: -2.6, label: "Forge / Repair" },
   cards: { x: 4.8, z: 2.8, label: "Cards" },
   gambler: { x: 2.2, z: 5.5, label: "Risk Gold" },
 };
+
+/**
+ * Extra keys to press after the counter opens — one per `--then` flag, in
+ * order, with a beat between them. A counter with TABS has more than one
+ * picture, and photographing only the one it opens on is how a second tab goes
+ * unlooked-at for a week. `--then ArrowDown --then Enter` walks to the BREW
+ * BOOK and opens it.
+ */
+const THEN = process.argv.reduce(
+  (acc, v, i) => (v === "--then" && process.argv[i + 1] ? [...acc, process.argv[i + 1]] : acc),
+  [],
+);
 
 const MIME = {
   ".html": "text/html",
@@ -165,7 +179,12 @@ async function main() {
       log(`viewport ${VIEW_W}x${VIEW_H} → lattice ${gui.w}x${gui.h} → sheet zoom ${zoom} → frame ${Math.floor(gui.w / zoom)}x${Math.floor(gui.h / zoom)}`);
     }
 
-    const shot = join(a.out, `tavern-counter-${a.station}-${VIEW_W}x${VIEW_H}.png`);
+    for (const key of THEN) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(400);
+    }
+    const suffix = THEN.length ? `-${THEN.join("-")}` : "";
+    const shot = join(a.out, `tavern-counter-${a.station}${suffix}-${VIEW_W}x${VIEW_H}.png`);
     await page.screenshot({ path: shot });
     log(`screenshot: ${shot}`);
     if (!after?.panel) {
