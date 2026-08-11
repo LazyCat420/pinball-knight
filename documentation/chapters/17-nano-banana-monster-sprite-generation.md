@@ -1,4 +1,4 @@
-# Nano Banana Monster Sprite Generation & Sprite-Forge Pipeline
+# Chapter 17 — Nano Banana Monster Sprite Generation & Sprite-Forge Pipeline
 
 **Status: `SHIPPED` (2026-08-10)** · Produces: 16-bit SNES pixel art monster sprite sheets & published game manifests.
 
@@ -46,11 +46,63 @@ Every monster sprite sheet generation follows six strict pipeline constraints:
 
 ---
 
-## 3. Shipped Monster Roster
+## 3. Visual Gallery of Generated & Published Monster Renders
 
-| Monster | Source PNG | Published Sheet | Published Manifest | Status |
-|---|---|---|---|---|
-| **spider** | `sources/spider-2026-08-10/spider-S.png` | `public/sprites/spider-S.png` | `public/sprites/spider-S.json` | ✅ Shipped |
-| **goblin** | `sources/goblin-2026-08-10/goblin-S.png` | `public/sprites/goblin-S.png` | `public/sprites/goblin-S.json` | ✅ Shipped |
-| **slime** | `sources/slime-2026-08-10/slime-S.png` | `public/sprites/slime-S.png` | `public/sprites/slime-S.json` | ✅ Shipped |
-| **reaper** | `sources/reaper-2026-08-10/reaper-S.png` | `public/sprites/reaper-S.png` | `public/sprites/reaper-S.json` | ✅ Shipped |
+### 🕷️ Spider (`spider-S`)
+- **Status**: ✅ Shipped & Published
+- **Published Manifest**: [spider-S.json](file:///home/lazycat/github/projects/sun/pinball-knight/legacy/public/sprites/spider-S.json)
+
+**Source 4×4 Generation Grid**:
+![Spider Source Grid](artifacts/spider-source-grid.png)
+
+**Published Ink-Tight Game Sheet**:
+![Spider Crushed Sheet](artifacts/spider-crushed-sheet.png)
+
+---
+
+### 👺 Goblin (`goblin-S`)
+- **Status**: ✅ Shipped & Published
+- **Published Manifest**: [goblin-S.json](file:///home/lazycat/github/projects/sun/pinball-knight/legacy/public/sprites/goblin-S.json)
+
+**Source 4×4 Generation Grid**:
+![Goblin Source Grid](artifacts/goblin-source-grid.png)
+
+**Published Ink-Tight Game Sheet**:
+![Goblin Crushed Sheet](artifacts/goblin-crushed-sheet.png)
+
+---
+
+### 🧪 Slime (`slime-S`)
+- **Status**: ✅ Shipped & Published
+- **Published Manifest**: [slime-S.json](file:///home/lazycat/github/projects/sun/pinball-knight/legacy/public/sprites/slime-S.json)
+
+**Source 4×4 Generation Grid**:
+![Slime Source Grid](artifacts/slime-source-grid.png)
+
+**Published Ink-Tight Game Sheet**:
+![Slime Crushed Sheet](artifacts/slime-crushed-sheet.png)
+
+---
+
+### 💀 Reaper (`reaper-S`)
+- **Status**: ✅ Shipped & Published
+- **Published Manifest**: [reaper-S.json](file:///home/lazycat/github/projects/sun/pinball-knight/legacy/public/sprites/reaper-S.json)
+
+**Source 4×4 Generation Grid**:
+![Reaper Source Grid](artifacts/reaper-source-grid.png)
+
+**Published Ink-Tight Game Sheet**:
+![Reaper Crushed Sheet](artifacts/reaper-crushed-sheet.png)
+
+---
+
+### 🐗 Existing Reference Monsters
+
+#### Brute (`brute-S`)
+![Brute Crushed Sheet](artifacts/brute-crushed-sheet.png)
+
+#### Jester (`jester-S`)
+![Jester Crushed Sheet](artifacts/jester-crushed-sheet.png)
+
+#### Beaver / Rotortail (`beaver-S`)
+![Beaver Crushed Sheet](artifacts/beaver-crushed-sheet.png)
