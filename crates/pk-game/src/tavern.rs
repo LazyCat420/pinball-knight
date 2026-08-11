@@ -36,7 +36,9 @@ use pk_core::tavern::layout::{
 use pk_core::tavern::npcs::{build_keeper_states, update_keeper, KeeperBeat, KeeperState};
 use pk_core::tavern::player::{step_tavern_movement, TavernInput, TavernPose, WALK_CLIP_THRESHOLD};
 use pk_core::tavern::state::{read_diorama, DioramaState, TavernStats};
+use pk_gui::screens::tavern::{PanelView, StationView, SummaryView};
 
+use crate::gui::{Gui, ScreenId};
 use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
 use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
@@ -177,6 +179,12 @@ fn emissive_rgb(color: u32, intensity: f32) -> LinearRgba {
 
 pub struct TavernPlugin;
 
+/// The tavern's per-frame work, named as a set so the GUI layer can paint
+/// AFTER it. Without the ordering the menu is one frame stale on every press —
+/// which reads as input lag, not as a scheduling bug.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TavernSystems;
+
 impl Plugin for TavernPlugin {
     fn build(&self, app: &mut App) {
         // Lazy Update setup, NOT OnEnter: a `?tavern=1` boot makes Tavern the
@@ -207,6 +215,7 @@ impl Plugin for TavernPlugin {
                 tavern_camera,
             )
                 .chain()
+                .in_set(TavernSystems)
                 .run_if(in_state(AppState::Tavern))
                 .run_if(resource_exists::<TavernRes>),
         );
@@ -278,13 +287,6 @@ struct BumperCap(usize);
 struct DioramaBall;
 #[derive(Component)]
 struct Coals;
-#[derive(Component)]
-struct PromptText;
-#[derive(Component)]
-struct PanelRoot;
-#[derive(Component)]
-struct PanelText;
-
 /// How far the contact blob floats above the feet (legacy sprite.ts:170).
 const BLOB_LIFT: f32 = 0.02;
 
@@ -752,71 +754,12 @@ fn setup_tavern(
         PixelSnapped,
     ));
 
-    // ── Prompt + panel UI (scene-screens.ts, placeholder chrome) ──
-    commands
-        .spawn((
-            TavernScene,
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(72.0),
-                left: Val::Px(0.0),
-                width: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-        ))
-        .with_children(|p| {
-            p.spawn((
-                PromptText,
-                Text::new(""),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                Node {
-                    padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.04, 0.05, 0.08, 0.85)),
-                Visibility::Hidden,
-            ));
-        });
-    commands
-        .spawn((
-            TavernScene,
-            PanelRoot,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.62)),
-            Visibility::Hidden,
-            GlobalZIndex(50),
-        ))
-        .with_children(|p| {
-            p.spawn((
-                PanelText,
-                Text::new(""),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(c(0xc9c1ad)),
-                Node {
-                    padding: UiRect::all(Val::Px(24.0)),
-                    max_width: Val::Px(560.0),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.05, 0.06, 0.1, 0.96)),
-            ));
-        });
+    // ── Prompt + panels ──
+    //
+    // Nothing is spawned here any more. Both used to be Bevy `Text` nodes with
+    // hand-rolled chrome; they are now screens on the GUI stack, painted by the
+    // ported legacy toolkit (`gui.rs` → `pk_gui::screens::tavern`). The room
+    // owns WHAT they say; it does not own how a sheet looks.
 
     // ── Scene state ──
     let stats = TavernStats::default();
@@ -1565,43 +1508,11 @@ fn step_tavern(mut res: ResMut<TavernRes>) {
 
 /// The per-frame scene work of legacy core.ts `frame()`: focus, prompt,
 /// spotlight, accent breathe, flicker, diorama, keepers, panels, interact.
-/// The room's three UI queries, bundled.
-///
-/// Not a tidiness choice: `tavern_frame` reached Bevy's 16-system-param tuple
-/// limit, and the failure is an E0599 on `.chain()` that names the whole system
-/// tuple and never mentions arity — worth a signpost so the next person to add
-/// a param knows what they hit. The UI three are the natural group; everything
-/// else in the signature is a distinct scene concern.
-#[derive(bevy::ecs::system::SystemParam)]
-struct TavernUi<'w, 's> {
-    prompt_q: Query<
-        'w,
-        's,
-        (
-            &'static mut Text,
-            &'static mut Visibility,
-            &'static mut TextColor,
-        ),
-        (
-            With<PromptText>,
-            Without<PanelText>,
-            Without<SpotlightDisc>,
-            Without<PanelRoot>,
-        ),
-    >,
-    panel_root: Query<
-        'w,
-        's,
-        &'static mut Visibility,
-        (With<PanelRoot>, Without<PromptText>, Without<SpotlightDisc>),
-    >,
-    panel_text: Query<'w, 's, &'static mut Text, (With<PanelText>, Without<PromptText>)>,
-}
-
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn tavern_frame(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut gui: Gui,
     mut res: ResMut<TavernRes>,
     mut next: ResMut<NextState<AppState>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -1638,16 +1549,9 @@ fn tavern_frame(
             Without<DioramaBall>,
         ),
     >,
-    mut ui: TavernUi,
     mut sfx: MessageWriter<SfxEvent>,
 ) {
-    // Destructured back out so the body below reads exactly as it did before
-    // the three UI queries were bundled — see `TavernUi` for why they are.
-    let TavernUi {
-        prompt_q,
-        panel_root,
-        panel_text,
-    } = &mut ui;
+    let Gui { layer, views } = &mut gui;
     // Same dt clamp as the legacy frame loop.
     let dt = (time.delta_secs_f64()).min(0.05);
     res.time += dt;
@@ -1770,25 +1674,24 @@ fn tavern_frame(
         tf.rotation = billboard(out.pose.rot_z as f32);
     }
 
-    // ── Prompt ──
-    if let Ok((mut text, mut vis, mut color)) = prompt_q.single_mut() {
-        match (frozen, res.focus) {
-            (false, Some(s)) => {
-                **text = format!("[E] {}\n{}", s.label.to_uppercase(), s.blurb);
-                color.0 = c(s.accent);
-                *vis = Visibility::Visible;
-            }
-            _ => *vis = Visibility::Hidden,
-        }
-    }
-
-    // ── Panels (placeholder chrome; the GUI stack is P5 scope) ──
-    if keys.just_pressed(KeyCode::Escape) && res.open_panel.is_some() {
+    // ── Panels ──
+    //
+    // The room decides WHAT is open and what it says; `gui.rs` paints it with
+    // the ported toolkit. Three routes close a panel and they must agree, or a
+    // sheet stays on screen with nothing driving it:
+    //   · `E`, the interact key, handled here;
+    //   · `ESC`, handled by the toolkit's cancel-pop;
+    //   · the sheet's own CLOSE button, handled by the toolkit.
+    // The last two both surface as `layer.closed`, so this reads that FIRST and
+    // never guesses — an `open_panel` that disagreed with the stack is how a
+    // frozen room with no menu on it happens.
+    if layer.closed.is_some() {
         res.open_panel = None;
     }
     if keys.just_pressed(KeyCode::KeyE) {
         if res.open_panel.is_some() {
-            res.open_panel = None; // E also closes, so a pad B-press maps later
+            // E also closes, so a pad B-press maps later.
+            res.open_panel = None;
         } else if let Some(s) = res.focus {
             match s.action {
                 StationKind::Descend => {
@@ -1810,27 +1713,93 @@ fn tavern_frame(
             }
         }
     }
-    if let (Ok(mut vis), Ok(mut text)) = (panel_root.single_mut(), panel_text.single_mut()) {
-        match res.open_panel {
-            None => *vis = Visibility::Hidden,
-            Some(panel) => {
-                *vis = Visibility::Visible;
-                **text = match panel {
-                    Panel::Summary => format!(
-                        "RUN SUMMARY\n\nFloor cleared   {}\nGrade           {}\nKills           {}\nBest combo      x{}\n\n[E / ESC] close",
-                        res.stats.floor, res.stats.grade, res.stats.kills, res.stats.best_combo
-                    ),
-                    Panel::Vendor(id) => {
-                        let s = STATIONS.iter().find(|s| s.id == id).unwrap();
-                        format!(
-                            "{}\n\n{}\n\nThe vendor counters open here once the\neconomy lands (P4) and the GUI layer (P5).\n\n[E / ESC] close",
-                            s.label.to_uppercase(),
-                            s.blurb
-                        )
-                    }
-                    Panel::Gambler => "RISK GOLD\n\nslots · roulette · blackjack · darts\n\nAll four games' logic is ported and tested\n(pk-core::gambler); the cabinet screen lands\nwith the P5 GUI layer.\n\n[E / ESC] close".into(),
-                };
-            }
+    // The stack is driven from `open_panel` every frame rather than only on the
+    // edges: two sources of truth for "is a sheet up" is exactly the drift this
+    // whole block is arranged to prevent.
+    match res.open_panel {
+        None => {
+            layer.close(ScreenId::RunSummary);
+            layer.close(ScreenId::StationPanel);
+            views.summary = None;
+            views.panel = None;
+        }
+        Some(Panel::Summary) => {
+            views.summary = Some(SummaryView {
+                floor: res.stats.floor.to_string(),
+                grade: res.stats.grade.to_string(),
+                kills: res.stats.kills.to_string(),
+                best_combo: format!("x{}", res.stats.best_combo),
+                // ⚠️ NOT ZERO — `TavernStats` has no gear and no purse, because
+                // the economy is P4. A "0 gold" here would be a number the game
+                // never computed, and a number on a summary screen is read as
+                // a measurement. An em dash is read as what it is.
+                gear: "—".into(),
+                purse: "—".into(),
+            });
+            layer.open(ScreenId::RunSummary);
+        }
+        Some(panel) => {
+            let (title, blurb, body, accent) = match panel {
+                Panel::Summary => unreachable!("handled above"),
+                Panel::Vendor(id) => {
+                    let s = STATIONS
+                        .iter()
+                        .find(|s| s.id == id)
+                        .expect("a live station");
+                    (
+                        s.label.to_string(),
+                        s.blurb.to_string(),
+                        "The counter opens here once the economy lands (P4). \
+                         The chrome around this line is the real one — sheet, \
+                         rivets, 16px heading — painted by the ported toolkit \
+                         against the browser-baked goldens."
+                            .to_string(),
+                        s.accent,
+                    )
+                }
+                Panel::Gambler => (
+                    "RISK GOLD".to_string(),
+                    "slots · roulette · blackjack · darts".to_string(),
+                    "All four games are ported and tested in pk-core::gambler, \
+                     RTP Monte-Carlos included. The cabinet screen that drives \
+                     them lands with the P5 economy."
+                        .to_string(),
+                    GOLD,
+                ),
+            };
+            views.panel = Some(PanelView {
+                title,
+                blurb,
+                body,
+                accent,
+            });
+            layer.open(ScreenId::StationPanel);
+        }
+    }
+    // ── Prompt, LAST ──
+    //
+    // A screen on the stack, not a `Text` node: the toolkit paints the legacy
+    // `createStationPrompt` chrome, and the room only says which station.
+    //
+    // ⚠️ AFTER the panel block, not before it. `frozen` is read at the top of
+    // the frame, so a prompt updated up there is answering the question "was a
+    // sheet open when this frame started" — and the frame a sheet OPENS on, that
+    // is no. The prompt therefore survived one frame underneath its own panel:
+    // a stack depth that was 2 on one frame and 1 on the next, which a browser
+    // gate caught by reading the wrong one and disagreeing with itself between
+    // runs. Reading `res.open_panel` down here makes it this frame's answer.
+    match (res.open_panel.is_some(), res.focus) {
+        (false, Some(s)) => {
+            views.prompt = Some(StationView {
+                label: s.label.to_string(),
+                blurb: s.blurb.to_string(),
+                accent: s.accent,
+            });
+            layer.open(ScreenId::StationPrompt);
+        }
+        _ => {
+            layer.close(ScreenId::StationPrompt);
+            views.prompt = None;
         }
     }
 }

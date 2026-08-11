@@ -3377,17 +3377,10 @@ dependencies = [
  "pk-assets",
  "pk-audio",
  "pk-core",
+ "pk-gui",
  "serde_json",
  "wasm-bindgen",
  "web-sys",
-]
-
-[[package]]
-name = "pk-jsmath-probe"
-version = "0.1.0"
-dependencies = [
- "libm",
- "pk-core",
 ]
 
 [[package]]
@@ -3397,6 +3390,14 @@ dependencies = [
  "png 0.17.16",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "pk-jsmath-probe"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "pk-core",
 ]
 
 [[package]]

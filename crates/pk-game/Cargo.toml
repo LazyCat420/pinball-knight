@@ -10,6 +10,7 @@ description = "Pinball Knight — the Bevy app (render, input, GUI, fx, boot)"
 pk-core = { path = "../pk-core" }
 pk-assets = { path = "../pk-assets" }
 pk-audio = { path = "../pk-audio" }
+pk-gui = { path = "../pk-gui" }
 serde_json = { workspace = true }
 libm = { workspace = true }
 # PNG decode for the embedded knight sheets — bypasses bevy_asset io entirely

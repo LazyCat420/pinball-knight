@@ -58,7 +58,7 @@ use pk_core::maze::floor_spec::derive_floor_spec;
 use pk_core::state::demo_floor;
 
 use crate::real_floor::{
-    build_active_floor, spawn_real_floor_failure, ActiveFloor, RealFloorBoot, RealFloorFailure,
+    build_active_floor, spawn_real_floor_failure, ActiveFloor, FloorPlan, RealFloorFailure,
     RealFloorRequest,
 };
 use crate::AppState;
@@ -299,10 +299,10 @@ fn floor_label(request: Option<RealFloorRequest>) -> String {
     }
 }
 
-fn enter_floor_loading(mut commands: Commands, boot: Res<RealFloorBoot>, dwell: Res<LoadingDwell>) {
+fn enter_floor_loading(mut commands: Commands, plan: Res<FloorPlan>, dwell: Res<LoadingDwell>) {
     // A malformed request has no spec to name, so the card stays generic and the
     // failure below replaces it two frames later.
-    let request = match &boot.0 {
+    let request = match &plan.next {
         Some(Ok(r)) => Some(*r),
         _ => None,
     };
@@ -363,7 +363,7 @@ fn enter_floor_loading(mut commands: Commands, boot: Res<RealFloorBoot>, dwell: 
 fn advance_floor_loading(
     mut commands: Commands,
     mut res: ResMut<FloorLoadingRes>,
-    boot: Res<RealFloorBoot>,
+    plan: Res<FloorPlan>,
     dwell: Res<LoadingDwell>,
     prepared: Option<Res<PreparedFloor>>,
     mut next: ResMut<NextState<AppState>>,
@@ -383,7 +383,7 @@ fn advance_floor_loading(
         LoadingStep::Paint | LoadingStep::Halt => {}
         LoadingStep::Build => {
             let t0 = now_ms();
-            match prepare_floor(&boot) {
+            match prepare_floor(&plan) {
                 Ok(mut floor) => {
                     let done = now_ms();
                     floor.prepare_ms = done - t0;
@@ -406,8 +406,8 @@ fn advance_floor_loading(
 }
 
 /// Build whatever floor the boot gate asked for. THE ONLY floor build site.
-fn prepare_floor(boot: &RealFloorBoot) -> Result<PreparedFloor, String> {
-    let real = match &boot.0 {
+fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
+    let real = match &plan.next {
         None => None,
         Some(Err(e)) => return Err(e.to_string()),
         Some(Ok(req)) => {
@@ -598,12 +598,12 @@ mod tests {
     /// off is a different floor and not a different code path.
     #[test]
     fn the_one_build_site_makes_both_kinds_of_floor() {
-        let demo = prepare_floor(&RealFloorBoot(None)).expect("the demo floor builds");
+        let demo = prepare_floor(&FloorPlan::of(None)).expect("the demo floor builds");
         assert!(demo.real.is_none());
         assert_eq!((demo.grid.w, demo.grid.h), (25, 25), "the demo arena");
         assert_eq!(demo.seed, DEMO_SEED);
 
-        let real = prepare_floor(&RealFloorBoot(Some(Ok(RealFloorRequest {
+        let real = prepare_floor(&FloorPlan::of(Some(Ok(RealFloorRequest {
             level: 3,
             run_seed: 1,
         }))))
@@ -624,7 +624,7 @@ mod tests {
         // `let Err(..) else` rather than `expect_err`: the Ok side carries a
         // `PreparedFloor`, which owns a whole grid and has no business deriving
         // `Debug` just so a test can format the value it must never see.
-        let Err(e) = prepare_floor(&RealFloorBoot(Some(Err(
+        let Err(e) = prepare_floor(&FloorPlan::of(Some(Err(
             crate::real_floor::RealFloorRequestError::InvalidQuery {
                 key: "level",
                 value: "banana".into(),

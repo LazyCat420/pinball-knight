@@ -344,6 +344,17 @@ pub struct RuntimeFloorInfo {
     pub path_distance: i32,
     /// The first step of a shortest path, as a unit cardinal.
     pub first_path_step: (i32, i32),
+    /// EVERY step of that shortest path, start → exit, as unit cardinals.
+    ///
+    /// The BFS field is already swept to answer `path_distance`; walking it down
+    /// costs one more pass and turns "the exit is reachable" — an arithmetic
+    /// claim about an array — into a route something can actually be driven
+    /// along. That is what the browser gate does with it: the descend rule is
+    /// "stand on the exit", and the only honest way to test a rule about walking
+    /// is to walk.
+    ///
+    /// Length is exactly `path_distance`, and empty when the start IS the exit.
+    pub route_to_exit: Vec<(i32, i32)>,
     /// `None` when no square wall abuts the start tile — an open plaza spawn.
     /// Optional rather than fabricated: a probe pointed at a wall that is not
     /// there is a gate that fails for the wrong reason.
@@ -394,6 +405,7 @@ pub fn validate_runtime_floor(track: &TrackFloor) -> Result<RuntimeFloorInfo, Fl
     }
 
     let first_path_step = first_step_downhill(g, start, &from_exit, path_distance);
+    let route_to_exit = route_downhill(g, start, &from_exit, path_distance);
 
     Ok(RuntimeFloorInfo {
         start_tile: start,
@@ -402,6 +414,7 @@ pub fn validate_runtime_floor(track: &TrackFloor) -> Result<RuntimeFloorInfo, Fl
         provisional_exit_world,
         path_distance,
         first_path_step,
+        route_to_exit,
         wall_probe: derive_wall_probe(g, start, start_world),
     })
 }
@@ -430,6 +443,33 @@ fn first_step_downhill(g: &Grid, start: TilePos, from_exit: &[i32], d: i32) -> (
     // one closer. Returned rather than panicked so a future grid change is a
     // failing assertion in a test, not a crash in the shell.
     (0, 0)
+}
+
+/// The whole shortest path, by repeating [`first_step_downhill`].
+///
+/// One function rather than a loop at the call site, and it reuses the step
+/// picker rather than re-deriving one: `first_path_step` and the first entry
+/// here are then equal BY CONSTRUCTION, and a fixture that pins one pins both.
+/// A step that cannot be found stops the route where it stalled — the caller
+/// checks the length against `path_distance`, so a truncated route fails loudly
+/// instead of arriving somewhere else.
+fn route_downhill(g: &Grid, start: TilePos, from_exit: &[i32], d: i32) -> Vec<(i32, i32)> {
+    let mut route = Vec::with_capacity(d.max(0) as usize);
+    let mut here = start;
+    let mut left = d;
+    while left > 0 {
+        let step = first_step_downhill(g, here, from_exit, left);
+        if step == (0, 0) {
+            break;
+        }
+        route.push(step);
+        here = TilePos {
+            i: here.i + step.0,
+            j: here.j + step.1,
+        };
+        left -= 1;
+    }
+    route
 }
 
 /// How many tiles the probe will walk looking for a wall.
@@ -531,6 +571,55 @@ impl AxisPick for (f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// THE ROUTE IS WALKED, not counted.
+    ///
+    /// `path_distance` is a number read out of an array, and a number can be
+    /// right about a floor nobody can cross. This replays every step on ten
+    /// levels: each tile it lands on must be walkable, the length must equal the
+    /// distance, and the last step must land on the exit — which is the claim
+    /// the descend rule stands on, and the claim a browser gate drives.
+    #[test]
+    fn the_route_to_the_exit_is_a_walkable_path_that_arrives() {
+        for level in 1..=10 {
+            let spec = derive_floor_spec(level, 1);
+            let track = build_track_floor_from_spec(&spec).expect("L{level} builds");
+            let info = validate_runtime_floor(&track).expect("L{level} validates");
+            let g = &track.grid;
+            assert_eq!(
+                info.route_to_exit.len() as i32,
+                info.path_distance,
+                "L{level}: the route is shorter than the distance it claims — \
+                 `route_downhill` stalled"
+            );
+            assert_eq!(
+                info.route_to_exit.first().copied(),
+                Some(info.first_path_step),
+                "L{level}: the route's first step and `first_path_step` are the \
+                 same pick or one of them is lying"
+            );
+            let mut here = info.start_tile;
+            for (n, (di, dj)) in info.route_to_exit.iter().enumerate() {
+                assert_eq!(
+                    di.abs() + dj.abs(),
+                    1,
+                    "L{level} step {n}: {di},{dj} is not a unit cardinal"
+                );
+                here = TilePos {
+                    i: here.i + di,
+                    j: here.j + dj,
+                };
+                assert!(
+                    is_walkable(g, here.i, here.j),
+                    "L{level} step {n} lands on a wall at {here:?}"
+                );
+            }
+            assert_eq!(
+                here, info.provisional_exit_tile,
+                "L{level}: the route ends somewhere that is not the exit"
+            );
+        }
+    }
 
     /// The derivation is a pure function of its two arguments — asserted rather
     /// than assumed, because `derive_floor_spec` DRAWS and a stream left in the

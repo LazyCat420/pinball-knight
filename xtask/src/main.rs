@@ -21,9 +21,7 @@ fn main() -> ExitCode {
             eprintln!(
                 "  bake --tavern  export the tavern keepers + ENTER MAZE sign to assets/tavern/"
             );
-            eprintln!(
-                "  bake --gui-font  rasterise the vendored UI faces to assets/gui/font/"
-            );
+            eprintln!("  bake --gui-font  rasterise the vendored UI faces to assets/gui/font/");
             eprintln!(
                 "  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)"
             );

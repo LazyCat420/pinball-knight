@@ -5,6 +5,62 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — The game generates its floors, and the tavern has a real menu.**
+  Two reports, one cause each, and both causes were a switch left in the wrong
+  position rather than missing work.
+  - **The maze did not render because the flag that rendered it was off.**
+    `--real-floor` shipped the nine landed passes on 08-10 and the game
+    everybody plays passes no flags, so every descend still built
+    `demo_floor(7)` — the 25×25 pillar arena. The default is now the generated
+    floor; `--demo-floor` / `?demo-floor=1` / `PK_DEMO_FLOOR=1` asks for the
+    arena by name. The refusal path is unchanged and still does not fall back.
+  - ⚠️ **`requested()` could not stay the boot gate.** It answered "is a
+    generated floor planned", which the inversion makes always true — using it
+    to choose the start state would have booted every run straight past the
+    intro and the hub onto a floor. `FloorPlan` splits the two questions:
+    `next` is what a descend builds, `boot_into_floor` is whether a flag asked
+    to open on one. Pinned by `asking_for_nothing_generates_a_floor`.
+  - **Floors are PLURAL now.** `descend_at_exit` takes the run one level deeper
+    when the knight stands on the provisional exit, and `FloorPlan::restart`
+    puts it back to `--level`'s value when the run leaves for the tavern — so a
+    flag survives a hub round trip instead of quietly meaning floor 1. The
+    marker is still not stairs (pass 21 authors those); the RULE is what is not
+    provisional.
+  - **`pk-gui` reached a screen.** The toolkit merged on 824ee0d is byte-exact
+    against the browser that authored its goldens and had no way to display
+    itself; `pk-game/src/gui.rs` is the upload, the input feed and the schedule
+    it names in its own header. The tavern's station prompt and panels are now
+    screens on that stack — sheet, rivets, 16px arcane heading, ruled rows, a
+    focused CLOSE button — instead of `Text` nodes with hand-rolled chrome, and
+    three `Query`s left `tavern_frame`'s parameter list.
+  - ⚠️ **The prompt updated one frame before the panel that hides it.** `frozen`
+    is read at the top of `tavern_frame`, so on the frame a sheet OPENS it still
+    says "nothing is open" and the prompt survived underneath its own panel for
+    exactly one frame. The browser gate read stack depth 2 on one run and 1 on
+    the next and disagreed with itself. The prompt block moved BELOW the panel
+    block; it now answers this frame's question.
+  - ⚠️ **A background tab throttles rAF and the dwell is wall clock.** The
+    loading-card capture polls for `painted >= 10`; in a background tab that
+    poll costs more than the whole 2.5 s hold, so the state ended and the
+    screenshot landed on the dungeon — passing on one seed and failing on the
+    next depending on which tab the host Chrome had in front. `bringToFront`
+    moved BEFORE the poll (it was between the poll and the shutter, one step too
+    late), the hold is 6 s, and the gate now re-reads the state AFTER the
+    capture so the failure names its cause instead of printing a byte count.
+  - **`routeToExit`: the whole shortest path, published.** The BFS field was
+    already swept for `pathDistance`; walking it down turns "the exit is
+    reachable" into a route something can be driven along, and
+    `the_route_to_the_exit_is_a_walkable_path_that_arrives` replays every step
+    on ten levels. ⚠️ **The DRIVEN descend is not a gate yet.** A CDP walker
+    arrived on L1 seed 163 (runLevel 2, a different `floorSeed`, the same
+    `runSeed`) and failed the next run on the same seed: the knight carries
+    momentum, an overshooting leg leaves the next one a row off its corridor,
+    and it walks into a wall. Parked deliberately rather than shipped flaky —
+    `floor_ascii --scan 300` names L1 seed 163 (30 tiles, 3 turns) as the
+    cheapest floor for whoever finishes it.
+  - Gates: `cargo test --workspace` (22 suites), fmt, per-crate clippy at deny,
+    the full default `pk-check` and `pk-check --real-floor` on two seeds.
+
 - **2026-08-10 — `Tavern -> FloorLoading -> Dungeon`: one door into a floor, and
   a loading screen that is provably on screen.** Two places used to build a
   floor — the boot gate and the DESCEND board — and both did it inside the frame
