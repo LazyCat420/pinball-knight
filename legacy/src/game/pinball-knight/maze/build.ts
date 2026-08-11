@@ -1138,6 +1138,60 @@ function arcSweepGeometry(arcs: readonly ArcFeature[], grid: Grid, heightFor: (f
   return geo;
 }
 
+/**
+ * BAKE SEAM — hand every maze surface's painted canvas to the Rust port.
+ *
+ * `docs/src/art/bake.md`: canvas painters are RUN in the browser they were
+ * authored against and their pixels ship as PNGs; they are never re-implemented
+ * in Rust. This is the maze's slice of that, and it is deliberately the ONLY
+ * thing added to this file for it — every canvas below comes out of the same
+ * painter `buildMaze` itself calls, so a bake cannot drift from what the game
+ * draws without the game changing too.
+ *
+ * DIFFUSE IS PER BIOME, NORMALS ARE NOT. `css()` resolves three palette slots
+ * through `BIOME_STONE`, so the stone colour is baked into every diffuse map;
+ * the normal maps come from the height fields alone and are byte-identical in
+ * all four. The caller sets the biome and takes `diffuse` four times, `normal`
+ * once — which is also exactly what the texture cache's own key comment says.
+ *
+ * Sizes are the painters' own: `pixelTexture` rasterises at the camera's PPU,
+ * so a rung change moves these and the PNGs are re-baked rather than resampled.
+ */
+export function bakeMazeSurfaces(): {
+  diffuse: Record<string, HTMLCanvasElement>;
+  normal: Record<string, HTMLCanvasElement>;
+} {
+  const canvas = (t: THREE.CanvasTexture): HTMLCanvasElement => t.image as HTMLCanvasElement;
+  // Mirrors the `lowHeight` closure inside buildMaze's wall pass. Kept here as
+  // well rather than exported from there because it is four lines and the
+  // alternative is hoisting a closure out of a 300-line function to serve a
+  // bake — see the note above about not changing what the game draws.
+  const lowHeight = (x: number, y: number): number => {
+    if (y < 2) return 0.7;
+    if (y >= TILE_PX - 4) return 0.1;
+    if (Math.abs(y - 28) < 1.5 || x % 22 < 1.5) return 0.2;
+    return 0.5;
+  };
+  return {
+    diffuse: {
+      floor: canvas(makeFloorTexture(1, 1)),
+      cap: canvas(makeCapTexture()),
+      "wall-plain": canvas(makeWallTexture(false, false)),
+      "wall-moss": canvas(makeWallTexture(true, false)),
+      "wall-low": canvas(makeWallTexture(false, true)),
+      "wall-low-moss": canvas(makeWallTexture(true, true)),
+      "wall-cracked": canvas(makeWallTexture(false, false, true)),
+      "wall-cracked-low": canvas(makeWallTexture(false, true, true)),
+    },
+    normal: {
+      floor: canvas(normalTexture(TILE_PX * FLOOR_BLOCK, floorHeight, 1, 1, 2.0)),
+      cap: canvas(normalTexture(TILE_PX, capHeight, 1, 1, 2.5)),
+      wall: canvas(normalTexture(TILE_PX, wallHeight, 1, 1, 2.5)),
+      "wall-low": canvas(normalTexture(TILE_PX, lowHeight, 1, 1, 2.5)),
+    },
+  };
+}
+
 export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
