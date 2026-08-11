@@ -1,3 +1,47 @@
+# Handoff — 2026-08-11, Stage 2 (INTRO), V-0/V-1/V-3 landed
+
+## THE BAKE WAS NEVER SLOW — READ THIS FIRST
+
+The ">13 minute" maze bake, blocker of V-0 and therefore of the intro, **was a
+browser defect and not a painting cost.** Playwright's bundled Chromium on this
+box hangs on the FIRST raster op of any canvas:
+
+```
+evaluate 1+1          2         (4 ms)     ← the renderer is alive
+createElement canvas  {w:64}    (3 ms)
+getContext("2d")      {ok:true} (1 ms)
+ONE fillRect          TIMEOUT              ← and here it stops, forever
+```
+
+No crash, no page error, no renderer CPU. It reproduces with
+`--use-gl=swiftshader`, with no `--use-gl` flag, with `--disable-gpu`, with
+`willReadFrequently: true`, and on `OffscreenCanvas`. All three suspects this
+page listed — `fillStyle` re-parsed in a 262k loop, `toDataURL` on software GL,
+a canvas scale ≠ 1 — were wrong, and the same 262k-`fillRect` loop runs on the
+HOST's Chrome in **60 ms**.
+
+`card-harness.open()` now runs on host Chrome, which fixes the bake and the
+other **thirteen** canvas harnesses that were dead the same way.
+`PK_HARNESS_BROWSER=bundled` forces the old path.
+
+| | |
+|---|---|
+| whole 4-biome bake | **5.1 s**, 36 PNGs → `assets/maze/` |
+| one biome, per surface | 95.6 ms (`legacy/scripts/bake-profile.mjs`) |
+| determinism | two full bakes, `sha256sum` over all 36 identical |
+
+**V-1 shipped on top of it**: `crate::maze_art` embeds the bake and
+`dungeon_render` paints with it — floor, four wall variants, dressed caps, plus
+the height-field normal maps. **V-3 with it**: `SURFACE_ALBEDO_LUMA` is
+re-derived from the baked pixels (0.055 → 0.0674) by a test that prints the
+table and fails if a re-bake moves it.
+
+Second defect found on the way: `open()` waited for `window.__ready` and the
+bake raises `window.__out`, so it could not have completed even with a working
+browser. `ready`/`timeout` are options now, defaulted to the old values.
+
+---
+
 # Handoff — 2026-08-11, Stage 2 (INTRO) under way
 
 Read [build-out](build-out.md) first: it is the queue and the reasoning, and
@@ -32,18 +76,35 @@ path of the FIRST scene.
 
 **Frozen A/B, both sides** (`node scripts/pk-ab-intro.mjs --no-build`):
 
-| phase | diff mean | over32 | note |
+| phase | before textures | after (V-1) | note |
 |---|---:|---:|---|
-| run | 15.3 | 11.0% | |
-| bonk | 23.7 | 18.4% | |
-| shatter | 46.1 | 54.6% | ball scale + camera framing |
-| sweep | 25.5 | 27.5% | |
-| title | **16.7** (was 39.5) | **17.0%** (was 40.9%) | lights + chrome + the 96px atlas |
+| run | 15.3 | 16.9 | ±3 run to run |
+| bonk | 23.7 | 14.6 | |
+| shatter | 46.1 | 58.4 | ⚠️ NOT A MEASUREMENT — see below |
+| sweep | 25.5 | **19.2** | stable across two runs |
+| title | 16.7 (was 39.5) | **13.3** | stable across two runs |
+
+`sweep` and `title` are the two phases where the title maze fills the frame,
+they moved the most, and they are the stable ones — which is what a texture
+change should look like.
+
+⚠️ **`shatter` cannot be measured by this rig on a loaded box.** Two
+consecutive runs gave 88.9 and 58.4 with the ORACLE's median luma at 119 then
+10, and both printed `CLOCK NOT FROZEN` on the legacy side. The rig's virtual
+clock advances one 1/60 s step per real rAF callback, so when the box is busy
+it never reaches the target offset inside the phase and the oracle is
+photographed EARLIER in the shatter than the port is. The label still says
+"frozen", which is what makes it a trap. Fix the rig (drive the clock off a
+frame COUNT the harness controls, not off rAF delivery) before believing a
+shatter number.
 
 ### What is still open on the intro, in order of pixel impact
 
-1. **The maze textures** — the same V-0 bake as the dungeon (see below). The
-   title maze is flat colour where the oracle has flagstone, moss and banners.
+1. ~~**The maze textures**~~ ✅ **DONE 2026-08-11 (V-0 + V-1).** The title maze
+   is built through the real `buildMaze`, so the bake unblocked it. Still
+   missing on it: torches, banners and decor (V-4) — the oracle's title maze
+   has lit sconces along the top wall and ours has none, which is most of the
+   remaining brightness gap.
 2. **The ball.** The oracle draws a small sprite with a white ricochet ring;
    the port draws a large knight and no ring. `SPRITE_UNITS = 1.5` against the
    port's `quad_h = 1.15` — but the port's reads BIGGER on the sheet, so this
@@ -84,11 +145,16 @@ ALBEDO error and not a lighting one.
 
 ## THE NEXT THING TO BUILD
 
-1. **V1 textures** (`maze/build.ts:356-670`). The stone is now the right FAMILY
-   (the biome remap is ported); it is still one flat colour per bucket where the
-   oracle has flagstone, moss, cracks and a normal map. This is the largest
-   remaining visible gap and the A/B rig grades it directly. It is blocked on
-   the maze-texture bake, which is the half-done item below.
+1. ~~**V1 textures**~~ ✅ **DONE 2026-08-11.** `crate::maze_art` embeds the bake;
+   `dungeon_render` paints the floor, the four wall variants and the dressed
+   caps with it, plus the height-field normal maps. `pk-ab-dungeon --level 3
+   --seed 1`: diff mean 32.0 → **30.2**, over32 36.2% → **33.8%**.
+   ⚠️ **The face split is the part to know about.** The oracle gives every wall
+   box six materials (`[face, face, cap, cap, face, face]`, `build.ts:1425`) and
+   a merged bucket carries one, so `split_faces` partitions each bucket's
+   triangles BY NORMAL and every bucket spawns two entities. `batched_entities()`
+   doubled with it, and the demo floor's batching-worth assertion went 20× → 10×
+   — the same claim against a new denominator, not a weakened one.
 2. ~~**`surface-paint.ts`**~~ ✅ **DONE 2026-08-11.** `grid.surfaces` is
    exported, loaded and washed (`dungeon_render::spawn_surface_wash`), and it
    was a PHYSICS gap as well as a visual one — `pk_core::pinball` reads
@@ -117,32 +183,29 @@ ALBEDO error and not a lighting one.
    WALLS on L3 and only the floor half is painted. Legacy tints wall instances
    with `instanceColor`; here it wants the bucket key extended by surface id so
    each (shape, surface) pair gets its own tinted material.
-5. **`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos** and must be
-   re-derived when V1 lands — `dungeon_light.rs` says so at the constant.
+5. ~~**`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos**~~ ✅ **DONE
+   2026-08-11 (V-3).** Re-derived from the baked pixels: **0.055 → 0.0674**,
+   measured by `maze_art::mean_linear_luma` over all four biomes, and a test now
+   prints the table and fails if a re-bake moves it. It caught the stale value
+   on its first run, which is the argument for it not being a comment.
+   **The real art inverts the placeholder's relationship** — the greys had the
+   wall seven times brighter than the floor; the bake has the FLOOR brighter in
+   every biome, because flagstone catches the light and coursed masonry is
+   mostly mortar shadow. Two guesses would not have converged on that.
 
-## Half-done, with a measurement attached
+## ~~Half-done, with a measurement attached~~ ✅ CLOSED — see the top of this page
 
+**The maze texture bake completes in 5.1 seconds.** It was never slow; the
+harness browser could not rasterise. The full account, the three wrong
+suspects, and the numbers are at the top of this page.
 
-**The maze texture bake does not complete.** `legacy/scripts/bake-maze-textures.mjs`
-and the `bakeMazeSurfaces()` / `__bakeParts` seams in `maze/build.ts` are
-written and correct in shape. One biome exceeds **thirteen minutes** in the
-harness browser, under `--use-gl=swiftshader` and `--disable-gpu` alike.
-
-What is already ruled out: the import (115 ms, bisected against
-`render/palette`, `engine/config`, `engine/collision` and `maze/generator`, all
-~13 ms). So the cost is inside the painting, where the arithmetic says seconds:
-the floor is 512×512 with a per-pixel `fillRect(x, y, 1, 1)`, ~262k draw calls,
-plus a moss pass adding at most 230k.
-
-Next step is a PROFILE with per-surface timings inside the page — `__bakeParts`
-exists for exactly that. Suspects in order: `fillStyle` re-parsed from a CSS
-string inside a 262k-iteration loop; `toDataURL` readback on a software-GL
-surface; a canvas scale that is not 1 at this rung.
-
-**Do not "fix" this by transcribing the painters into Rust.** They are ~700
-lines of Skia-dependent Canvas2D and a second implementation is a permanent
-parity liability — see `docs/src/art/bake.md`. The bake is the right shape; the
-cost is what is unexplained.
+The standing rule survives intact and is worth restating because the pressure
+to break it was the whole point of the investigation: **do not "fix" anything
+here by transcribing the painters into Rust.** They are ~700 lines of
+Skia-dependent Canvas2D and a second implementation is a permanent parity
+liability (`docs/src/art/bake.md`). Two handed-in blueprints proposed exactly
+that as the fix for this "performance problem", and the performance problem did
+not exist.
 
 ## Traps this session paid for
 
@@ -176,7 +239,16 @@ node scripts/pk-check.mjs --no-build                            # the flow gates
 node scripts/pk-check.mjs --no-build --real-floor               # the generated-floor gates
 cd legacy && npm run dev                                        # :5174, the oracle the rig needs
 RUN_EXPORT=1 npx vitest run src/game/pinball-knight/port-floor-export.test.ts
+
+bash scripts/pk-drift.sh ../braindeadbot-client   # D-1: has the ORACLE rotted?
+bash scripts/pk-coverage.sh                       # C-1: how much of legacy has no counterpart
+cd legacy && node scripts/bake-maze-textures.mjs --sheet /tmp/m.png   # re-bake the stone (5 s)
+cd legacy && node scripts/bake-profile.mjs                            # per-surface bake timings
 ```
+
+⚠️ Every browser-driven line above wants a core slot on this shared box —
+prefix it with `legacy/scripts/ops/pk-run.sh --class webgpu --` rather than
+running it bare.
 
 The A/B sheet lands at `.checks/ab-dungeon-L3-s1.png`. **Look at it.** It is the
 only honest answer to "does the dungeon look right", and until this week the

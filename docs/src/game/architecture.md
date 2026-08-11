@@ -17,20 +17,45 @@ function also keeps `cargo test -p pk-core` GPU-free and is the shape golden
 fixtures need. Pause is a `SimPaused` resource, not Bevy's virtual-time pause
 (heat haze keeps animating while menus are open, as in the TS game).
 
-## Collision: ported, not adopted
+## DECISION: no third-party physics engine
+
+**Status: decided, and re-proposed twice.** Recorded here as a named decision
+because an unwritten one gets re-derived — this is work item X-2.
 
 The TS game hand-rolls circle-vs-tile-grid collision with axis-separated
 sweep-and-clamp (`legacy/.../engine/collision.ts`), and its BLUEPRINT §1.5
 explicitly keeps Rapier/cannon-es "on the shelf". The Rust port keeps that
-stance: no physics crate. Physics-engine floats would also destroy fixture
-parity.
+stance: **no physics crate, while `legacy/` is the oracle.**
 
-## Registries: the compiler replaces the drift hook
+**The reason is bit-exact replay, and it is not a preference.** `pk_core`
+reproduces the oracle's simulation to the last ulp — gated by the trace
+fixtures in `assets/fixtures/`, by ported unit tests, and by a sabotage sweep on
+every generator pass. That is only possible because `collide.rs` and
+`pinball.rs` are transcriptions, down to the JS engine's own arithmetic via
+`pk_core::jsmath` (both `std` and `libm` disagree with V8 by enough to flip a
+threshold — see the Incidents chapter on `js_pow`).
+
+A third-party solver has no bit-exact answer to reproduce. Adopting Rapier
+would not add physics; it would **invalidate every fixture in the repo**, and
+with them the only evidence the port has that it plays like the game it
+replaces. It reads as progress and is a week of subtraction.
+
+Both handed-in blueprints that proposed it are triaged in
+`status/one-to-one.md` §3.1, and the chapter they came from
+(`documentation/chapters/18-rust-webgpu-engine-port.md`) is retracted.
+
+## Registries: the compiler replaces MOST of the drift hook
 
 The nine `Record<EnemyKind, X>` tables become `EnumMap<EnemyKind, X>` +
-exhaustive `match`. Adding a kind fails the build at every site — this retires
-`legacy/scripts/hooks/registry-drift.mjs`, which existed because TS `Record`
-exhaustiveness doesn't reach switch statements.
+exhaustive `match`. Adding a kind fails the build at every site.
+
+⚠️ **That does NOT retire `legacy/scripts/hooks/registry-drift.mjs`, and an
+earlier version of this page said it did.** The hook exists precisely because
+four registries are invisible to `tsc` as well: the `spawnKind` switch, the
+biome tables in `maze/prefabs.ts`, `EXPANSION_SKIN` vs `KIND_PORTRAIT`, and
+`ESSENTIAL`. Exhaustive `match` reaches the nine and nothing else, so the port
+inherits **thirteen** registries and the four leftovers need a Rust test of
+their own — for which the hook is the specification.
 
 ## GUI: hand-rolled immediate-mode
 

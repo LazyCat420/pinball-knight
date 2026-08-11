@@ -447,14 +447,28 @@ the default source (1b-2), so the generator's remaining 14 passes buy *seed
 variety*, not a dungeon. Schedule it against that, not against "the floors do
 not exist yet".
 
-### 5.4 Track V — and the blocker C walks past
+### 5.4 Track V — and the blocker C walks past ✅ **the blocker is gone**
+
+> **2026-08-11.** The blocker in this section's title — the maze bake that
+> "exceeds thirteen minutes" — **did not exist.** It was Playwright's bundled
+> Chromium failing to rasterise at all on this box, and the bake takes 5.1
+> seconds on the host's Chrome. Three of this plan's own suspects (`fillStyle`
+> re-parsed in a 262k loop, `toDataURL` on software GL, a canvas scale ≠ 1)
+> were all inside the painters, and all three were wrong.
+>
+> **The lesson is bigger than the bake.** Every one of those suspects would
+> have been "fixed" by rewriting the painters — which is the exact work two
+> handed-in blueprints proposed and this plan twice refused (§3.3 C8). A
+> performance story that points at the code you are already being lobbied to
+> rewrite deserves one measurement before it is believed. The measurement here
+> was four lines long: `1+1`, `createElement`, `getContext`, `fillRect`.
 
 | # | Item | Acceptance evidence |
 |---|---|---|
-| V-0 | **Profile** the maze bake (`__bakeParts`, per-surface timers), then set the target from the profile | a timing table per surface; the 13-minute biome explained, not guessed. **This is the real V1** — not transcribing the painters (§3.3 C8) |
-| V-1 | Finish the bake; wall/floor/cap textures into `dungeon_render.rs`'s existing buckets | A/B sheet + the bake's provenance JSON |
+| ~~V-0~~ | ✅ **DONE 2026-08-11 — and the answer was not a profile.** The bake was never slow: Playwright's bundled Chromium on this box hangs on the FIRST raster op of any canvas (one `fillRect`, 64px, never returns — with swiftshader, without it, with `--disable-gpu`, with `willReadFrequently`, on `OffscreenCanvas`). All three suspects this row listed were wrong, and so were the fourteen harnesses that share `card-harness.open()`. Moved to the HOST's Chrome | the same blamed loop runs in **60 ms** there; one biome **95.6 ms**; the whole four-biome bake **5.1 s**, byte-identical across two runs |
+| ~~V-1~~ | ✅ **DONE 2026-08-11.** `crate::maze_art` embeds the 36 baked PNGs; `dungeon_render` paints floor / four wall variants / dressed caps + normal maps. The oracle's six-material box becomes a merged mesh split BY NORMAL (`split_faces`), so each bucket spawns two entities | `pk-ab-dungeon --level 3 --seed 1`: diff mean 32.0 → **30.2**, over32 36.2% → **33.8%**. `pk-ab-intro`: title 16.7 → **13.3**, sweep 25.5 → **19.2**, both stable over two runs |
 | V-2 | The WALL wash — 455 mud / 89 brass / 74 rubber wall tiles on L3 carry a surface id nothing paints | A/B sheet; bucket key extended by surface id |
-| V-3 | Re-derive `SURFACE_ALBEDO_LUMA`, which is calibrated on placeholder albedos | the constant's own comment is the acceptance test |
+| ~~V-3~~ | ✅ **DONE 2026-08-11.** `SURFACE_ALBEDO_LUMA` re-derived from the baked pixels, **0.055 → 0.0674** | `maze_art::mean_linear_luma` over all four biomes, printed by a test that FAILS if a re-bake moves it — it caught the stale value on its first run. **The real art inverts the placeholder's relationship**: the greys had the wall 7× brighter than the floor, the bake has the FLOOR brighter in every biome |
 | V-4 | Architecture, banners, stairs marker; shaped tiles at their real heights; cracked bands as removable meshes | A/B per item |
 | V-5 | GUI pixel pass into `composite.wgsl` at **`@binding(6)`** (not 7 — §3.3 C9) | one frame with the GUI cel-graded, screenshotted |
 
@@ -573,11 +587,11 @@ The dungeon A/B rig — the third missing gate as of last week — **now exists*
 | ID | Item | Why | Acceptance |
 |---|---|---|---|
 | **P-1** | A provenance ledger: every Rust module carries `//! PORTS: <legacy path>`, and `cargo xtask coverage` emits ported / partial / not-started per legacy file | §2.3's number is an upper bound from a heuristic; 1:1 is not claimable from a heuristic | the tool runs in CI and prints a number that moves only when a file is ported |
-| **D-1** | `braindeadbot-client` ↔ `legacy/` drift check in CI | §4 | red on a seeded change, green on today's tree |
-| **X-1** | Correct or retire `documentation/chapters/18-rust-webgpu-engine-port.md` | it describes a `pk-render` crate and a Rapier3D physics layer that do not exist — the same two false claims as blueprint A, which is the likeliest place they came from | the chapter's crate tree matches `Cargo.toml` |
-| **X-2** | Record the "no third-party physics engine" decision in [architecture](../game/architecture.md) | it has now been proposed twice; an unwritten decision gets re-proposed | a named decision record whose reason is bit-exact replay |
-| **I-1** | `scripts/pk-ab-intro.mjs` — the intro's A/B rig, modelled on `pk-ab-tavern.mjs` | Stage 2's gate does not exist, and a scene cannot be signed off by eye ([[by-eye-is-not-a-measurement]]); the tavern and dungeon rigs both had to exist before their scenes could be called done | a sheet at `.checks/ab-intro-*.png` with the same diff statistics the other two rigs print |
-| **C-1** | `scripts/pk-coverage.sh` in CI, printing the uncovered total | the number in §2 goes stale the moment it is written — v1's was two commits old within a day | CI prints it per run; a merge that ports a file moves it |
+| ~~**D-1**~~ | ✅ **SHIPPED 2026-08-11** — `scripts/pk-drift.sh` + a CI job | §4 | **Sabotage sweep run, 4 cases**: a changed gameplay file → red; a new file on either side → red; no tree at all → **exit 2, not 0**; today's trees → green. Its ONE blind spot is stated in the script: a change to an allowlisted file (the three legacy-ahead seams) is invisible. ⚠️ braindeadbot-client is PRIVATE, so the CI job can only run where a `BDB_TOKEN` secret reaches it; without one it raises a GitHub **warning annotation** saying the gate did not run, rather than passing quietly. On this box it is one command |
+| ~~**X-1**~~ | ✅ **SHIPPED 2026-08-11** — chapter 18 RETRACTED | it described a `pk-render` crate and a Rapier3D layer that do not exist | the chapter is now a stub listing each false claim against the tree and pointing at the five status pages. Retracted rather than deleted: deleting it would not stop the blueprint being re-derived a third time |
+| ~~**X-2**~~ | ✅ **SHIPPED 2026-08-11** — a named decision in [architecture](../game/architecture.md) | it had been proposed twice | "DECISION: no third-party physics engine", with bit-exact replay as the reason and both blueprints named. Corrected a second error on that page while there: exhaustive `match` does **not** retire `registry-drift.mjs`, because four of the thirteen registries are invisible to `tsc` too |
+| ~~**I-1**~~ | ✅ shipped `54e506e` — `scripts/pk-ab-intro.mjs` | Stage 2's gate | sheets at `.checks/ab-intro-*.png`. ⚠️ **its `shatter` phase is not currently a measurement** — the virtual clock advances per rAF callback, so on a loaded box the oracle freezes EARLIER in the phase than the port does while both labels claim "frozen". Two runs: 88.9 then 58.4. See [handoff](handoff.md) |
+| ~~**C-1**~~ | ✅ **SHIPPED 2026-08-11** — `pk-coverage.sh` runs in CI | the number in §2 goes stale the moment it is written | CI prints the uncovered total per run. **Reported, not enforced**: a ratchet on an upper-bound heuristic would gate real work on a number that can move without anything being ported. P-1 is what makes it enforceable |
 
 ---
 

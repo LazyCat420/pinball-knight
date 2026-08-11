@@ -125,4 +125,55 @@ jobs:
       # a failure rather than a queue. `test:raw` is the same vitest run without
       # the broker. On the dev box, keep using `npm test`.
       - run: npm run test:raw
+
+  coverage:
+    name: 1:1 coverage (C-1)
+    runs-on: ubuntu-latest
+    # The number in docs/src/status/one-to-one.md goes stale the moment it is
+    # written — v1's was two commits old within a day of shipping. Printing it
+    # per run makes "how much is left" a fact of the build rather than a
+    # measurement someone has to remember to re-take.
+    #
+    # REPORTED, not enforced. A ratchet here would be wrong today: the scan is
+    # a two-signal heuristic and an UPPER bound on coverage (a Rust file that
+    # merely mentions a legacy path counts it), so a threshold would gate real
+    # work on a number that can move without anything being ported. The exact
+    # ledger is WORK ITEM P-1.
+    steps:
+      - uses: actions/checkout@v4
+      - name: uncovered legacy lines
+        run: bash scripts/pk-coverage.sh
+
+  drift:
+    name: oracle rot (D-1)
+    runs-on: ubuntu-latest
+    # `legacy/` is the oracle for every fixture and every A/B sheet, AND a
+    # filtered extraction of braindeadbot-client's live PK tree. A gameplay fix
+    # landed there makes the oracle wrong while every fixture stays green.
+    #
+    # ⚠️ braindeadbot-client is a PRIVATE repo, so this job can only run where a
+    # token reaches it. Without one it does NOT quietly pass: the gate script
+    # exits 2 for "cannot check", and the step raises a GitHub warning
+    # annotation saying so in as many words. A gate that reports green when it
+    # did not run is worse than no gate, because it retires the worry.
+    #
+    # On the dev box, where both trees exist, run it directly:
+    #   bash scripts/pk-drift.sh ../braindeadbot-client
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch the live PK tree
+        if: ${{ secrets.BDB_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: LazyCat420/braindeadbot-client
+          token: ${{ secrets.BDB_TOKEN }}
+          path: .bdb
+      - name: diff the oracle against the live game
+        run: |
+          if [ -d .bdb ]; then
+            bash scripts/pk-drift.sh "$PWD/.bdb"
+          else
+            bash scripts/pk-drift.sh /definitely-not-here || true
+            echo "::warning title=D-1 did not run::No BDB_TOKEN secret, so the oracle-rot gate could NOT check braindeadbot-client. This job is green because nothing failed, NOT because the trees agree."
+          fi
         working-directory: legacy
