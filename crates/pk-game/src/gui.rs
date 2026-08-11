@@ -677,6 +677,7 @@ mod tests {
             stats: UiStats::default(),
             image: Handle::default(),
             closed: None,
+            skip_pressed: false,
             dirty: false,
             views_gen: 0,
             last_pointer: None,
