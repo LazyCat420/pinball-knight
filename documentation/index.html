@@ -81,6 +81,30 @@ body{
   padding:0.12rem 0.45rem; border-radius:4px; font-weight:700; border:none;
   margin-left:auto; line-height:1; vertical-align:middle; letter-spacing:0.04em;
 }
+/* Status — the lifecycle a chapter is in. A plan that says "approved" and a
+   plan that says "shipped" are different documents, and a reader who cannot
+   tell them apart at a glance will act on the wrong one. */
+.statusbar{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 1.1rem}
+.status,.meta-pill{
+  display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;font-weight:700;
+  border-radius:4px;padding:.16rem .45rem;line-height:1.35;white-space:nowrap;
+}
+.meta-pill{
+  text-transform:none;font-weight:500;letter-spacing:.02em;
+  color:var(--ink-soft);background:var(--panel-2);border:1px solid var(--rule);
+}
+.status.s-ok{color:var(--ok);background:var(--ok-bg);border:1px solid var(--ok)}
+.status.s-warn{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn)}
+.status.s-bad{color:var(--bad);background:var(--bad-bg);border:1px solid var(--bad)}
+.status.s-muted{color:var(--ink-soft);background:var(--panel-2);border:1px solid var(--rule)}
+/* Overdue is set by the browser, never baked into the build — see _status_bar. */
+.meta-pill.overdue{color:var(--bad);background:var(--bad-bg);border-color:var(--bad);font-weight:700}
+nav.toc .status{
+  margin-left:auto;font-size:.58rem;padding:.08rem .3rem;letter-spacing:.02em;
+  border-radius:3px;
+}
+nav.toc a.chapter .status + .freshness.badge{margin-left:.25rem}
 .shell{max-width:1180px;margin:0 auto;padding:2rem 1.5rem 5rem;display:grid;grid-template-columns:220px minmax(0,1fr);gap:2.6rem;align-items:start}
 /* The sidebar scrolls ITSELF. It is `position:sticky`, so without a height
    bound it grows past the bottom of the window and the only way to reach its
@@ -235,7 +259,7 @@ figcaption{margin-top:.8rem;font-size:.82rem;color:var(--ink-soft);text-align:ce
       <p class="sub">subtitle = Rust/WebGPU Engine, Sprite-Forge, &amp; Nano Banana Art Pipeline
 repo = LazyCat420/pinball-knight</p>
     </div>
-    <span class="stamp"><span class="freshness lede" data-ts="2026-08-10T17:23:34-07:00"></span>generated 2026-08-11 00:29 UTC · do not edit by hand</span>
+    <span class="stamp"><span class="freshness lede" data-ts="2026-08-10T17:23:34-07:00"></span>generated 2026-08-11 13:16 UTC · do not edit by hand</span>
   </div>
 </header>
 <div class="shell">
@@ -1690,6 +1714,20 @@ struct CelParams {
          nodes[i].textContent = "last commit " + ago(seconds);
       }
       nodes[i].title = when.toLocaleString();
+    }
+    /* A review date that has passed is the whole point of writing one down.
+       Decided here, not at build time — the page is rebuilt when a chapter
+       CHANGES, which is never the case for the chapters that go stale. */
+    var due = document.querySelectorAll(".meta-pill.review[data-review]");
+    for (var j = 0; j < due.length; j++) {
+      var by = new Date(due[j].getAttribute("data-review") + "T23:59:59");
+      if (isNaN(by.getTime())) continue;
+      var late = now > by.getTime();
+      due[j].classList.toggle("overdue", late);
+      if (late) {
+        var days = Math.floor((now - by.getTime()) / 86400000);
+        due[j].textContent = "review overdue by " + days + " day" + (days === 1 ? "" : "s");
+      }
     }
   }
   paint();
