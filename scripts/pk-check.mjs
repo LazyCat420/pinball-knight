@@ -744,6 +744,20 @@ async function main() {
       const guiUp = (await pkTav())?.gui ?? null;
       gate(!!guiUp, "the GUI layer is live");
       gate(guiUp?.painted > 0, `the GUI painted frames (${guiUp?.painted})`);
+      // THE SKIP, AS A NUMBER. Immediate mode rebuilds the widgets every pass;
+      // it must not repaint the PIXELS every pass. Repainting unconditionally
+      // took the tavern from 36 fps to 14, and the way that surfaced was the
+      // walk below missing its lane — the probe publishes every 5 frames, so at
+      // 14 fps it hands back a position 357 ms old and every leg overshoots.
+      // A ratio near 1.0 means the skip is dead again.
+      console.log(
+        `  note  GUI repainted ${guiUp?.painted} of ${guiUp?.frames} driven frames ` +
+          `(${((100 * guiUp?.painted) / Math.max(1, guiUp?.frames)).toFixed(0)}%)`,
+      );
+      gate(
+        guiUp?.frames > 0 && guiUp.painted / guiUp.frames < 0.5,
+        `the layer skips quiet frames (${guiUp?.painted}/${guiUp?.frames})`,
+      );
       // EXACTLY one. The prompt is not stacked under the sheet — legacy hides
       // the contextual line while a panel is up (`frozen` kills the focus), and
       // the port keeps that: a "[E] TABLE" prompt behind an open summary is an
@@ -788,17 +802,33 @@ async function main() {
       // not tick-exact and the post-release slide drifts, so each leg walks
       // until the coordinate says it arrived. (Key mapping: due north = W+D,
       // east = S+D, west = W+A on the 45° screen basis.)
-      const walkUntil = async (keys, done, maxSteps = 24) => {
+      //
+      // ⚠️ THE HOLD LENGTH IS A TOLERANCE, NOT A SPEED. The probe publishes every
+      // five frames, so each check reads a pose up to that far in the past and
+      // the leg overshoots by whatever the knight covered meanwhile. At 260 ms
+      // the north leg ran 1.4 units past its lane and every later leg was inside
+      // the wall behind the DESCEND board — which reads as "the room changed",
+      // not as "the harness steps too coarsely". 140 ms halves the overshoot and
+      // the correction below absorbs the rest.
+      const walkUntil = async (keys, done, maxSteps = 40, ms = 140) => {
         for (let i = 0; i < maxSteps; i++) {
           const p = (await pkTav()).tavern;
           if (!p || done(p)) return p;
-          await hold(keys, 260);
+          await hold(keys, ms);
         }
         return (await pkTav()).tavern;
       };
-      await walkUntil(["w", "a"], (p) => p.x <= -4.4); // west, clear of the table
-      await walkUntil(["w", "d"], (p) => p.z <= -4.4); // north up the west lane
+      const leg = (name, p) =>
+        console.log(`  note  leg ${name}: x=${p?.x?.toFixed(2)} z=${p?.z?.toFixed(2)} focus=${p?.focus}`);
+      leg("start", (await pkTav()).tavern);
+      leg("west", await walkUntil(["w", "a"], (p) => p.x <= -4.4)); // west, clear of the table
+      leg("north", await walkUntil(["w", "d"], (p) => p.z <= -4.4)); // north up the west lane
+      // The corridor east is a BAND, not a line: the board sits at z -4.9 with a
+      // 1.6 radius, and the wall behind it starts just past that. An overshot
+      // north leg puts the east leg inside it, so come back south first.
+      leg("correct", await walkUntil(["s", "a"], (p) => p.z >= -5.0, 12));
       let atBoard = await walkUntil(["s", "d"], (p) => p.focus === "board" || p.x > 1.4); // east into the corridor
+      leg("east", atBoard);
       if (atBoard?.focus !== "board") {
         // Overshot east past the radius — walk back west until it catches.
         atBoard = await walkUntil(["w", "a"], (p) => p.focus === "board", 10);
@@ -819,6 +849,15 @@ async function main() {
         if (s && s.tavern === null && s.x !== undefined) descended = s;
       }
       gate(!!descended, "DESCEND hands off to a live dungeon sim");
+      // ⚠️ THE GUI STACK IS GLOBAL AND THE SCENES ARE NOT. The prompt and the
+      // panels used to be `Text` nodes tagged with the tavern's scene marker, so
+      // despawning the room took them; as screens they outlive it, and the first
+      // build after the port put "[E] DESCEND" over the dungeon floor. Caught by
+      // LOOKING at a screenshot — every gate above was green through it.
+      gate(
+        descended?.gui?.open === 0,
+        `the tavern's screens do not follow you down the stairs (open=${descended?.gui?.open})`,
+      );
     }
     await tavPage.close();
 

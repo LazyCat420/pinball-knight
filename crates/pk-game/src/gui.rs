@@ -78,6 +78,22 @@ pub struct GuiViews {
     pub panel: Option<PanelView>,
 }
 
+/// Assign only if the value actually differs.
+///
+/// ⚠️ THE REASON THE REPAINT SKIP NEEDS THIS. A scene rebuilds its view structs
+/// every frame — that is what immediate mode is — and `ResMut` marks the
+/// resource changed on the DEREF, not on a difference. So `views.prompt =
+/// Some(same_thing)` set the changed flag sixty times a second and the skip had
+/// a 0% hit rate while looking, from inside, like it worked. Measured: the
+/// tavern sat at 14 fps with a caption on screen, and the browser gate's timed
+/// walk started missing its lane because the probe (every 5 frames) had gone
+/// 357 ms stale.
+pub fn set_view<T: PartialEq>(slot: &mut Option<T>, want: Option<T>) {
+    if *slot != want {
+        *slot = want;
+    }
+}
+
 /// The layer: the buffer, the fonts, the stack, and the texture they land in.
 #[derive(Resource)]
 pub struct GuiLayer {
@@ -98,6 +114,47 @@ pub struct GuiLayer {
     /// early-out on an empty stack is a decision about the PAINTER, and the
     /// texture is this module's problem.
     dirty: bool,
+    /// Bumped whenever Bevy's change detection says [`GuiViews`] was written.
+    views_gen: u64,
+    /// Where the cursor was last frame, in painter pixels.
+    ///
+    /// ⚠️ `pointer_moved` MEANS MOVED. Setting it whenever a cursor is over the
+    /// window makes every frame a repaint the moment the mouse rests on the
+    /// game — which is most frames a player ever produces, and would have given
+    /// the skip below a 0% hit rate while looking like it worked in a test.
+    last_pointer: Option<(f64, f64)>,
+    /// What the last painted frame was a picture OF.
+    ///
+    /// ⚠️ REPAINTING EVERY FRAME COST HALF THE FRAME RATE. Immediate mode means
+    /// the widgets are rebuilt each pass, and it is easy to read that as "the
+    /// pixels must be too" — they must not. The tavern with only its station
+    /// prompt up fell from 36 fps to 14 (measured, in the real Windows build)
+    /// once this layer existed: a 756x482 clear plus a 1.4 MB texture write,
+    /// sixty times a second, to redraw a caption that had not changed. The
+    /// browser gate's timed walk started falling short of the DESCEND board,
+    /// which is how it surfaced — as a harness flake, three files away.
+    ///
+    /// So a frame repaints when something could have MOVED: the views changed,
+    /// the stack changed, or input arrived. Everything else reuses the texture
+    /// that is already on the GPU.
+    seen: PaintKey,
+}
+
+/// The cheap summary of "would this frame paint the same picture as the last".
+///
+/// Deliberately NOT a hash of the pixels — that would cost the paint it exists
+/// to avoid. It is the inputs to the paint: what is open, at what size, and
+/// whether the views behind them changed since the last pass. `views_gen`
+/// counts Bevy change-detection ticks rather than comparing contents, so a
+/// screen whose text is rebuilt into an identical `String` still repaints once
+/// and never spins.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+struct PaintKey {
+    open: usize,
+    top: Option<ScreenId>,
+    focus: i64,
+    size: (u32, u32),
+    views_gen: u64,
 }
 
 impl GuiLayer {
@@ -123,6 +180,15 @@ impl GuiLayer {
 
     pub fn close(&mut self, id: ScreenId) {
         self.stack.remove(id);
+    }
+
+    /// Close everything — a scene handing the screen to another scene.
+    ///
+    /// The stack is global and the SCENES are not, so a room that opened a
+    /// screen has to close it on the way out. Nothing else can: `Update` systems
+    /// are gated on the state that just ended.
+    pub fn clear(&mut self) {
+        self.stack.clear();
     }
 
     /// The `__pk.gui` payload — "did it run" and "did it paint", which are the
@@ -188,6 +254,9 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         image: image.clone(),
         closed: None,
         dirty: false,
+        views_gen: 0,
+        last_pointer: None,
+        seen: PaintKey::default(),
     });
     commands.spawn((
         GuiImage,
@@ -261,6 +330,7 @@ fn gather_ui_input(
     keys: &ButtonInput<KeyCode>,
     mouse: &ButtonInput<MouseButton>,
     pointer: Option<(f64, f64)>,
+    was: Option<(f64, f64)>,
 ) -> UiInput {
     let count = |ks: &[KeyCode]| ks.iter().filter(|k| keys.just_pressed(**k)).count() as u32;
     let mut input = empty_ui_input();
@@ -283,9 +353,34 @@ fn gather_ui_input(
             pressed: mouse.just_pressed(MouseButton::Left),
             released: mouse.just_released(MouseButton::Left),
         };
-        input.pointer_moved = true;
+        input.pointer_moved = was != Some((x, y));
     }
     input
+}
+
+/// Did NOTHING arrive this frame?
+///
+/// Written out rather than derived from a `PartialEq` on `UiInput`, because the
+/// answer is not "is this equal to the empty input" — a pointer that is inside
+/// the lattice and merely still is not empty, and it must not force a repaint
+/// every frame the mouse rests over the window. Motion, buttons and keys are
+/// events; a resting position is not.
+fn is_quiet(i: &UiInput) -> bool {
+    i.up == 0
+        && i.down == 0
+        && i.left == 0
+        && i.right == 0
+        && i.next_tab == 0
+        && i.prev_tab == 0
+        && !i.accept
+        && !i.cancel
+        && !i.pointer_moved
+        && !i.pointer.pressed
+        && !i.pointer.released
+        && !i.pointer.down
+        && i.scroll == 0.0
+        && i.digit == 0
+        && i.typed.is_empty()
 }
 
 /// The window cursor, in painter pixels — or `None` when it is off the lattice.
@@ -333,7 +428,34 @@ fn paint_gui(
         .single()
         .ok()
         .and_then(|w| pointer_in_lattice(w, &sizing));
-    let input = gather_ui_input(&keys, &mouse, pointer);
+    let input = gather_ui_input(&keys, &mouse, pointer, layer.last_pointer);
+    layer.last_pointer = pointer;
+
+    // ── The repaint decision — see `GuiLayer::seen` ──
+    //
+    // Input is checked as "did anything arrive", not "did it change something":
+    // a press that no widget answers still has to reach `paint_stack`, because
+    // focus movement and cancel-pops are resolved INSIDE it. Only a frame with
+    // no input at all, over an unchanged stack and unchanged views, is safe to
+    // skip — and that is the frame the game spends nearly all of its time on.
+    if views.is_changed() {
+        layer.views_gen = layer.views_gen.wrapping_add(1);
+    }
+    let key = PaintKey {
+        open: layer.stack.len(),
+        top: layer.stack.top().map(|t| t.id),
+        focus: layer.stack.top().map(|t| t.focus).unwrap_or(0),
+        size: (layer.painter.w, layer.painter.h),
+        views_gen: layer.views_gen,
+    };
+    if is_quiet(&input) && key == layer.seen && layer.dirty {
+        // Still a DRIVEN frame — `frames` counts what the schedule asked for,
+        // and `painted` counts what reached the texture. The gap between them is
+        // the saving, and publishing both is what makes it visible.
+        layer.stats.frames += 1;
+        return;
+    }
+    layer.seen = key;
 
     // Split the borrows: `paint_stack` takes the painter, the fonts and the
     // stack at once, and the closure needs the views.
@@ -436,7 +558,7 @@ mod tests {
     fn two_direction_keys_in_one_frame_are_two_presses() {
         let k = keys(&[KeyCode::ArrowDown, KeyCode::KeyS]);
         let m = ButtonInput::default();
-        let input = gather_ui_input(&k, &m, None);
+        let input = gather_ui_input(&k, &m, None, None);
         assert_eq!(
             input.down, 2,
             "two down keys in one frame is a delta of two"
@@ -450,8 +572,8 @@ mod tests {
     #[test]
     fn escape_cancels_and_e_does_not() {
         let m = ButtonInput::default();
-        assert!(gather_ui_input(&keys(&[KeyCode::Escape]), &m, None).cancel);
-        assert!(!gather_ui_input(&keys(&[KeyCode::KeyE]), &m, None).cancel);
+        assert!(gather_ui_input(&keys(&[KeyCode::Escape]), &m, None, None).cancel);
+        assert!(!gather_ui_input(&keys(&[KeyCode::KeyE]), &m, None, None).cancel);
     }
 
     /// The letterbox. A pointer in the black bar is over nothing, and reporting
@@ -483,6 +605,33 @@ mod tests {
         assert_eq!(pointer_in_lattice(&win, &sizing), None);
     }
 
+    /// A resting cursor is not an event.
+    ///
+    /// The repaint skip is worthless if this reports movement every frame the
+    /// mouse happens to sit over the window — which is most frames a player
+    /// produces. Measured the hard way: the layer repainting unconditionally
+    /// took the tavern from 36 fps to 14.
+    #[test]
+    fn a_still_cursor_does_not_report_movement() {
+        let k = ButtonInput::default();
+        let m = ButtonInput::default();
+        let at = Some((10.0, 20.0));
+        assert!(
+            !gather_ui_input(&k, &m, at, at).pointer_moved,
+            "a cursor that has not moved has not moved"
+        );
+        assert!(gather_ui_input(&k, &m, at, Some((10.0, 21.0))).pointer_moved);
+        assert!(gather_ui_input(&k, &m, at, None).pointer_moved);
+        // …and the whole frame is quiet, which is what the skip reads.
+        assert!(is_quiet(&gather_ui_input(&k, &m, at, at)));
+        assert!(!is_quiet(&gather_ui_input(
+            &keys(&[KeyCode::ArrowDown]),
+            &m,
+            at,
+            at
+        )));
+    }
+
     /// The prompt must never pause; a sheet always must. This is the flag the
     /// tavern reads to decide whether WASD walks or moves a focus ring.
     #[test]
@@ -497,6 +646,9 @@ mod tests {
             image: Handle::default(),
             closed: None,
             dirty: false,
+            views_gen: 0,
+            last_pointer: None,
+            seen: PaintKey::default(),
         };
         layer.open(ScreenId::StationPrompt);
         assert!(

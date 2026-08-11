@@ -5,6 +5,36 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-11 — Two regressions the GUI layer shipped with, both found by
+  looking at the game rather than at a gate.**
+  - ⚠️ **The tavern's `[E] DESCEND` prompt followed the player into the
+    dungeon.** The prompt and the panels used to be `Text` nodes tagged
+    `TavernScene`, so despawning the room took them with it. As SCREENS they sit
+    on a stack that every scene shares and nothing was closing it —
+    `teardown_tavern` does now. A layer shared by every scene has to be closed
+    by the scene that opened it, because the systems that could close it are
+    gated on the state that just ended. Gated in `pk-check`: `gui.open === 0`
+    after DESCEND.
+  - ⚠️ **Repainting every frame cost more than half the frame rate, and it
+    surfaced three files away.** Immediate mode rebuilds the WIDGETS each pass;
+    it must not rebuild the PIXELS. A 756×482 clear plus a 1.4 MB texture write
+    at 60 Hz — to redraw a caption that had not changed — took the tavern from
+    36 fps to 14. What actually failed was the browser gate's walk to the
+    DESCEND board: `publish_stats` samples every 5 frames, so at 14 fps each
+    check read a pose 357 ms old, the north leg overshot its lane by 1.4 units,
+    and every later leg was inside the wall behind the board. It reads as "the
+    room changed", not as "the renderer got slower".
+    - The skip needed TWO fixes, and the first alone would have looked like it
+      worked: `ResMut` marks a resource changed on the DEREF, so a scene
+      assigning an identical view every frame kept the dirty flag set forever
+      (`set_view` compares first), and `pointer_moved` was set whenever a cursor
+      was over the window rather than when it MOVED. Now 41-45% of driven
+      frames repaint, the tavern is back at 33 fps, and `pk-check` gates the
+      ratio — a repaint fraction near 1.0 means the skip is dead again.
+  - The harness's walk got the tolerance it always needed: 140 ms legs instead
+    of 260, and a correction leg south, because the corridor east of the board
+    is a BAND and an overshot leg lands in the wall behind it.
+
 - **2026-08-10 — The game generates its floors, and the tavern has a real menu.**
   Two reports, one cause each, and both causes were a switch left in the wrong
   position rather than missing work.
