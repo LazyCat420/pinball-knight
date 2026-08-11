@@ -194,10 +194,15 @@ impl Painter {
     /// because enforcing it here would make a legitimate 1:1 blit of a
     /// non-square source a panic.
     ///
-    /// Colour is copied straight; there is no tint. Item icons are already the
-    /// game's own palette, and multiplying a 32-entry indexed palette by a UI
-    /// colour walks it off its own ramp — the failure `palette-source.ts`'s
-    /// `shadeDown` exists to prevent.
+    /// `tint: None` copies the source colour straight, which is what an item
+    /// icon wants — it is already the game's own palette, and MULTIPLYING a
+    /// 32-entry indexed palette by a UI colour walks it off its own ramp, the
+    /// failure `palette-source.ts`'s `shadeDown` exists to prevent.
+    ///
+    /// `tint: Some(c)` keeps only the source's ALPHA and paints the shape in
+    /// `c` — a silhouette, not a tint. That is a different operation with a
+    /// different honesty: it never claims to show you the art's colours, it
+    /// shows you a shape in a colour you chose.
     #[allow(clippy::too_many_arguments)]
     pub fn blit_rgba(
         &mut self,
@@ -209,6 +214,7 @@ impl Painter {
         dw: i64,
         dh: i64,
         alpha: f64,
+        tint: Option<Rgba>,
         clip: Option<DeviceClip>,
     ) {
         if dw <= 0 || dh <= 0 || sw == 0 || sh == 0 {
@@ -235,11 +241,14 @@ impl Painter {
                 let sx = ((col as f64 + 0.5) * sw as f64 / dw as f64).floor() as i64;
                 let sx = sx.clamp(0, sw as i64 - 1);
                 let s = ((sy * sw as i64 + sx) * 4) as usize;
-                let c = Rgba {
-                    r: src[s],
-                    g: src[s + 1],
-                    b: src[s + 2],
-                    a: src[s + 3],
+                let c = match tint {
+                    Some(t) => Rgba { a: src[s + 3], ..t },
+                    None => Rgba {
+                        r: src[s],
+                        g: src[s + 1],
+                        b: src[s + 2],
+                        a: src[s + 3],
+                    },
                 };
                 if c.a == 0 {
                     continue;
@@ -343,7 +352,7 @@ mod tests {
             }
         }
         let mut p = Painter::new(2, 2);
-        p.blit_rgba(&src, 4, 4, 0, 0, 2, 2, 1.0, None);
+        p.blit_rgba(&src, 4, 4, 0, 0, 2, 2, 1.0, None, None);
         assert_eq!(p.pixel(0, 0).r, 200);
         assert_eq!(p.pixel(1, 0).r, 200);
     }
@@ -357,7 +366,7 @@ mod tests {
             0, 0, 255, 255,
         ];
         let mut p = Painter::new(2, 2);
-        p.blit_rgba(&src, 2, 2, 0, 0, 2, 2, 1.0, Some((0, 0, 2, 1)));
+        p.blit_rgba(&src, 2, 2, 0, 0, 2, 2, 1.0, None, Some((0, 0, 2, 1)));
         assert_eq!(
             p.pixel(0, 0),
             Rgba::TRANSPARENT,

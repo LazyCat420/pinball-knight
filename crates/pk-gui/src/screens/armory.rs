@@ -379,17 +379,31 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     for (i, s) in v.styles.iter().enumerate() {
         let r = cut_top(&mut body, STYLE_ROW_H);
         well(f, &r, None);
-        // The swatch is the row's identity — "matches the sprite's plate mid
-        // tone", so a player recognises the set they are wearing.
-        crate::im::fill_rect(
-            f,
-            &rect(r.x + 3.0, r.y + 4.0, 3.0, 14.0),
-            Rgba::hex(s.swatch),
-        );
+        // THE SET, AS ARMOUR. The oracle's row is a label, a blurb and a
+        // colour bar — which is what the swatch is for ("matches the sprite's
+        // plate mid tone") — and beside three rows that now show real gear, a
+        // bar reads as a bullet point rather than as a piece of plate.
+        //
+        // So: the armour's own silhouette, stencilled in the set's steel. There
+        // is ONE `ARMOR_ITEM` painter and no per-set sprite to bake — an
+        // elemental set recolours the KNIGHT, not the ground item — and tinting
+        // the real icon would multiply an indexed palette off its own ramp. A
+        // stencil claims nothing it cannot show: this shape, in this steel.
+        let chip = rect(r.x + 2.0, r.y + 2.0, ICON_PX_ROW, ICON_PX_ROW);
+        match crate::icons::icon("armor") {
+            Some(ic) => {
+                crate::im::draw_icon_silhouette(f, ic, chip.x, chip.y, chip.w, Rgba::hex(s.swatch))
+            }
+            None => crate::im::fill_rect(
+                f,
+                &rect(r.x + 3.0, r.y + 4.0, 3.0, 14.0),
+                Rgba::hex(s.swatch),
+            ),
+        }
         text(
             f,
             &s.label,
-            r.x + 12.0,
+            r.x + 24.0,
             r.y + 2.0,
             TextOpts {
                 size: 8,
@@ -400,16 +414,16 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         text(
             f,
             &s.blurb,
-            r.x + 12.0,
+            r.x + 24.0,
             r.y + 12.0,
             TextOpts {
                 size: 8,
                 colour: Some(Ui::TEXT_DIM),
-                // Ellipsize BEFORE the button gutter: the blurb starts 12 in,
+                // Ellipsize BEFORE the button gutter: the blurb starts 24 in,
                 // the key's left edge is `BTN_INSET` off the right, and 4 of
                 // clear air between them is what stops a long blurb reading as
                 // if it runs under the price.
-                max: Some(r.w - BTN_INSET - 16.0),
+                max: Some(r.w - BTN_INSET - 28.0),
                 ..TextOpts::default()
             },
         );

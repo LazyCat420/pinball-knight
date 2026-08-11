@@ -490,6 +490,37 @@ pub fn wrap(f: &UiFrame, s: &str, max: f64, size: u32) -> Vec<String> {
 /// The centring rounds the same way at both scales, so an icon does not shift
 /// inside its box when the window changes zoom.
 pub fn draw_icon(f: &mut UiFrame, icon: &crate::icons::Icon, x: f64, y: f64, size: f64) {
+    draw_icon_inner(f, icon, x, y, size, None)
+}
+
+/// The same blit, in ONE colour — the icon's alpha as a stencil.
+///
+/// For a row whose subject is the ART IN A DIFFERENT MATERIAL. The armorer's
+/// elemental sets are the same plate in hoarfrost steel, jade tempest steel,
+/// forge-red and storm-slate; there is one `ARMOR_ITEM` painter and the sets
+/// live in the knight's own palette, not in a per-set sprite. A silhouette in
+/// the set's swatch says "this shape, in this steel" without inventing four
+/// pieces of art or — worse — multiplying the real one by a colour, which walks
+/// an indexed palette off its own ramp and comes out muddy.
+pub fn draw_icon_silhouette(
+    f: &mut UiFrame,
+    icon: &crate::icons::Icon,
+    x: f64,
+    y: f64,
+    size: f64,
+    colour: Rgba,
+) {
+    draw_icon_inner(f, icon, x, y, size, Some(colour))
+}
+
+fn draw_icon_inner(
+    f: &mut UiFrame,
+    icon: &crate::icons::Icon,
+    x: f64,
+    y: f64,
+    size: f64,
+    tint: Option<Rgba>,
+) {
     let z = f.zoom as i64;
     let d = exact_icon_size(icon.w as i64, (px(size) * z).max(0));
     if d <= 0 {
@@ -507,6 +538,7 @@ pub fn draw_icon(f: &mut UiFrame, icon: &crate::icons::Icon, x: f64, y: f64, siz
         d,
         d,
         f.global_alpha,
+        tint,
         f.device_clip,
     );
 }
