@@ -205,6 +205,14 @@ the queue.
 | B11 | render parts with placeholder primitives | **CORRECT AND DELIBERATE** | the A/B rig grades POSITION and DENSITY at this stage; baked art replaces placeholders later without moving a call site |
 | B12 | "60 FPS on low-power devices" | **OUT OF SCOPE / UNFALSIFIABLE as stated** | no device class, no scene, no measurement. The project's FPS gate is pk-check on this box |
 
+**Correction to B-row facts, measured while building the loader:** the export
+carries BOTH `kicks` (5-6 bands per floor) and `lanes` (4-8) — the handoff says
+it carries neither. It also omits `solidOut` on most arcs and `rarity` on 12 of
+30 items, neither of which a key-union scan can see. **A union says "some entry
+has this field"; only a per-entry count says "every entry does."** That mistake
+cost two build-refuse cycles and is the reason every optional field in
+`authored_floor.rs` carries its measured presence count in a comment.
+
 **New finding, from measuring the payloads for B2:** `plan.rooms` is **empty on
 all three exported floors** (L1, L3, L5), while every other section is populated
 — parts 80/102/121, props 63/84/93, spawns 52/72/105, torches 48/41/64, items 10
@@ -255,16 +263,56 @@ This is [build-out](build-out.md)'s queue with the 1:1 items that page does not
 carry folded in. Each item names its acceptance evidence; an item without one is
 not startable.
 
-### Stage 1b — the authored floor becomes the dungeon *(blueprint B, corrected)*
+### Stage 1b — the authored floor becomes the dungeon — ✅ **SHIPPED 2026-08-11**
 
-| # | Item | Acceptance evidence |
+| # | Item | Status / evidence |
 |---|---|---|
-| 1b-0 | Resolve `plan.rooms == []` on all three exports (§3.2) | either the archetypes provably author no rooms, or the exporter is fixed and the floors re-exported |
-| 1b-1 | `crates/pk-game/src/authored_floor.rs`: serde structs, `include_str!`, `solidOut`→`solid_out`, `owner: String`→`Option<&'static str>`, default `kicks`/`lanes` empty | `cargo test -p pk-game`; `validate_runtime_floor` passes on L1/L3/L5 |
-| 1b-2 | Authored is the DEFAULT source; `--rust-floor` selects the generator; **source printed in the banner** | `pk-check --no-build` green; banner legible in the screenshot |
-| 1b-3 | Torches: sconce quad + flame quad per `plan.torches`, **6-light parked pool**, oracle constants from B7 | `pk-ab-dungeon --level 3 --seed 1`; live-light count asserted == 6 in a unit test |
-| 1b-4 | Parts, props, items as per-kind placeholder geometry | A/B sheet: position and density match; 102 parts on L3-s1 |
-| 1b-5 | `scripts/pk-win.sh build`, then look at the real exe | a screenshot from the Windows build, not the wasm one |
+| 1b-0 | Resolve `plan.rooms == []` on all three exports | ✅ **NOT A DEFECT.** `spawn/floor-authoring.ts:162-171`: room rects are authored in half-scale cell coords on the growing-tree branch ONLY — "a track floor ships neither; decorateMaze's own sparse-region fill covers it" — and `buildTrackFloor` declined 0 times in 400 floors. Their one reader is the minimap outline, which draws none in the oracle either. Pinned by `every_embedded_floor_carries_its_content` |
+| 1b-1 | `authored_floor.rs` — loader | ✅ 17 tests. `pk_core::maze::floor_spec::validate_runtime_grid` extracted so both sources get the SAME standability check rather than the authored path fabricating a `TrackFloor` |
+| 1b-2 | Authored is the DEFAULT; `--rust-floor` selects the generator; source in the banner and in `__pk.floorSource` | ✅ `pk-check --no-build` ALL GATES PASSED; `--real-floor` ditto |
+| 1b-3 | Torches + the **6-light parked pool** | ✅ and it needed a prerequisite nobody had listed — see below |
+| 1b-4 | Parts, props, items as per-kind placeholders | ✅ 102 parts / 84 props / 10 items on L3-s1, all on the tiles the oracle chose |
+| 1b-5 | Windows exe | ✅ `scripts/pk-win.sh build` green |
+
+**The A/B numbers, before and after** (`pk-ab-dungeon --level 3 --seed 1`, 1920×1080, host Chrome):
+
+| | diff mean | p95 | over32 | our median luma vs oracle's |
+|---|---:|---:|---:|---:|
+| first sheet | 43.1 | 94 | 58.3% | 23.2 vs 40.7 |
+| after the stone fix | **33.1** | **80** | **39.1%** | **40.6 vs 40.7** |
+
+#### Five findings, four of which were wrong assumptions in the plan above
+
+1. **The dungeon's materials were `unlit: true`.** Every wall, floor and shaped
+   tile. So "torches are the single largest visible change" was wrong by one
+   step: an unlit material ignores every light, and 41 torches would have added
+   41 quads and changed nothing. The light rig (`dungeon_light.rs`, a port of
+   `boot/lighting.ts`) is the change; the torches are what it reveals.
+2. **`solidOut` is absent on ~3 of 4 arcs**, because `tile-shape.ts:226` types it
+   `solidOut?: boolean` and `JSON.stringify` drops `undefined`. A required field
+   refused every floor. It is also 9 TRUE out of 10 present on L3 — "carries the
+   key" and "is solid outside" are two different counts, and the first draft of
+   the test asserted the wrong one.
+3. **`dirI`/`dirJ` are floats.** A `boostcurve` carries `(0.447, -0.894)` =
+   `(1,-2)/√5`. Typed `i32` they refuse the payload; rounded, they point the
+   booster somewhere the ball is not thrown.
+4. **`circuits[].links` are PARTS, not tiles** — they parse cleanly as tiles
+   (both have `i`/`j`) and silently lose the kind and the facing. `Tile` now
+   carries `deny_unknown_fields` so that class of error cannot recur.
+5. **The floor was too dark because the ALBEDO was wrong, not the light.** The
+   oracle bakes the biome's stone into every diffuse map (`build.ts:83-87`,
+   `BIOME_STONE` + `css()`), so L3 is deep cold blue; the port's four greys were
+   picked to look right unlit and answered to no biome. Porting the remap moved
+   our median luma from 23.2 to 40.6 against the oracle's 40.7 — with the light
+   rig untouched, which is the evidence that the rig's derivation was right and
+   the albedo was the error.
+
+Two instruments had to be repaired as part of this, both because they asked
+`__pk.floor` — the GENERATED floor's field, now `null` by default:
+`pk-ab-dungeon` accepts either source and reports which, and `pk-check`'s
+real-floor gate asks for the generator by name (`&rust-floor=1`) because its
+fixture is the generator's digest. **A default flip silently retargets every
+gate that hard-codes the old default.**
 
 ### Stage 2 — the surfaces
 

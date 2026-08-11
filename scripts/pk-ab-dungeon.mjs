@@ -50,6 +50,8 @@
  *   node scripts/pk-ab-dungeon.mjs --level 3 --seed 1
  *   node scripts/pk-ab-dungeon.mjs --rust-only        # one side, no comparison
  *   node scripts/pk-ab-dungeon.mjs --strict           # diff stats are fatal
+ *   node scripts/pk-ab-dungeon.mjs --rust-floor       # the GENERATOR's floor,
+ *                                                    # not the authored one
  */
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -79,6 +81,16 @@ const { values: a } = parseArgs({
     "no-build": { type: "boolean", default: false },
     "legacy-only": { type: "boolean", default: false },
     "rust-only": { type: "boolean", default: false },
+    /**
+     * Shoot the ported GENERATOR's floor instead of the authored one.
+     *
+     * The default changed with the authored-floor bridge: the right-hand side
+     * is now the oracle's own floor, so the two sides are the same floor and
+     * the diff is about PAINT. Pass this when the generator is what is under
+     * test — the sheets will differ in geometry again, which is correct and is
+     * what the header's "not the same floor yet" paragraph is about.
+     */
+    "rust-floor": { type: "boolean", default: false },
     strict: { type: "boolean", default: false },
     out: { type: "string", default: join(ROOT, ".checks") },
     "legacy-url": { type: "string", default: "" },
@@ -98,6 +110,7 @@ const LEVEL = Number(a.level);
 const SEED = Number(a.seed);
 const SETTLE_MS = Number(a.settle);
 const PORT = Number(a.port);
+const RUST_FLOOR = a["rust-floor"];
 const OUT = a.out;
 const doLegacy = !a["rust-only"];
 const doRust = !a["legacy-only"];
@@ -322,20 +335,42 @@ async function shootLegacy(ctx, errors, badUrls, url) {
 
 async function shootRust(ctx, errors, badUrls) {
   const page = await openPage(ctx, errors, "rust", badUrls);
-  const url = `http://localhost:${PORT}/index.html?real-floor=1&level=${LEVEL}&seed=${SEED}&mute=1`;
+  // TWO FLOOR SOURCES, and the URL says which. The default is the AUTHORED
+  // floor — the oracle's own finished floor, loaded from `assets/floors/` —
+  // which is the whole reason this rig can now compare like with like: before
+  // the bridge, the left side ran 23 passes plus `decorateMaze` and the right
+  // side ran 9, so the sheets differed in GEOMETRY and the numbers were
+  // meaningless. `--rust-floor` shoots the ported generator's own floor
+  // instead, which is what you want when the thing under test is the generator.
+  const url =
+    `http://localhost:${PORT}/index.html?real-floor=1&level=${LEVEL}&seed=${SEED}&mute=1` +
+    (RUST_FLOOR ? "&rust-floor=1" : "");
   log(`▶ rust:   ${url}`);
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.bringToFront();
 
   const pk = () => page.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
   let floor = null;
+  let source = null;
   for (let i = 0; i < 240 && !floor; i++) {
     await page.waitForTimeout(500);
     const s = await pk();
     if (s?.floorError) throw new Error(`rust: the floor was refused — ${s.floorError}`);
-    floor = s?.floor ?? null;
+    // Either source counts as "a floor is installed". Asking only for `.floor`
+    // is how this gate read "no floor was installed" over a fully rendered
+    // authored dungeon — the field is the GENERATED floor's, and it is `null`
+    // by design when the generator is not the source.
+    floor = s?.floor ?? s?.authoredFloor ?? null;
+    source = s?.floorSource ?? null;
   }
-  if (!floor) throw new Error("rust: __pk.floor never appeared — no floor was installed");
+  if (!floor) {
+    throw new Error("rust: neither __pk.floor nor __pk.authoredFloor appeared — no floor installed");
+  }
+  const wantSource = RUST_FLOOR ? "generated" : "authored";
+  if (source !== wantSource) {
+    throw new Error(`rust: floor source is "${source}", asked for "${wantSource}"`);
+  }
+  log(`▶ rust:   source=${source} level=${floor.level} ${floor.w ?? "?"}x${floor.h ?? "?"}`);
   if (floor.level !== LEVEL) {
     throw new Error(`rust: booted level ${floor.level}, asked for ${LEVEL}`);
   }
@@ -347,9 +382,14 @@ async function shootRust(ctx, errors, badUrls) {
   // after `page.close()` and failed with "Target page, context or browser has
   // been closed" — which reads like the app crashed, and the screenshot on disk
   // says it did not.
-  const probe = (await pk()).floor;
+  const last = await pk();
+  // The probe is whichever source is installed — `.floor` for the generator,
+  // `.authoredFloor` for the oracle's export. They carry different fields on
+  // purpose (a pass count vs a content census), so `source` rides along and the
+  // reader below branches on it rather than guessing from the shape.
+  const probe = last.floor ?? last.authoredFloor;
   await page.close();
-  return { file, probe, vp };
+  return { file, probe, source, vp };
 }
 
 /** Find a live legacy dev server. The route is `/` — `/dungeon` is stale. */
@@ -452,7 +492,10 @@ async function main() {
     imgs.rust = await decode(rust.file);
     log(
       `rust    ${imgs.rust.w}x${imgs.rust.h}  ${rust.probe.w}x${rust.probe.h}  ` +
-        `archetype=${rust.probe.archetype}  pass=P${rust.probe.pass}`,
+        `source=${rust.source}  archetype=${rust.probe.archetype}  ` +
+        (rust.source === "authored"
+          ? `torches=${rust.probe.torches} parts=${rust.probe.parts} props=${rust.probe.props}`
+          : `pass=P${rust.probe.pass}`),
     );
     log(`        ${rust.file}`);
   }
@@ -462,7 +505,10 @@ async function main() {
     const sheet = join(OUT, `ab-dungeon-${STAMP}.png`);
     await writeSideBySide(imgs.legacy, imgs.rust, sheet, [
       `LEGACY  L${LEVEL} seed ${SEED}  (23 passes + decorateMaze)`,
-      `RUST    L${LEVEL} seed ${SEED}  (P${rust.probe.pass}, no decoration)`,
+      rust.source === "authored"
+        ? `RUST    L${LEVEL} seed ${SEED}  (authored floor: ${rust.probe.torches} torches, ` +
+          `${rust.probe.parts} parts, ${rust.probe.props} props)`
+        : `RUST    L${LEVEL} seed ${SEED}  (generated, P${rust.probe.pass}, no decoration)`,
     ]);
     const heat = join(OUT, `ab-dungeon-${STAMP}-diff.png`);
     stats = await writeDiff(imgs.legacy, imgs.rust, heat);

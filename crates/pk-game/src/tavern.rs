@@ -42,7 +42,7 @@ use crate::gui::{set_view, Gui, GuiViews, ScreenId};
 use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
 use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
-use crate::{camera_offset, AppState, DungeonCamera, KnightArt, CAM_TILT, CAM_YAW, VIEW_H};
+use crate::{camera_offset, AppState, DungeonCamera, KnightArt, VIEW_H};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
 const STONE_DK: u32 = 0x171a22; // [1]
@@ -99,13 +99,11 @@ const DIR_HEIGHT: f32 = 14.0;
 // and bevy's `getDistanceAttenuation(d², 1/range²)` is the same expression with
 // `range` for `cutoff`. So every `distance` in core.ts/props.ts is a `range`
 // here, one for one, and the over-brightness was never the falloff.
-/// 1 / `Exposure::BLENDER.exposure()`. Bevy scales every LIT surface by the
-/// camera's exposure before anything else sees it — `ev100 = 9.7`, so
-/// `2^-9.7 / 1.2` ≈ 1/998 (bevy_camera camera.rs:232,244, and this app spawns
-/// its camera with no `Exposure`, so it gets that default). three.js has no
-/// such stage at all, which is the whole reason these numbers are in the
-/// thousands and the oracle's are single digits.
-const EXPOSURE_RECIP: f32 = 998.1;
+// `EXPOSURE_RECIP`, `PL`, `c()` and `billboard()` moved to `crate::units` when
+// the dungeon needed the same conversions — one definition, so the two scenes
+// cannot drift into being lit by two different candela→lumen constants. The
+// derivations moved with them.
+use crate::units::{billboard, c, EXPOSURE_RECIP, PL};
 /// Bevy's ambient DIFFUSE env-BRDF response at roughness 1 (`ambient.wgsl`,
 /// `EnvBRDFApprox` with `F_AB(1.0, _) = (0.4524, -0.0024)`), where three uses
 /// Lambert's `1/π`.
@@ -151,10 +149,6 @@ const ROOM_ALBEDO_LUMA: f32 = 0.034;
 /// hemisphere's blue sky and warm timber bounce cancel back to the ambient's
 /// own colour, so only the MAGNITUDE has to move.
 const HEMI_OVER_AMBIENT: f32 = 0.79;
-
-/// THREE candela → Bevy lumens. One knob for every point light in the room,
-/// and no longer a guess: `4π / exposure` ≈ 12_542.
-const PL: f32 = 4.0 * std::f32::consts::PI * EXPOSURE_RECIP;
 
 /// The linear-RGB emissive of a THREE `MeshStandardMaterial { emissive: color,
 /// emissiveIntensity: intensity }` — which is `linear(color) * intensity` and
@@ -293,24 +287,6 @@ const BLOB_LIFT: f32 = 0.02;
 /// The knight quad's height. Centre-origin (unlike the keepers'), so his feet
 /// sit half of this below his transform — which is where the blob goes.
 const KNIGHT_QUAD_H: f32 = 1.15;
-
-fn c(hex: u32) -> Color {
-    Color::srgb_u8(
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
-    )
-}
-
-/// The BAKED billboard orientation (legacy sprite.ts:44-48 `faceCamera`): yaw
-/// to the camera's heading, then tilt back by its elevation, in YXZ order so
-/// the X tilt stays local — which is what keeps sprite texels square under the
-/// orthographic camera. The iso camera never moves, so this is computed once
-/// per sprite rather than billboarded per frame; `lean` is the only per-frame
-/// term (a keeper's `rot_z`), composed here instead of overwriting the bake.
-fn billboard(lean: f32) -> Quat {
-    Quat::from_euler(EulerRot::YXZ, CAM_YAW, -CAM_TILT, lean)
-}
 
 /// A knight sheet material re-cut with `alphaTest` instead of blending. The
 /// source lives in `KnightArt` and is shared with the dungeon and the intro,

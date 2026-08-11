@@ -117,6 +117,9 @@ const gate = (ok, msg) => {
 /**
  * THE GENERATED FLOOR, FROM OUTSIDE THE APP.
  *
+ * ⚠️ Asks for the generator with `?rust-floor=1`. The default source is the
+ * AUTHORED floor; this gate is about the ported generator and its fixture.
+ *
  * What this can prove that no Rust test can: that the WASM build boots a
  * generated floor at all, that it spawns the knight where `pk_core` said, that
  * the banner naming the floor is on screen, and that a wall the collider reports
@@ -134,7 +137,14 @@ async function realFloorGates(page, gate, errors) {
   const seed = flagNum("--seed", 1);
   const url =
     `http://localhost:${PORT}/index.html` +
-    `?real-floor=1&level=${level}&seed=${seed}&autostart=1&mute=1` +
+    // `rust-floor=1` ASKS FOR THE GENERATOR BY NAME. A descend loads an
+    // AUTHORED floor by default now (the oracle's exported floor — see
+    // `crates/pk-game/src/authored_floor.rs`), and everything below is pinned
+    // against `real-floor-l3s1-p9.json`, which is the GENERATOR's digest at
+    // nine passes. Without this flag the gate photographs one floor and grades
+    // it against another's fixture — which is exactly what it did for one run,
+    // and the failure it reported was "no floor was installed".
+    `?real-floor=1&rust-floor=1&level=${level}&seed=${seed}&autostart=1&mute=1` +
     // HOLD THE LOADING SCREEN. Without it the state lives about three frames at
     // the debug build's frame rate and no externally-timed screenshot can land
     // inside it — the first version of this gate went green on `__pk.loading`

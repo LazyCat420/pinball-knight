@@ -38,6 +38,16 @@ Track C is what makes the floor a game.
 
 ---
 
+> **2026-08-11 — Stage 1b shipped and it changes this queue.** The authored
+> floor is the default source, so **C3-C5's output is on screen today without
+> `decorateMaze` being ported**: torches, boosters, bumpers, props and items are
+> loaded from `assets/floors/*.json` and drawn by `authored_render.rs`. What that
+> does NOT do is make the generator produce them — C1/C2/C3 are still the work,
+> and their gate is now sharper for it (generate in Rust, diff against the same
+> JSON). Two items below also moved: **V2 is no longer blocked on C3** (the
+> torches have their plan), and V1's prerequisite turned out to be the light rig,
+> because every dungeon material was `unlit: true`. See [handoff](handoff.md).
+
 ## Track V — make it look like the game
 
 ### V1. Wall, floor and cap textures · `maze/build.ts:356-670`
@@ -52,10 +62,14 @@ material, precisely so this lands as a material swap and not a re-bucketing.
 `scripts/pk-ab-tavern.mjs`. That rig does not exist and is the first thing this
 item builds.
 
-### V2. Torches, sconces and the light pool · `build.ts:1694-`
-Sconce mesh + flame quad + a pooled `PointLight` per torch. Needs
-`plan.torches`, which is Track C's output — so until C3 lands, V2 can only be
-built against a hand-placed set. **Do V2 after C3, or accept a stub.**
+### ~~V2. Torches, sconces and the light pool~~ · ✅ SHIPPED 2026-08-11
+Sconce mesh + flame quad + the oracle's **parked pool of `TORCH_LIGHT_POOL = 6`**
+— not one light per torch, which the torch BUDGET is derived from
+(`constants/level.ts:114-129`). It did not have to wait for C3 after all: the
+authored floor carries `plan.torches`, so the plan arrived from the export
+rather than from the generator. Its real prerequisite was the LIGHT RIG
+(`dungeon_light.rs`), because every dungeon material was `unlit: true` and would
+have ignored the pool entirely.
 
 ### V3. Architecture, banners and the stairs marker · `build.ts:1521-1693`
 The Castlevania pass: arches, banners (`makeBannerTexture`), and the stairs-down

@@ -26,6 +26,9 @@
 //! shell already hit Bevy's B0001 once for exactly that reason.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod authored_floor;
+mod authored_render;
+mod dungeon_light;
 mod dungeon_render;
 mod floor_loading;
 mod fx;
@@ -37,6 +40,7 @@ mod real_floor;
 mod sfx;
 mod tavern;
 mod tavern_art;
+mod units;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
@@ -51,6 +55,7 @@ use overworld::CpuSheet;
 use pk_assets::published::SheetManifest;
 use pk_core::state::{simulate, Facing, FrameInput, SimState};
 // The loading probe is read by `publish_stats`, which only exists on the web.
+use authored_floor::AuthoredFloor;
 #[cfg(target_arch = "wasm32")]
 use floor_loading::FloorLoadingRes;
 use real_floor::{
@@ -124,7 +129,12 @@ pub struct KnightArt {
 }
 
 #[derive(Component)]
-struct KnightSprite;
+pub struct KnightSprite;
+
+/// The authored floor's top-left readout. Its own component so a browser gate
+/// can be told which SOURCE is on screen without scraping pixels.
+#[derive(Component)]
+pub struct AuthoredFloorBanner;
 
 #[derive(Component)]
 pub struct DungeonCamera;
@@ -300,6 +310,18 @@ fn main() {
             .run_if(in_state(AppState::Dungeon))
             .run_if(resource_exists::<Sim>),
     )
+    .add_systems(
+        Update,
+        dungeon_light::follow_player
+            .run_if(in_state(AppState::Dungeon))
+            .run_if(resource_exists::<Sim>),
+    )
+    .add_systems(
+        Update,
+        authored_render::park_torch_lights
+            .run_if(in_state(AppState::Dungeon))
+            .run_if(resource_exists::<authored_render::TorchAnchors>),
+    )
     .add_systems(OnExit(AppState::Dungeon), teardown_dungeon)
     .add_systems(
         FixedUpdate,
@@ -323,6 +345,7 @@ fn publish_stats(
     intro_res: Option<Res<intro::IntroRes>>,
     tavern_res: Option<Res<tavern::TavernRes>>,
     floor_res: Option<Res<ActiveFloor>>,
+    authored_res: Option<Res<AuthoredFloor>>,
     floor_err: Option<Res<RealFloorFailure>>,
     floor_timings: Option<Res<FloorTimings>>,
     loading_res: Option<Res<FloorLoadingRes>>,
@@ -371,6 +394,30 @@ fn publish_stats(
     // The generated floor, when one is installed. `null` on the demo floor —
     // NOT omitted, because `--real-floor` silently doing nothing and the flag
     // not being passed are the two states a gate most needs to tell apart.
+    // The AUTHORED floor, when that is the source. Separate from `floor` below
+    // rather than folded into it: the two carry different facts (that one has a
+    // provisional exit and a pass count; this one has a content census), and a
+    // gate that had to guess which shape it was reading would be a gate that
+    // passes on the wrong floor. `source` is the discriminator and is ALWAYS
+    // published — see `FloorSource::label`.
+    let authored_field = match &authored_res {
+        Some(f) => format!(
+            r#"{{"level":{},"requestedLevel":{},"runSeed":{},"biome":"{}","archetype":"{}","w":{},"h":{},"torches":{},"parts":{},"props":{},"items":{},"spawns":{}}}"#,
+            f.level,
+            f.requested_level,
+            f.run_seed,
+            json_escape(&f.biome.name),
+            json_escape(&f.archetype),
+            f.grid.w,
+            f.grid.h,
+            f.plan.torches.len(),
+            f.plan.parts.len(),
+            f.plan.props.len(),
+            f.plan.items.len(),
+            f.plan.spawns.len(),
+        ),
+        None => "null".into(),
+    };
     let floor_field = match (&floor_res, &floor_timings) {
         // The timings ride INSIDE the floor payload rather than beside it, so a
         // reader cannot pair this descend's cost with the previous descend's
@@ -432,7 +479,7 @@ fn publish_stats(
             // sim-less count frozen at hand-off plus the sim's own tick: one
             // monotonic series across every state.
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{}}}"#,
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floorSource":"{}","authoredFloor":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{}}}"#,
                 *ticks + sim.0.tick,
                 p.x,
                 p.z,
@@ -440,6 +487,8 @@ fn publish_stats(
                 p.moving,
                 intro_field,
                 tavern_field,
+                plan.source.label(),
+                authored_field,
                 floor_field,
                 floor_error_field,
                 loading_field,
@@ -453,8 +502,9 @@ fn publish_stats(
         None => {
             *ticks += 1;
             format!(
-                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field},"runLevel":{run_level_field},"gui":{gui_field}}}"#,
-                *ticks
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floorSource":"{source}","authoredFloor":{authored_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field},"runLevel":{run_level_field},"gui":{gui_field}}}"#,
+                *ticks,
+                source = plan.source.label()
             )
         }
     };
@@ -769,11 +819,38 @@ fn setup_dungeon(
     art: Res<KnightArt>,
     mut prepared: ResMut<PreparedFloor>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
+    mut ambient: ResMut<AmbientLight>,
 ) {
     // The intro's black hold ends the moment the dungeon exists (legacy
     // setIntroFade(0) right after onDone()).
     for mut bg in &mut fade_q {
         bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+    }
+
+    // ── The light rig, before anything it lights ──
+    //
+    // An AUTHORED floor carries its biome's tint; a generated one has no biome
+    // ported yet and takes `BIOMES[0]`, which is what the oracle's `buildLights`
+    // is called with before `startLevel` re-tints.
+    let tint = prepared
+        .authored
+        .as_ref()
+        .map(|f| dungeon_light::Tint {
+            amb: f.biome.amb,
+            sky: f.biome.sky,
+            ground: f.biome.ground,
+        })
+        .unwrap_or_default();
+    // The floor's stone family, from its biome — the oracle bakes the biome's
+    // colour into every diffuse map (`build.ts:83-87`), so the placeholder
+    // materials carry it too rather than being one warm grey at every depth.
+    let stone = prepared
+        .authored
+        .as_ref()
+        .map(|f| dungeon_light::Stone::for_biome(&f.biome.name))
+        .unwrap_or_default();
+    for e in dungeon_light::install(&mut commands, &mut ambient, tint) {
+        commands.entity(e).insert(DungeonScene);
     }
 
     let install_t0 = floor_loading::now_ms();
@@ -806,13 +883,44 @@ fn setup_dungeon(
         curr: spawn,
     });
 
-    for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid) {
+    for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid, stone) {
         commands.entity(e).insert(DungeonScene);
     }
     if let Some(f) = &real {
         for e in spawn_real_floor_decor(&mut commands, &mut meshes, &mut materials, f) {
             commands.entity(e).insert(DungeonScene);
         }
+    }
+    // An AUTHORED floor brings its own contents — torches, parts, props, items
+    // and the six-light pool. Taken like `real` above: one owner, so the next
+    // descend cannot install the previous floor's furniture.
+    let authored = prepared.authored.take();
+    if let Some(f) = &authored {
+        let (entities, anchors) =
+            authored_render::spawn_authored_decor(&mut commands, &mut meshes, &mut materials, f);
+        for e in entities {
+            commands.entity(e).insert(DungeonScene);
+        }
+        commands.insert_resource(anchors);
+        commands.spawn((
+            DungeonScene,
+            AuthoredFloorBanner,
+            Node {
+                position_type: PositionType::Absolute,
+                // Same line as the generated floor's banner, for the same
+                // reason — clear of the centred frame-time readout at top: 6.
+                top: Val::Px(26.0),
+                left: Val::Px(8.0),
+                ..default()
+            },
+            GlobalZIndex(50),
+            Text::new(f.banner()),
+            TextFont {
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(Color::srgba(0.62, 0.86, 1.0, 0.95)),
+        ));
     }
 
     // ── Knight billboard from the real published sheets ──
@@ -830,6 +938,9 @@ fn setup_dungeon(
     // a stale one left behind would be the next descend's floor.
     commands.remove_resource::<PreparedFloor>();
     if let Some(f) = real {
+        commands.insert_resource(f);
+    }
+    if let Some(f) = authored {
         commands.insert_resource(f);
     }
     commands.insert_resource(FloorTimings {
@@ -855,7 +966,14 @@ pub struct FloorTimings {
 /// Leaving the dungeon tears the floor down completely — Sim included — so
 /// the next entry regenerates through `setup_dungeon` (the legacy dungeon
 /// tears down between floors; two scenes must not share live state).
-fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>) {
+fn teardown_dungeon(
+    mut commands: Commands,
+    q: Query<Entity, With<DungeonScene>>,
+    mut ambient: ResMut<AmbientLight>,
+) {
+    // The ambient is a global RESOURCE, not a scene entity — see
+    // `dungeon_light::reset_ambient`.
+    dungeon_light::reset_ambient(&mut ambient);
     for e in &q {
         commands.entity(e).despawn();
     }
@@ -866,6 +984,11 @@ fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>
     // and the banner and the probe with it, which is the shape of bug that makes
     // a browser gate report on a screen nobody is looking at.
     commands.remove_resource::<ActiveFloor>();
+    // The authored floor's light anchors go with the floor they were measured
+    // on: left behind, the next descend's six lights would park on the previous
+    // floor's torches — off-screen, and the dungeon would simply be dark.
+    commands.remove_resource::<authored_render::TorchAnchors>();
+    commands.remove_resource::<AuthoredFloor>();
     // The failure latch is cleared too: a fresh descent gets a fresh attempt,
     // and a request that fails deterministically simply fails again.
     commands.remove_resource::<RealFloorFailure>();
@@ -907,15 +1030,22 @@ fn dungeon_to_tavern(
 fn descend_at_exit(
     sim: Res<Sim>,
     floor: Option<Res<ActiveFloor>>,
+    authored: Option<Res<AuthoredFloor>>,
     mut plan: ResMut<FloorPlan>,
     mut next: ResMut<NextState<AppState>>,
 ) {
-    // No generated floor, no exit: the demo arena has no tile to stand on and
-    // must not descend into one.
-    let Some(floor) = floor else {
-        return;
+    // Either source can be standing here, and NEITHER is the demo arena, which
+    // has no exit tile and must not descend into one. Asked in this order and
+    // not merged into one trait: the two exits are different things — a
+    // generated floor's is the provisional pass-7 pick, an authored floor's is
+    // a real `T_STAIRS` tile — and a shared abstraction would have to pretend
+    // they are the same to be worth having.
+    let on_exit = match (&floor, &authored) {
+        (Some(f), _) => f.stands_on_exit(sim.0.player.x, sim.0.player.z),
+        (None, Some(a)) => a.stands_on_exit(sim.0.player.x, sim.0.player.z),
+        (None, None) => return,
     };
-    if floor.stands_on_exit(sim.0.player.x, sim.0.player.z) {
+    if on_exit {
         plan.advance();
         next.set(AppState::FloorLoading);
     }

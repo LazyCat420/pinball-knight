@@ -368,13 +368,28 @@ pub struct RuntimeFloorInfo {
 /// booted a different floor when this failed would make every "the real floor
 /// looks like the demo floor" report unfalsifiable.
 pub fn validate_runtime_floor(track: &TrackFloor) -> Result<RuntimeFloorInfo, FloorBuildError> {
-    let g = &track.grid;
     let ends = track
         .ends
         .as_ref()
         .ok_or(FloorBuildError::MissingEndpoints)?;
-    let (start, exit) = (ends.start, ends.stairs);
+    validate_runtime_grid(&track.grid, ends.start, ends.stairs)
+}
 
+/// [`validate_runtime_floor`] for a floor that has no [`TrackFloor`] behind it.
+///
+/// The generator is not the only thing that can produce a floor: an AUTHORED
+/// floor exported from the oracle (`assets/floors/*.json`) arrives as a grid and
+/// two endpoints and nothing else. Every check below reads exactly those three
+/// things, so the split is an extraction and not a second implementation — which
+/// matters more here than it usually would, because the alternative on offer was
+/// to fabricate a `TrackFloor` around the grid (an empty graph, an empty path, a
+/// mask nobody carved) purely to reach this function. A fabricated field is a
+/// field some later pass will read and believe.
+pub fn validate_runtime_grid(
+    g: &Grid,
+    start: TilePos,
+    exit: TilePos,
+) -> Result<RuntimeFloorInfo, FloorBuildError> {
     if !is_walkable(g, start.i, start.j) {
         return Err(FloorBuildError::StartNotWalkable { tile: start });
     }

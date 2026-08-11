@@ -57,9 +57,10 @@ use pk_core::grid::Grid;
 use pk_core::maze::floor_spec::derive_floor_spec;
 use pk_core::state::demo_floor;
 
+use crate::authored_floor::{self, AuthoredFloor};
 use crate::real_floor::{
-    build_active_floor, spawn_real_floor_failure, ActiveFloor, FloorPlan, RealFloorFailure,
-    RealFloorRequest,
+    build_active_floor, spawn_real_floor_failure, ActiveFloor, FloorPlan, FloorSource,
+    RealFloorFailure, RealFloorRequest,
 };
 use crate::AppState;
 
@@ -172,8 +173,12 @@ pub struct PreparedFloor {
     pub grid: Grid,
     pub spawn: (f64, f64),
     pub seed: u32,
-    /// `None` for the demo floor.
+    /// `None` for the demo floor and for an authored one.
     pub real: Option<ActiveFloor>,
+    /// The oracle's exported floor, when that is the source. Mutually exclusive
+    /// with `real` by construction — `prepare_floor` is the only constructor and
+    /// it returns from one branch or the other.
+    pub authored: Option<AuthoredFloor>,
     /// What the work actually cost, milliseconds. Published, not just stored:
     /// it is the number [`MIN_DWELL_MS`] must never be confused with.
     pub prepare_ms: f64,
@@ -406,7 +411,29 @@ fn advance_floor_loading(
 }
 
 /// Build whatever floor the boot gate asked for. THE ONLY floor build site.
+///
+/// Three outcomes, and the branch order is the reading order: the demo arena is
+/// asked for by name, an AUTHORED floor is what a descend loads by default, and
+/// the generator runs behind `--rust-floor`. Every one of them either produces a
+/// standable floor or returns the reason — see `real_floor`'s "it does not fall
+/// back".
 fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
+    if plan.source == FloorSource::Authored {
+        if let Some(Ok(req)) = &plan.next {
+            let f = authored_floor::load(req.level, req.run_seed).map_err(|e| e.to_string())?;
+            return Ok(PreparedFloor {
+                grid: f.grid.clone(),
+                spawn: f.info.start_world,
+                // The floor's own run seed drives the sim's rng. An authored
+                // floor is not generated here, so there is no `floor_seed` to
+                // borrow — and reusing the RUN seed is what the oracle does.
+                seed: f.run_seed,
+                real: None,
+                authored: Some(f),
+                prepare_ms: 0.0,
+            });
+        }
+    }
     let real = match &plan.next {
         None => None,
         Some(Err(e)) => return Err(e.to_string()),
@@ -429,6 +456,7 @@ fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
             spawn: f.info.start_world,
             seed: f.spec.floor_seed,
             real: Some(f),
+            authored: None,
             prepare_ms: 0.0,
         },
         None => {
@@ -438,6 +466,7 @@ fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
                 spawn,
                 seed: DEMO_SEED,
                 real: None,
+                authored: None,
                 prepare_ms: 0.0,
             }
         }
@@ -594,21 +623,49 @@ mod tests {
         assert!(d.contains("DESCENDING") && !d.contains("FLOOR"), "{d}");
     }
 
-    /// The demo floor still comes out of the ONE build site, so `--real-floor`
-    /// off is a different floor and not a different code path.
+    /// All THREE floor sources still come out of the ONE build site, so the
+    /// flags select a floor and never a code path.
+    ///
+    /// This test used to be called `…both_kinds_of_floor` and it FAILED the
+    /// moment authored floors became the default — correctly, and it is worth
+    /// saying why it was updated rather than relaxed: `FloorPlan::of` now
+    /// defaults to `FloorSource::Authored`, so the request that used to build a
+    /// generated floor loads an exported one instead. The fix is to ask for the
+    /// generator by name, which is exactly what `--rust-floor` does on the
+    /// command line.
     #[test]
-    fn the_one_build_site_makes_both_kinds_of_floor() {
+    fn the_one_build_site_makes_every_kind_of_floor() {
         let demo = prepare_floor(&FloorPlan::of(None)).expect("the demo floor builds");
-        assert!(demo.real.is_none());
+        assert!(demo.real.is_none() && demo.authored.is_none());
         assert_eq!((demo.grid.w, demo.grid.h), (25, 25), "the demo arena");
         assert_eq!(demo.seed, DEMO_SEED);
 
-        let real = prepare_floor(&FloorPlan::of(Some(Ok(RealFloorRequest {
+        // The DEFAULT: an authored floor, with content on it.
+        let authored = prepare_floor(&FloorPlan::of(Some(Ok(RealFloorRequest {
             level: 3,
             run_seed: 1,
         }))))
+        .expect("the authored floor loads");
+        let a = authored
+            .authored
+            .as_ref()
+            .expect("the default source is the authored floor");
+        assert!(authored.real.is_none(), "one source at a time");
+        assert_eq!((authored.grid.w, authored.grid.h), (87, 61));
+        assert_eq!(authored.spawn, a.info.start_world);
+        assert!(!a.plan.torches.is_empty(), "an authored floor has content");
+
+        // …and the generator, asked for by name.
+        let real = prepare_floor(&FloorPlan {
+            source: FloorSource::Generated,
+            ..FloorPlan::of(Some(Ok(RealFloorRequest {
+                level: 3,
+                run_seed: 1,
+            })))
+        })
         .expect("the generated floor builds");
         let f = real.real.as_ref().expect("a generated floor is carried");
+        assert!(real.authored.is_none(), "one source at a time");
         assert_eq!((real.grid.w, real.grid.h), (87, 61));
         assert_eq!(real.spawn, f.info.start_world);
         assert_eq!(real.seed, f.spec.floor_seed);

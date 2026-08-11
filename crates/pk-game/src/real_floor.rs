@@ -39,11 +39,17 @@
 //!
 //! ## The flags, three ways
 //!
-//! | target | open on a floor | the demo arena | level | run seed |
-//! |---|---|---|---|---|
-//! | wasm   | `?real-floor=1`   | `?demo-floor=1`   | `&level=N` | `&seed=N` |
-//! | native | `--real-floor`    | `--demo-floor`    | `--level N` | `--seed N` |
-//! | native | `PK_REAL_FLOOR=1` | `PK_DEMO_FLOOR=1` | `PK_LEVEL=N` | `PK_SEED=N` |
+//! | target | open on a floor | the demo arena | the GENERATOR's floor | level | run seed |
+//! |---|---|---|---|---|---|
+//! | wasm   | `?real-floor=1`   | `?demo-floor=1`   | `?rust-floor=1`   | `&level=N` | `&seed=N` |
+//! | native | `--real-floor`    | `--demo-floor`    | `--rust-floor`    | `--level N` | `--seed N` |
+//! | native | `PK_REAL_FLOOR=1` | `PK_DEMO_FLOOR=1` | `PK_RUST_FLOOR=1` | `PK_LEVEL=N` | `PK_SEED=N` |
+//!
+//! ⚠️ **A descend now loads an AUTHORED floor by default** — the oracle's own
+//! finished floor, with its content on it (see [`FloorSource`] and
+//! [`crate::authored_floor`]). `--rust-floor` selects the nine-pass generator
+//! this module builds. The two are told apart on screen by the banner and in
+//! `__pk.floor.source`, never by looking at the maze.
 //!
 //! `--level`/`--seed` are read whether or not `--real-floor` is: they say which
 //! floor a run STARTS on, and a run now starts on a generated floor by default.
@@ -65,6 +71,45 @@ use pk_core::maze::floor_spec::{
     FloorSpec, RuntimeFloorInfo,
 };
 use pk_core::maze::track_floor::{TrackFloor, PASSES_LANDED};
+
+/// WHERE a floor comes from.
+///
+/// Two sources now produce a standable dungeon and they are at different stages
+/// of the port, so which one a screenshot is showing has to be a fact and not an
+/// inference:
+///
+/// - [`Authored`](FloorSource::Authored) — the oracle's own finished floor,
+///   exported by `port-floor-export.test.ts` and loaded by [`crate::authored_floor`].
+///   It has content on it: torches, parts, props, items, real stairs.
+/// - [`Generated`](FloorSource::Generated) — built here by the nine landed
+///   generator passes. Correct shape, no content, a provisional exit.
+///
+/// Authored is the DEFAULT because the visible dungeon is the thing being built;
+/// the generator keeps its own flag (`--rust-floor`) so its parity work stays
+/// one keystroke away, and every floor says which it is in the banner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FloorSource {
+    #[default]
+    Authored,
+    Generated,
+}
+
+impl FloorSource {
+    /// The word the banner and the telemetry use. One definition, so a browser
+    /// gate matching on `"authored"` can never disagree with what is on screen.
+    ///
+    /// Read by `publish_stats`, which only exists on the web — the same
+    /// `cfg_attr` the rest of this module's probe surface carries, and for the
+    /// same reason: a method cfg'd to one target is how a browser-only path
+    /// stops being compiled on the target CI actually runs.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Authored => "authored",
+            Self::Generated => "generated",
+        }
+    }
+}
 
 /// The level a run opens on when nothing says otherwise.
 const DEFAULT_LEVEL: i32 = 1;
@@ -194,6 +239,13 @@ pub fn read_floor_plan() -> FloorPlan {
     );
     FloorPlan {
         boot_into_floor: flag("real-floor"),
+        // `?rust-floor=1` asks for the GENERATOR's floor. The absence of a flag
+        // is the authored one — see `FloorSource`.
+        source: if flag("rust-floor") {
+            FloorSource::Generated
+        } else {
+            FloorSource::Authored
+        },
         ..FloorPlan::of(plan)
     }
 }
@@ -245,6 +297,11 @@ pub fn read_floor_plan() -> FloorPlan {
     });
     FloorPlan {
         boot_into_floor: asked("--real-floor", "PK_REAL_FLOOR"),
+        source: if asked("--rust-floor", "PK_RUST_FLOOR") {
+            FloorSource::Generated
+        } else {
+            FloorSource::Authored
+        },
         ..FloorPlan::of(plan)
     }
 }
@@ -273,6 +330,8 @@ pub struct FloorPlan {
     /// the inversion: every run generates floors now, so "generates floors" can
     /// no longer be the thing that decides whether to skip the tavern.
     pub boot_into_floor: bool,
+    /// Which of the two floor sources the next descend reads from.
+    pub source: FloorSource,
 }
 
 impl FloorPlan {
@@ -286,6 +345,7 @@ impl FloorPlan {
             next,
             start_level,
             boot_into_floor: false,
+            source: FloorSource::default(),
         }
     }
 

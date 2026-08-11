@@ -50,6 +50,8 @@ use bevy::prelude::*;
 use pk_core::grid::{is_low_wall, is_walkable, shape_at, tile_center, Grid};
 use pk_core::tile_shape::{is_round, is_slant, round_center, shape_normal, SHAPE_FULL};
 
+use crate::dungeon_light::Stone;
+use crate::units::c;
 use crate::{WALL_H, WALL_LOW};
 
 /// One batched draw: every tile in the bucket shares a mesh shape, a height
@@ -423,6 +425,7 @@ pub(crate) fn spawn_grid_meshes(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     grid: &Grid,
+    stone: Stone,
 ) -> Vec<Entity> {
     let plan = plan_walls(grid);
     let mut out = Vec::with_capacity(plan.batched_entities());
@@ -434,8 +437,15 @@ pub(crate) fn spawn_grid_meshes(
             .spawn((
                 Mesh3d(meshes.add(Plane3d::default().mesh().size(gw, gh))),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.13, 0.11, 0.10),
-                    unlit: true,
+                    // The biome's DARK stone — the flagstone floor's base tone.
+                    // Was a warm grey that answered to no biome; see `Stone`.
+                    base_color: c(stone.dark),
+                    // LIT, as of the light rig (`dungeon_light`). These four
+                    // materials were `unlit` while the dungeon had no lights at
+                    // all, which made the torch pool a no-op — see that module's
+                    // header. Roughness 0.95: stone, with no specular highlight
+                    // to give away that the normal maps have not been baked yet.
+                    perceptual_roughness: 0.95,
                     ..default()
                 })),
                 Transform::from_xyz(0.0, 0.0, 0.0),
@@ -445,21 +455,24 @@ pub(crate) fn spawn_grid_meshes(
 
     // ── Walls: full-height stone, knee-high camera-side rims (the Diablo rule)
     let wall_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.34, 0.32, 0.30),
-        unlit: true,
+        // MID stone: the wall faces, which is most of what the camera sees.
+        base_color: c(stone.mid),
+        perceptual_roughness: 0.95,
         ..default()
     });
     let low_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.24, 0.22, 0.21),
-        unlit: true,
+        // LIGHT stone on the knee-high rims: the camera looks down at their
+        // TOPS, and the oracle's cap texture is the lightest of the three.
+        base_color: c(stone.light),
+        perceptual_roughness: 0.95,
         ..default()
     });
     // Shaped tiles get their own meshes — square boxes would contradict the
     // collider ("see = hit" is the tile-shape contract; these are P3-debt
     // approximations of it, not violations).
     let shaped_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.42, 0.36, 0.32),
-        unlit: true,
+        base_color: c(stone.mid),
+        perceptual_roughness: 0.95,
         ..default()
     });
 
@@ -486,7 +499,11 @@ pub(crate) fn spawn_grid_meshes(
 
     let arc_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
-        unlit: true,
+        // Lit like the rest of the floor. Left `unlit` it would be the only
+        // surface in the dungeon that ignores a torch, and a guide that does not
+        // catch the light reads as a decal rather than a rail.
+        perceptual_roughness: 0.5,
+        metallic: 0.4,
         ..default()
     });
     if !plan.arcs.is_empty() {

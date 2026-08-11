@@ -1,87 +1,49 @@
-# Handoff — 2026-08-11, mid Stage 1
+# Handoff — 2026-08-11, Stage 1b shipped
 
-Read [build-out](build-out.md) first: it is the queue and the reasoning. This
-page is the state of the baton — what is done, what is half-done, and the
-facts that cost time to learn and are not visible in the code.
+Read [build-out](build-out.md) first: it is the queue and the reasoning, and
+[the 1:1 plan](one-to-one.md) for what "converted" means and how far off it is.
+This page is the state of the baton.
 
-## The diagnosis this all turns on
+## What just landed — the authored floor IS the dungeon
 
-The port spent a day getting nine of twenty-three generator passes bit-exact and
-the screen never changed, because **the generator is the half nobody can see**.
-Everything a player looks at is in the other half: `maze/build.ts` (1,834 lines
-of Canvas2D painters), `maze/decorate.ts` (3,169 lines of content),
-`gui/screens/tavern.ts` (607) and ~2.5k of economy tables.
+`crates/pk-game/src/authored_floor.rs` loads the oracle's exported floors and
+they are now the DEFAULT source of a descend. The dungeon has torches, boosters,
+bumpers, props, items and real stairs on it, in the tiles `decorateMaze` chose,
+lit by a light rig that did not exist this morning.
 
-Two decisions were taken with the user on 2026-08-11 and they order everything:
-
-1. **Bit-exact is for the SIM only.** Digest harnesses and sabotage sweeps stay
-   on physics/rng/generator, where a 1-ulp drift breaks replay. Content and art
-   are verified visually against a rig.
-2. **The TS game is a DATA SOURCE, not just an oracle.** Export finished floors;
-   render them in Rust now; port the generator behind that later.
-
-## Done and on `main`
-
-| What | Where |
+| | |
 |---|---|
-| Dungeon A/B rig | `scripts/pk-ab-dungeon.mjs` |
-| Dungeon camera framing fix | `crates/pk-game/src/post/sizing.rs` |
-| Authored-floor exporter + 3 floors | `legacy/src/game/pinball-knight/port-floor-export.test.ts`, `assets/floors/` |
-| GUI shell + tavern menus (chrome only) | `crates/pk-game/src/gui.rs` |
-| Generated floors by default, floor progression | `crates/pk-game/src/real_floor.rs` |
+| loader | `crates/pk-game/src/authored_floor.rs` (17 tests) |
+| contents | `crates/pk-game/src/authored_render.rs` — torches, the 6-light pool, parts/props/items |
+| light rig | `crates/pk-game/src/dungeon_light.rs` — port of `boot/lighting.ts` |
+| unit conversions | `crates/pk-game/src/units.rs` — `PL`, `EXPOSURE_RECIP`, `c()`, `billboard()`, moved out of `tavern.rs` so both scenes share one derivation |
+| the flag | authored by default; `--rust-floor` / `?rust-floor=1` selects the generator |
+| the evidence | `pk-ab-dungeon` diff mean 43.1 → 33.1, over32 58.3% → 39.1%, our median luma 23.2 → 40.6 against the oracle's 40.7 |
 
-## THE NEXT THING TO BUILD — `crates/pk-game/src/authored_floor.rs`
+**Read [one-to-one](one-to-one.md) §5 Stage 1b for the five findings** — the
+`unlit: true` materials that would have made the torches a no-op, the three
+payload fields whose shape was wrong, and why the floor being too dark was an
+ALBEDO error and not a lighting one.
 
-The exports exist and nothing reads them yet. This is the whole of the visible
-win and it is a day's work at most.
+## THE NEXT THING TO BUILD
 
-1. Add `serde = { workspace = true }` to `crates/pk-game/Cargo.toml` (the
-   workspace already has it with `derive`; pk-game only has `serde_json`).
-2. Deserialize `assets/floors/L{level}-s{seed}.json`. **`include_str!` them** —
-   three files, ~180 KB total — so wasm and native load identically and a
-   missing bake is a build error, exactly like `tavern_art.rs` does it.
-3. Build a `pk_core::grid::Grid` from `grid`, and hand
-   `floor_loading::prepare_floor` a `PreparedFloor`. Run
-   `validate_runtime_floor` on it — an export that is not standable must fail
-   the same way a generated floor does.
-4. Make it the DEFAULT source in `real_floor::FloorPlan`, with `--rust-floor`
-   for the self-generated one, and **put the source in the banner** so no
-   screenshot is ever ambiguous.
-
-### Facts about the payload, measured
-
-- **Tile ids** in `grid.t`: `0` wall, `1` floor, `2` stairs, `3` cracked — the
-  same constants as `pk_core::grid`.
-- **Shape ids** in `grid.shapes` on L3 s1: 0 (5,059), 9 (156), 8 (26), 6 (20),
-  7 (12), 5 (10), 1 (8), 2 (7). Shaped tiles are real and the renderer's
-  slant/round buckets will fire immediately.
-- **`grid.arcs` is populated** (40 features on L3 s1) and the field names match
-  `pk_core::tile_shape::ArcFeature` except for case: `solidOut` → `solid_out`.
-  Two mismatches to handle: Rust's `owner` is `Option<&'static str>` and the
-  JSON carries an owned `String`; and Rust has `kicks`/`lanes` which the export
-  does not carry (default them empty). **Pass 10 `publish-arcs` is what makes
-  the renderer's arc bucket non-empty** — an authored floor gets there first.
-- **`plan.parts[].kind`** on L3 s1: `boostcorner`, `boostcurve`, `booster`,
-  `bumper`, `deflector`, `electric`, `firevent`, `jumppad`, `lamp`, `magstrip`,
-  `pit`, `ramp`, `rollover`, `spinpad`, `target`, `trapdoor`. Each carries
-  `i, j, dirI, dirJ, dir2I, dir2J` and sometimes `bank`/`seq`/`vault`/`circuit`.
-- **`plan.props[].kind`**: `bones`, `rubble`, `skull` — keys into `PROP_PAINTS`.
-- **`plan.torches`** are `{i, j, di, dj}` where `(di, dj)` points from the floor
-  tile at the wall it mounts on.
-- **`plan.items`** are `{kind: weapon|gear|potion, id, i, j, rarity}`.
-
-### Render it in this order — biggest visible change first
-
-Torches are the single largest one: the legacy dungeon is LIT BY THEM, and ours
-has flat ambient. A sconce quad, a flame quad and a pooled `PointLight` per
-torch changes the whole frame before a single texture is baked.
-
-Then parts (the "boosters" in every report), then props, then items. Placeholder
-geometry per kind is fine and correct at this stage — the A/B rig grades
-POSITION and DENSITY now, and the baked art replaces the placeholders in Stage 2
-without moving a call site.
+1. **V1 textures** (`maze/build.ts:356-670`). The stone is now the right FAMILY
+   (the biome remap is ported); it is still one flat colour per bucket where the
+   oracle has flagstone, moss, cracks and a normal map. This is the largest
+   remaining visible gap and the A/B rig grades it directly. It is blocked on
+   the maze-texture bake, which is the half-done item below.
+2. **`surface-paint.ts`** — the rose/slate zones visible across the oracle's
+   floor in the A/B sheet are surface paint, and nothing in the export carries
+   them yet (`grid.surfaces` is absent; the loader defaults it to the neutral
+   surface). Add it to the exporter first.
+3. **Monsters** (P4). `plan.spawns` is parsed and carries 52-105 tiles per floor;
+   nothing reads it. The A/B sheet's most obvious remaining difference after the
+   textures is that the oracle's floor has things standing on it.
+4. **`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos** and must be
+   re-derived when V1 lands — `dungeon_light.rs` says so at the constant.
 
 ## Half-done, with a measurement attached
+
 
 **The maze texture bake does not complete.** `legacy/scripts/bake-maze-textures.mjs`
 and the `bakeMazeSurfaces()` / `__bakeParts` seams in `maze/build.ts` are

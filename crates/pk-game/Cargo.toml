@@ -11,6 +11,12 @@ pk-core = { path = "../pk-core" }
 pk-assets = { path = "../pk-assets" }
 pk-audio = { path = "../pk-audio" }
 pk-gui = { path = "../pk-gui" }
+# The authored-floor payloads (`assets/floors/*.json`) are deserialised into
+# derived structs — pk-game is the only crate that does this. pk-core carries
+# ZERO serde derives on purpose (its types answer to a JS oracle, not to a file
+# format), so the wire types live in `authored_floor.rs` and convert at the
+# boundary.
+serde = { workspace = true }
 serde_json = { workspace = true }
 libm = { workspace = true }
 # PNG decode for the embedded knight sheets — bypasses bevy_asset io entirely

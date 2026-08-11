@@ -23,6 +23,8 @@ use bevy::camera::ScalingMode;
 use bevy::image::{Image, ImageSampler};
 use bevy::math::Affine2;
 use bevy::prelude::*;
+
+use crate::dungeon_light;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use pk_core::intro::{
@@ -119,7 +121,16 @@ fn intro_setup(
 
     // ── The 3D title maze, built now so pipelines prewarm during the 2D bit ──
     let layout = build_title_grid();
-    for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &layout.grid) {
+    for e in spawn_grid_meshes(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &layout.grid,
+        // The title maze is not a dungeon floor and has no biome; the Cold
+        // Crypt's unremapped slots are what the oracle paints before
+        // `startLevel` sets one.
+        dungeon_light::Stone::default(),
+    ) {
         commands.entity(e).insert(IntroOnly);
     }
 
