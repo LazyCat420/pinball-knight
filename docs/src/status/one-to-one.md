@@ -1,9 +1,17 @@
 # The 1:1 plan — what "converted" means, and what is left
 
-**Version 1 · 2026-08-11 · baseline `main` @ `a47a7a8` · method: VCPM
+**Version 2 · 2026-08-11 · baseline `main` @ `db31ac2` · method: VCPM
 (`.agents/plan-verification-standard.md` in the sun workspace).**
 Every number on this page was measured from the tree on that commit, with the
 command that produced it named. Nothing here is estimated.
+
+> **What changed in v2.** The v1 baseline (`a47a7a8`) was two feature commits
+> stale — `e86b299` (surfaces) and `072b57f` (the standing horde) landed after
+> it. The coverage scan is now a committed script (`scripts/pk-coverage.sh`)
+> instead of a one-off, so §2 is re-derivable at any commit rather than
+> re-measured by hand. A third handed-in blueprint is triaged in §3.3, the
+> remaining work is decomposed into the five tracks it proposed (§5), and its
+> three open questions are answered from the tree in §5.6.
 
 The other four status pages answer different questions and this one does not
 replace any of them:
@@ -78,43 +86,54 @@ it ([handoff](handoff.md)):
 |---|---:|---|
 | Legacy portable source | 97,241 lines / 273 files | `find … -name '*.ts' ! -name '*.test.ts'`, `tools/` excluded |
 | Legacy test source | 41,680 lines | same, `*.test.ts` |
-| Rust source | 38,411 lines / 6 crates | `find crates/*/src -name '*.rs' \| xargs wc -l` |
-| **Legacy lines with NO Rust counterpart** | **63,441 (65%), 206 files** | two-signal scan, §2.3 |
+| Rust source | 41,118 lines / 6 crates | `find crates/*/src -name '*.rs' \| xargs wc -l` (45,945 with `tests/` and `xtask/`) |
+| **Legacy lines with NO Rust counterpart** | **61,936 (63%), 201 files** | `bash scripts/pk-coverage.sh` — the two-signal scan of §2.3, now a script |
 | Maze passes landed | 9 of 23 | `PASSES_LANDED` — `crates/pk-core/src/maze/track_floor.rs:362` |
 | Bit-exact fixtures | 10 | `ls assets/fixtures/` |
 | Authored floors exported | 3 (L1/L3/L5, seed 1) | `ls assets/floors/` |
 | Baked sprite atlases | **0** | `assets/sprites/` is empty; `cargo xtask bake` returns `ExitCode::FAILURE` with "not implemented yet" (`xtask/src/main.rs:59-77`) |
 | CI | exists | `.github/workflows/ci.yml` |
 
-The 65% figure was derived independently of the completion plan's "~60k of 104k
+The 63% figure was derived independently of the completion plan's "~60k of 104k
 remain" and lands on the same answer from the other direction. That is
 corroboration, not repetition.
 
+**v1 → v2 movement, and what it costs to read it wrong.** 63,441 → 61,936 is
+1,505 lines of counterpart gained across two commits, and **the directory that
+moved is not the one that shipped**: `spawn/` 24% → 57% and `sim/` 25% → 96%
+moved because `authored_floor.rs` and `dungeon_render.rs` now *cite* those
+files, not because the horde got an AI. This is ASSUMPTION-1 in the wild — a
+citation is a claim of provenance, not of behaviour, and §5.1's Stage 1c is the
+honest description of what those two commits actually delivered.
+
 ### 2.2 Where the remaining 63k lives
 
-| Legacy dir | Lines | With a Rust counterpart | Coverage |
-|---|---:|---:|---:|
-| `maze/` | 19,893 | 11,094 | 55% |
-| `render/` | 15,231 | 251 | **1%** |
-| root (`state.ts`, `cards.ts`, …) | 12,712 | 2,495 | 19% |
-| `entities/` | 11,289 | 4,745 | 42% |
-| `engine/` | 8,720 | 6,180 | 70% |
-| `gui/` | 7,420 | 2,823 | 38% |
-| `dev/` | 5,438 | 140 | **2%** |
-| `constants/` | 3,906 | 2,948 | 75% |
-| `fx/` | 3,817 | 869 | 22% |
-| `spawn/` | 1,580 | 388 | 24% |
-| `boot/` | 1,479 | 209 | 14% |
-| `economy/` | 1,338 | 0 | **0%** |
-| `sfx/` | 1,140 | 360 | 31% |
-| `intro/` | 1,118 | 1,118 | 100% |
-| `run/` | 1,036 | 0 | **0%** |
-| `sim/` | 708 | 180 | 25% |
-| `testkit/` | 292 | 0 | 0% |
-| `input/` | 124 | 0 | 0% |
+Measured at `db31ac2` by `scripts/pk-coverage.sh`; the v1 column is kept so the
+movement is visible.
 
-The twelve largest files with no Rust counterpart — most of the remaining
-schedule, in twelve names:
+| Legacy dir | Lines | Counterpart | Coverage | v1 (`a47a7a8`) |
+|---|---:|---:|---:|---:|
+| `maze/` | 19,893 | 11,385 | 57% | 55% |
+| `render/` | 15,231 | 251 | **1%** | 1% |
+| root (`state.ts`, `cards.ts`, …) | 12,712 | 2,495 | 19% | 19% |
+| `entities/` | 11,289 | 4,745 | 42% | 42% |
+| `engine/` | 8,720 | 6,180 | 70% | 70% |
+| `gui/` | 7,420 | 2,823 | 38% | 38% |
+| `dev/` | 5,438 | 140 | **2%** | 2% |
+| `constants/` | 3,906 | 2,948 | 75% | 75% |
+| `fx/` | 3,817 | 869 | 22% | 22% |
+| `spawn/` | 1,580 | 913 | 57% | 24% |
+| `boot/` | 1,479 | 392 | 26% | 14% |
+| `economy/` | 1,338 | 0 | **0%** | 0% |
+| `sfx/` | 1,140 | 360 | 31% | 31% |
+| `intro/` | 1,118 | 1,118 | 100% | 100% |
+| `run/` | 1,036 | 0 | **0%** | 0% |
+| `sim/` | 708 | 686 | 96% | 25% |
+| `testkit/` | 292 | 0 | 0% | 0% |
+| `input/` | 124 | 0 | 0% | 0% |
+
+The fifteen largest files with no Rust counterpart — most of the remaining
+schedule, in fifteen names:
 
 ```
 4785  render/cel-painter.ts        ← baked, never ported (excluded above)
@@ -129,6 +148,9 @@ schedule, in twelve names:
  885  cards.ts
  856  render/monsters/stiltneck.ts
  821  constants/enemies.ts
+ 809  render/holo-card.ts
+ 809  gui/screens/menu.ts
+ 807  entities/projectiles.ts
 ```
 
 ### 2.3 The method, and what it cannot see
@@ -223,6 +245,58 @@ Either these archetypes author no rooms, or the exporter drops the field.
 against a payload with a silently missing section will look correct and be
 wrong.
 
+### 3.3 Blueprint C — "Pinball Knight 1:1 Rust/WebGPU Conversion Plan"
+
+Handed in 2026-08-11, after v1 of this page shipped. **Verdict: adopt its
+decomposition, reject one item outright, correct five.** It is the best of the
+three documents — it was written against v1 and the queue, its structural
+contribution (the remaining work as five parallel *tracks* rather than one
+serial stage list) is real and is folded into §5 — but it carries one claim that
+would spend a week undoing a standing decision.
+
+| # | Claim | Class | Evidence / correction |
+|---|---|---|---|
+| C1 | baseline `a47a7a8`, Rust 38,411 lines / 6 crates | **STALE** | tree is `db31ac2`; `e86b299` (surfaces) and `072b57f` (the horde) landed after. 41,118 lines in `crates/*/src` |
+| C2 | port target 91,756 after three exclusions | **VERIFIED** | reproduces §1's arithmetic from today's `wc -l` |
+| C3 | 63,441 remaining (65%) | **STALE-DERIVED** | 61,936 (63%) at `db31ac2` — and still an upper bound (ASSUMPTION-1) |
+| C4 | maze passes 1–9 landed bit-exact | **VERIFIED** | `PASSES_LANDED = 9`, `track_floor.rs:362` |
+| C5 | passes 10–23, by name, in `PASS_ORDER` | **VERIFIED** | matches `maze/mod.rs:51-73` exactly, all fourteen |
+| C6 | `decorateMaze` is 3,169 lines | **VERIFIED** | `wc -l maze/decorate.ts` |
+| C7 | add the `onPass` seam to `decorateMaze` **before** porting any of it | **VERIFIED, and it is the most valuable line in the document** | `grep -rl onPass` returns `track-floor.ts` and the exporter, nothing else |
+| C8 | **V1: port `makeFloorTexture` / `makeWallTexture` / `makeCapTexture` (`build.ts:356-670`) into `dungeon_render.rs`** | **FALSE — it contradicts the document's own §1.1** | those three functions live at `build.ts:356`, `:482`, `:623` — they *are* the "~700 lines of `maze/build.ts` painters" the plan's own exclusion table says are baked and never ported, and [handoff](handoff.md) says in as many words: *do not "fix" this by transcribing the painters into Rust*. Same shape as blueprint A's Rapier — an expensive divergence that reads as progress. The real V1 item is the **bake profile** (§5.2) |
+| C9 | composite the GUI at `@binding(7)` | **FALSE** | `post/composite.wgsl:88-102` binds 0–5 (5 twice, MSAA-`cfg`d). Next free is **6** |
+| C10 | `pk-ab-dungeon` asserts pixel-diff thresholds | **HALF-TRUE, and the half that is false is the gate** | diff stats are printed and **soft**; only console errors are hard. `--strict` is what gates, at `over32Frac > 0.02` (`pk-ab-dungeon.mjs:545`). Nothing runs `--strict` today |
+| C11 | deploy via `npm run deploy` to the Synology NAS | **FALSE for this repo** | there is no root `package.json`; `deploy.sh` belongs to `legacy/` (braindeadbot-client's pipeline). PK ships `trunk build` + `xtask dist` |
+| C12 | `cargo xtask coverage` reports line coverage | **NOT BUILT** | `xtask/src/main.rs:12-14` dispatches `docs`/`bake`/`dist` only. It is WORK ITEM P-1, unstarted — `scripts/pk-coverage.sh` (new in v2) is its cheap half |
+| C13 | track sizes: C 31.7k + V 10k + E 20k + T 4.4k + F/G 5k | **SUMS TO 71.1k against 61.9k remaining** | ~15% over, and C8 is why: V1 counts excluded painter lines as portable work |
+| C14 | `economy/tavern-shop.ts` 453 lines | **VERIFIED** | and `economy/` totals 1,338 at **0%** |
+| C15 | C4–C5 floor population is 1,276 lines | **VERIFIED** | 388 + 363 + 525 = 1,276 exactly |
+| C16 | `hud-face` 1,330 / `cards` 885 / `abilities` 916 | **VERIFIED** | |
+| C17 | Windows cross-build clean, wasm passes `pk-check` | **VERIFIED as of the last run** — not a standing property | it is re-established per merge, not inherited ([handoff](handoff.md), B9) |
+
+**What C omits, which matters more than what it got wrong.** Each of these is a
+live item in the tree that a reader of C alone would not know exists:
+
+1. **The maze bake does not complete** — one biome exceeds thirteen minutes
+   ([handoff](handoff.md)). C's V1 walks straight past the actual blocker and
+   proposes the forbidden workaround for it.
+2. **The wall wash is unported.** 455 mud / 89 brass / 74 rubber wall tiles on
+   L3 carry a surface id nothing paints.
+3. **`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos** and must be
+   re-derived when V1 lands (`dungeon_light.rs` says so at the constant).
+4. **The shell input wiring is still open.** The pinball sim verbs are ported
+   and the game still only walks — P1's remainder is a *wiring* task C files
+   under C6 as if it were the porting task.
+5. **The A/B rig cannot grade monsters until they move** — the oracle's zombies
+   have left their spawn tiles before the 4.5 s shutter.
+6. **Nine `Record<EnemyKind, X>` registries are compile-enforced in TS** and a
+   further four are not — `scripts/hooks/registry-drift.mjs` covers the
+   `spawnKind` switch, `maze/prefabs.ts`'s biome tables, `EXPANSION_SKIN` vs
+   `KIND_PORTRAIT`, and `ESSENTIAL`. Track E inherits thirteen tables, not nine.
+7. **X-1/X-2** (§7) — the aspirational chapter that produced blueprint A is
+   still in the tree, and the "no third-party physics" decision is still
+   unwritten. It has now been proposed twice.
+
 ---
 
 ## 4. The drift nobody is gating: `braindeadbot-client` vs `legacy/`
@@ -314,19 +388,53 @@ real-floor gate asks for the generator by name (`&rust-floor=1`) because its
 fixture is the generator's digest. **A default flip silently retargets every
 gate that hard-codes the old default.**
 
-### Stage 2 — the surfaces
+### 5.1 Stage 1c — the floor is MADE of something, and the horde stands on it — ✅ **SHIPPED 2026-08-11**
 
-| # | Item | Acceptance evidence |
+The two commits v1 did not know about. Both are in `main`; neither is in
+blueprint C.
+
+| # | Item | Status / evidence |
 |---|---|---|
-| 2-1 | **Profile** the maze bake (`__bakeParts`, per-surface timers), then set the target from the profile | a timing table per surface; the 13-minute biome explained, not guessed |
-| 2-2 | Finish the bake; wall/floor/cap textures into `dungeon_render.rs`'s existing buckets | A/B sheet + the bake's provenance JSON |
-| 2-3 | V3–V5: architecture/banners/stairs marker; shaped tiles at their real heights; cracked bands as removable meshes | A/B per item |
+| 1c-1 | `grid.surfaces` exported, loaded, washed (`e86b299`) | ✅ **and it was a PHYSICS gap, not only a visual one** — `pk_core::pinball` reads `surface_at` for friction and steering, so until this every tile answered "stone" and a ball crossing the oracle's sand kept stone friction. L3-s1: 624 sand / 440 steel / 462 flowstone floors. A/B 33.1 → 32.0 |
+| 1c-2 | `spawn_standing_horde` — one billboard per `plan.spawns` tile (`072b57f`) | ⚠️ **THEY STAND, THEY DO NOT LIVE.** 52/72/105 a floor as one merged mesh. No AI, no flow field, no combat, no death |
 
-### Stage 3 — the generator (Track C1)
+⚠️ **Two vocabularies share the byte**: a walkable tile carries a `FLOOR_*` id
+and a solid one a `WALL_*` id, numerically overlapping — branch on walkability
+before reading it.
+
+### 5.2 The remaining 61,936 lines, as seven tracks that SUM to it
+
+Blueprint C's contribution, corrected. C's five tracks sum to ~71.1k against a
+61.9k remainder — ~15% over, because V1 counted the excluded painters as
+portable work. This decomposition is built from `scripts/pk-coverage.sh`'s
+per-file output and **reconciles exactly**: every uncovered line is in exactly
+one track, and the tracks plus the one exclusion add back to 61,936.
+
+| Track | What it is | Lines | Sources |
+|---|---|---:|---|
+| **C** | generator & content: maze passes 10–23, `decorateMaze`, floor authoring/populate/factory | **9,175** | `maze/` 8,508 + `spawn/` 667 |
+| **V** | visuals: parts/monster/prop renderers, FX pools, the sheet registry | **14,230** | `render/` 10,195 (net of `cel-painter`) + `fx/` 2,948 + `boot/` 1,087 |
+| **E** | entities, combat, rules: AI, damage, the enemy registries, cards/abilities/items/secrets/boss | **12,247** | `entities/` 6,544 + `constants/` 958 + root rules 4,745 (`abilities` 916, `cards` 885, `boss` 772, `items` 535, `secrets` 409, `bestiary` 379, `zombie-types` 297, `shots` 222, `lamp-puzzle` 173, `skill-runtime` 157) |
+| **T** | tavern economy: shop rules and the data tables behind them | **1,845** | `economy/` 1,338 + root tables 507 (`reagents` 147, `recipes` 86, `armor-styles` 127, `card-reader` 147) |
+| **F** | HUD, screens, run flow, persistence | **8,597** | `gui/` 4,597 + `run/` 1,036 + root HUD/run 2,964 (`hud-face` 1,330, `map-render` 431, `corpse-run` 295, `fps` 276, `settings-save` 157, `delve` 151, `fog` 120, `run-score` 112, `hud-minimap` 92) |
+| **G** | audio synthesis | **780** | `sfx/` |
+| **D** | dev surface & engine remainder: `__lab()`, the censuses, profiler, input, testkit | **10,277** | `dev/` 5,298 + `engine/` 2,540 + root misc 2,001 + `testkit/` 292 + `input/` 124 + `sim/` 22 |
+| | **subtotal** | **57,151** | |
+| — | `render/cel-painter.ts` — baked, never ported (§1) | 4,785 | excluded by decision |
+| | **total uncovered** | **61,936** | ✅ reconciles |
+
+**What this decomposition says that a stage list does not:** track **D is the
+third-largest**, at 10,277 lines and 2% coverage, and no plan handed in so far
+has scheduled it. `dev/window-hooks.ts` alone is the `__lab()` surface — spawn,
+ring, floor-jump, the headless bot — which is how every monster gets QA'd and
+every future bug gets reported. Porting E without D means porting the horde with
+no way to spawn one on demand.
+
+### 5.3 Track C — the generator
 
 Passes 10–23, each 10/10 corpus floors bit-exact at its boundary, each with a
 sabotage sweep. Then the `onPass` seam **inside `decorateMaze` before a line of
-it is ported** — 5.4k lines with no oracle is the single most expensive mistake
+it is ported** — 3,169 lines with no oracle is the single most expensive mistake
 available here. Then `authorFloor`'s remainder, `floor-populate`, `factory`.
 
 Two sabotages ride into pass 13 (`repair-2`): `connect_all` carves nothing at
@@ -334,16 +442,112 @@ repair-1 and provably cannot, so "de-stub before connect" and "withhold the
 keep-out mask" are un-gated until fillets fill pockets with no degree
 constraint.
 
-### Stage 4 — the mass nobody has started (§2.2's 0–2% rows)
+**C is no longer on the critical path to a playable game.** Authored floors are
+the default source (1b-2), so the generator's remaining 14 passes buy *seed
+variety*, not a dungeon. Schedule it against that, not against "the floors do
+not exist yet".
 
-`entities/` + combat + the nine `Record<EnemyKind,X>` registries (~20k),
-`economy/` (1,338, **0%**), `run/` (1,036, **0%**), root `state.ts` / `cards.ts`
-/ `abilities.ts` / `items.ts` / `skills.ts` / `secrets.ts`, `hud-face.ts`, the
-GUI screens, and `dev/window-hooks.ts` — the `__lab()` surface the entire debug
-workflow stands on, 1,054 lines at 2% coverage, and the way every future bug
-gets reported.
+### 5.4 Track V — and the blocker C walks past
 
-### Stage 5 — sweep and cutover
+| # | Item | Acceptance evidence |
+|---|---|---|
+| V-0 | **Profile** the maze bake (`__bakeParts`, per-surface timers), then set the target from the profile | a timing table per surface; the 13-minute biome explained, not guessed. **This is the real V1** — not transcribing the painters (§3.3 C8) |
+| V-1 | Finish the bake; wall/floor/cap textures into `dungeon_render.rs`'s existing buckets | A/B sheet + the bake's provenance JSON |
+| V-2 | The WALL wash — 455 mud / 89 brass / 74 rubber wall tiles on L3 carry a surface id nothing paints | A/B sheet; bucket key extended by surface id |
+| V-3 | Re-derive `SURFACE_ALBEDO_LUMA`, which is calibrated on placeholder albedos | the constant's own comment is the acceptance test |
+| V-4 | Architecture, banners, stairs marker; shaped tiles at their real heights; cracked bands as removable meshes | A/B per item |
+| V-5 | GUI pixel pass into `composite.wgsl` at **`@binding(6)`** (not 7 — §3.3 C9) | one frame with the GUI cel-graded, screenshotted |
+
+### 5.5 Tracks E / T / F / G / D
+
+- **E** inherits **thirteen** registries, not nine: the nine
+  `Record<EnemyKind, X>` tables TypeScript compile-enforces, plus the four
+  `scripts/hooks/registry-drift.mjs` covers because `tsc` cannot see them (the
+  `spawnKind` switch, `maze/prefabs.ts`'s biome tables, `EXPANSION_SKIN` vs
+  `KIND_PORTRAIT`, `ESSENTIAL`). A Rust port turns nine of those into
+  exhaustive `match`es for free and the other four into nothing — **they need
+  their own test, and the drift hook is the specification.**
+- **T** is the cheapest whole track at 1,845 lines and it is **0% covered**
+  while `pk-core::gambler` next door is fully ported with 250 tests. The shop
+  rules are pure data + predicates: the highest ratio of shipped behaviour to
+  ported lines left in the tree.
+- **F** owns the persistence decision (native file vs wasm `localStorage`)
+  that nothing has made yet.
+- **G** is blocked on a rig that does not exist (§6).
+- **D** is scheduled nowhere and is a prerequisite for QA'ing E (§5.2).
+
+### 5.6 Blueprint C's three open questions, answered from the tree
+
+1. **"Track C1 first (playable dungeons) or Track V1 first (lose the grey-box
+   look)?"** — **Neither. The user settled this on 2026-08-11 and the order is
+   by SCENE, not by track:**
+
+   > *"in order finish the intro > finish the tavern > then work on the maze
+   > last… we should have finished making the intro accurate with the textures
+   > first so we know what order of operations of how to build 1:1 for the
+   > rest."*
+
+   **INTRO → TAVERN → MAZE**, each finished 1:1 — art, UI and behaviour —
+   before the next one starts, each signed off by an A/B screenshot against the
+   oracle. The reasoning is explicit and it is a better argument than the
+   track-order one: the intro is the smallest complete scene in the game, so
+   **finishing one scene to 1:1 establishes the method** — what "same style"
+   means, what the art pipeline costs per asset, what a scene's UI parity gate
+   looks like — and that method is what the two larger scenes then follow.
+   Track order optimises for line count; scene order optimises for *learning
+   the conversion loop on the cheapest possible scene*.
+
+   The track table in §5.2 stays exactly as it is — it is the ledger, and it
+   still has to reconcile. What changes is the traversal: scenes are cut
+   *across* the tracks (the intro needs its slice of V and F; the tavern needs
+   T and F and its own V), so each scene stage below names which track lines it
+   burns down.
+
+   Both of C's original options are answered on the way past: C1 does not gate
+   playability (§5.3 — the authored floor is already the default source), and
+   V1 as C defines it is forbidden work (§3.3 C8).
+2. **"Frame drops on the Windows desktop vs WSL2?"** — a real question, and it
+   is for the user, not the tree. It is **not blocking**: it should ride along
+   with the next exe drop rather than gate a track. The project's own FPS gate
+   is `pk-check` on this box (RISK-1).
+3. **"Should D-1 run on every push to main?"** — **Yes.** It is a `diff -rq`
+   over two trees; it costs seconds, and the failure it catches (silent oracle
+   rot, §4) is invisible by construction — every fixture stays green while the
+   oracle moves. There is no cheaper gate in the project, and CI can host it
+   because it needs no GPU (RISK-1 excludes only the visual gates).
+
+### 5.7 The scene order, and what "finished" means for each
+
+Three stages, in the user's order. **A scene is finished when a side-by-side
+A/B sheet against the oracle is signed off — not when its logic is ported.**
+That is the whole point of doing the smallest scene first: the intro is where
+the cost of "same style" gets measured, before it is paid twice more.
+
+Each stage names the tracks it burns down, so §5.2's ledger stays the ledger.
+
+| Stage | Scene | Burns down | Gate |
+|---|---|---|---|
+| **2** | **INTRO** — accurate, with its textures | V (sheets/backdrop), F (its own screens) | `scripts/pk-ab-intro.mjs` — **does not exist; building it is item 2-0** |
+| **3** | **TAVERN** — every vendor you can walk up to does what the oracle's does | **T entire (1,845)**, F (counter screens), V (keeper paints, sign text) | `pk-ab-tavern.mjs` (exists) + one sheet per counter |
+| **4** | **MAZE** — pinball verbs wired, textures, animations, physics | C, V-0…V-5, E | `pk-ab-dungeon.mjs` + `pk-check` |
+
+**Stage 4 is where the four open items the user named land**, and they are
+already sized above: *pinball functionality* is P1's shell-wiring remainder
+(§3.3 omission 4 — the sim verbs are ported and unbound), *textures for the
+map* is V-0/V-1 (blocked on the bake profile, and **not** on transcribing the
+painters), *animations* is V + the clip-name interface, *physics hooked up* is
+the same wiring as the verbs plus `surface_at`, which 1c-1 already delivered.
+
+Track E's first slice (`pk_core::movement` — the 569-line `MovementKind`
+dispatch table, ported behind a trace fixture) is **deferred to Stage 4** by
+this decision. It was the right answer to a track-ordering question that the
+user has replaced with a scene-ordering one, and it is written down here rather
+than discarded because it is still the correct first cut of E when E's turn
+comes: `movement.ts` is plain-data in, plain-data out — no `state`, no three,
+no grid — and it is the substrate combat, boss phases and all eight zombie
+sub-types steer through.
+
+### 5.8 Stage 5 — sweep and cutover
 
 P7 audio/FX remainder behind a spectral-diff rig that does not exist yet; P8
 playtest bot, `xtask dist`, deploy; the P-1 ledger at 100%; then legacy is
@@ -372,6 +576,8 @@ The dungeon A/B rig — the third missing gate as of last week — **now exists*
 | **D-1** | `braindeadbot-client` ↔ `legacy/` drift check in CI | §4 | red on a seeded change, green on today's tree |
 | **X-1** | Correct or retire `documentation/chapters/18-rust-webgpu-engine-port.md` | it describes a `pk-render` crate and a Rapier3D physics layer that do not exist — the same two false claims as blueprint A, which is the likeliest place they came from | the chapter's crate tree matches `Cargo.toml` |
 | **X-2** | Record the "no third-party physics engine" decision in [architecture](../game/architecture.md) | it has now been proposed twice; an unwritten decision gets re-proposed | a named decision record whose reason is bit-exact replay |
+| **I-1** | `scripts/pk-ab-intro.mjs` — the intro's A/B rig, modelled on `pk-ab-tavern.mjs` | Stage 2's gate does not exist, and a scene cannot be signed off by eye ([[by-eye-is-not-a-measurement]]); the tavern and dungeon rigs both had to exist before their scenes could be called done | a sheet at `.checks/ab-intro-*.png` with the same diff statistics the other two rigs print |
+| **C-1** | `scripts/pk-coverage.sh` in CI, printing the uncovered total | the number in §2 goes stale the moment it is written — v1's was two commits old within a day | CI prints it per run; a merge that ports a file moves it |
 
 ---
 
