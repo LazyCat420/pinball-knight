@@ -73,6 +73,12 @@ pub(crate) const VIEW_H: f32 = 11.25;
 
 /// The published knight sheets, embedded so native and wasm load identically.
 /// The bake pipeline (M0 exit) replaces embedding with per-rung atlases.
+/// The one monster sheet the port embeds. `plan.spawns` is a list of ZOMBIE
+/// spawn tiles (`decorate.ts`'s second section), and only the E direction is
+/// published — the sheet's own `mirror: true` is what serves W. N and S arrive
+/// with the per-rung bake.
+const ZOMBIE_E_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/zombie-E.png");
+const ZOMBIE_E_JSON: &str = include_str!("../../../legacy/public/sprites/zombie-E.json");
 const SHEET_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/pinball_knight-S.png");
 const SHEET_S_JSON: &str = include_str!("../../../legacy/public/sprites/pinball_knight-S.json");
 const SHEET_E_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/pinball_knight-E.png");
@@ -779,6 +785,14 @@ fn setup_common(
         n,
         e_cpu: e_cpu.expect("E sheet keeps a CPU copy"),
     });
+    let (zombie, _) = decode_sheet(
+        ZOMBIE_E_PNG,
+        ZOMBIE_E_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    commands.insert_resource(authored_render::MonsterArt { zombie });
 
     // ── Camera: orthographic, tilt 38°, yaw 45°, 11.25 world-units tall ──
     commands.spawn((
@@ -817,6 +831,7 @@ fn setup_dungeon(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     art: Res<KnightArt>,
+    monster_art: Res<authored_render::MonsterArt>,
     mut prepared: ResMut<PreparedFloor>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
     mut ambient: ResMut<AmbientLight>,
@@ -910,6 +925,13 @@ fn setup_dungeon(
             commands.entity(e).insert(DungeonScene);
         }
         commands.insert_resource(anchors);
+        // The floor's zombies, WHERE the oracle put them — standing, not
+        // living. See `StandingMonster`.
+        if let Some(e) =
+            authored_render::spawn_standing_horde(&mut commands, &mut meshes, &monster_art, f)
+        {
+            commands.entity(e).insert(DungeonScene);
+        }
         commands.spawn((
             DungeonScene,
             AuthoredFloorBanner,

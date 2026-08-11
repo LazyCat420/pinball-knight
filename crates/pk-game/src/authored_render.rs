@@ -411,6 +411,71 @@ mod tests {
     use super::*;
     use crate::authored_floor;
 
+    /// Every spawn tile is somewhere a monster can actually stand.
+    ///
+    /// A billboard on a wall tile is invisible from this camera (it is inside
+    /// the masonry) and would read as "the horde is smaller than the oracle's"
+    /// rather than as a placement bug.
+    #[test]
+    fn every_spawn_stands_on_floor() {
+        for level in [1, 3, 5] {
+            let f = authored_floor::load(level, 1).unwrap();
+            assert!(!f.plan.spawns.is_empty(), "L{level} has spawns");
+            for s in &f.plan.spawns {
+                assert!(
+                    is_walkable(&f.grid, s.i, s.j),
+                    "L{level} spawn at ({},{}) is not on a floor tile",
+                    s.i,
+                    s.j
+                );
+            }
+        }
+    }
+
+    /// The horde keeps its distance from the start tile — **measured on the
+    /// BFS field, which is the field the rule is written against.**
+    ///
+    /// `decorate.ts:2170`: `minSpawnDist = max(5, floor(maxDist * 0.3))`, tested
+    /// against `dist[idx(g, p.i, p.j)]` — a flood from the start, not a straight
+    /// line. The first version of this test used Euclidean distance and asserted
+    /// `> 8`, which failed on L1 at 5.8 tiles. Nothing was wrong with the floor:
+    /// a spawn 5.8 tiles away as the crow flies can be twenty tiles away through
+    /// the maze, and the crow is not the thing that walks. **Measure the
+    /// quantity the rule is about.**
+    #[test]
+    fn the_horde_is_not_waiting_on_the_doormat() {
+        for level in [1, 3, 5] {
+            let f = authored_floor::load(level, 1).unwrap();
+            let field = pk_core::flow_field::bfs_distances(&f.grid, f.plan.start.i, f.plan.start.j);
+            let nearest = f
+                .plan
+                .spawns
+                .iter()
+                .map(|s| field[(s.j * f.grid.w + s.i) as usize])
+                .filter(|&d| d >= 0)
+                .min()
+                .expect("every spawn is reachable from the start");
+            // The rule's own floor. The real threshold is `maxDist * 0.3` on
+            // most floors and higher, but 5 is the part that is a constant
+            // rather than a property of the floor's diameter.
+            assert!(
+                nearest >= 5,
+                "L{level}'s nearest zombie is {nearest} steps from the spawn; \
+                 minSpawnDist is at least 5"
+            );
+            // …and every spawn is REACHABLE, which the filter above would
+            // otherwise hide: an unreachable one is a monster in a sealed
+            // pocket, which the oracle's flood cannot produce and a bad port can.
+            assert!(
+                f.plan
+                    .spawns
+                    .iter()
+                    .all(|s| field[(s.j * f.grid.w + s.i) as usize] >= 0),
+                "L{level} has a zombie the player can never reach"
+            );
+        }
+    }
+
     /// The pool is SIX, whatever the floor carries. This is the assertion the
     /// module header is about: a per-torch light would be 41-64 of them, would
     /// look brighter and flatter than the oracle, and would quietly invalidate
@@ -513,4 +578,117 @@ mod tests {
             );
         }
     }
+}
+
+// ── THE STANDING HORDE ─────────────────────────────────────────────────────
+
+/// The zombie sheet, decoded once at startup.
+///
+/// One kind, because one kind is what `plan.spawns` describes: `decorateMaze`'s
+/// second section places ZOMBIE spawns, "weighted AWAY from the start so level
+/// entry is calm" (`decorate.ts:7`). The bestiary's other eighteen kinds arrive
+/// with the spawn factory in P4, and they arrive as a `Record<EnemyKind, X>`
+/// registry rather than as more constants here.
+#[derive(Resource)]
+pub struct MonsterArt {
+    pub zombie: crate::SheetClips,
+}
+
+/// ⚠️ **THESE MONSTERS STAND. THEY DO NOT LIVE.**
+///
+/// This draws a billboard on each of `plan.spawns`' 52-105 tiles and nothing
+/// else: no AI, no flow-field, no combat, no stagger, no death. P4 is
+/// `entities/` + `spawn/factory.ts` + the nine `Record<EnemyKind, X>`
+/// registries, and none of it is ported.
+///
+/// It is worth doing anyway, and worth being loud about: the A/B rig grades
+/// POSITION and DENSITY, an oracle floor has 72 monsters on it at L3, and a
+/// port whose dungeon is empty cannot be compared with one whose dungeon is
+/// not. What it must never do is read as P4 — hence the name of this component
+/// and this paragraph.
+#[derive(Component)]
+pub struct StandingMonster;
+
+/// Every spawn tile's zombie, as ONE mesh.
+///
+/// A merged mesh rather than 72 entities, for the reason `dungeon_render` gives
+/// for the walls: these never move, so their transform is a constant that may as
+/// well be baked, and the camera is fixed so the billboard rotation is the same
+/// for every one of them. The moment they MOVE (P4) this becomes per-entity and
+/// the merge is deleted — that is the trade the wall module already documents.
+///
+/// The frame is `idle[0]`. An animated horde needs one material per phase or a
+/// per-instance UV offset, and both are P4's problem to solve properly with the
+/// animator; a hand-rolled version here would be a second animation system to
+/// delete later.
+pub fn spawn_standing_horde(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    art: &MonsterArt,
+    floor: &AuthoredFloor,
+) -> Option<Entity> {
+    let clip = art
+        .zombie
+        .idle
+        .first()
+        .or_else(|| art.zombie.walk.first())?;
+    if floor.plan.spawns.is_empty() {
+        return None;
+    }
+    // Zombie-sized against the knight's 1.15 quad — the published sheets are
+    // authored at one scale and the legacy per-kind sizes live in the bestiary,
+    // which is P4. Equal-to-the-knight is the honest placeholder: it is the one
+    // height that cannot be accused of being a guess at a specific monster.
+    let quad_h = 1.15f32;
+    let quad_w = quad_h * art.zombie.aspect;
+    let [u, v, uw, vh] = *clip;
+
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(floor.plan.spawns.len() * 4);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(floor.plan.spawns.len() * 4);
+    let mut nrm: Vec<[f32; 3]> = Vec::with_capacity(floor.plan.spawns.len() * 4);
+    let mut idx: Vec<u32> = Vec::with_capacity(floor.plan.spawns.len() * 6);
+    let rot = billboard(0.0);
+    let normal = (rot * Vec3::Z).to_array();
+
+    for (n, s) in floor.plan.spawns.iter().enumerate() {
+        let (cx, cz) = tile_center(&floor.grid, s.i, s.j);
+        let base = Vec3::new(cx as f32, 0.0, cz as f32);
+        // The quad's own corners, rotated into the billboard plane, then moved
+        // onto the tile. Half a quad up, so the sprite's feet sit on the floor.
+        for (dx, dy, uu, vv) in [
+            (-0.5, 1.0, 0.0, 0.0),
+            (0.5, 1.0, 1.0, 0.0),
+            (0.5, 0.0, 1.0, 1.0),
+            (-0.5, 0.0, 0.0, 1.0),
+        ] {
+            let local = Vec3::new(dx * quad_w, (dy - 0.5) * quad_h, 0.0);
+            let p = base + rot * local + Vec3::Y * (quad_h * 0.5);
+            pos.push(p.to_array());
+            uvs.push([u + uu * uw, v + vv * vh]);
+            nrm.push(normal);
+        }
+        let b = (n * 4) as u32;
+        idx.extend_from_slice(&[b, b + 2, b + 1, b, b + 3, b + 2]);
+    }
+
+    let mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
+    .with_inserted_indices(bevy::mesh::Indices::U32(idx));
+
+    Some(
+        commands
+            .spawn((
+                AuthoredDecor,
+                StandingMonster,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(art.zombie.material.clone()),
+                Transform::IDENTITY,
+            ))
+            .id(),
+    )
 }

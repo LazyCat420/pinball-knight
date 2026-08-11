@@ -45,10 +45,22 @@ ALBEDO error and not a lighting one.
    instances with their surface colour) and the four grain textures — the flat
    quad here is what the oracle's own painter header calls "a spilled bucket of
    blue", and the grain lands with the V1 bake.
-3. **Monsters** (P4). `plan.spawns` is parsed and carries 52-105 tiles per floor;
-   nothing reads it. The A/B sheet's most obvious remaining difference after the
-   textures is that the oracle's floor has things standing on it.
-4. **`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos** and must be
+3. ~~**Monsters**~~ ⚠️ **THEY STAND, THEY DO NOT LIVE** (2026-08-11). One
+   zombie billboard per `plan.spawns` tile, 52-105 a floor, as ONE merged mesh
+   (`authored_render::spawn_standing_horde`). No AI, no flow-field, no combat,
+   no death — P4 is `entities/` + `spawn/factory.ts` + the nine
+   `Record<EnemyKind, X>` registries and none of it is ported.
+   **A finding for whoever does port it:** the A/B sheet cannot match on
+   monsters until they MOVE. The oracle's zombies have walked off their spawn
+   tiles by the time the shutter fires 4.5 s after load — that is why legacy's
+   frame shows monsters beside the knight while ours shows none there, with the
+   nearest spawn 21 BFS steps away on L3. Shoot L5 (`--level 5`) to see the
+   horde: its spawns are dense enough to land in frame.
+4. **The WALL wash.** `grid.surfaces` carries 455 mud, 89 brass and 74 rubber
+   WALLS on L3 and only the floor half is painted. Legacy tints wall instances
+   with `instanceColor`; here it wants the bucket key extended by surface id so
+   each (shape, surface) pair gets its own tinted material.
+5. **`SURFACE_ALBEDO_LUMA` is calibrated on placeholder albedos** and must be
    re-derived when V1 lands — `dungeon_light.rs` says so at the constant.
 
 ## Half-done, with a measurement attached
