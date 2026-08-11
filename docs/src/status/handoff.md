@@ -1,10 +1,67 @@
-# Handoff — 2026-08-11, Stage 1b shipped
+# Handoff — 2026-08-11, Stage 2 (INTRO) under way
 
 Read [build-out](build-out.md) first: it is the queue and the reasoning, and
 [the 1:1 plan](one-to-one.md) for what "converted" means and how far off it is.
 This page is the state of the baton.
 
-## What just landed — the authored floor IS the dungeon
+## THE ORDER IS BY SCENE NOW — INTRO → TAVERN → MAZE
+
+Set by the user on 2026-08-11 and it overrides the track order the 1:1 plan
+had derived: *"in order finish the intro > finish the tavern > then work on
+the maze last… we should have finished making the intro accurate with the
+textures first so we know what order of operations of how to build 1:1 for
+the rest."* Each scene is finished 1:1 — art, UI and behaviour — and signed
+off by an A/B sheet before the next one starts. See
+[one-to-one](one-to-one.md) §5.6-5.7.
+
+**It has already paid for itself.** Finishing the smallest scene first turned
+up four defects that were all invisible from the track view, and one coupling
+that changes the schedule: the intro's title maze is built through the REAL
+`buildMaze`, so **the intro is blocked on the same texture bake as the
+dungeon** (V-0). The bake is not a late-stage art item; it is on the critical
+path of the FIRST scene.
+
+## Stage 2 — the intro, so far
+
+| | |
+|---|---|
+| the gate | `scripts/pk-ab-intro.mjs` — did not exist; one frame per phase per side, frozen |
+| light rig | `dungeon_light::install_intro` — the intro spawned NO lights at all |
+| chrome | `pk_gui::screens::intro` — the title was three Bevy `Text` nodes and there was no SKIP button |
+| fonts | `Fonts::derive_missing_zoom_sizes` — size 32 at zoom 3 wants a 96px atlas that was never baked, and missing-atlas text draws NOTHING, silently |
+
+**Frozen A/B, both sides** (`node scripts/pk-ab-intro.mjs --no-build`):
+
+| phase | diff mean | over32 | note |
+|---|---:|---:|---|
+| run | 15.3 | 11.0% | |
+| bonk | 23.7 | 18.4% | |
+| shatter | 46.1 | 54.6% | ball scale + camera framing |
+| sweep | 25.5 | 27.5% | |
+| title | **16.7** (was 39.5) | **17.0%** (was 40.9%) | lights + chrome + the 96px atlas |
+
+### What is still open on the intro, in order of pixel impact
+
+1. **The maze textures** — the same V-0 bake as the dungeon (see below). The
+   title maze is flat colour where the oracle has flagstone, moss and banners.
+2. **The ball.** The oracle draws a small sprite with a white ricochet ring;
+   the port draws a large knight and no ring. `SPRITE_UNITS = 1.5` against the
+   port's `quad_h = 1.15` — but the port's reads BIGGER on the sheet, so this
+   is not simply the quad and wants measuring, not adjusting.
+3. **Camera framing during shatter/sweep.** The two frustums agree at 16:9
+   (both 20 × 11.25) and the port's `1/zoom` is right, yet our maze renders
+   ~22% taller at the same width — which is a tilt or a geometry-height
+   difference, NOT a zoom one. Measure before touching.
+
+⚠️ **The rig freezes the sequence, and that is what makes it a measurement.**
+A CDP screenshot takes 0.6-1.3 s and `bonk` lasts 0.35 s. Shooting "when the
+phase appears" gave a `run` diff of 14.5, then 21.7, then 37.0 across three
+runs with that phase's art untouched. The port freezes on
+`?intro-freeze=<phase>:<t>`; the ORACLE is frozen from the harness by a
+virtual rAF clock, so `legacy/` needs no seam — which also means the gate
+works before a merge instead of after one.
+
+## Stage 1b — the authored floor IS the dungeon
 
 `crates/pk-game/src/authored_floor.rs` loads the oracle's exported floors and
 they are now the DEFAULT source of a descend. The dungeon has torches, boosters,
@@ -113,6 +170,7 @@ cost is what is unexplained.
 ## How to see anything
 
 ```
+node scripts/pk-ab-intro.mjs --no-build                        # the INTRO's gate (Stage 2)
 node scripts/pk-ab-dungeon.mjs --no-build --level 3 --seed 1   # the gate for all visual work
 node scripts/pk-check.mjs --no-build                            # the flow gates
 node scripts/pk-check.mjs --no-build --real-floor               # the generated-floor gates
