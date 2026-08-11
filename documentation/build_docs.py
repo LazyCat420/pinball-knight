@@ -8,9 +8,25 @@ docs build that quietly stops happening.
 Usage:
     python3 documentation/build_docs.py            # write index.html
     python3 documentation/build_docs.py --check    # exit 1 if index.html is stale
+    python3 documentation/build_docs.py --status   # front matter as JSON
 
 Chapters are ordered by filename; the leading NN- is a sort key and is stripped
 from the display title. The title comes from the file's first H1.
+
+A chapter FILES ITSELF. Open it with a front-matter block and there is nothing
+else to edit — no manifest, no renumbering, no HTML:
+
+    ---
+    part: Plans
+    status: approved
+    updated: 2026-08-10
+    review-by: 2026-09-09
+    ---
+
+    # What this plan does
+
+That is the whole contract. `part` decides where it lands on the page; `status`
+and the dates are what the daily audit reads to decide what has gone stale.
 """
 
 from __future__ import annotations
@@ -322,6 +338,30 @@ body{
   padding:0.12rem 0.45rem; border-radius:4px; font-weight:700; border:none;
   margin-left:auto; line-height:1; vertical-align:middle; letter-spacing:0.04em;
 }
+/* Status — the lifecycle a chapter is in. A plan that says "approved" and a
+   plan that says "shipped" are different documents, and a reader who cannot
+   tell them apart at a glance will act on the wrong one. */
+.statusbar{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 1.1rem}
+.status,.meta-pill{
+  display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;font-weight:700;
+  border-radius:4px;padding:.16rem .45rem;line-height:1.35;white-space:nowrap;
+}
+.meta-pill{
+  text-transform:none;font-weight:500;letter-spacing:.02em;
+  color:var(--ink-soft);background:var(--panel-2);border:1px solid var(--rule);
+}
+.status.s-ok{color:var(--ok);background:var(--ok-bg);border:1px solid var(--ok)}
+.status.s-warn{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn)}
+.status.s-bad{color:var(--bad);background:var(--bad-bg);border:1px solid var(--bad)}
+.status.s-muted{color:var(--ink-soft);background:var(--panel-2);border:1px solid var(--rule)}
+/* Overdue is set by the browser, never baked into the build — see _status_bar. */
+.meta-pill.overdue{color:var(--bad);background:var(--bad-bg);border-color:var(--bad);font-weight:700}
+nav.toc .status{
+  margin-left:auto;font-size:.58rem;padding:.08rem .3rem;letter-spacing:.02em;
+  border-radius:3px;
+}
+nav.toc a.chapter .status + .freshness.badge{margin-left:.25rem}
 .shell{max-width:1180px;margin:0 auto;padding:2rem 1.5rem 5rem;display:grid;grid-template-columns:220px minmax(0,1fr);gap:2.6rem;align-items:start}
 /* The sidebar scrolls ITSELF. It is `position:sticky`, so without a height
    bound it grows past the bottom of the window and the only way to reach its
@@ -532,6 +572,20 @@ PAGE = """<!doctype html>
       }}
       nodes[i].title = when.toLocaleString();
     }}
+    /* A review date that has passed is the whole point of writing one down.
+       Decided here, not at build time — the page is rebuilt when a chapter
+       CHANGES, which is never the case for the chapters that go stale. */
+    var due = document.querySelectorAll(".meta-pill.review[data-review]");
+    for (var j = 0; j < due.length; j++) {{
+      var by = new Date(due[j].getAttribute("data-review") + "T23:59:59");
+      if (isNaN(by.getTime())) continue;
+      var late = now > by.getTime();
+      due[j].classList.toggle("overdue", late);
+      if (late) {{
+        var days = Math.floor((now - by.getTime()) / 86400000);
+        due[j].textContent = "review overdue by " + days + " day" + (days === 1 ? "" : "s");
+      }}
+    }}
   }}
   paint();
   /* A page left open overnight must not still claim "updated 2 minutes ago". */
@@ -569,34 +623,170 @@ def _last_touched(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
 
 
-def _load_parts(chapters: list[Path]) -> list[dict]:
-    """Group chapters into named parts using ``chapters/_parts.json``.
+# ---------------------------------------------------------------- front matter
+#
+# A chapter may open with a `---` block. It is deliberately NOT parsed as YAML:
+# this script is stdlib-only so it can be copied into any repo without an
+# install step, and every field we need is a `key: value` scalar.
+#
+#     ---
+#     part: Plans
+#     status: approved
+#     updated: 2026-08-10
+#     ---
+#
+# `part` is the field that matters mechanically — it is how a chapter files
+# ITSELF. Writing a chapter is writing one file: no manifest to edit, no
+# renumbering, no HTML. The rest is metadata the page renders as a badge and the
+# daily audit reads to decide what has gone stale.
 
-    The manifest is OPTIONAL — without it every chapter lands in one unnamed
-    part and the page renders exactly as it used to, so this script stays
-    copyable into a repo that wants a flat list.
+FRONT_KEYS = {"part", "status", "updated", "review-by", "owner", "supersedes"}
 
-    It is deliberately **fail-closed**: a chapter on disk that no part lists is
-    a hard build error, not a silent omission. On 2026-08-07 a chapter was
-    written, built, deployed and verified present in the served bytes while the
-    operator could not find it on the page, and hunting that took longer than
-    writing the chapter. A document whose navigation can disagree with its own
-    contents is not a document. The same applies in reverse: a part listing a
-    file that does not exist fails rather than rendering a dead entry.
+# The lifecycle, and the tone each state renders in. `approved` and
+# `in-progress` are the two the staleness check cares about: they are claims
+# about the FUTURE, and a claim about the future rots. `shipped`, `superseded`
+# and `abandoned` are claims about the past and never go stale.
+STATUS_TONE = {
+    "approved": "warn",
+    "in-progress": "warn",
+    "blocked": "bad",
+    "shipped": "ok",
+    "verified": "ok",
+    "superseded": "muted",
+    "abandoned": "muted",
+    "reference": "muted",
+}
+
+LIVE_STATUSES = {"approved", "in-progress", "blocked"}
+
+
+def parse_front(md: str) -> tuple[dict, str]:
+    """Split a leading ``---`` block off a chapter. Returns (meta, body).
+
+    A chapter with no block parses to ``({}, md)``, so this is backwards
+    compatible with every chapter already written.
     """
-    manifest = CHAPTERS_DIR / "_parts.json"
-    if not manifest.exists():
-        return [{"part": None, "blurb": "", "chapters": chapters}]
+    if not md.startswith("---"):
+        return {}, md
+    m = re.match(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?", md, re.S)
+    if not m:
+        return {}, md
+    meta: dict[str, str] = {}
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        meta[key.strip().lower()] = value.strip().strip("'\"")
+    return meta, md[m.end():]
 
+
+def _check_front(name: str, meta: dict) -> None:
+    """Reject a front-matter block that is subtly wrong rather than absent.
+
+    A MISSPELLED key is the dangerous case: `stat:` instead of `status:` reads
+    as a chapter with no status, which silently drops it out of the staleness
+    audit forever. Absent is fine; wrong is not.
+    """
+    unknown = sorted(set(meta) - FRONT_KEYS)
+    if unknown:
+        raise SystemExit(
+            f"{name}: unknown front-matter key(s): {', '.join(unknown)}.\n"
+            f"Known keys: {', '.join(sorted(FRONT_KEYS))}."
+        )
+    status = meta.get("status")
+    if status and status not in STATUS_TONE:
+        raise SystemExit(
+            f"{name}: status '{status}' is not one of "
+            f"{', '.join(sorted(STATUS_TONE))}."
+        )
+    for key in ("updated", "review-by"):
+        value = meta.get(key)
+        if value and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise SystemExit(f"{name}: {key} must be YYYY-MM-DD, got '{value}'.")
+
+
+def _status_bar(meta: dict) -> str:
+    """Render the front matter as a row of pills under the chapter title.
+
+    ``review-by`` is emitted as ``data-review`` rather than a pre-computed
+    verdict: a page built in June cannot know that its July review date has
+    passed, and this page is rebuilt only when a chapter changes — which is
+    precisely when nobody is looking at the ones that went stale. The browser
+    decides, so the label is true whenever it is read. Same reasoning as the
+    freshness marks.
+    """
+    pills = []
+    status = (meta.get("status") or "").strip()
+    if status:
+        tone = STATUS_TONE.get(status, "muted")
+        pills.append(
+            f'<span class="status s-{tone}">{html.escape(status)}</span>'
+        )
+    if meta.get("owner"):
+        pills.append(f'<span class="meta-pill">{html.escape(meta["owner"])}</span>')
+    if meta.get("updated"):
+        pills.append(
+            f'<span class="meta-pill">updated {html.escape(meta["updated"])}</span>'
+        )
+    if meta.get("review-by"):
+        pills.append(
+            f'<span class="meta-pill review" data-review="'
+            f'{html.escape(meta["review-by"], quote=True)}">'
+            f'review by {html.escape(meta["review-by"])}</span>'
+        )
+    if meta.get("supersedes"):
+        pills.append(
+            f'<span class="meta-pill">supersedes {html.escape(meta["supersedes"])}</span>'
+        )
+    if not pills:
+        return ""
+    return f'<p class="statusbar">{"".join(pills)}</p>'
+
+
+def _load_parts(records: list[dict]) -> list[dict]:
+    """Group chapters into named parts.
+
+    A chapter normally declares its OWN part in front matter (``part: Plans``).
+    That is the point: adding a chapter is adding one file, and the page
+    reorganises itself around it. ``chapters/_parts.json`` stays supported and,
+    when present, fixes the ORDER of the parts and carries their blurbs; it may
+    also list chapters explicitly to pin their order within a part, which is how
+    the hand-curated repos already read.
+
+    Still **fail-closed**: a chapter that declares no ``part:`` and appears in no
+    manifest is a hard build error naming the file, not a silent omission. On
+    2026-08-07 a chapter was written, built, deployed and verified present in
+    the served bytes while the operator could not find it on the page, and
+    hunting that took longer than writing the chapter. A document whose
+    navigation can disagree with its own contents is not a document. The same
+    applies in reverse: a part listing a file that does not exist fails rather
+    than rendering a dead entry.
+    """
     import json
 
-    try:
-        spec = json.loads(manifest.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise SystemExit(f"{manifest.name} is not valid JSON: {e}")
+    by_name = {r["path"].name: r for r in records}
+    manifest = CHAPTERS_DIR / "_parts.json"
 
-    by_name = {p.name: p for p in chapters}
-    grouped, claimed = [], set()
+    # A repo with no manifest and no front matter anywhere renders as one flat
+    # list, exactly as it did before parts existed. This is checked FIRST: the
+    # orphan rejection below is what a repo OPTS IN to by naming a part even
+    # once, and reaching it here would make the kit uncopyable into a repo that
+    # only wants a pile of chapters (braindeadbot-client is one today).
+    if not manifest.exists() and not any(r["meta"].get("part") for r in records):
+        return [{"part": None, "blurb": "", "chapters": records}]
+
+    spec: list[dict] = []
+    if manifest.exists():
+        try:
+            spec = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"{manifest.name} is not valid JSON: {e}")
+
+    grouped: list[dict] = []
+    index: dict[str, dict] = {}
+    claimed: set[str] = set()
+
     for entry in spec:
         picked = []
         for filename in entry.get("chapters", []):
@@ -609,25 +799,63 @@ def _load_parts(chapters: list[Path]) -> list[dict]:
                 raise SystemExit(f"{manifest.name} lists '{filename}' twice.")
             picked.append(by_name[filename])
             claimed.add(filename)
-        grouped.append({
+        group = {
             "part": entry.get("part"),
             "blurb": entry.get("blurb", ""),
             "chapters": picked,
-        })
+        }
+        grouped.append(group)
+        if group["part"]:
+            index[group["part"].casefold()] = group
 
-    orphans = [p.name for p in chapters if p.name not in claimed]
+    # Everything the manifest did not claim files itself by front matter. A part
+    # the manifest never named is created at the end rather than rejected —
+    # inventing a part must not require also editing a second file.
+    orphans = []
+    for record in records:
+        name = record["path"].name
+        if name in claimed:
+            continue
+        part = (record["meta"].get("part") or "").strip()
+        if not part:
+            orphans.append(name)
+            continue
+        group = index.get(part.casefold())
+        if group is None:
+            group = {"part": part, "blurb": "", "chapters": []}
+            grouped.append(group)
+            index[part.casefold()] = group
+        group["chapters"].append(record)
+
     if orphans:
         raise SystemExit(
-            "These chapters exist but no part lists them, so they would render "
-            "with no way to navigate to them:\n  "
+            "These chapters declare no part, so they would render with no way "
+            "to navigate to them:\n  "
             + "\n  ".join(orphans)
-            + f"\n\nAdd each to {manifest.name}."
+            + "\n\nGive each a front-matter block naming its part:\n"
+            "  ---\n  part: Plans\n  status: approved\n  updated: YYYY-MM-DD\n  ---"
         )
-    return grouped
+
+    return [g for g in grouped if g["chapters"]]
+
+
+def _read_chapters() -> list[dict]:
+    """Parse every chapter once into {path, meta, body}. Front matter is split
+    off here so it is never rendered as prose — a chapter that shows its own
+    `---` block at the top reads as a bug to whoever opens the page."""
+    records = []
+    for path in sorted(CHAPTERS_DIR.glob("*.md")):
+        if path.name.startswith("_"):
+            continue  # _parts.json and friends are configuration, not chapters
+        md = path.read_text(encoding="utf-8")
+        meta, body = parse_front(md)
+        _check_front(path.name, meta)
+        records.append({"path": path, "meta": meta, "body": body})
+    return records
 
 
 def build() -> str:
-    chapters = sorted(CHAPTERS_DIR.glob("*.md"))
+    chapters = _read_chapters()
     if not chapters:
         raise SystemExit(f"No chapters found in {CHAPTERS_DIR}")
 
@@ -657,9 +885,9 @@ def build() -> str:
                 f'<div class="part-divider">'
                 f'<h2>{html.escape(group["part"])}</h2>{blurb}</div>'
             )
-        for path in group["chapters"]:
+        for record in group["chapters"]:
+            path, meta, md = record["path"], record["meta"], record["body"]
             chap_no += 1
-            md = path.read_text(encoding="utf-8")
             chap_ts = _last_touched(path)
             touched.append(chap_ts)
             sub_toc: list[dict] = []
@@ -667,10 +895,20 @@ def build() -> str:
             m = re.search(r"^#\s+(.*)$", md, re.M)
             chap_title = m.group(1).strip() if m else path.stem
             chap_id = _slug(re.sub(r"^\d+[-_]", "", path.stem))
+            status = (meta.get("status") or "").strip()
+            # The status rides in the SIDEBAR as well as the body. A reader
+            # scanning for "what is still open" should not have to open eleven
+            # chapters to find the two that are still claims about the future.
+            nav_status = (
+                f'<span class="status s-{STATUS_TONE.get(status, "muted")}">'
+                f'{html.escape(status)}</span>'
+                if status else ""
+            )
             nav_parts.append(
                 f'<li><a class="chapter" href="#{chap_id}">'
                 f'<span class="num">{chap_no}</span>'
                 f'<span class="title-text">{html.escape(chap_title)}</span>'
+                f'{nav_status}'
                 f'<span class="freshness badge" data-ts="{html.escape(chap_ts)}"></span>'
                 f"</a></li>"
             )
@@ -690,7 +928,7 @@ def build() -> str:
             body_parts.append(
                 f'<section class="chapter" id="{chap_id}">'
                 f'<span class="freshness" data-ts="{html.escape(chap_ts)}"></span>'
-                f"{eyebrow}{rendered}</section>"
+                f"{eyebrow}{_status_bar(meta)}{rendered}</section>"
             )
 
     return PAGE.format(
@@ -725,10 +963,40 @@ def _strip_stamp(page: str) -> str:
     return re.sub(r'data-ts="[^"]*"', 'data-ts=""', page)
 
 
+def status_report() -> list[dict]:
+    """Every chapter's front matter, as data. This is what the daily audit reads.
+
+    It lives in the builder rather than in the audit script so that a repo which
+    only ever gets the kit copied in is still auditable — there is exactly one
+    file that knows what a chapter looks like.
+    """
+    out = []
+    for record in _read_chapters():
+        meta = record["meta"]
+        out.append({
+            "file": record["path"].name,
+            "part": meta.get("part", ""),
+            "status": meta.get("status", ""),
+            "updated": meta.get("updated", ""),
+            "review_by": meta.get("review-by", ""),
+            "owner": meta.get("owner", ""),
+            "live": meta.get("status", "") in LIVE_STATUSES,
+            "last_touched": _last_touched(record["path"]),
+        })
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="exit 1 if index.html is stale")
+    ap.add_argument("--status", action="store_true",
+                    help="print chapter front matter as JSON and exit")
     args = ap.parse_args()
+
+    if args.status:
+        import json as _json
+        print(_json.dumps(status_report(), indent=2))
+        return 0
 
     page = build()
     if args.check:
