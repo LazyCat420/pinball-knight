@@ -474,8 +474,33 @@ fn drive_scene_camera(
             if o.far != CAM_FAR {
                 o.far = CAM_FAR;
             }
-            if *state.get() == AppState::Tavern {
-                let ppu = PPU * sizing.zoom();
+            // ⚠️ THE DUNGEON'S FRUSTUM FLEXES TOO, and pinning it was a defect
+            // that framed every dungeon screenshot this port ever took.
+            //
+            // `main.rs` set `FixedVertical { VIEW_H }` with `VIEW_H = 11.25`,
+            // which is `engineConfig.camera.viewH` — the config DEFAULT. Legacy
+            // overwrites it on every frame: `pixel-pass.ts syncCameraFrustum`
+            // sets the half-extents to `renderW/(2*PPU)` and `renderH/(2*PPU)`,
+            // with a comment explaining that PPU stays pinned and the FRUSTUM is
+            // what moves (otherwise the sprite identity SPRITE_UNITS * PPU ===
+            // SPRITE_PIXEL_GRID breaks). At 1920x1080 and PPU 56 that is
+            // 34.3 x 19.29 world units; the port was showing 11.25 tall, so the
+            // dungeon was framed 1.7x too close and no screenshot of it has ever
+            // been comparable to the oracle's.
+            //
+            // Found by `scripts/pk-ab-dungeon.mjs` on its first honest sheet —
+            // which is the entire argument for building the rig before the art.
+            //
+            // The two scenes differ only in ZOOM: the tavern rides
+            // `fitZoom` (`sizing.zoom()`), and the dungeon does not — legacy's
+            // comment on that line is explicit that `zoom` is left untouched
+            // there because the tavern is the only thing using it.
+            let framed = match *state.get() {
+                AppState::Tavern => Some(PPU * sizing.zoom()),
+                AppState::Dungeon => Some(PPU),
+                _ => None,
+            };
+            if let Some(ppu) = framed {
                 let (want_w, want_h) = (sizing.render_w as f32 / ppu, sizing.render_h as f32 / ppu);
                 // `ScalingMode` has no `PartialEq` in 0.17, so the "did it
                 // change" test is a match rather than a comparison — worth
@@ -633,8 +658,46 @@ mod tests {
             panic!("orthographic")
         };
         assert_eq!((o.near, o.far), (CAM_NEAR, CAM_FAR));
-        // The dungeon keeps its own framing.
-        assert!(matches!(o.scaling_mode, ScalingMode::FixedVertical { .. }));
+        // ⚠️ THIS ASSERTION USED TO PIN THE DEFECT. It read "the dungeon keeps
+        // its own framing" and checked for `FixedVertical`, which is exactly
+        // what `main.rs` spawns and exactly what legacy overwrites on every
+        // frame (`pixel-pass.ts syncCameraFrustum`). A test can only ever say
+        // the code does what it does; this one said it in a sentence that
+        // sounded like a decision. The dungeon frustum flexes with the lattice
+        // at PPU, zoom 1 — 1920/56 x 1080/56 world units here.
+        match o.scaling_mode {
+            ScalingMode::Fixed { width, height } => {
+                assert!((width - 1920.0 / PPU).abs() < 1e-3, "{width}");
+                assert!((height - 1080.0 / PPU).abs() < 1e-3, "{height}");
+            }
+            other => panic!("the dungeon frustum did not flex with the lattice: {other:?}"),
+        }
+    }
+
+    /// The two scenes differ only in ZOOM, and that is worth an assertion
+    /// rather than a comment: the tavern rides `fitZoom`, the dungeon does not.
+    /// If the dungeon ever picked the zoom up, its frustum would shrink by 22%
+    /// at this window size and every sprite would stop landing on whole texels.
+    #[test]
+    fn the_dungeon_does_not_ride_the_tavern_zoom() {
+        for (w, h) in [(1280, 720), (1920, 1080)] {
+            let mut app = harness(w, h, AppState::Dungeon);
+            let sizing = *app.world().resource::<PixelSizing>();
+            let mut cams = app
+                .world_mut()
+                .query_filtered::<&Projection, With<DungeonCamera>>();
+            let Projection::Orthographic(o) = cams.single(app.world()).expect("the scene camera")
+            else {
+                panic!("orthographic")
+            };
+            let ScalingMode::Fixed { height, .. } = o.scaling_mode else {
+                panic!("the dungeon frustum did not flex at {w}x{h}")
+            };
+            assert!(
+                (height - sizing.render_h as f32 / PPU).abs() < 1e-3,
+                "{w}x{h}: {height}"
+            );
+        }
     }
 
     #[test]
