@@ -60,6 +60,8 @@ export interface MatteOptions {
   tolerance?: number;
   /** Rings of background-contaminated fringe to remove after keying. */
   erode?: number;
+  /** Whether to strip magenta tint from remaining edge pixels (despill). */
+  despill?: boolean;
   /** Seeds of small pockets to key anyway — authored in the UI, never guessed. */
   keyEnclosed?: [number, number][];
   /** Seeds of large pockets to KEEP opaque, overriding the auto-key below. */
@@ -344,6 +346,31 @@ export function matte(
       if (colourDist(data[i], data[i + 1], data[i + 2], bg[0], bg[1], bg[2]) <= tol * 3) drop.push(p);
     }
     for (const p of drop) keyed[p] = 1;
+  }
+
+  // ── Despill.
+  // Edge pixels adjacent to transparency that carry a magenta hue but survive erode.
+  // We snap them to a dark grey/black selout ink instead of leaving a bright pink glow.
+  if (opts.despill) {
+    for (let p = 0; p < w * h; p++) {
+      if (keyed[p]) continue;
+      const x = p % w;
+      const y = (p / w) | 0;
+      const edge =
+        (x > 0 && keyed[p - 1]) || (x < w - 1 && keyed[p + 1]) ||
+        (y > 0 && keyed[p - w]) || (y < h - 1 && keyed[p + w]);
+      if (!edge) continue;
+      
+      const i = p * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      // Magenta detection: high red, high blue, low green
+      if (r > 70 && b > 70 && g < r * 0.75) {
+        // Snap to dark selout ink
+        out[i] = 20;
+        out[i + 1] = 20;
+        out[i + 2] = 25;
+      }
+    }
   }
 
   let n = 0;

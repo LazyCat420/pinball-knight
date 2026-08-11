@@ -1,4 +1,4 @@
 {
   "rows": ["idle", "walk", "attack", "death"],
-  "matte": { "bg": [255, 0, 255], "tolerance": 40, "autoKeyArea": 0.00001 }
+  "matte": { "bg": [255, 0, 255], "tolerance": 40, "autoKeyArea": 0.00001, "erode": 2, "despill": true }
 }
