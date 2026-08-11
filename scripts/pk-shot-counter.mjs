@@ -53,6 +53,11 @@ const { values: a } = parseArgs({
     port: { type: "string", default: "8795" },
     "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
     view: { type: "string", default: "1600x900" },
+    // `multiple` so `--then ArrowDown --then Enter` collects both. Without it
+    // `parseArgs` throws ERR_PARSE_ARGS_UNKNOWN_OPTION on the second one — and
+    // reading them out of `process.argv` by hand does not help, because the
+    // parser rejects the flag before any of that runs.
+    then: { type: "string", multiple: true, default: [] },
   },
 });
 
@@ -79,10 +84,7 @@ const STATIONS = {
  * unlooked-at for a week. `--then ArrowDown --then Enter` walks to the BREW
  * BOOK and opens it.
  */
-const THEN = process.argv.reduce(
-  (acc, v, i) => (v === "--then" && process.argv[i + 1] ? [...acc, process.argv[i + 1]] : acc),
-  [],
-);
+const THEN = a.then;
 
 const MIME = {
   ".html": "text/html",
