@@ -5,6 +5,42 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-11 — `pk-ab-dungeon`: the measurement device the dungeon never had,
+  and the defect it found in its first hour.**
+  The tavern has had an A/B rig since it was ported; the dungeon had nothing, so
+  "does the dungeon look right" was answered by screenshots pasted into a chat
+  window by hand. That is not a gate, and the consequence was structural: effort
+  flowed to the part of the port that HAD a number attached — the bit-exact
+  generator digests — while the part a player looks at had no instrument and
+  therefore no schedule pressure. Nine of twenty-three passes are bit-exact and
+  the screen had not changed once.
+  - Both sides are booted on the same level and seed in real host Chrome at the
+    one matched regime (1920x1080), and it leaves two frames, a captioned
+    side-by-side and a difference heatmap. Legacy is pinned with `?seed=` plus
+    the dev floor lock in localStorage, both written at DOCUMENT START because
+    both are read during boot.
+  - ⚠️ **Its first sheet was a loading screen.** Waiting on
+    `__dungeonBoss().level` alone photographed legacy's own "FORGING THE MACHINE
+    / 90%" card, because `state.level` is assigned before the floor is built.
+    The gate now also requires `floor-loading` to be off the GUI stack and a
+    live player to exist. The 28.5% diff it reported first time was a number
+    computed over a loading screen.
+  - ⚠️ **THE DUNGEON CAMERA WAS FRAMED 1.7x TOO CLOSE, ALWAYS.** `main.rs`
+    pinned `FixedVertical { VIEW_H }` with `VIEW_H = 11.25` — which is
+    `engineConfig.camera.viewH`, the config DEFAULT that legacy overwrites on
+    every frame: `pixel-pass.ts syncCameraFrustum` sets the half-extents from
+    `renderW/(2*PPU)` and `renderH/(2*PPU)`, with a comment saying PPU stays
+    pinned and the FRUSTUM is what moves. At 1920x1080 and PPU 56 that is
+    34.3 x 19.29 world units against the port's 11.25 — so every dungeon
+    screenshot this port has ever produced was framed wrong, including all of
+    yesterday's sign-offs. The dungeon now flexes with the lattice at zoom 1;
+    the tavern keeps `fitZoom`, which is the only difference between them.
+  - **A test was pinning the defect.** `the_scene_camera_ends_up_pointed_at_the
+    _lattice` asserted `FixedVertical` under the sentence "the dungeon keeps its
+    own framing" — a test can only say what the code does, and this one said it
+    in a sentence that sounded like a decision. It now asserts the flex, and
+    `the_dungeon_does_not_ride_the_tavern_zoom` pins the one real difference.
+
 - **2026-08-11 — Two regressions the GUI layer shipped with, both found by
   looking at the game rather than at a gate.**
   - ⚠️ **The tavern's `[E] DESCEND` prompt followed the player into the
