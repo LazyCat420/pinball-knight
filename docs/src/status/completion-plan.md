@@ -8,6 +8,12 @@ of those gates does not exist yet.
 Written 2026-08-10 with `main` at `ce686f6` (P2 pass 2 landed). Every number
 below is measured from the tree on that day, not estimated.
 
+> **2026-08-11 — the ordered queue lives in [build-out](build-out.md).** This
+> page is still the route to cutover and the sizing behind it; that one is the
+> work queue, written against a report from the real Windows build ("it renders
+> the maze but it's missing the textures/boosters, it's just the skeleton") and
+> it says which unported file each absence is.
+
 ## Where the port actually stands
 
 `legacy/src/game/pinball-knight` is **104,205 lines of source** plus 41,646
