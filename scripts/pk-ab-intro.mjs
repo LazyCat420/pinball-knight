@@ -140,6 +140,23 @@ const FREEZE_SETTLE_MS = 1200;
 /** A phase that has not appeared in this long means the sequence is not
  *  running — a skip gate fired, or it already finished. */
 const PHASE_TIMEOUT_MS = 40_000;
+/**
+ * How long the oracle's VIRTUAL clock may take to reach its target offset.
+ *
+ * ⚠️ This is not the same wait as `PHASE_TIMEOUT_MS`, and conflating them is
+ * what made `shatter` unmeasurable. The virtual clock advances one 1/60 s step
+ * per REAL rAF callback, so its target offset is reached in wall-clock time
+ * only if the browser is delivering frames at full rate. On a loaded box it is
+ * not: two runs on 2026-08-11 gave shatter diffs of 88.9 and 58.4, with the
+ * ORACLE's median luma at 119 then 10 — the oracle was photographed EARLIER in
+ * the phase than the port each time, while both captions said "frozen".
+ *
+ * The old code waited a fixed `FREEZE_SETTLE_MS` and shot whatever was there,
+ * which is exactly the shutter-outlives-the-phase failure the freeze seam
+ * exists to remove — reintroduced one level up. So: WAIT FOR THE FLAG, and if
+ * it never comes, say so instead of printing a number.
+ */
+const FROZEN_TIMEOUT_MS = 30_000;
 
 const MIME = {
   ".html": "text/html",
@@ -379,6 +396,33 @@ async function shootPhase(page, side, readPhase, phase, stamp) {
     if (seen !== phase) await page.waitForTimeout(POLL_MS);
   }
   if (seen !== phase) throw new Error(`${side}: phase "${phase}" never arrived`);
+
+  // WAIT FOR THE CLOCK TO REACH THE OFFSET, do not assume wall time got it
+  // there. The virtual clock (oracle side) ticks per rAF callback, so a busy
+  // box reaches t+0.45s of `shatter` long after 0.45 real seconds — or never,
+  // inside a phase that is only 0.95 s of virtual time. Polling the flag turns
+  // "the box is loaded" from a wrong number into a longer run.
+  const hasFlag = await page.evaluate(() => typeof window.__abFrozen === "function");
+  if (hasFlag) {
+    const f0 = Date.now();
+    let frozen = false;
+    while (Date.now() - f0 < FROZEN_TIMEOUT_MS && !frozen) {
+      frozen = await page.evaluate(() => window.__abFrozen());
+      if (!frozen) await page.waitForTimeout(POLL_MS);
+    }
+    if (!frozen) {
+      // Loud, and NOT a screenshot. A frame shot here is of a different instant
+      // than the other side's and every statistic computed from it describes
+      // the harness. This used to warn and shoot anyway.
+      throw new Error(
+        `${side}: the virtual clock never reached "${phase}"'s target offset in ` +
+          `${FROZEN_TIMEOUT_MS / 1000}s — the page is not being given frames fast enough. ` +
+          "Re-run with less load, or raise FROZEN_TIMEOUT_MS. Refusing to shoot a " +
+          "frame that is at a different instant than the other side's.",
+      );
+    }
+  }
+
   // It is HELD here by construction, but prove it rather than assume it: two
   // reads a settle apart must agree, or the freeze did not take and every
   // number below is describing a moving target again.
@@ -392,12 +436,9 @@ async function shootPhase(page, side, readPhase, phase, stamp) {
         "the seam is not wired on this side",
     );
   }
-  const froze = await page.evaluate(() =>
-    typeof window.__abFrozen === "function" ? window.__abFrozen() : "n/a",
-  );
   const file = join(OUT, `ab-intro-${phase}-${stamp}.png`);
   await page.screenshot({ path: file });
-  log(`  ${side} ${phase.padEnd(8)} frozen and shot${froze === false ? "  ⚠ CLOCK NOT FROZEN" : ""}`);
+  log(`  ${side} ${phase.padEnd(8)} frozen and shot`);
   return file;
 }
 

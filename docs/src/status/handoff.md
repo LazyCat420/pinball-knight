@@ -76,27 +76,47 @@ path of the FIRST scene.
 
 **Frozen A/B, both sides** (`node scripts/pk-ab-intro.mjs --no-build`):
 
-| phase | before textures | after (V-1) | note |
-|---|---:|---:|---|
-| run | 15.3 | 16.9 | ±3 run to run |
-| bonk | 23.7 | 14.6 | |
-| shatter | 46.1 | 58.4 | ⚠️ NOT A MEASUREMENT — see below |
-| sweep | 25.5 | **19.2** | stable across two runs |
-| title | 16.7 (was 39.5) | **13.3** | stable across two runs |
+⚠️ **THE RIG WAS FIXED AFTER V-1, SO DO NOT COMPARE ACROSS THE LINE BELOW.**
+Every number taken before the fix was partly describing the harness.
 
-`sweep` and `title` are the two phases where the title maze fills the frame,
-they moved the most, and they are the stable ones — which is what a texture
-change should look like.
+**The current baseline — fixed rig, both sides genuinely frozen:**
 
-⚠️ **`shatter` cannot be measured by this rig on a loaded box.** Two
-consecutive runs gave 88.9 and 58.4 with the ORACLE's median luma at 119 then
-10, and both printed `CLOCK NOT FROZEN` on the legacy side. The rig's virtual
-clock advances one 1/60 s step per real rAF callback, so when the box is busy
-it never reaches the target offset inside the phase and the oracle is
-photographed EARLIER in the shatter than the port is. The label still says
-"frozen", which is what makes it a trap. Fix the rig (drive the clock off a
-frame COUNT the harness controls, not off rAF delivery) before believing a
-shatter number.
+| phase | diff mean | p95 | over32 | median luma L/R |
+|---|---:|---:|---:|---|
+| run | 17.2 | 150 | 12.0% | 166 / 163 |
+| bonk | 16.9 | 141 | 13.7% | 171 / 165 |
+| **shatter** | **56.7** | 118 | 71.3% | **10 / 51** ← the largest real gap in the intro |
+| sweep | 25.0 | 73 | 39.7% | 40 / 41 |
+| title | **13.5** | 37 | 14.7% | 10 / 11 |
+
+### What the rig fix was, and why the old numbers were fiction
+
+The virtual clock advances one 1/60 s step per REAL rAF callback, and
+`shootPhase` waited a fixed 1.2 s and then photographed whatever was on screen.
+On a loaded box the clock had not reached its target offset by then, so **the
+oracle was shot EARLIER in the phase than the port** — while both captions said
+"frozen". That is the shutter-outlives-the-phase failure the freeze seam exists
+to remove, reintroduced one level up.
+
+Two consecutive pre-fix runs gave shatter 88.9 then 58.4, with the oracle's
+median luma 119 then 10. `sweep` moved too, 23 → 40 on the oracle side, which
+means its pre-fix 19.2 was also partly an artefact.
+
+`shootPhase` now POLLS `__abFrozen()` until it is true (30 s budget) and
+**throws rather than shooting** if it never is. A refused run costs a re-run; a
+shot one costs a number that gets written into a status page.
+
+### The gap this uncovered — `shatter` is genuinely wrong
+
+With both sides truly at t+0.45 s the sheet is unambiguous, and it is not a
+lighting or texture difference. **The oracle's 2D world has already collapsed
+into a thin horizontal band on a black screen; ours is still very nearly
+intact**, filling the frame with shards. Our shatter progresses far too slowly,
+and the knight plus its echo trail is drawn much larger than the oracle's.
+
+That is the next intro item, and it is now measurable. It also subsumes the
+"ball scale" note below: the oracle's actor at this instant is small and single,
+ours is large and triple.
 
 ### What is still open on the intro, in order of pixel impact
 
