@@ -34,8 +34,8 @@
 
 use crate::icons::icon;
 use crate::im::{
-    button, cut_left, cut_top, fill_rect, focus_ring, focusable, rect, scrim, sheet, stroke_rect,
-    text, well, Align, ButtonOpts, Rect, TextOpts, UiFrame,
+    button, cut_top, fill_rect, focus_ring, focusable, rect, scrim, sheet, stroke_rect, text, well,
+    Align, ButtonOpts, Rect, TextOpts, UiFrame,
 };
 use crate::painter::Rgba;
 use crate::theme::{Ui, GRID};
@@ -226,12 +226,17 @@ pub fn paint_alchemist(
     let mut body = sc.inner;
 
     // ── TABS ──
-    let mut tabs = cut_top(&mut body, TAB_H);
+    let tabs = cut_top(&mut body, TAB_H);
     let half = ((tabs.w - 6.0) / 2.0).floor();
     for (i, (id, label)) in [(AlchTab::Shelf, "THE SHELF"), (AlchTab::Brew, "BREW BOOK")]
         .into_iter()
         .enumerate()
     {
+        // ⚠️ THE ROW MUST NOT BE CONSUMED. This laid the tabs out from `tabs.x`
+        // AND `cut_left`-ed the row by the same width each pass, so the second
+        // tab was placed at `x + 2 * (half + 6)` — off the sheet entirely. The
+        // screenshot showed ONE tab and a counter with no way to reach the brew
+        // book at all. Index arithmetic OR a cursor; never both.
         let tr = rect(tabs.x + i as f64 * (half + 6.0), tabs.y, half, TAB_H - 2.0);
         let st = focusable(f, &tr, false);
         let on = v.tab == id;
@@ -255,7 +260,6 @@ pub fn paint_alchemist(
         if st.activated {
             act = Some(AlchemistAction::Tab(id));
         }
-        cut_left(&mut tabs, half + 6.0);
     }
     cut_top(&mut body, HEAD_GAP);
 
@@ -666,6 +670,48 @@ mod tests {
                     paint_alchemist(&mut f, &v, &mut scroll);
                 }
                 assert_eq!(scroll, 0.0, "{tab:?} scrolled at focus {focus}");
+            }
+        }
+    }
+
+    /// THE DEFECT THE SCREENSHOT FOUND AND SEVEN GREEN TESTS DID NOT.
+    ///
+    /// The tab row was laid out from an index AND advanced with `cut_left`, so
+    /// the BREW BOOK tab was placed 266px past where it belonged — off the
+    /// sheet, off the window. Every test still passed: `focusable` registers a
+    /// widget wherever it is, so focus 1 dutifully reported `Tab(Brew)` for a
+    /// button no player could see, and the counter shipped with no way to reach
+    /// half of itself.
+    ///
+    /// A widget's focus rect is where the pad tells the player to look. If it is
+    /// off the plate, the widget does not exist. This walks every focus index on
+    /// both tabs and asserts the rect is ON the sheet — the general form of the
+    /// bug, not a check for this one tab.
+    #[test]
+    fn every_focusable_lands_on_the_sheet() {
+        let x0 = (600.0 - SHEET_W) / 2.0;
+        let x1 = x0 + SHEET_W;
+        for tab in [AlchTab::Shelf, AlchTab::Brew] {
+            let v = view(tab);
+            for focus in 0..30 {
+                let fonts = Fonts::load_embedded();
+                let mut p = Painter::new(600, 338);
+                let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, empty_ui_input(), focus, 1);
+                paint_alchemist(&mut f, &v, &mut 0.0);
+                // `focusable` returns EARLY for a disabled widget, before it
+                // records the rect — so `None` here is "nothing focusable at
+                // this index, or it is greyed", not a failure.
+                let Some(r) = f.focus_rect else { continue };
+                assert!(
+                    r.x >= x0 && r.x + r.w <= x1,
+                    "{tab:?} focus {focus} is at x={}..{} — outside the sheet ({x0}..{x1})",
+                    r.x,
+                    r.x + r.w
+                );
+                assert!(
+                    r.y >= 0.0 && r.y + r.h <= 338.0,
+                    "{tab:?} focus {focus} is off the window vertically"
+                );
             }
         }
     }
