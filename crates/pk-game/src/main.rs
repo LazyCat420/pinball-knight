@@ -29,6 +29,7 @@
 mod dungeon_render;
 mod floor_loading;
 mod fx;
+mod gui;
 mod intro;
 mod overworld;
 mod post;
@@ -53,7 +54,7 @@ use pk_core::state::{simulate, Facing, FrameInput, SimState};
 #[cfg(target_arch = "wasm32")]
 use floor_loading::FloorLoadingRes;
 use real_floor::{
-    real_floor_request, spawn_real_floor_decor, ActiveFloor, RealFloorBoot, RealFloorFailure,
+    read_floor_plan, spawn_real_floor_decor, ActiveFloor, FloorPlan, RealFloorFailure,
 };
 
 /// legacy constants/world.ts
@@ -227,12 +228,16 @@ fn main() {
     // Read ONCE, here, and carried as a resource: `setup_dungeon` runs again
     // after every tavern hand-off, and re-reading the process arguments each
     // time would let one flag mean different things on floor 1 and floor 2.
-    let boot = RealFloorBoot(real_floor_request());
+    let plan = read_floor_plan();
     // Hub-first: a skipped intro lands in the tavern, not on a floor. Only
-    // the explicit dev hatch opens straight into the dungeon — and asking for
+    // the explicit dev hatches open straight into the dungeon — and asking for
     // a real floor IS asking for a floor, so it opens one rather than dropping
     // you in a hub with a flag that appears to have done nothing.
-    let start = if dungeon_boot_gate() || boot.requested() {
+    //
+    // ⚠️ `boot_into_floor`, NOT "is a generated floor planned". Every run
+    // generates floors now, so the second question is always yes and using it
+    // here would boot straight past the intro and the hub into a dungeon.
+    let start = if dungeon_boot_gate() || plan.boot_into_floor {
         AppState::FloorLoading
     } else if tavern::tavern_boot_gate() || intro_skip_gate() {
         AppState::Tavern
@@ -240,7 +245,7 @@ fn main() {
         AppState::Intro
     };
     let mut app = App::new();
-    app.insert_resource(boot);
+    app.insert_resource(plan);
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Pinball Knight (Rust slice)".into(),
@@ -255,6 +260,7 @@ fn main() {
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
     .add_plugins(tavern::TavernPlugin)
+    .add_plugins(gui::GuiPlugin)
     .add_plugins(FloorLoadingPlugin)
     .add_plugins(post::PostPlugin)
     .add_plugins(fx::FxPlugin)
@@ -288,6 +294,12 @@ fn main() {
         Update,
         dungeon_to_tavern.run_if(in_state(AppState::Dungeon)),
     )
+    .add_systems(
+        Update,
+        descend_at_exit
+            .run_if(in_state(AppState::Dungeon))
+            .run_if(resource_exists::<Sim>),
+    )
     .add_systems(OnExit(AppState::Dungeon), teardown_dungeon)
     .add_systems(
         FixedUpdate,
@@ -314,6 +326,8 @@ fn publish_stats(
     floor_err: Option<Res<RealFloorFailure>>,
     floor_timings: Option<Res<FloorTimings>>,
     loading_res: Option<Res<FloorLoadingRes>>,
+    plan: Res<FloorPlan>,
+    gui: Option<Res<gui::GuiLayer>>,
     state: Res<State<AppState>>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
@@ -388,6 +402,17 @@ fn publish_stats(
         ),
         _ => "null".into(),
     };
+    // The run's DEPTH, which outlives the floor standing on it. `floor` is
+    // `null` in the tavern and while a floor is loading — exactly the two
+    // moments a gate wants to ask "did the descend advance the level" — so the
+    // question is answered by the plan rather than by whatever happens to be
+    // installed. `null` on the demo arena, which has no levels.
+    let run_level_field = plan.level().map_or("null".to_string(), |l| l.to_string());
+    // The GUI layer: driven frames and painted frames. A menu that never ran
+    // and a menu that ran and was composited away are the same black screen.
+    let gui_field = gui
+        .as_ref()
+        .map_or("null".to_string(), |g| g.telemetry_json());
     let floor_error_field = match &floor_err {
         Some(e) => format!("\"{}\"", json_escape(&e.message)),
         None => "null".into(),
@@ -407,7 +432,7 @@ fn publish_stats(
             // sim-less count frozen at hand-off plus the sim's own tick: one
             // monotonic series across every state.
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{},"loading":{}}}"#,
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{}}}"#,
                 *ticks + sim.0.tick,
                 p.x,
                 p.z,
@@ -417,7 +442,9 @@ fn publish_stats(
                 tavern_field,
                 floor_field,
                 floor_error_field,
-                loading_field
+                loading_field,
+                run_level_field,
+                gui_field
             )
         }
         // No dungeon sim (e.g. the tavern owns the screen, or a real-floor
@@ -426,7 +453,7 @@ fn publish_stats(
         None => {
             *ticks += 1;
             format!(
-                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field}}}"#,
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field},"runLevel":{run_level_field},"gui":{gui_field}}}"#,
                 *ticks
             )
         }
@@ -852,9 +879,45 @@ fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>
 /// T enters the tavern from the dungeon — the stand-in for the P5 run flow
 /// (death / floor-clear / lobby), which is where `enterTavern` is called
 /// from in the legacy game.
-fn dungeon_to_tavern(keys: Res<ButtonInput<KeyCode>>, mut next: ResMut<NextState<AppState>>) {
+///
+/// Leaving for the hub ENDS the run, so the plan goes back to the floor a run
+/// starts on. Without this, walking out on floor 6 and pressing DESCEND would
+/// resume on floor 7 — a hub that continues a run it has no record of.
+fn dungeon_to_tavern(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut plan: ResMut<FloorPlan>,
+    mut next: ResMut<NextState<AppState>>,
+) {
     if keys.just_pressed(KeyCode::KeyT) {
+        plan.restart();
         next.set(AppState::Tavern);
+    }
+}
+
+/// Standing on the provisional exit takes the run one floor deeper.
+///
+/// ⚠️ THE MARKER IS NOT STAIRS. Pass 21 authors `T_STAIRS` and pass 14 re-picks
+/// the tile this uses, so what this reads is `provisional_exit_tile` and what a
+/// player walks onto is the amber pillar `spawn_real_floor_decor` puts there.
+/// When the real stairs land, the tile moves and this system reads the new one;
+/// the RULE — touch the exit, descend — is the part that is not provisional.
+///
+/// This is what makes floors PLURAL. Before it the exit was a decoration, every
+/// run was one floor long, and the level was fixed for the process by a flag.
+fn descend_at_exit(
+    sim: Res<Sim>,
+    floor: Option<Res<ActiveFloor>>,
+    mut plan: ResMut<FloorPlan>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    // No generated floor, no exit: the demo arena has no tile to stand on and
+    // must not descend into one.
+    let Some(floor) = floor else {
+        return;
+    };
+    if floor.stands_on_exit(sim.0.player.x, sim.0.player.z) {
+        plan.advance();
+        next.set(AppState::FloorLoading);
     }
 }
 

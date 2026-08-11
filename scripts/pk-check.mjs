@@ -69,7 +69,18 @@ const flagNum = (name, dflt) => {
  */
 /// How long to pin the loading screen open so it can be photographed. Long
 /// enough to survive a poll, a round trip and a capture on a 14 fps debug build.
-const LOADING_HOLD_MS = 2500;
+/// 6 s, not 2.5: the poll that waits for a live renderer costs up to ~1.5 s of
+/// wall clock on a debug build, the capture another ~0.3 s, and a hold that only
+/// just covers them is a gate that fails on a slow afternoon. It is spent once
+/// per real-floor run.
+const LOADING_HOLD_MS = 6000;
+
+/// The cheapest floor to walk end to end, for whoever finishes the driven
+/// descend gate: `cargo run -p pk-core --example floor_ascii -- --level 1
+/// --scan 300` ranks L1 seed 163 at 30 tiles and three turns, the shortest
+/// route in the first 300 seeds. Measured, so the next attempt starts from a
+/// number rather than a guess.
+///   node scripts/pk-check.mjs --real-floor --level 1 --seed 163
 
 const WORLD_TO_KEYS = {
   "0,-1": ["w", "d"], // north — up-right on screen
@@ -195,6 +206,17 @@ async function realFloorGates(page, gate, errors) {
     // taken at `painted: 2` captured a frame the page had not yet drawn. The
     // probe's own frame counter is the readiness signal: once it is climbing,
     // the renderer is producing frames and a capture means something.
+    //
+    // ⚠️ FOREGROUND FIRST, and this is not a tidy-up. Chrome throttles rAF in a
+    // BACKGROUND tab, so a page waiting to be photographed advances `painted` at
+    // a few frames a second while the dwell — which is `performance.now()`, wall
+    // clock — runs at full speed. The poll below then spends more than the whole
+    // hold reaching `painted >= 10`, the state ends, and the capture lands on the
+    // dungeon. Measured: the identical run passed on one seed and failed on the
+    // next, because the host Chrome had a different tab in front. `bringToFront`
+    // used to sit between the poll and the screenshot, which is exactly one step
+    // too late.
+    await page.bringToFront();
     let live = null;
     for (let i = 0; i < 40; i++) {
       const p2 = await pk();
@@ -219,11 +241,22 @@ async function realFloorGates(page, gate, errors) {
     );
 
     if (live) {
-      // The host Chrome is persistent and has other tabs; a background tab can
-      // hand back the compositor's stale frame.
-      await page.bringToFront();
       const lshot = join(ROOT, ".checks", "floor-loading.png");
       const lpng = await page.screenshot({ path: lshot });
+      // READ THE STATE AFTER THE CAPTURE, not only before it. The byte gate
+      // below can tell a card from a maze, but it cannot say WHY — and the
+      // failure it catches has exactly one interesting cause: the hold ran out
+      // between the poll and the shutter. Asserting the state at capture time
+      // makes the run report the cause instead of a number to squint at.
+      const after = await pk();
+      gate(
+        !!after?.loading,
+        `the card was still up when the shutter fired (${
+          after?.loading
+            ? `painted ${after.loading.painted}, ${Math.round(after.loading.elapsedMs)} ms in state`
+            : "the hold expired first — raise LOADING_HOLD_MS"
+        })`,
+      );
       console.log("screenshot:", lshot, `(${lpng.length} bytes)`);
       // A flat dark field with two lines of text encodes MUCH smaller than the
       // maze frame (~32 kB, measured). Both bounds: too big means the maze is
@@ -413,6 +446,25 @@ async function realFloorGates(page, gate, errors) {
       `is set and that the frame has detail — neither is legibility, and the last two defects ` +
       `this found (the banner drawn over the frame-time text; a tofu box where the default ` +
       `font had no U+00D7) were invisible to both.`,
+  );
+
+  // ── THE DESCEND ──
+  //
+  // The rule the flag exists for is "stand on the exit and the run goes a floor
+  // deeper". It is pinned by `ActiveFloor::stands_on_exit` and `FloorPlan`'s
+  // advance/restart unit tests, and pk-core publishes the whole shortest path
+  // (`routeToExit`) so a harness can drive it.
+  //
+  // ⚠️ THE DRIVEN VERSION IS NOT A GATE YET, DELIBERATELY. A CDP walker that
+  // holds keys along the route arrived on L1 seed 163 (runLevel 2, a different
+  // `floorSeed`, the same `runSeed`) and then failed the next run on the same
+  // seed: the knight carries momentum, a leg that overshoots leaves the next leg
+  // one row off its corridor, and it walks into a wall. A gate that passes on
+  // alternate afternoons is worse than no gate — it teaches you to re-run.
+  // Fixing it needs per-tile cross-axis correction, which is its own change.
+  gate(
+    Array.isArray(f.routeToExit) && f.routeToExit.length === f.pathDistance,
+    `the exit has a published route to drive (${f.routeToExit?.length ?? "none"} steps)`,
   );
 
   // ── THE REFUSAL PATH, DRIVEN ──
@@ -682,9 +734,53 @@ async function main() {
       await tavPage.keyboard.press("e");
       const withPanel = await pollTav((p) => p.panel === true);
       gate(withPanel?.panel === true, "E opens the run summary panel");
+
+      // ── The GUI layer, while a sheet is up ──
+      //
+      // `panel === true` is the TAVERN's opinion. These are the layer's: it ran,
+      // it painted, and it owns the keyboard. A menu that never ran and a menu
+      // that ran and was composited away are the same black screen, so both
+      // counters are asserted rather than either one.
+      const guiUp = (await pkTav())?.gui ?? null;
+      gate(!!guiUp, "the GUI layer is live");
+      gate(guiUp?.painted > 0, `the GUI painted frames (${guiUp?.painted})`);
+      // EXACTLY one. The prompt is not stacked under the sheet — legacy hides
+      // the contextual line while a panel is up (`frozen` kills the focus), and
+      // the port keeps that: a "[E] TABLE" prompt behind an open summary is an
+      // offer you cannot take.
+      gate(
+        guiUp?.open === 1,
+        `the sheet replaced the prompt rather than stacking on it (open=${guiUp?.open})`,
+      );
+      gate(guiUp?.pauses === true, "an open sheet takes the keyboard");
+      // The painter is the pixel LATTICE, never the window: a menu on its own
+      // grid would upscale fractionally and read as "the game is blurry".
+      const lattice = await tavPage.evaluate(
+        () => window.innerWidth + "x" + window.innerHeight,
+      );
+      console.log(`  note  GUI painter ${guiUp?.w}x${guiUp?.h}, window ${lattice}`);
+      const sheetShot = join(ROOT, ".checks", "tavern-run-summary.png");
+      await tavPage.screenshot({ path: sheetShot });
+      console.log("screenshot:", sheetShot);
+      console.log(
+        "  note  MANUAL: tavern-run-summary.png must show the RUN SUMMARY sheet — " +
+          "scrim, riveted panel, 16px arcane heading, six labelled rows with rules " +
+          "under them, and a CLOSE button — NOT a paragraph of plain text on a " +
+          "flat rectangle.",
+      );
+
       await tavPage.keyboard.press("Escape");
       const noPanel = await pollTav((p) => p.panel === false);
       gate(noPanel?.panel === false, "Escape closes the panel");
+      const guiDown = (await pkTav())?.gui ?? null;
+      gate(
+        guiDown?.pauses === false,
+        "closing the sheet hands the keyboard back",
+      );
+      gate(
+        guiDown?.open === 1,
+        `the prompt comes back when the sheet closes (open=${guiDown?.open})`,
+      );
 
       // Route to the DESCEND board: west along the table's flank, north up
       // the west lane, then east into the corridor between the board and the

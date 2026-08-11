@@ -1,11 +1,19 @@
-//! `--real-floor` — boot the ported generator instead of `demo_floor(7)`.
+//! THE FLOOR A DESCEND BUILDS — the ported generator, and `--demo-floor` for
+//! the 25×25 pillar arena that used to be the only thing here.
 //!
-//! The dungeon has always rendered a 25×25 bordered room with a pillar scatter,
-//! because that is what `pk_core::state::demo_floor` builds and the maze port
-//! had nothing to hand it. Nine of twenty-three passes have landed and their
-//! output is bit-identical to the legacy oracle at the `plan-doorways` boundary
-//! on all ten corpus floors, so the shell can now stand on a real one. Behind a
-//! flag, because the floor is nine passes deep and the flag is what says so.
+//! The dungeon rendered that arena on every descend, because that is what
+//! `pk_core::state::demo_floor` builds and the maze port had nothing to hand it.
+//! Nine of twenty-three passes have landed and their output is bit-identical to
+//! the legacy oracle at the `plan-doorways` boundary on all ten corpus floors,
+//! so the shell stood on a real one behind `--real-floor` — and then nobody saw
+//! a maze, because the flag was off in the game everybody actually plays.
+//!
+//! **The default is now the generated floor.** The flag that used to turn it on
+//! survives as the flag that opens straight onto one, and `--demo-floor` is what
+//! asks for the arena by name. The reasoning for the old default was that nine
+//! passes of twenty-three is not a finished floor; that is still true, and it is
+//! what the on-screen `P9` banner says. It is not a reason to ship a game whose
+//! dungeon is a pad arena.
 //!
 //! ## THREE THINGS THIS DELIBERATELY DOES NOT DO
 //!
@@ -29,13 +37,19 @@
 //! collider from the renderer with no symptom until a wall stopped being where
 //! it looks.
 //!
-//! ## The flag, three ways
+//! ## The flags, three ways
 //!
-//! | target | request | level | run seed |
-//! |---|---|---|---|
-//! | wasm   | `?real-floor=1` | `&level=N` | `&seed=N` |
-//! | native | `--real-floor`  | `--level N` | `--seed N` |
-//! | native | `PK_REAL_FLOOR=1` | `PK_LEVEL=N` | `PK_SEED=N` |
+//! | target | open on a floor | the demo arena | level | run seed |
+//! |---|---|---|---|---|
+//! | wasm   | `?real-floor=1`   | `?demo-floor=1`   | `&level=N` | `&seed=N` |
+//! | native | `--real-floor`    | `--demo-floor`    | `--level N` | `--seed N` |
+//! | native | `PK_REAL_FLOOR=1` | `PK_DEMO_FLOOR=1` | `PK_LEVEL=N` | `PK_SEED=N` |
+//!
+//! `--level`/`--seed` are read whether or not `--real-floor` is: they say which
+//! floor a run STARTS on, and a run now starts on a generated floor by default.
+//! [`FloorPlan::advance`] walks the level up from there as the exit is reached,
+//! and [`FloorPlan::restart`] puts it back — to `--level`'s value, so a flag
+//! survives a trip through the tavern instead of quietly meaning floor 1.
 //!
 //! The wasm side reads `location.search` through `web_sys::UrlSearchParams` and
 //! never `js_sys::eval`. The rest of this shell still evals its query reads (see
@@ -52,9 +66,9 @@ use pk_core::maze::floor_spec::{
 };
 use pk_core::maze::track_floor::{TrackFloor, PASSES_LANDED};
 
-/// The level a bare `--real-floor` asks for — the floor a run actually opens on.
+/// The level a run opens on when nothing says otherwise.
 const DEFAULT_LEVEL: i32 = 1;
-/// The run seed a bare `--real-floor` asks for.
+/// The run seed a run opens on when nothing says otherwise.
 const DEFAULT_RUN_SEED: u32 = 1;
 
 /// What was asked for, once it has parsed.
@@ -115,15 +129,17 @@ impl std::fmt::Display for RealFloorRequestError {
 /// The whole flag layer as one pure function, so it can be tested without a
 /// browser, a process or an `App`.
 ///
-/// `None` means "not asked for" and is the only path that leaves the demo floor
-/// alone. The three call sites below each turn their platform into these two
-/// arguments and then agree by construction.
+/// `generated` is the answer to "should a descend build a real floor", which is
+/// now YES unless `--demo-floor` says otherwise. `None` out means the demo
+/// arena, and it is reachable only by asking for it by name — the inversion this
+/// module's header is about. The call sites below each turn their platform into
+/// these arguments and then agree by construction.
 fn parse_request(
-    asked: bool,
+    generated: bool,
     read: impl Fn(&'static str) -> Option<String>,
     bad: impl Fn(&'static str, String) -> RealFloorRequestError,
 ) -> Option<Result<RealFloorRequest, RealFloorRequestError>> {
-    if !asked {
+    if !generated {
         return None;
     }
     let level = match read("level") {
@@ -147,43 +163,48 @@ fn parse_request(
     Some(Ok(RealFloorRequest { level, run_seed }))
 }
 
-/// Read the request off whichever platform this is.
+/// Read the plan off whichever platform this is.
 #[cfg(target_arch = "wasm32")]
-pub fn real_floor_request() -> Option<Result<RealFloorRequest, RealFloorRequestError>> {
+pub fn read_floor_plan() -> FloorPlan {
     let Some(win) = web_sys::window() else {
-        // Not an error unless the flag was asked for — and it cannot have been,
-        // since there is no URL to ask on.
-        return None;
+        // No window is not a bad request — it is a target with no URL to ask on,
+        // so the default answers and the game generates a floor.
+        return FloorPlan::of(parse_request(
+            true,
+            |_| None,
+            |key, value| RealFloorRequestError::InvalidQuery { key, value },
+        ));
     };
     let Ok(search) = win.location().search() else {
-        return Some(Err(RealFloorRequestError::BrowserContextMissing));
+        return FloorPlan::of(Some(Err(RealFloorRequestError::BrowserContextMissing)));
     };
     let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search) else {
-        return Some(Err(RealFloorRequestError::QueryReadFailed));
+        return FloorPlan::of(Some(Err(RealFloorRequestError::QueryReadFailed)));
     };
-    // `?real-floor` with no value is as much a request as `?real-floor=1`;
-    // `?real-floor=0` is not. Same three-way reading the legacy query flags use.
-    let asked = match params.get("real-floor") {
+    // `?x` with no value is as much a request as `?x=1`; `?x=0` is not. Same
+    // three-way reading the legacy query flags use.
+    let flag = |name: &str| match params.get(name) {
         None => false,
         Some(v) => v != "0" && v != "false",
     };
-    parse_request(
-        asked,
+    let plan = parse_request(
+        !flag("demo-floor"),
         |k| params.get(k),
         |key, value| RealFloorRequestError::InvalidQuery { key, value },
-    )
+    );
+    FloorPlan {
+        boot_into_floor: flag("real-floor"),
+        ..FloorPlan::of(plan)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn real_floor_request() -> Option<Result<RealFloorRequest, RealFloorRequestError>> {
+pub fn read_floor_plan() -> FloorPlan {
     let args: Vec<String> = std::env::args().collect();
-    let env_asked = std::env::var("PK_REAL_FLOOR")
-        .map(|v| v == "1")
-        .unwrap_or(false);
-    let cli_asked = args.iter().any(|a| a == "--real-floor");
-    if !(env_asked || cli_asked) {
-        return None;
-    }
+    let asked = |cli: &str, env: &str| {
+        args.iter().any(|a| a == cli) || std::env::var(env).map(|v| v == "1").unwrap_or(false)
+    };
+    let demo = asked("--demo-floor", "PK_DEMO_FLOOR");
     // The CLI wins over the environment, because the environment is the thing
     // you forgot was exported.
     let cli = |flag: &'static str| -> Option<String> {
@@ -210,7 +231,7 @@ pub fn real_floor_request() -> Option<Result<RealFloorRequest, RealFloorRequestE
         from_cli.set(false);
         std::env::var(env_key(flag)).ok()
     };
-    parse_request(cli_asked || env_asked, read, |key, value| {
+    let plan = parse_request(!demo, read, |key, value| {
         if from_cli.get() {
             RealFloorRequestError::InvalidCli {
                 argument: format!("--{key} {value}"),
@@ -221,20 +242,84 @@ pub fn real_floor_request() -> Option<Result<RealFloorRequest, RealFloorRequestE
                 value,
             }
         }
-    })
+    });
+    FloorPlan {
+        boot_into_floor: asked("--real-floor", "PK_REAL_FLOOR"),
+        ..FloorPlan::of(plan)
+    }
 }
 
-/// The boot-time answer, evaluated once in `main` and read by every descent.
+/// WHAT THE NEXT DESCEND BUILDS, and how deep the run is.
 ///
-/// A resource rather than a call inside `setup_dungeon`, because `setup_dungeon`
-/// runs again after every tavern hand-off and re-reading the process arguments
-/// each time would let a flag mean different things on floor 1 and floor 2.
+/// Read once in `main` and carried as a resource: the loading state runs again
+/// after every hand-off, and re-reading the process arguments each time would
+/// let one flag mean different things on floor 1 and floor 2. It is also the
+/// only thing that knows a run has a SECOND floor — the level lives here rather
+/// than in [`ActiveFloor`], which is torn down with the scene standing on it.
 #[derive(Resource)]
-pub struct RealFloorBoot(pub Option<Result<RealFloorRequest, RealFloorRequestError>>);
+pub struct FloorPlan {
+    /// The floor the next descend builds. `None` is the demo arena, and is now
+    /// reachable only by asking for it: see this module's header.
+    pub next: Option<Result<RealFloorRequest, RealFloorRequestError>>,
+    /// The level [`Self::restart`] goes back to — `--level`'s value, or 1.
+    ///
+    /// Carried rather than re-derived from `next`, because `next` is the thing
+    /// that MOVES. A restart that read the current level would put a run that
+    /// died on floor 6 back on floor 6.
+    pub start_level: i32,
+    /// Did a flag ask to open straight onto a floor, skipping intro and hub?
+    ///
+    /// Separate from `next` being `Some`, and the split is the whole point of
+    /// the inversion: every run generates floors now, so "generates floors" can
+    /// no longer be the thing that decides whether to skip the tavern.
+    pub boot_into_floor: bool,
+}
 
-impl RealFloorBoot {
-    pub fn requested(&self) -> bool {
-        self.0.is_some()
+impl FloorPlan {
+    /// Wrap a parsed request, taking the start level from it.
+    pub(crate) fn of(next: Option<Result<RealFloorRequest, RealFloorRequestError>>) -> Self {
+        let start_level = match &next {
+            Some(Ok(r)) => r.level,
+            _ => DEFAULT_LEVEL,
+        };
+        Self {
+            next,
+            start_level,
+            boot_into_floor: false,
+        }
+    }
+
+    /// The level the next descend builds, if it builds a generated floor.
+    ///
+    /// Read by the wasm telemetry (`__pk.runLevel`) and by this module's tests.
+    /// Native has no `window.__pk`, so the same `allow` the rest of the probe
+    /// surface carries applies here rather than the method being cfg'd — a
+    /// method that existed on one target is how a browser-only path stops being
+    /// compiled on the target CI actually runs.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub fn level(&self) -> Option<i32> {
+        match &self.next {
+            Some(Ok(r)) => Some(r.level),
+            _ => None,
+        }
+    }
+
+    /// One floor deeper — the exit was reached.
+    ///
+    /// A no-op on the demo arena and on a malformed request: neither has a level
+    /// to advance, and advancing one anyway would turn a flag typo into a run
+    /// that silently starts generating floors.
+    pub fn advance(&mut self) {
+        if let Some(Ok(r)) = &mut self.next {
+            r.level += 1;
+        }
+    }
+
+    /// Back to the floor this run starts on — a new run out of the tavern.
+    pub fn restart(&mut self) {
+        if let Some(Ok(r)) = &mut self.next {
+            r.level = self.start_level;
+        }
     }
 }
 
@@ -329,6 +414,18 @@ impl ActiveFloor {
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub fn telemetry_json(&self) -> String {
         let i = &self.info;
+        // The whole shortest path, so a browser gate can DRIVE to the exit
+        // rather than assert that a number in an array says it could. The
+        // descend rule is "stand on the exit"; the only honest test of a rule
+        // about walking is a walk.
+        let route = {
+            let steps: Vec<String> = i
+                .route_to_exit
+                .iter()
+                .map(|(di, dj)| format!("[{di},{dj}]"))
+                .collect();
+            format!("[{}]", steps.join(","))
+        };
         let probe = match &i.wall_probe {
             Some(p) => format!(
                 r#"{{"from":[{},{}],"input":[{},{}],"ticks":{},"wallTile":[{},{}],"expectedBlockedAxis":"{}","maxAllowedTravel":{}}}"#,
@@ -345,7 +442,7 @@ impl ActiveFloor {
             None => "null".into(),
         };
         format!(
-            r#"{{"source":"track-floor","level":{},"runSeed":{},"floorSeed":{},"pass":{},"w":{},"h":{},"archetype":"{}","tileDigest":{},"startTile":[{},{}],"startWorld":[{},{}],"exitTile":[{},{}],"exitWorld":[{},{}],"pathDistance":{},"firstPathStep":[{},{}],"debugBanner":true,"wallProbe":{probe}}}"#,
+            r#"{{"source":"track-floor","level":{},"runSeed":{},"floorSeed":{},"pass":{},"w":{},"h":{},"archetype":"{}","tileDigest":{},"startTile":[{},{}],"startWorld":[{},{}],"exitTile":[{},{}],"exitWorld":[{},{}],"pathDistance":{},"firstPathStep":[{},{}],"routeToExit":{route},"debugBanner":true,"wallProbe":{probe}}}"#,
             self.request.level,
             self.request.run_seed,
             self.spec.floor_seed,
@@ -391,6 +488,19 @@ impl ActiveFloor {
             ));
         }
         Ok(())
+    }
+
+    /// Is a body at `(x, z)` standing on the provisional exit tile?
+    ///
+    /// A method rather than four lines inside the system, so the one thing that
+    /// can silently go wrong here is testable: `world_to_tile` takes `(x, z)`
+    /// and the tile is `(i, j)`, and a transposition of either pair produces a
+    /// perfectly plausible exit somewhere else on the floor — an exit that never
+    /// triggers reads exactly like an exit that is decoration, which is what it
+    /// was before this system existed.
+    pub fn stands_on_exit(&self, x: f64, z: f64) -> bool {
+        let t = self.info.provisional_exit_tile;
+        pk_core::grid::world_to_tile(&self.track.grid, x, z) == (t.i, t.j)
     }
 
     /// Where the exit marker goes, at the height it reads at from the 38° camera.
@@ -523,13 +633,76 @@ mod tests {
     /// which is the reason it is a pure function taking a reader. The three real
     /// entry points differ only in where the strings come from.
     #[test]
-    fn not_asking_for_a_real_floor_leaves_the_demo_floor_alone() {
+    fn only_asking_for_the_demo_arena_gets_the_demo_arena() {
         let none = parse_request(
             false,
             |_| Some("3".into()),
             |key, value| RealFloorRequestError::InvalidQuery { key, value },
         );
-        assert!(none.is_none(), "an unrequested flag must not build a floor");
+        assert!(
+            none.is_none(),
+            "--demo-floor must get the arena, level=3 or not"
+        );
+    }
+
+    /// THE INVERSION, as an assertion: a run that asks for nothing at all now
+    /// generates a floor. This is the whole of the "the maze levels don't
+    /// render" report — the generator worked, the flag that turned it on was
+    /// off, and the game everybody plays passes no flags.
+    #[test]
+    fn asking_for_nothing_generates_a_floor() {
+        let plan = FloorPlan::of(parse_request(
+            true,
+            |_| None,
+            |key, value| RealFloorRequestError::InvalidQuery { key, value },
+        ));
+        assert_eq!(plan.level(), Some(DEFAULT_LEVEL));
+        assert!(
+            !plan.boot_into_floor,
+            "generating floors must not also mean skipping the intro and the hub"
+        );
+    }
+
+    /// The run walks DOWN and restarts at the floor the flags named — not at 1,
+    /// and not at wherever it happened to be standing.
+    #[test]
+    fn the_plan_descends_and_restarts_where_the_flag_said() {
+        let mut plan = FloorPlan::of(Some(Ok(RealFloorRequest {
+            level: 5,
+            run_seed: 9,
+        })));
+        assert_eq!(plan.start_level, 5);
+        plan.advance();
+        plan.advance();
+        assert_eq!(plan.level(), Some(7));
+        assert_eq!(
+            plan.next,
+            Some(Ok(RealFloorRequest {
+                level: 7,
+                run_seed: 9
+            })),
+            "the RUN seed is the run's, and must not move with the level"
+        );
+        plan.restart();
+        assert_eq!(plan.level(), Some(5));
+    }
+
+    /// Neither the arena nor a typo has a level, and advancing one anyway would
+    /// turn `--demo-floor` into a generated floor at the first exit.
+    #[test]
+    fn a_floorless_plan_has_no_level_to_advance() {
+        for mut plan in [
+            FloorPlan::of(None),
+            FloorPlan::of(Some(Err(RealFloorRequestError::InvalidCli {
+                argument: "--level banana".into(),
+            }))),
+        ] {
+            let before = format!("{:?}", plan.next);
+            plan.advance();
+            plan.restart();
+            assert_eq!(plan.level(), None);
+            assert_eq!(format!("{:?}", plan.next), before);
+        }
     }
 
     #[test]
@@ -670,6 +843,34 @@ mod tests {
         assert_eq!(tf.translation.z, floor.info.provisional_exit_world.1 as f32);
     }
 
+    /// The descend trigger, at the two places whose answers must differ.
+    ///
+    /// A transposed `(x, z)` or `(i, j)` still answers TRUE somewhere on the
+    /// floor, so the negative half is the half that has teeth: the spawn is the
+    /// one tile a player is guaranteed to stand on, and an exit test that
+    /// accepted it would descend on arrival forever.
+    #[test]
+    fn standing_on_the_exit_is_the_exit_and_the_spawn_is_not() {
+        let floor = pinned();
+        let (ex, ez) = floor.info.provisional_exit_world;
+        assert!(floor.stands_on_exit(ex, ez));
+        // Anywhere within the tile, not just dead centre — a body has a radius.
+        assert!(floor.stands_on_exit(ex + 0.4, ez - 0.4));
+        let (sx, sz) = floor.info.start_world;
+        assert!(
+            !floor.stands_on_exit(sx, sz),
+            "the spawn must not read as the exit"
+        );
+        // And the transposition specifically: swapping the world pair lands on a
+        // different tile on this floor, so it must not answer true.
+        assert_ne!(
+            (ex, ez),
+            (ez, ex),
+            "pick a fixture whose exit is off the diagonal or this proves nothing"
+        );
+        assert!(!floor.stands_on_exit(ez, ex));
+    }
+
     /// The banner names the floor on screen. Asserted on CONTENT rather than
     /// length, because the whole job of the banner is that a screenshot says
     /// which floor it is showing.
@@ -715,6 +916,20 @@ mod tests {
         assert_eq!(v["startTile"][0], floor.info.start_tile.i);
         assert_eq!(v["startWorld"][0], floor.info.start_world.0);
         assert_eq!(v["pathDistance"], floor.info.path_distance);
+        // The route is the payload a browser gate DRIVES, so it is checked as a
+        // route and not as a field that exists: same length as the distance, and
+        // the same steps pk-core derived, in order.
+        let route = v["routeToExit"]
+            .as_array()
+            .expect("routeToExit is an array");
+        assert_eq!(route.len(), floor.info.route_to_exit.len());
+        assert_eq!(route.len() as i32, floor.info.path_distance);
+        for (got, (di, dj)) in route.iter().zip(&floor.info.route_to_exit) {
+            assert_eq!(
+                (got[0].as_i64(), got[1].as_i64()),
+                (Some(*di as i64), Some(*dj as i64))
+            );
+        }
         let p = floor
             .info
             .wall_probe
