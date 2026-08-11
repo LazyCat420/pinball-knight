@@ -1,0 +1,3 @@
+title = Pinball Knight Architecture & Sprite Pipeline
+subtitle = Rust/WebGPU Engine, Sprite-Forge, & Nano Banana Art Pipeline
+repo = LazyCat420/pinball-knight
