@@ -53,6 +53,14 @@
 //!   turns 29 convex guides into concave bowls. `owner` is present on every arc
 //!   in all three exports, so it stays required-shaped (`Option`, but never
 //!   absent in practice).
+//! - `grid.surfaces`: one byte per tile, and **two vocabularies share it** — a
+//!   walkable tile carries a `FLOOR_*` id, a solid one a `WALL_*` id
+//!   (`surface-paint.ts:112-116`). Measured on L3-s1: 624 SAND, 440 STEEL and
+//!   462 FLOWSTONE floor tiles, plus 455 MUD, 89 BRASS and 74 RUBBER walls —
+//!   and **no ice on any of the three floors**, because ice is a modifier's
+//!   material and none of them rolled it. Anything reading
+//!   the byte must branch on walkability first; `dungeon_render::wash_buckets`
+//!   does, and getting it backwards gives every icy floor mud physics silently.
 //! - `plan.rooms` is `[]` on every floor, and that is CORRECT rather than a
 //!   dropped field: `spawn/floor-authoring.ts:162-171` authors room rects only
 //!   on the legacy growing-tree branch (half-scale cell coords, scaled ×2). A
@@ -315,6 +323,11 @@ struct GridExport {
     h: i32,
     t: Vec<u8>,
     shapes: Vec<u8>,
+    /// What each tile is MADE OF. Added to the exporter 2026-08-11 — before
+    /// that the port's ice was stone to `pk_core::pinball`'s friction and
+    /// steering as well as to the eye.
+    #[serde(default)]
+    surfaces: Option<Vec<u8>>,
     arcs: Option<Vec<ArcExport>>,
     arc_idx: Option<Vec<i32>>,
 }
@@ -335,6 +348,13 @@ impl GridExport {
         };
         check("t", self.t.len())?;
         check("shapes", self.shapes.len())?;
+        let surfaces = match self.surfaces {
+            None => None,
+            Some(v) => {
+                check("surfaces", v.len())?;
+                Some(v)
+            }
+        };
 
         let arcs: Vec<ArcFeature> = self
             .arcs
@@ -359,10 +379,7 @@ impl GridExport {
             h: self.h,
             t: self.t,
             shapes: self.shapes,
-            // The exporter does not carry surfaces — `surface-paint.ts` is
-            // unported on both sides. Absent reads as 0, the neutral surface,
-            // so physics does not branch on it.
-            surfaces: None,
+            surfaces,
             arcs,
             arc_idx,
         })
@@ -901,6 +918,104 @@ mod tests {
         assert!(serde_json::from_str::<Tile>(r#"{"i":1,"j":2}"#).is_ok());
     }
 
+    /// The floor's MATERIAL byte arrives, and it is not all stone.
+    ///
+    /// This is the field the export did not carry until 2026-08-11. Without it
+    /// `pk_core::pinball` reads `surface_at` as 0 everywhere and an ice patch
+    /// has stone friction — a parity gap with no visual symptom beyond the
+    /// missing wash, which is exactly the kind that survives a screenshot
+    /// review.
+    #[test]
+    fn the_floor_carries_what_it_is_made_of() {
+        for (level, seed, _) in EMBEDDED {
+            let f = load(*level, *seed).unwrap();
+            let surfaces = f
+                .grid
+                .surfaces
+                .as_ref()
+                .unwrap_or_else(|| panic!("L{level} carries no surface byte"));
+            assert_eq!(surfaces.len(), f.grid.t.len(), "L{level} surface length");
+            let painted = surfaces.iter().filter(|&&s| s != 0).count();
+            assert!(
+                painted > 100,
+                "L{level} has only {painted} painted tiles — paintSurfaces covers ~1,900"
+            );
+        }
+    }
+
+    /// **The two vocabularies are real, and this measures them.**
+    ///
+    /// A walkable tile's byte is a `FLOOR_*` id and a solid tile's is a `WALL_*`
+    /// id (`surface-paint.ts:112-116`). They overlap numerically — 1 is
+    /// `FLOOR_ICE` on one side of the branch and `WALL_RUBBER` on the other — so
+    /// no assertion about the byte alone can catch a reader that forgets to
+    /// branch. What CAN be asserted is that both populations are non-empty and
+    /// that they carry different mixes, which is what makes the confusion
+    /// possible in the first place.
+    #[test]
+    fn the_surface_byte_carries_two_vocabularies() {
+        let f = load(3, 1).unwrap();
+        let surfaces = f.grid.surfaces.as_ref().unwrap();
+        let (mut on_floor, mut on_wall) = (0usize, 0usize);
+        for j in 0..f.grid.h {
+            for i in 0..f.grid.w {
+                let s = surfaces[(j * f.grid.w + i) as usize];
+                if s == 0 {
+                    continue;
+                }
+                if is_walkable(&f.grid, i, j) {
+                    on_floor += 1;
+                } else {
+                    on_wall += 1;
+                }
+            }
+        }
+        // Measured on L3-s1: 1,526 painted floor tiles and 618 painted walls.
+        assert_eq!(on_floor, 1526, "painted FLOOR tiles on L3-s1");
+        assert_eq!(on_wall, 618, "painted WALL tiles on L3-s1");
+    }
+
+    /// **The export closed a PHYSICS gap, not only a visual one.**
+    ///
+    /// `pk_core::pinball` reads `surface_at` for its steer and friction
+    /// multipliers. Before the byte was exported every tile answered 0 —
+    /// stone — so a ball crossing the oracle's sand kept stone friction and the
+    /// ride was wrong in a way the eye could not see.
+    ///
+    /// ⚠️ The counts below were WRONG in this file's first draft, and the test
+    /// is what said so. A scratch histogram printed `{2: 624, 3: 440, 4: 462}`
+    /// and I read the ids off in the order I happened to have the names in —
+    /// calling 2 "ice" when `FLOOR_ICE` is 1 and 2 is `FLOOR_SAND`. **Print the
+    /// LABEL, not the id.** There is no ice on any of the three floors: it is a
+    /// modifier's material and none of them rolled it.
+    #[test]
+    fn the_sim_gets_real_friction_off_an_authored_floor() {
+        use pk_core::surfaces::{floor_surface, FLOOR_GRIP, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL};
+        let f = load(3, 1).unwrap();
+        let mut counts = std::collections::BTreeMap::<u8, usize>::new();
+        for j in 0..f.grid.h {
+            for i in 0..f.grid.w {
+                if is_walkable(&f.grid, i, j) {
+                    *counts
+                        .entry(pk_core::grid::surface_at(&f.grid, i, j))
+                        .or_default() += 1;
+                }
+            }
+        }
+        assert_eq!(counts.get(&FLOOR_SAND), Some(&624), "L3-s1 sand tiles");
+        assert_eq!(counts.get(&FLOOR_STEEL), Some(&440), "L3-s1 steel tiles");
+        assert_eq!(counts.get(&FLOOR_GRIP), Some(&462), "L3-s1 flowstone tiles");
+        assert_eq!(counts.get(&FLOOR_ICE), None, "no floor here rolled ice");
+
+        // The multipliers those tiles hand the sim — the whole point of
+        // carrying the byte. Sand is the loud one: 2.4x the friction.
+        assert!((floor_surface(FLOOR_SAND).friction_mult - 2.4).abs() < 1e-9);
+        assert!((floor_surface(FLOOR_STEEL).friction_mult - 0.62).abs() < 1e-9);
+        assert!((floor_surface(FLOOR_GRIP).steer_mult - 1.6).abs() < 1e-9);
+        // …and what it was before the export carried it: everything stone.
+        assert!((floor_surface(pk_core::surfaces::FLOOR_STONE).friction_mult - 1.0).abs() < 1e-9);
+    }
+
     /// A request deeper than the deepest export lands on the deepest one, says
     /// so, and never lands on nothing.
     #[test]
@@ -958,6 +1073,7 @@ mod tests {
             h: 4,
             t: vec![1; 15],
             shapes: vec![SHAPE_FULL; 16],
+            surfaces: None,
             arcs: None,
             arc_idx: None,
         };

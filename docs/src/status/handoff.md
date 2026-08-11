@@ -32,10 +32,19 @@ ALBEDO error and not a lighting one.
    oracle has flagstone, moss, cracks and a normal map. This is the largest
    remaining visible gap and the A/B rig grades it directly. It is blocked on
    the maze-texture bake, which is the half-done item below.
-2. **`surface-paint.ts`** — the rose/slate zones visible across the oracle's
-   floor in the A/B sheet are surface paint, and nothing in the export carries
-   them yet (`grid.surfaces` is absent; the loader defaults it to the neutral
-   surface). Add it to the exporter first.
+2. ~~**`surface-paint.ts`**~~ ✅ **DONE 2026-08-11.** `grid.surfaces` is
+   exported, loaded and washed (`dungeon_render::spawn_surface_wash`), and it
+   was a PHYSICS gap as well as a visual one — `pk_core::pinball` reads
+   `surface_at` for friction and steering, so before this every tile answered
+   "stone" and a ball crossing the oracle's sand kept stone friction. L3-s1
+   carries 624 sand, 440 steel and 462 flowstone floor tiles plus 455 mud
+   walls. diff mean 33.1 → 32.0, over32 39.1% → 36.2%.
+   ⚠️ **Two vocabularies share the byte**: a walkable tile carries a `FLOOR_*`
+   id and a solid one a `WALL_*` id, so `wash_buckets` branches on walkability
+   before reading it. What is still unported: the WALL wash (legacy tints wall
+   instances with their surface colour) and the four grain textures — the flat
+   quad here is what the oracle's own painter header calls "a spilled bucket of
+   blue", and the grain lands with the V1 bake.
 3. **Monsters** (P4). `plan.spawns` is parsed and carries 52-105 tiles per floor;
    nothing reads it. The A/B sheet's most obvious remaining difference after the
    textures is that the oracle's floor has things standing on it.

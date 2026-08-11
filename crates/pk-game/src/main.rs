@@ -886,6 +886,14 @@ fn setup_dungeon(
     for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid, stone) {
         commands.entity(e).insert(DungeonScene);
     }
+    // What the floor is MADE of, over the top of it. A no-op on a grid with no
+    // surface byte — which is every generated floor until `surface-paint.ts` is
+    // ported — so this is one call site for both sources rather than a branch.
+    for e in
+        dungeon_render::spawn_surface_wash(&mut commands, &mut meshes, &mut materials, &sim.grid)
+    {
+        commands.entity(e).insert(DungeonScene);
+    }
     if let Some(f) = &real {
         for e in spawn_real_floor_decor(&mut commands, &mut meshes, &mut materials, f) {
             commands.entity(e).insert(DungeonScene);

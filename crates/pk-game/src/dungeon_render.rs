@@ -520,9 +520,180 @@ pub(crate) fn spawn_grid_meshes(
     out
 }
 
+// ── SURFACE WASH ───────────────────────────────────────────────────────────
+
+/// What a painted floor tile is MADE OF, as a colour.
+///
+/// `paintSurfaces` (`maze/surface-paint.ts`) covers a median ~1,900 tiles a
+/// floor, and until 2026-08-11 the export did not carry the byte at all — so
+/// the port's ice was stone, both to the eye and to `pk_core::pinball`'s
+/// friction and steering. These are the four wash textures' BASE FILLS,
+/// verbatim from `maze/build.ts:816-880`, at the alpha the painter uses:
+///
+/// | surface | fill | palette |
+/// |---|---|---|
+/// | `FLOOR_ICE` | `rgba(111, 208, 232, 0.30)` | arcane light 31 |
+/// | `FLOOR_SAND` | `rgba(122, 59, 18, 0.34)` | ember 14 |
+/// | `FLOOR_STEEL` | `rgba(138, 148, 166, 0.34)` | steel mid 20 |
+/// | `FLOOR_GRIP` | `rgba(61, 92, 58, 0.32)` | rot dark 7 |
+///
+/// ⚠️ THE BASE FILL IS NOT THE TEXTURE. Each of those canvases then draws its
+/// grain — crystalline fractures, wind ripples, riveted seams, mineral pebbling
+/// — and the painter's own header says why: a flat colour quad "reads as a
+/// spilled bucket of blue, not as ice". This is deliberately that flat quad
+/// until the wash textures are baked, because the alternative is a floor whose
+/// physics and whose paint disagree. The grain is V1's, with the rest of the
+/// bake.
+fn floor_wash(surface: u8) -> Option<(Color, f32)> {
+    match surface {
+        pk_core::surfaces::FLOOR_ICE => Some((Color::srgb_u8(111, 208, 232), 0.30)),
+        pk_core::surfaces::FLOOR_SAND => Some((Color::srgb_u8(122, 59, 18), 0.34)),
+        pk_core::surfaces::FLOOR_STEEL => Some((Color::srgb_u8(138, 148, 166), 0.34)),
+        pk_core::surfaces::FLOOR_GRIP => Some((Color::srgb_u8(61, 92, 58), 0.32)),
+        // FLOOR_STONE and anything unknown: no wash. A stone patch is a no-op
+        // in the painter too — `paintSurfaces` skips it rather than repainting.
+        _ => None,
+    }
+}
+
+/// Which walkable tiles carry each washed surface.
+///
+/// ⚠️ **WALKABILITY IS THE DISAMBIGUATOR, NOT AN OPTIMISATION.** `Grid.surfaces`
+/// holds TWO VOCABULARIES in one byte: a walkable tile carries a `FLOOR_*` id
+/// and a solid one carries a `WALL_*` id (`surface-paint.ts:112-116`). Reading a
+/// wall's byte through [`floor_wash`] would paint `WALL_ICE` (1) as `FLOOR_ICE`
+/// — a different material entirely — so the walkability test here is the same
+/// branch the painter makes when it writes.
+pub(crate) fn wash_buckets(grid: &Grid) -> BTreeMap<u8, Vec<Placement>> {
+    let mut out: BTreeMap<u8, Vec<Placement>> = BTreeMap::new();
+    let Some(surfaces) = grid.surfaces.as_ref() else {
+        return out;
+    };
+    for j in 0..grid.h {
+        for i in 0..grid.w {
+            if !is_walkable(grid, i, j) {
+                continue;
+            }
+            let s = surfaces[(j * grid.w + i) as usize];
+            if floor_wash(s).is_none() {
+                continue;
+            }
+            let (x, z) = tile_center(grid, i, j);
+            out.entry(s).or_default().push(Placement {
+                pos: Vec3::new(x as f32, 0.0, z as f32),
+                yaw: 0.0,
+            });
+        }
+    }
+    out
+}
+
+/// One thin quad per painted tile, merged into a mesh per material.
+///
+/// Sits 12 mm above the floor plane — the oracle's own "second, very thin quad
+/// washed over the flagstone" (`build.ts:1227-1232`), which is what keeps the
+/// stone reading THROUGH the patch instead of replacing it.
+pub(crate) fn spawn_surface_wash(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    grid: &Grid,
+) -> Vec<Entity> {
+    let quad: Mesh = Plane3d::default().mesh().size(1.0, 1.0).into();
+    wash_buckets(grid)
+        .into_iter()
+        .filter_map(|(surface, cells)| {
+            let (colour, alpha) = floor_wash(surface)?;
+            let mut base = colour.to_srgba();
+            base.alpha = alpha;
+            let mesh = merge(&quad, &cells);
+            Some(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(mesh)),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: base.into(),
+                            alpha_mode: AlphaMode::Blend,
+                            perceptual_roughness: 0.9,
+                            // No depth bias games: the quad is lifted in Y
+                            // instead, so it cannot z-fight with the floor at a
+                            // grazing camera angle.
+                            ..default()
+                        })),
+                        Transform::from_xyz(0.0, 0.012, 0.0),
+                    ))
+                    .id(),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wash buckets only ever read a WALKABLE tile's byte.
+    ///
+    /// The regression this pins is silent: a solid tile carrying `WALL_RUBBER`
+    /// (1) would be washed as `FLOOR_ICE` (1) — a blue patch on a wall, and the
+    /// wrong material named. Built as a grid where every SOLID tile carries the
+    /// id of a washed floor surface and no walkable one does, so a reader that
+    /// skips the walkability branch produces buckets where the correct one
+    /// produces none.
+    #[test]
+    fn the_wash_never_reads_a_walls_byte() {
+        let mut g = Grid::solid(5, 5);
+        // A cross of floor through the middle.
+        for k in 1..4 {
+            pk_core::grid::set_tile(&mut g, k, 2, pk_core::grid::T_FLOOR);
+            pk_core::grid::set_tile(&mut g, 2, k, pk_core::grid::T_FLOOR);
+        }
+        for j in 0..g.h {
+            for i in 0..g.w {
+                if !is_walkable(&g, i, j) {
+                    // Every WALL says "ice" in the floor vocabulary.
+                    pk_core::grid::set_surface(&mut g, i, j, pk_core::surfaces::FLOOR_ICE);
+                }
+            }
+        }
+        assert!(
+            wash_buckets(&g).is_empty(),
+            "a wall's surface byte must never reach the floor wash"
+        );
+
+        // …and one painted FLOOR tile does produce a bucket.
+        pk_core::grid::set_surface(&mut g, 2, 2, pk_core::surfaces::FLOOR_ICE);
+        let b = wash_buckets(&g);
+        assert_eq!(b.len(), 1, "one material");
+        assert_eq!(b[&pk_core::surfaces::FLOOR_ICE].len(), 1, "one tile");
+    }
+
+    /// A grid with no surface byte washes nothing rather than panicking — every
+    /// generated floor is that grid until `surface-paint.ts` is ported.
+    #[test]
+    fn a_grid_with_no_surfaces_washes_nothing() {
+        let g = Grid::solid(4, 4);
+        assert!(wash_buckets(&g).is_empty());
+    }
+
+    /// Stone is not a wash. `paintSurfaces` skips a stone patch rather than
+    /// repainting, and a stone-coloured quad over the flagstone would dull the
+    /// whole floor for nothing.
+    #[test]
+    fn stone_is_not_washed() {
+        assert!(floor_wash(pk_core::surfaces::FLOOR_STONE).is_none());
+        assert!(floor_wash(200).is_none());
+        for s in [
+            pk_core::surfaces::FLOOR_ICE,
+            pk_core::surfaces::FLOOR_SAND,
+            pk_core::surfaces::FLOOR_STEEL,
+            pk_core::surfaces::FLOOR_GRIP,
+        ] {
+            let (_, alpha) = floor_wash(s).expect("every non-stone floor surface washes");
+            assert!((0.25..0.40).contains(&alpha), "wash alpha for {s}");
+        }
+    }
+
     use pk_core::grid::{set_tile, T_FLOOR, T_WALL};
     use pk_core::rng::Mulberry32;
     use pk_core::state::demo_floor;

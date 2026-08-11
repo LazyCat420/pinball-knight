@@ -95,6 +95,17 @@ function exportFloor(level: number, runSeed: number): unknown {
       // worth being able to read one.
       t: Array.from(g.t),
       shapes: Array.from(g.shapes),
+      // WHAT EACH TILE IS MADE OF — `paintSurfaces` (floor-authoring.ts:364)
+      // writes one byte per tile and the port's physics READS it
+      // (`pk_core::collide` restitution, `pinball.rs` steer/friction), so an
+      // export without it is not merely undressed: it is a floor whose ice is
+      // stone. Optional on a Grid, so `null` is "no patch was painted".
+      //
+      // ⚠️ TWO VOCABULARIES SHARE THIS BYTE: a walkable tile carries a FLOOR id
+      // and a solid one carries a WALL id (surface-paint.ts:112-116). Anything
+      // reading it has to branch on walkability, and getting that backwards
+      // gives every icy floor mud physics — silently.
+      surfaces: g.surfaces ? Array.from(g.surfaces) : null,
       // Arc features are OPTIONAL on a Grid and only a track floor has them.
       // Exported as-is so the renderer's curved-wall bucket has something to
       // draw the day it is wired; `null` is a floor with no arcs, not a bug.
