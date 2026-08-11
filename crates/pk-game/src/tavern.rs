@@ -38,6 +38,11 @@ use pk_core::tavern::player::{step_tavern_movement, TavernInput, TavernPose, WAL
 use pk_core::tavern::state::{read_diorama, DioramaState, TavernStats};
 use pk_gui::screens::tavern::{PanelView, StationView, SummaryView};
 
+use pk_core::economy::armory::{
+    Loadout, ELEMENTAL_STYLE_IDS, GEAR_SLOTS, PRICE_REPAIR_GEAR,
+};
+use pk_core::economy::Wallet;
+use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
 use crate::gui::{set_view, Gui, GuiViews, ScreenId};
 use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
@@ -235,6 +240,14 @@ pub struct TavernRes {
     pub time: f64,
     pub focus: Option<&'static Station>,
     pub open_panel: Option<Panel>,
+    /// The run's plate and the permanent sets. `pk_core::economy` owns the
+    /// rules; persistence is P5 (the oracle keeps styles + gold in
+    /// localStorage, and the port has made no persistence decision yet — see
+    /// the 1:1 plan's track F).
+    pub loadout: Loadout,
+    pub wallet: Wallet,
+    /// The counter's last `ActionResult`, flashed under its heading.
+    pub shop_message: Option<String>,
     pub stats: TavernStats,
     diorama: DioramaState,
     /// Integrated, not derived from the clock, so a speed change never
@@ -749,6 +762,12 @@ fn setup_tavern(
         time: 0.0,
         focus: None,
         open_panel: None,
+        loadout: Loadout::default(),
+        // ⚠️ A STARTING PURSE, NOT A MEASUREMENT. The oracle's balance is a
+        // persisted wallet; until the port has one, an empty purse would grey
+        // out every button on the counter and make it untestable by hand.
+        wallet: Wallet::new(1200),
+        shop_message: None,
         stats,
         diorama,
         ball_angle: 0.0,
@@ -1701,12 +1720,62 @@ fn tavern_frame(
     // The stack is driven from `open_panel` every frame rather than only on the
     // edges: two sources of truth for "is a sheet up" is exactly the drift this
     // whole block is arranged to prevent.
+    // ── The counter's action, applied before its view is rebuilt ──
+    // Order matters: the view below is built from `res.loadout`, so applying
+    // the purchase first is what makes the row read `3/3` on the same frame the
+    // button was pressed rather than one frame later.
+    if let Some(action) = layer.armory_action.take() {
+        // Split borrow: `res.loadout.buy_gear(&mut res.wallet, …)` borrows
+        // `res` twice over. Destructuring once is the fix the borrow checker
+        // is asking for, and it keeps the rules' signature (state + purse)
+        // rather than folding the purse into the loadout to dodge it.
+        let TavernRes {
+            loadout,
+            wallet,
+            shop_message,
+            open_panel,
+            ..
+        } = &mut *res;
+        match action {
+            ArmoryAction::BuyPlate(i) => {
+                if let Some(slot) = GEAR_SLOTS.get(i) {
+                    *shop_message = loadout.buy_gear(wallet, *slot);
+                }
+            }
+            ArmoryAction::RepairAll => {
+                *shop_message = loadout.repair_gear(wallet);
+            }
+            ArmoryAction::BuyStyle(i) => {
+                if let Some(id) = ELEMENTAL_STYLE_IDS.get(i) {
+                    // `buy_style` returns None for "not applicable" (already
+                    // owned, or free). KEEP the previous message in that case —
+                    // blanking it would make a no-op look like a fresh event.
+                    if let Some(m) = loadout.buy_style(wallet, *id) {
+                        *shop_message = Some(m);
+                    }
+                }
+            }
+            ArmoryAction::WearStyle(i) => {
+                if let Some(id) = ELEMENTAL_STYLE_IDS.get(i) {
+                    if let Some(m) = loadout.wear_style(*id) {
+                        *shop_message = Some(m);
+                    }
+                }
+            }
+            ArmoryAction::Close => {
+                *open_panel = None;
+                *shop_message = None;
+            }
+        }
+    }
     match res.open_panel {
         None => {
             layer.close(ScreenId::RunSummary);
             layer.close(ScreenId::StationPanel);
+            layer.close(ScreenId::Armory);
             set_view(&mut views.summary, None);
             set_view(&mut views.panel, None);
+            set_view(&mut views.armory, None);
         }
         Some(Panel::Summary) => {
             set_view(
@@ -1725,6 +1794,45 @@ fn tavern_frame(
                 }),
             );
             layer.open(ScreenId::RunSummary);
+        }
+        // Every other vendor still gets the placeholder below. This one is
+        // wired to `pk_core::economy::armory`, so "Manage Loadout" opens the
+        // sheet the oracle paints instead of a sentence promising it.
+        Some(Panel::Vendor("armory")) => {
+            let l = &res.loadout;
+            let gold = res.wallet.balance();
+            set_view(
+                &mut views.armory,
+                Some(ArmoryView {
+                    gold,
+                    plate: GEAR_SLOTS
+                        .iter()
+                        .map(|s| PlateRow {
+                            label: s.label().to_string(),
+                            worn: l.worn(*s),
+                            base: s.base(),
+                            price: s.price(),
+                            affordable: gold >= s.price(),
+                        })
+                        .collect(),
+                    styles: ELEMENTAL_STYLE_IDS
+                        .iter()
+                        .map(|id| StyleRow {
+                            label: id.label().to_string(),
+                            blurb: id.blurb().to_string(),
+                            price: id.price(),
+                            owned: l.is_unlocked(*id),
+                            worn: l.active == *id,
+                            affordable: gold >= id.price(),
+                            swatch: id.swatch(),
+                        })
+                        .collect(),
+                    repair_price: PRICE_REPAIR_GEAR,
+                    repair_affordable: gold >= PRICE_REPAIR_GEAR,
+                    message: res.shop_message.clone(),
+                }),
+            );
+            layer.open(ScreenId::Armory);
         }
         Some(panel) => {
             let (title, blurb, body, accent) = match panel {

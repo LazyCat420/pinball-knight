@@ -1157,6 +1157,16 @@ function arcSweepGeometry(arcs: readonly ArcFeature[], grid: Grid, heightFor: (f
  * Sizes are the painters' own: `pixelTexture` rasterises at the camera's PPU,
  * so a rung change moves these and the PNGs are re-baked rather than resampled.
  */
+/** PROFILING SEAM — one painter at a time, so a slow bake names its own cost. */
+export const __bakeParts = {
+  floor: () => makeFloorTexture(1, 1),
+  cap: () => makeCapTexture(),
+  wall: (m: boolean, l: boolean, c: boolean) => makeWallTexture(m, l, c),
+  normalFloor: () => normalTexture(TILE_PX * FLOOR_BLOCK, floorHeight, 1, 1, 2.0),
+  normalCap: () => normalTexture(TILE_PX, capHeight, 1, 1, 2.5),
+  normalWall: () => normalTexture(TILE_PX, wallHeight, 1, 1, 2.5),
+};
+
 export function bakeMazeSurfaces(): {
   diffuse: Record<string, HTMLCanvasElement>;
   normal: Record<string, HTMLCanvasElement>;

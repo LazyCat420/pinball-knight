@@ -40,6 +40,7 @@ use bevy::window::PrimaryWindow;
 
 use pk_gui::im::{empty_ui_input, Pointer};
 use pk_gui::root::{paint_stack, UiStats};
+use pk_gui::screens::armory::{paint_armory, ArmoryAction, ArmoryView};
 use pk_gui::screens::intro::{
     paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
     DESIGN_W as INTRO_DESIGN_W,
@@ -69,6 +70,8 @@ pub enum ScreenId {
     /// The title sequence's skip button, title banner and black wipe.
     /// Non-pausing: the intro runs its own clock and there is no sim to freeze.
     IntroChrome,
+    /// The armorer's counter — "Manage Loadout".
+    Armory,
 }
 
 /// WHAT the open screens say. Filled by whoever owns the scene, read here.
@@ -84,6 +87,7 @@ pub struct GuiViews {
     pub summary: Option<SummaryView>,
     pub panel: Option<PanelView>,
     pub intro: Option<IntroChromeView>,
+    pub armory: Option<ArmoryView>,
 }
 
 /// Assign only if the value actually differs.
@@ -117,6 +121,8 @@ pub struct GuiLayer {
     pub closed: Option<ScreenId>,
     /// Did SKIP get pressed this frame? See [`ScreenId::IntroChrome`].
     pub skip_pressed: bool,
+    /// What the armorer's counter was asked to do this frame.
+    pub armory_action: Option<ArmoryAction>,
     /// Has the texture got pixels on it that the stack no longer accounts for?
     ///
     /// Set by every paint, taken by the first idle frame. Without it, closing
@@ -190,6 +196,11 @@ impl GuiLayer {
             // and swallowing keys here would make it a lie.
             ScreenId::IntroChrome => ScreenEntry::new(id, false)
                 .with_design(INTRO_DESIGN_W, INTRO_DESIGN_H, INTRO_ZOOM),
+            // The counter PAUSES the room and takes the keyboard: the oracle's
+            // vendor screens are modal over the walkable tavern, and a sheet
+            // you can walk away from while it is open is how `openStation`
+            // and the stack drift apart.
+            ScreenId::Armory => ScreenEntry::new(id, true).with_design(600.0, 338.0, 2),
         };
         self.stack.push(entry);
     }
@@ -270,6 +281,7 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         image: image.clone(),
         closed: None,
         skip_pressed: false,
+        armory_action: None,
         dirty: false,
         views_gen: 0,
         last_pointer: None,
@@ -486,6 +498,7 @@ fn paint_gui(
     let views = &*views;
     let mut closed = None;
     let mut skipped = false;
+    let mut armory_action = None;
     let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, _entry| {
         match id {
             ScreenId::StationPrompt => {
@@ -505,6 +518,11 @@ fn paint_gui(
                     if paint_station_panel(f, v) {
                         closed = Some(id);
                     }
+                }
+            }
+            ScreenId::Armory => {
+                if let Some(v) = &views.armory {
+                    armory_action = paint_armory(f, v);
                 }
             }
             ScreenId::IntroChrome => {
@@ -532,6 +550,9 @@ fn paint_gui(
     // the next paint. A latch would fire the skip again on the frame after the
     // scene had already left.
     layer.skip_pressed = skipped;
+    // One frame's worth, like `closed` — the scene reads it and acts. A latch
+    // would buy the same plate again on the frame after the purchase.
+    layer.armory_action = armory_action;
     if result.painted {
         layer.dirty = true;
         upload(&mut images, &layer);
@@ -678,6 +699,7 @@ mod tests {
             image: Handle::default(),
             closed: None,
             skip_pressed: false,
+            armory_action: None,
             dirty: false,
             views_gen: 0,
             last_pointer: None,

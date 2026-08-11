@@ -39,6 +39,7 @@
 
 pub mod collide;
 pub mod combo;
+pub mod economy;
 pub mod flow_field;
 pub mod gambler;
 pub mod grid;
