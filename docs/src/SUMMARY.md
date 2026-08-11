@@ -15,6 +15,7 @@
 # Port Status
 
 - [Status board](status/board.md)
+- [The 1:1 plan (what "converted" means, and what is left)](status/one-to-one.md)
 - [Port checklist (phases P0–P9)](status/port-checklist.md)
 - [Completion plan (the route to cutover)](status/completion-plan.md)
 - [Build-out queue (what gets built next, in order)](status/build-out.md)
