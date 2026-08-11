@@ -15,22 +15,48 @@
 //!   REPAIR ALL PLATE — 40g      one wide button
 //!   ELEMENTAL SETS              four rows — label, blurb, and WORN / WEAR / price
 //!
-//! ## The numbers are the oracle's, and they are not decorative
+//! ## THE COUNTER IS SIZED TO FIT, NOT TRANSCRIBED
 //!
-//! Row heights (34 for plate, 32 for a set, 3 of gap, `ROW_H` for a heading),
-//! the 26px icon at +4/+4, the label baseline at +5 and the state line at +19,
-//! the 76×22 buy button inset 84 from the right edge, the 200×24 repair button,
-//! the 92×22 set button inset 100, and `max: r.w - 130` on the blurb so a long
-//! one ellipsizes instead of running under the button. Each one is transcribed
-//! rather than re-judged: a counter that is "about right" is a counter that
-//! reads as a different game beside the oracle's.
+//! The first build took the oracle's metrics verbatim — 34px plate rows, 32px
+//! set rows, `ROW_H` headings, a 26px icon, 76×22 and 92×22 buttons, a 200×24
+//! repair key — because "about right" numbers read as a different game beside
+//! the oracle's. That gave a counter 427px tall inside a 338px design box, and
+//! the answer to the overflow was the oracle's own: a scroll region.
+//!
+//! **The player asked for the other answer.** *"We have to keep decreasing the
+//! size of the buttons/text of the UI until we can fit it without having to
+//! scroll."* So every repeating metric here is now the SMALLEST one that still
+//! holds its content, and the whole counter fits the design box with the region
+//! inert. What that costs is the transcription; what it buys is a sheet the
+//! player can read in one look, with no fold and no hidden rows.
+//!
+//! Two things did NOT shrink, and both are deliberate. Body text stays at 8 —
+//! that is the floor of the baked atlas set (8/16/24/32; see [`crate::font`]),
+//! and a size the bake does not ship draws NOTHING, silently. And the 16px
+//! title stays 16: it appears once, it is the sheet's identity, and shrinking a
+//! heading buys 8 pixels of the ~105 this needed.
+//!
+//! ## The fit is a gate, not an observation
+//!
+//! [`content_height`] and [`scroll_body_height`] are what the sheet and the
+//! region are sized from, and
+//! `the_shipped_counter_never_scrolls_at_any_focus` drives the REAL roster (3
+//! plate slots, 4 elemental sets) through the real paint and fails if the
+//! offset ever leaves zero. Grow any constant in this file past its budget and
+//! that test goes red — which is the only way "it fits" stays true after the
+//! next row is added.
+//!
+//! The region is kept, and it is not dead weight: it is what makes the failure
+//! mode of a future fifth set a scrollbar instead of rows painting off the
+//! bottom of the window over the room, which is exactly what the player
+//! screenshotted.
 
 use crate::im::{
     button, cut_top, focusable, rect, scrim, sheet, text, well, Align, ButtonOpts, Rect, TextOpts,
     UiFrame,
 };
 use crate::painter::Rgba;
-use crate::theme::{Ui, GRID, ROW_H};
+use crate::theme::{Ui, GRID};
 
 /// One plate row, already resolved by the shell — the screen does no rules.
 #[derive(Clone, Debug, PartialEq)]
@@ -81,33 +107,81 @@ pub enum ArmoryAction {
 }
 
 /// The plate the counter sits on. Wide enough for the longest set blurb at its
-/// 130px button gutter.
+/// button gutter.
 const SHEET_W: f64 = 560.0;
-/// Row heights, from `armorBody`. Named because [`content_height`] and the
-/// painter must agree — the oracle guarantees that by MEASURING the previous
-/// frame (`measuredH`, "this used to be a hand-written formula per vendor"),
-/// and every row here is a fixed height, so computing it from the counts is the
-/// same answer without the one-frame lag.
-const PLATE_ROW_H: f64 = 34.0;
-const STYLE_ROW_H: f64 = 32.0;
-const ROW_GAP: f64 = 3.0;
-const REPAIR_H: f64 = 30.0;
-const FOOT_H: f64 = 26.0;
+
+// ── THE COMPACT METRICS ──────────────────────────────────────────────────────
+//
+// Every row here is a FIXED height, so [`content_height`] computes from the
+// counts what the oracle gets by measuring the previous frame (`measuredH`,
+// "this used to be a hand-written formula per vendor") — the same answer
+// without the one-frame lag, and the reason the painter and the sizer cannot
+// drift apart.
+//
+// The floor on all of them is one number: **8px text**. A row carrying two
+// stacked lines cannot go below 2 + 8 + 2 + 8 + 2 = 22, and that is what the
+// two row heights are. A single-line row (a heading, a button) is 8 plus its
+// air.
+
+/// Title + purse. 16px type with 2 of air above and below.
+const TITLE_H: f64 = 20.0;
+/// The `say()` flash line — 8px type, and it is often empty.
+const MSG_H: f64 = 12.0;
+/// A section heading: 8px type, its rule, and 2 of air.
+const HEAD_H: f64 = 14.0;
+/// The air over the second heading, so the sets read as a new block. Was `GRID`.
+const HEAD_GAP: f64 = 4.0;
+/// Icon, label, state line. Two 8px lines at 2/12 with 2 of bottom air.
+const PLATE_ROW_H: f64 = 22.0;
+/// Swatch, label, blurb. Same two-line budget.
+const STYLE_ROW_H: f64 = 22.0;
+/// Between rows. Below 2 the wells merge into one long trough.
+const ROW_GAP: f64 = 2.0;
+const REPAIR_H: f64 = 22.0;
+const FOOT_H: f64 = 20.0;
+
+/// Every row button on the counter. 64 wide holds `1200g` (5 chars = 40px)
+/// inside `button()`'s own `GRID * 2` text inset with room to spare; 16 tall is
+/// the 8px label plus its 4/4 air, and it is the shortest key the focus ring
+/// still reads as a ring rather than as a line.
+const BTN_W: f64 = 64.0;
+const BTN_H: f64 = 16.0;
+/// Right-hand gutter: the button, plus `GRID` of air off the well's edge.
+const BTN_INSET: f64 = BTN_W + GRID;
+/// The repair key. It carries the longest label on the sheet — "REPAIR ALL
+/// PLATE — 40g" is 22 chars = 176px, and `button()` ellipsizes at `w - 16`, so
+/// anything under 192 would silently eat the price.
+const REPAIR_W: f64 = 200.0;
+const REPAIR_BTN_H: f64 = 18.0;
 
 /// How tall the sheet WANTS to be. It gets this or the screen, whichever is
 /// smaller — `sheet()` clamps — and the difference is what the region scrolls.
+/// At the compact metrics the real roster wants 320 of the design box's 322, so
+/// the clamp does not bite and the region never engages.
 ///
 /// ⚠️ **The first build passed a CONSTANT 320 here** and the screenshot showed
 /// the last two elemental sets and the BACK button hanging off the bottom of
 /// the plate, over the room. Computing it from the counts fixed the SIZE and
 /// not the overflow: at the counter's design box (600×338, `gui.rs`) three
-/// plate rows and four sets want ~411, `sheet()` clamped the plate to 322, and
+/// plate rows and four sets wanted 427, `sheet()` clamped the plate to 322, and
 /// the rows kept painting past the bottom edge of the window because nothing
 /// clipped them. See [`scroll_body_height`].
+///
+/// ⚠️ **`GRID * 4`, not `GRID * 2`.** `sheet()` returns `inset(r, GRID * 2)` —
+/// which takes the margin off the TOP and the BOTTOM. Counting it once asks for
+/// a plate 8px too short and hands the region a view 8px smaller than the sizer
+/// believed, i.e. a scrollbar on a counter that fits.
+///
+/// And the answer is rounded UP to the grid because `sheet()` SNAPS its height
+/// (`snap` is `Math.round` on GRID, which rounds DOWN as often as up): asking
+/// for 314 gets a 312-tall plate, and those two pixels are two pixels of view
+/// the content is entitled to.
 fn content_height(v: &ArmoryView) -> f64 {
-    ROW_H * 2.0                                              // title, message
+    let want = GRID * 4.0                                    // the plate's margins
+        + TITLE_H + MSG_H                                    // title, message
         + scroll_body_height(v)
-        + FOOT_H + GRID * 2.0 // BACK, and the plate's own margin
+        + GRID + FOOT_H; // the air over BACK, and BACK
+    (want / GRID).ceil() * GRID
 }
 
 /// The part that SCROLLS: everything between the message line and BACK.
@@ -117,10 +191,10 @@ fn content_height(v: &ArmoryView) -> f64 {
 /// that scrolls off is a purse you cannot read the prices against, and a BACK
 /// button below the fold is how a sheet becomes a trap.
 fn scroll_body_height(v: &ArmoryView) -> f64 {
-    ROW_H                                                    // PLATE heading
+    HEAD_H                                                   // PLATE heading
         + v.plate.len() as f64 * (PLATE_ROW_H + ROW_GAP)
         + REPAIR_H
-        + ROW_H + GRID                                       // ELEMENTAL SETS heading
+        + HEAD_GAP + HEAD_H                                  // ELEMENTAL SETS heading
         + v.styles.len() as f64 * (STYLE_ROW_H + ROW_GAP)
 }
 
@@ -141,12 +215,12 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     // assertion was about where the rows are.
     scrim(f);
     let mut body = sheet(f, SHEET_W, content_height(v));
-    let head = cut_top(&mut body, ROW_H);
+    let head = cut_top(&mut body, TITLE_H);
     text(
         f,
         "ARMORER",
         head.x,
-        head.y + 4.0,
+        head.y + 2.0,
         TextOpts {
             size: 16,
             colour: Some(Ui::HEADING),
@@ -159,7 +233,7 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         f,
         &format!("{}g", v.gold),
         head.x + head.w,
-        head.y + 4.0,
+        head.y + 2.0,
         TextOpts {
             size: 16,
             colour: Some(Ui::GOLD),
@@ -167,13 +241,13 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
             ..TextOpts::default()
         },
     );
-    let msg = cut_top(&mut body, ROW_H);
+    let msg = cut_top(&mut body, MSG_H);
     if let Some(m) = &v.message {
         text(
             f,
             m,
             msg.x,
-            msg.y + 4.0,
+            msg.y + 2.0,
             TextOpts {
                 size: 8,
                 colour: Some(Ui::TEXT_DIM),
@@ -196,28 +270,31 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     // the counter screenshot — "Storm Plate" was clipped at the fold and BACK
     // overlapped its price.
     let foot_h = FOOT_H + GRID;
-    let view = rect(body.x, body.y, body.w, (body.h - foot_h).max(ROW_H));
+    let view = rect(body.x, body.y, body.w, (body.h - foot_h).max(HEAD_H));
     let foot_row = rect(body.x, body.y + view.h + GRID, body.w, FOOT_H);
     let content_h = scroll_body_height(v);
     let sc = crate::im::begin_scroll(f, &view, content_h, *scroll);
     let mut body = sc.inner;
 
     // ── PLATE ──
-    let h = cut_top(&mut body, ROW_H);
+    let h = cut_top(&mut body, HEAD_H);
     heading(f, &h, "PLATE");
     for (i, row) in v.plate.iter().enumerate() {
         let r = cut_top(&mut body, PLATE_ROW_H);
         well(f, &r, None);
         // The oracle draws `itemIcon(s) ?? glyph("shield", …)` here; the icon
-        // set is P3 art, so the slot keeps its 26px square and paints the
-        // set's tone into it rather than leaving a hole the layout forgets.
-        let chip = rect(r.x + 4.0, r.y + 4.0, 26.0, 26.0);
+        // set is P3 art, so the slot keeps a square and paints the set's tone
+        // into it rather than leaving a hole the layout forgets. 16 rather than
+        // 26 because the row is 22 tall now — and 16 is an EXACT half of the
+        // 32px sprites that will eventually land in it (`exact_icon_size`),
+        // where 26 was a resample that deletes rows and columns.
+        let chip = rect(r.x + 3.0, r.y + 3.0, 16.0, 16.0);
         crate::im::fill_rect(f, &chip, Ui::WELL_EDGE);
         text(
             f,
             &row.label,
-            r.x + 36.0,
-            r.y + 5.0,
+            r.x + 24.0,
+            r.y + 2.0,
             TextOpts {
                 size: 8,
                 colour: Some(Ui::TEXT),
@@ -241,8 +318,8 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         text(
             f,
             &state,
-            r.x + 36.0,
-            r.y + 19.0,
+            r.x + 24.0,
+            r.y + 12.0,
             TextOpts {
                 size: 8,
                 colour: Some(colour),
@@ -251,7 +328,7 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         );
         if button(
             f,
-            &rect(r.x + r.w - 84.0, r.y + 6.0, 76.0, 22.0),
+            &rect(r.x + r.w - BTN_INSET, r.y + 3.0, BTN_W, BTN_H),
             &format!("{}g", row.price),
             ButtonOpts {
                 disabled: !row.affordable,
@@ -266,7 +343,7 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     let rr = cut_top(&mut body, REPAIR_H);
     if button(
         f,
-        &rect(rr.x, rr.y, 200.0, 24.0),
+        &rect(rr.x, rr.y + 2.0, REPAIR_W, REPAIR_BTN_H),
         &format!("REPAIR ALL PLATE — {}g", v.repair_price),
         ButtonOpts {
             disabled: !v.repair_affordable,
@@ -277,7 +354,11 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     }
 
     // ── ELEMENTAL SETS ──
-    let h = cut_top(&mut body, ROW_H + GRID);
+    // The gap is cut SEPARATELY from the heading row: `heading()` paints from
+    // the top of the rect it is given, so folding the air into its height would
+    // put the label back where it was and only move the rule.
+    cut_top(&mut body, HEAD_GAP);
+    let h = cut_top(&mut body, HEAD_H);
     heading(f, &h, "ELEMENTAL SETS — permanent unlocks");
     for (i, s) in v.styles.iter().enumerate() {
         let r = cut_top(&mut body, STYLE_ROW_H);
@@ -286,14 +367,14 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         // tone", so a player recognises the set they are wearing.
         crate::im::fill_rect(
             f,
-            &rect(r.x + 4.0, r.y + 8.0, 4.0, 16.0),
+            &rect(r.x + 3.0, r.y + 4.0, 3.0, 14.0),
             Rgba::hex(s.swatch),
         );
         text(
             f,
             &s.label,
-            r.x + GRID + 4.0,
-            r.y + 5.0,
+            r.x + 12.0,
+            r.y + 2.0,
             TextOpts {
                 size: 8,
                 colour: Some(if s.worn { Ui::GOLD } else { Ui::TEXT }),
@@ -303,16 +384,20 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
         text(
             f,
             &s.blurb,
-            r.x + GRID + 4.0,
-            r.y + 19.0,
+            r.x + 12.0,
+            r.y + 12.0,
             TextOpts {
                 size: 8,
                 colour: Some(Ui::TEXT_DIM),
-                max: Some(r.w - 130.0),
+                // Ellipsize BEFORE the button gutter: the blurb starts 12 in,
+                // the key's left edge is `BTN_INSET` off the right, and 4 of
+                // clear air between them is what stops a long blurb reading as
+                // if it runs under the price.
+                max: Some(r.w - BTN_INSET - 16.0),
                 ..TextOpts::default()
             },
         );
-        let btn = rect(r.x + r.w - 100.0, r.y + 5.0, 92.0, 22.0);
+        let btn = rect(r.x + r.w - BTN_INSET, r.y + 3.0, BTN_W, BTN_H);
         if s.worn {
             // WORN is a LABEL, and it still takes a focus slot — the oracle
             // calls `focusable(disabled)` so keyboard travel does not silently
@@ -321,7 +406,7 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
                 f,
                 "WORN",
                 btn.x + btn.w,
-                btn.y + 8.0,
+                btn.y + 4.0,
                 TextOpts {
                     size: 8,
                     colour: Some(Ui::GOLD),
@@ -365,12 +450,7 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
     // scene never has to guess whether the sheet is up. It is cut from the
     // BODY, not placed against the frame: against the frame it lands in the
     // bottom-right corner of the SCREEN, outside the plate it belongs to.
-    let foot = rect(
-        foot_row.x + foot_row.w - 100.0,
-        foot_row.y,
-        100.0,
-        foot_row.h,
-    );
+    let foot = rect(foot_row.x + foot_row.w - 80.0, foot_row.y, 80.0, foot_row.h);
     if button(f, &foot, "BACK", ButtonOpts::default()) {
         act = Some(ArmoryAction::Close);
     }
@@ -378,19 +458,23 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option
 }
 
 /// The oracle's `heading()` — a label with a rule under it.
+///
+/// In a 14-tall row the label owns 2..10 and the rule sits at 12, so there is
+/// one clear pixel between the glyph box and the line. At the oracle's `+4` and
+/// `h - 3` the rule would have landed INSIDE the type.
 fn heading(f: &mut UiFrame, r: &Rect, s: &str) {
     text(
         f,
         s,
         r.x,
-        r.y + 4.0,
+        r.y + 2.0,
         TextOpts {
             size: 8,
             colour: Some(Ui::ARCANE),
             ..TextOpts::default()
         },
     );
-    crate::im::fill_rect(f, &rect(r.x, r.y + r.h - 3.0, r.w, 1.0), Ui::SHEET_EDGE_LIT);
+    crate::im::fill_rect(f, &rect(r.x, r.y + r.h - 2.0, r.w, 1.0), Ui::SHEET_EDGE_LIT);
 }
 
 #[cfg(test)]
@@ -584,20 +668,145 @@ mod tests {
         p
     }
 
+    /// The LAST focusable index: 3 plate buttons, the repair key, then a slot
+    /// per set.
+    fn last_focus(v: &ArmoryView) -> i64 {
+        (v.plate.len() + 1 + v.styles.len() - 1) as i64
+    }
+
+    /// Does this fixture overflow its box?
+    ///
+    /// Answered by the PAINT — park the cursor on the bottom widget and ask
+    /// whether the region had to move to reach it. A formula here would be a
+    /// second copy of the layout, and the layout is what these tests exist to
+    /// pin; the copy would agree with a broken painter.
+    fn overflows(v: &ArmoryView) -> bool {
+        let mut scroll = 0.0;
+        paint_view(v, last_focus(v), &mut scroll);
+        scroll > 0.0
+    }
+
+    /// THE REAL COUNTER: three plate slots (`GEAR_SLOTS`) and four elemental
+    /// sets (`ELEMENTAL_STYLE_IDS`, pinned at 4 by its own test in
+    /// `pk_core::economy::armory` — pk-gui cannot see that crate, which is why
+    /// the count is restated here rather than imported).
+    ///
+    /// Everything is AFFORDABLE on purpose. `focusable` returns early for a
+    /// disabled widget, before it records `focus_rect`, so a greyed row cannot
+    /// be followed — and a fit test walking a roster of unaffordable rows would
+    /// report "never scrolled" no matter how far off the plate they painted.
+    fn shipped_view() -> ArmoryView {
+        let mut v = view();
+        v.gold = 5_000;
+        for row in &mut v.plate {
+            row.affordable = true;
+        }
+        v.styles = [
+            (
+                "Glacier Plate",
+                "hoarfrost steel, cold-blue sheen",
+                0x6fd0e8,
+            ),
+            (
+                "Storm Plate",
+                "storm-slate chased with lightning gold",
+                0xffd98a,
+            ),
+            ("Gale Plate", "jade-green tempest steel", 0x8fe3a8),
+            ("Ember Plate", "forge-red plate, coal-warm", 0xe8794a),
+        ]
+        .into_iter()
+        .map(|(label, blurb, swatch)| StyleRow {
+            label: label.into(),
+            blurb: blurb.into(),
+            price: 600,
+            owned: false,
+            worn: false,
+            affordable: true,
+            swatch,
+        })
+        .collect();
+        v
+    }
+
+    /// THE ASK, PINNED. *"Keep decreasing the size of the buttons/text of the
+    /// UI until we can fit it without having to scroll."*
+    ///
+    /// The counter the game actually opens must never move its region — not on
+    /// the first row, not on the last, not anywhere between. Walking every
+    /// focus rather than only the last is what catches a metric that grows the
+    /// MIDDLE of the sheet: `follow_focus` only reports a widget it had to
+    /// chase, so a bottom-anchored check can be satisfied by a layout that
+    /// clips a row nobody parks on.
+    ///
+    /// Grow any constant in this file past its budget and this goes red. That
+    /// is the point: "it fits" is a property with a test, not a screenshot from
+    /// one afternoon.
+    #[test]
+    fn the_shipped_counter_never_scrolls_at_any_focus() {
+        let v = shipped_view();
+        for focus in 0..=last_focus(&v) {
+            let mut scroll = 0.0;
+            paint_view(&v, focus, &mut scroll);
+            assert_eq!(
+                scroll,
+                0.0,
+                "focus {focus} of {} pushed the region off the top — \
+                 the counter does not fit its design box",
+                last_focus(&v)
+            );
+        }
+        assert!(
+            !overflows(&v),
+            "the shipped roster overflows the 600x338 design box"
+        );
+        // …and it fits with the sheet INSIDE the box rather than clamped to it,
+        // which is the difference between "fits" and "was cut down to size".
+        assert!(
+            content_height(&v) <= 338.0 - GRID * 2.0,
+            "the sheet wants {} of the 322 the design box can give it",
+            content_height(&v)
+        );
+    }
+
+    /// A counter with more rows than the WINDOW, not merely more than the
+    /// region. See [`nothing_paints_below_the_plate_when_the_counter_is_taller_than_its_box`]
+    /// for why the distinction is the whole test.
+    fn flooded_view() -> ArmoryView {
+        let mut v = tall_view();
+        let extra: Vec<StyleRow> = (0..8)
+            .map(|i| StyleRow {
+                label: format!("Spare Plate {i}"),
+                blurb: "a set that exists to overrun the box".into(),
+                price: 750,
+                owned: false,
+                worn: false,
+                affordable: true,
+                swatch: 0x8a7d6b,
+            })
+            .collect();
+        v.styles.extend(extra);
+        v
+    }
+
     /// THE DEFECT THE PLAYER SCREENSHOTTED. `content_height` sized the sheet
     /// from the counts, `sheet()` clamped that to the screen, and the rows kept
     /// painting past the clamped plate — off the bottom of the window, over the
     /// room. Every layout test passed, because they all assert where rows are
     /// and none asked whether the last one is on the plate.
     ///
-    /// The fixture has to OVERFLOW or this test proves nothing, so that is
-    /// asserted first — the two-set `view()` fits in 338 and would have made
-    /// this vacuously green.
+    /// ⚠️ THE FIXTURE HAD TO GROW WHEN THE METRICS SHRANK. At the old 34px
+    /// rows, five sets overran the window and this saw it. At 22px they overrun
+    /// the REGION by 18px and stop well inside the plate — so the same fixture
+    /// would have gone on passing with the clip deleted, which is a test that
+    /// has quietly stopped testing. `flooded_view` is 13 sets: unclipped it
+    /// paints to y≈470 in a 338-tall window, so pulling `begin_scroll` out
+    /// turns this red. Verified by doing exactly that.
     #[test]
     fn nothing_paints_below_the_plate_when_the_counter_is_taller_than_its_box() {
-        let v = tall_view();
+        let v = flooded_view();
         assert!(
-            scroll_body_height(&v) > 338.0 - ROW_H * 2.0 - FOOT_H - GRID * 4.0,
+            overflows(&v),
             "the fixture fits, so this test cannot see the defect"
         );
         let p = paint_view(&v, 0, &mut 0.0);
@@ -635,9 +844,8 @@ mod tests {
 
         // 3 plate + repair = 4 focusables before the sets; the last set's
         // button is the final one.
-        let last = (v.plate.len() + 1 + v.styles.len() - 1) as i64;
         let mut bottom = 0.0;
-        paint_view(&v, last, &mut bottom);
+        paint_view(&v, last_focus(&v), &mut bottom);
         assert!(
             bottom > 0.0,
             "focus walked below the fold and the region did not follow it"
@@ -652,10 +860,18 @@ mod tests {
         let v = tall_view();
         let mut wild = 10_000.0;
         paint_view(&v, 0, &mut wild);
-        let view_h = 338.0 - 16.0 - ROW_H * 2.0 - FOOT_H - GRID;
+
+        // The reference is BEHAVIOURAL, not a second copy of the layout:
+        // parking the cursor on the last button scrolls the minimum that brings
+        // the bottom of the content into view, which is the maximum offset the
+        // region has any business holding. A clamp is right if 10,000 lands
+        // within a row of that; it is broken if it lands anywhere near 10,000.
+        let mut bottom = 0.0;
+        paint_view(&v, last_focus(&v), &mut bottom);
+        assert!(bottom > 0.0, "a fixture that overflows must scroll at all");
         assert!(
-            wild <= scroll_body_height(&v) - view_h + 1.0,
-            "clamped to {wild}, which is past the end of the content"
+            wild <= bottom + STYLE_ROW_H,
+            "clamped to {wild}, and the end of the content is {bottom}"
         );
     }
 

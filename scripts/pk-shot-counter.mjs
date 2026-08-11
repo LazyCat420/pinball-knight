@@ -10,6 +10,19 @@
  *   node scripts/pk-shot-counter.mjs                 # trunk build + armory
  *   node scripts/pk-shot-counter.mjs --no-build
  *   node scripts/pk-shot-counter.mjs --station table
+ *   node scripts/pk-shot-counter.mjs --view 1200x676 # the TIGHTEST UI regime
+ *
+ * ── THE VIEWPORT IS PART OF THE MEASUREMENT ────────────────────────────────
+ * A sheet does not overflow at a size, it overflows at a REGIME. `screen_zoom`
+ * hands a design box the largest integer zoom that fits the lattice, so the UI
+ * frame is `render / zoom` — 800x450 at this script's old fixed 1600x900, but
+ * only 600x338 on a 1200x676 window, where the same counter has 112 fewer
+ * pixels of height to live in. That is why the counter photographed here as
+ * "fits, with a scrollbar" while the player's own window showed rows running
+ * off the bottom of the plate: the harness had never once stood in the regime
+ * the defect lives in. So `--view` exists, the shot is NAMED for its viewport,
+ * and the run PRINTS the frame it measured (`__pk.gui` carries the painter's
+ * size; the zoom follows from the design box).
  *
  * ── WALKING IS THE HARD PART, AND IT IS NOT INCIDENTAL ─────────────────────
  * WASD is SCREEN-relative in an isometric room, the central pinball table walls
@@ -39,11 +52,14 @@ const { values: a } = parseArgs({
     out: { type: "string", default: join(ROOT, ".checks") },
     port: { type: "string", default: "8795" },
     "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
+    view: { type: "string", default: "1600x900" },
   },
 });
 
-const VIEW_W = 1600;
-const VIEW_H = 900;
+const VIEW = /^(\d+)x(\d+)$/.exec(a.view);
+if (!VIEW) throw new Error(`--view wants WxH, got "${a.view}"`);
+const VIEW_W = Number(VIEW[1]);
+const VIEW_H = Number(VIEW[2]);
 const PORT = Number(a.port);
 
 /** Stand-here positions, from `pk_core::tavern::layout::STATIONS`. */
@@ -141,8 +157,15 @@ async function main() {
     const after = await pose();
     const gui = (await pk())?.gui ?? null;
     log(`panel=${after?.panel}  gui.open=${gui?.open}  painted=${gui?.painted}`);
+    // The regime this shot was taken in — see the header. A sheet's design box
+    // is {600, 338, max 2}, so the frame it painted into is the lattice over
+    // that zoom, and THAT is the number a "does it fit" claim is about.
+    if (gui?.w) {
+      const zoom = Math.max(1, Math.min(2, Math.floor(gui.w / 600), Math.floor(gui.h / 338)));
+      log(`viewport ${VIEW_W}x${VIEW_H} → lattice ${gui.w}x${gui.h} → sheet zoom ${zoom} → frame ${Math.floor(gui.w / zoom)}x${Math.floor(gui.h / zoom)}`);
+    }
 
-    const shot = join(a.out, `tavern-counter-${a.station}.png`);
+    const shot = join(a.out, `tavern-counter-${a.station}-${VIEW_W}x${VIEW_H}.png`);
     await page.screenshot({ path: shot });
     log(`screenshot: ${shot}`);
     if (!after?.panel) {
