@@ -288,7 +288,10 @@ mod tests {
     #[test]
     fn buying_plate_charges_once_and_a_full_slot_is_free_to_click() {
         let (mut l, mut w) = rich();
-        assert_eq!(l.buy_gear(&mut w, GearSlot::Armor).unwrap(), "Armor equipped");
+        assert_eq!(
+            l.buy_gear(&mut w, GearSlot::Armor).unwrap(),
+            "Armor equipped"
+        );
         assert_eq!(l.worn(GearSlot::Armor), 5);
         assert_eq!(w.balance(), 10_000 - 70);
         // Already full: the oracle checks BEFORE it charges.

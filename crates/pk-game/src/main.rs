@@ -34,6 +34,7 @@ mod floor_loading;
 mod fx;
 mod gui;
 mod intro;
+mod maze_art;
 mod overworld;
 mod post;
 mod real_floor;
@@ -830,6 +831,7 @@ fn setup_dungeon(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     art: Res<KnightArt>,
     monster_art: Res<authored_render::MonsterArt>,
     mut prepared: ResMut<PreparedFloor>,
@@ -898,7 +900,14 @@ fn setup_dungeon(
         curr: spawn,
     });
 
-    for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid, stone) {
+    for e in spawn_grid_meshes(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut images,
+        &sim.grid,
+        stone,
+    ) {
         commands.entity(e).insert(DungeonScene);
     }
     // What the floor is MADE of, over the top of it. A no-op on a grid with no

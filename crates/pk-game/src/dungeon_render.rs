@@ -35,23 +35,32 @@
 //!    here — the floor is what the camera is looking at, so per-tile frustum
 //!    rejection saves little, while per-tile ECS work costs every frame.
 //!
-//! Deliberately NOT ported yet (P3, and each would change the picture):
-//! textures and the moss material, banners/decor/torches/lights, the
-//! knee-high treatment for shaped tiles and arc sweeps, and legacy's
-//! removable meshes for `T_CRACKED` bands. The moss BUCKET is ported now —
-//! only its material is still plain stone — so the split costs nothing on the
-//! day the texture lands.
+//! 3. **TEXTURES** (V-1, 2026-08-11). Every material here was a flat
+//!    `base_color` — the right stone FAMILY since the `BIOME_STONE` remap, and
+//!    one colour where the oracle has flagstone, moss, coursing and cracks.
+//!    The bake now exists (`crate::maze_art`), so the floor, the four wall
+//!    variants and the dressed caps carry their painted pixels and their
+//!    height-field normal maps. This is where the moss BUCKET finally pays for
+//!    itself: it has carried the right SELECTION since the batching pass with
+//!    no material of its own, and the day its texture landed cost one line.
+//!
+//! Deliberately NOT ported yet (P3/V-4, and each would change the picture):
+//! banners and decor, the knee-high treatment for shaped tiles and arc sweeps,
+//! shaped tiles at their real heights, and legacy's removable meshes for
+//! `T_CRACKED` bands (whose face texture IS baked, and unused until the bands
+//! are geometry).
 
 use std::collections::BTreeMap;
 
 use bevy::asset::RenderAssetUsages;
+use bevy::math::Affine2;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
 use pk_core::grid::{is_low_wall, is_walkable, shape_at, tile_center, Grid};
 use pk_core::tile_shape::{is_round, is_slant, round_center, shape_normal, SHAPE_FULL};
 
 use crate::dungeon_light::Stone;
-use crate::units::c;
+use crate::maze_art;
 use crate::{WALL_H, WALL_LOW};
 
 /// One batched draw: every tile in the bucket shares a mesh shape, a height
@@ -65,9 +74,10 @@ pub(crate) enum Bucket {
     /// Full-height stone box.
     Full,
     /// Full-height box on the legacy moss variant, `(i*7 + j*13) % 4 == 0`.
-    /// Same material as [`Bucket::Full`] until the textures land; the point of
-    /// carrying it now is that the SELECTION is the thing that has to match
-    /// the oracle, and a selection with no bucket cannot be checked.
+    /// Carries its own damp-rot face bake as of V-1; it existed for two passes
+    /// before that with the plain stone material, because the SELECTION is the
+    /// thing that has to match the oracle and a selection with no bucket
+    /// cannot be checked.
     Moss,
     /// Knee-high camera-side rim — the Diablo rule (`pk_core::grid::is_low_wall`).
     Low,
@@ -143,12 +153,21 @@ pub(crate) struct WallPlan {
     pub stats: PlanStats,
 }
 
+/// Face groups a box bucket splits into — see [`FaceGroup`]. The oracle gives
+/// every wall box six materials (four coursed sides, two dressed caps); a
+/// merged mesh carries one, so each bucket becomes this many entities.
+const FACE_GROUPS: usize = 2;
+
 impl WallPlan {
-    /// Entities this plan spawns: one per non-empty bucket, one for the arcs
-    /// if any, plus the floor plane. Equals the draw count, since each is one
-    /// mesh with one material.
+    /// Entities this plan spawns: [`FACE_GROUPS`] per non-empty bucket, one for
+    /// the arcs if any, plus the floor plane. Equals the draw count, since each
+    /// is one mesh with one material.
+    ///
+    /// This was `buckets.len() + …` while every bucket drew in one flat colour.
+    /// The baked textures split sides from caps, which doubles the bucket term
+    /// — an upper bound, since a bucket with no cap faces spawns one entity.
     pub fn batched_entities(&self) -> usize {
-        self.buckets.len() + usize::from(!self.arcs.is_empty()) + 1
+        self.buckets.len() * FACE_GROUPS + usize::from(!self.arcs.is_empty()) + 1
     }
 }
 
@@ -414,6 +433,91 @@ pub(crate) fn build_meshes(plan: &WallPlan) -> Vec<(Bucket, Mesh)> {
         .collect()
 }
 
+/// Which of a wall's faces a texture belongs on.
+///
+/// The oracle hands a box SIX materials, not one:
+/// `[faceMat, faceMat, capMat, capMat, faceMat, faceMat]` in three.js's
+/// `+x, -x, +y, -y, +z, -z` order (`build.ts:1425`) — coursed masonry on the
+/// four sides, the bordered grid cap on top and bottom, "so the coursed texture
+/// doesn't smear across a horizontal face".
+///
+/// A merged bucket is ONE mesh with ONE material, so the split has to happen in
+/// the geometry instead: each bucket becomes two entities, one per face group.
+/// Splitting by the NORMAL rather than by vertex index is deliberate — it needs
+/// no knowledge of how Bevy happens to order a `Cuboid`'s faces this version,
+/// and it does the right thing for the cylinder shells as well.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum FaceGroup {
+    /// Vertical-ish: the coursed wall face.
+    Side,
+    /// Horizontal-ish: the dressed cap, top and bottom alike.
+    Cap,
+}
+
+/// The half of `mesh` whose triangles face `group`, or `None` if it has none.
+///
+/// A triangle is classified by its first vertex normal, which is exact for the
+/// flat-shaded boxes and wedges this is called on. `0.5` is a wide margin
+/// rather than a tuned threshold: box normals are axis-aligned, so every
+/// triangle scores 0 or 1 and nothing sits near the boundary.
+pub(crate) fn split_faces(mesh: &Mesh, group: FaceGroup) -> Option<Mesh> {
+    let (Some(VertexAttributeValues::Float32x3(pos)), Some(VertexAttributeValues::Float32x3(nrm))) = (
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        mesh.attribute(Mesh::ATTRIBUTE_NORMAL),
+    ) else {
+        return None;
+    };
+    let uv = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+        Some(VertexAttributeValues::Float32x2(v)) => v.as_slice(),
+        _ => &[],
+    };
+    let idx: Vec<u32> = match mesh.indices() {
+        Some(Indices::U32(v)) => v.clone(),
+        Some(Indices::U16(v)) => v.iter().map(|&k| u32::from(k)).collect(),
+        None => (0..pos.len() as u32).collect(),
+    };
+
+    // Vertices are re-indexed rather than copied wholesale: a bucket's cap is
+    // 1/3 of its vertices, and shipping the other 2/3 as unreferenced data
+    // would double the upload for no drawn triangle.
+    let mut remap = vec![u32::MAX; pos.len()];
+    let (mut o_pos, mut o_nrm, mut o_uv, mut o_idx) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for tri in idx.chunks_exact(3) {
+        let horizontal = nrm[tri[0] as usize][1].abs() > 0.5;
+        if horizontal != (group == FaceGroup::Cap) {
+            continue;
+        }
+        for &v in tri {
+            let vi = v as usize;
+            if remap[vi] == u32::MAX {
+                remap[vi] = o_pos.len() as u32;
+                o_pos.push(pos[vi]);
+                o_nrm.push(nrm[vi]);
+                if !uv.is_empty() {
+                    o_uv.push(uv[vi]);
+                }
+            }
+            o_idx.push(remap[vi]);
+        }
+    }
+    if o_idx.is_empty() {
+        return None;
+    }
+
+    let mut out = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, o_pos)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, o_nrm)
+    .with_inserted_indices(Indices::U32(o_idx));
+    if !o_uv.is_empty() {
+        out.insert_attribute(Mesh::ATTRIBUTE_UV_0, o_uv);
+    }
+    Some(out)
+}
+
 /// Spawn the floor plane, batched wall meshes (Diablo-rule low rims),
 /// shaped-tile meshes and arc-guide segments for a grid — shared by the
 /// dungeon floor and the intro's title maze. Returns every entity so callers
@@ -424,11 +528,16 @@ pub(crate) fn spawn_grid_meshes(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
     grid: &Grid,
     stone: Stone,
 ) -> Vec<Entity> {
     let plan = plan_walls(grid);
     let mut out = Vec::with_capacity(plan.batched_entities());
+    // The baked stone for THIS biome. Until this landed every material here was
+    // a flat `base_color` — the right FAMILY since the `BIOME_STONE` remap, but
+    // one colour where the oracle has flagstone, moss, cracks and coursing.
+    let tex = maze_art::load(images, stone.biome);
 
     // ── Floor plane ──
     let (gw, gh) = (grid.w as f32, grid.h as f32);
@@ -437,15 +546,30 @@ pub(crate) fn spawn_grid_meshes(
             .spawn((
                 Mesh3d(meshes.add(Plane3d::default().mesh().size(gw, gh))),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    // The biome's DARK stone — the flagstone floor's base tone.
-                    // Was a warm grey that answered to no biome; see `Stone`.
-                    base_color: c(stone.dark),
-                    // LIT, as of the light rig (`dungeon_light`). These four
+                    base_color_texture: Some(tex.floor.clone()),
+                    normal_map_texture: Some(tex.floor_normal.clone()),
+                    // The floor is ONE plane under the whole grid and the
+                    // flagstone texture spans `FLOOR_BLOCK` tiles, so the
+                    // repeat is the grid measured in texture blocks —
+                    // `cachedTiled("floor", …, grid.w / FLOOR_BLOCK, grid.h /
+                    // FLOOR_BLOCK)` (`build.ts:1215`). Getting this wrong does
+                    // not fail; it just makes the flagstones the wrong size.
+                    uv_transform: Affine2::from_scale(Vec2::new(
+                        gw / maze_art::FLOOR_BLOCK,
+                        gh / maze_art::FLOOR_BLOCK,
+                    )),
+                    // The biome's DARK stone still tints the map. It is white
+                    // in the oracle (`map` with no `color`), and it is kept
+                    // here at full white for the same reason — the biome is
+                    // already IN the pixels (`css()` remaps before painting),
+                    // so tinting again would double the colour.
+                    base_color: Color::WHITE,
+                    // LIT, as of the light rig (`dungeon_light`). These
                     // materials were `unlit` while the dungeon had no lights at
-                    // all, which made the torch pool a no-op — see that module's
-                    // header. Roughness 0.95: stone, with no specular highlight
-                    // to give away that the normal maps have not been baked yet.
+                    // all, which made the torch pool a no-op — see that
+                    // module's header.
                     perceptual_roughness: 0.95,
+                    metallic: 0.0,
                     ..default()
                 })),
                 Transform::from_xyz(0.0, 0.0, 0.0),
@@ -454,47 +578,69 @@ pub(crate) fn spawn_grid_meshes(
     );
 
     // ── Walls: full-height stone, knee-high camera-side rims (the Diablo rule)
-    let wall_mat = materials.add(StandardMaterial {
-        // MID stone: the wall faces, which is most of what the camera sees.
-        base_color: c(stone.mid),
-        perceptual_roughness: 0.95,
+    //
+    // Roughness is the oracle's per-material figure, and the two differ:
+    // faces 0.92 (`build.ts:1418`), caps 0.95 (`:1363`).
+    let face = |map: &Handle<Image>, normal: &Handle<Image>| StandardMaterial {
+        base_color_texture: Some(map.clone()),
+        normal_map_texture: Some(normal.clone()),
+        perceptual_roughness: 0.92,
+        metallic: 0.0,
         ..default()
-    });
-    let low_mat = materials.add(StandardMaterial {
-        // LIGHT stone on the knee-high rims: the camera looks down at their
-        // TOPS, and the oracle's cap texture is the lightest of the three.
-        base_color: c(stone.light),
-        perceptual_roughness: 0.95,
-        ..default()
-    });
+    };
+    let wall_mat = materials.add(face(&tex.wall, &tex.wall_normal));
+    // Moss is its own PAINT, not its own geometry — the bucket has existed
+    // since the batching pass precisely so this day cost one line.
+    let moss_mat = materials.add(face(&tex.wall_moss, &tex.wall_normal));
+    // The knee-high rims have their own face bake: a full design squashed to
+    // 0.35 world units would read as stripes, so the painter draws a different
+    // one (`makeWallTexture(_, low = true)`).
+    let low_mat = materials.add(face(&tex.wall_low, &tex.wall_low_normal));
     // Shaped tiles get their own meshes — square boxes would contradict the
     // collider ("see = hit" is the tile-shape contract; these are P3-debt
-    // approximations of it, not violations).
-    let shaped_mat = materials.add(StandardMaterial {
-        base_color: c(stone.mid),
+    // approximations of it, not violations). The oracle paints them with the
+    // PLAIN tall face (`build.ts:1453`).
+    let shaped_mat = materials.add(face(&tex.wall, &tex.wall_normal));
+    let cap_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(tex.cap.clone()),
+        normal_map_texture: Some(tex.cap_normal.clone()),
         perceptual_roughness: 0.95,
+        metallic: 0.0,
         ..default()
     });
 
     for (bucket, mesh) in build_meshes(&plan) {
-        let material = match bucket {
-            // Moss shares stone until its texture lands — the bucket exists
-            // for the selection, not yet for a different look.
-            Bucket::Full | Bucket::Moss => wall_mat.clone(),
+        let side_mat = match bucket {
+            Bucket::Full => wall_mat.clone(),
+            Bucket::Moss => moss_mat.clone(),
             Bucket::Low => low_mat.clone(),
             Bucket::Slant { .. } | Bucket::Round { .. } => shaped_mat.clone(),
         };
-        out.push(
-            commands
-                .spawn((
-                    Mesh3d(meshes.add(mesh)),
-                    MeshMaterial3d(material),
-                    // The stamps carry world positions, so the batch entity
-                    // sits at the origin.
-                    Transform::IDENTITY,
-                ))
-                .id(),
-        );
+        // Two entities per bucket, one material each — the merged-mesh stand-in
+        // for the oracle's six-material box. A bucket with no cap faces (there
+        // are none today, but a future capless shell would be one) spawns one.
+        //
+        // ⚠️ The round shell is CAPLESS in the oracle (`side: DoubleSide`, no
+        // cap material) and Bevy's `Cylinder` has end discs. Giving those the
+        // cap texture is the closer of the two available wrongs; making the
+        // shell genuinely capless is V-4, with the rest of the shaped-tile
+        // heights.
+        for (group, material) in [(FaceGroup::Side, &side_mat), (FaceGroup::Cap, &cap_mat)] {
+            let Some(part) = split_faces(&mesh, group) else {
+                continue;
+            };
+            out.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(part)),
+                        MeshMaterial3d(material.clone()),
+                        // The stamps carry world positions, so the batch entity
+                        // sits at the origin.
+                        Transform::IDENTITY,
+                    ))
+                    .id(),
+            );
+        }
     }
 
     let arc_mat = materials.add(StandardMaterial {
@@ -631,6 +777,95 @@ pub(crate) fn spawn_surface_wash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The face split has to PARTITION — every triangle in exactly one group.
+    ///
+    /// The failure this pins is not a crash: a split that dropped triangles
+    /// leaves holes in the masonry, and one that duplicated them z-fights. Both
+    /// read as a texture problem rather than a geometry one, which is why the
+    /// counts are asserted rather than eyeballed on the A/B sheet.
+    #[test]
+    fn the_face_split_partitions_a_box() {
+        let cube = Mesh::from(Cuboid::new(1.0, WALL_H, 1.0));
+        let whole = tri_count(&cube);
+        let sides = split_faces(&cube, FaceGroup::Side).expect("a box has sides");
+        let caps = split_faces(&cube, FaceGroup::Cap).expect("a box has caps");
+        assert_eq!(
+            tri_count(&sides) + tri_count(&caps),
+            whole,
+            "triangles lost or doubled"
+        );
+        // Four upright faces and two horizontal ones, two triangles each.
+        assert_eq!(tri_count(&sides), 8);
+        assert_eq!(tri_count(&caps), 4);
+    }
+
+    /// …and it must partition BY NORMAL, not by vertex index.
+    ///
+    /// A split that happened to produce 8/4 by slicing the index buffer at the
+    /// right offset would pass the test above and put the coursed wall texture
+    /// on the floor-facing cap. Assert what each group actually faces.
+    #[test]
+    fn each_group_holds_only_faces_that_point_its_way() {
+        let cube = Mesh::from(Cuboid::new(1.0, WALL_H, 1.0));
+        for (group, want_horizontal) in [(FaceGroup::Side, false), (FaceGroup::Cap, true)] {
+            let part = split_faces(&cube, group).unwrap();
+            let Some(VertexAttributeValues::Float32x3(nrm)) =
+                part.attribute(Mesh::ATTRIBUTE_NORMAL)
+            else {
+                panic!("{group:?} kept its normals");
+            };
+            for n in nrm {
+                assert_eq!(
+                    n[1].abs() > 0.5,
+                    want_horizontal,
+                    "{group:?} holds a face with normal {n:?}"
+                );
+            }
+        }
+    }
+
+    /// UVs survive the re-index. Without them the texture is not merely
+    /// misplaced — `StandardMaterial` samples at (0,0) and every wall in the
+    /// floor becomes one flat colour, which is precisely what V-1 was fixing
+    /// and would look like the textures had never landed.
+    #[test]
+    fn the_split_keeps_its_uvs() {
+        let cube = Mesh::from(Cuboid::new(1.0, WALL_H, 1.0));
+        for group in [FaceGroup::Side, FaceGroup::Cap] {
+            let part = split_faces(&cube, group).unwrap();
+            let Some(VertexAttributeValues::Float32x2(uv)) = part.attribute(Mesh::ATTRIBUTE_UV_0)
+            else {
+                panic!("{group:?} kept its uvs");
+            };
+            let Some(VertexAttributeValues::Float32x3(pos)) =
+                part.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!("{group:?} kept its positions");
+            };
+            assert_eq!(uv.len(), pos.len(), "{group:?}: one uv per vertex");
+            // A face's texture spans it exactly once (`build.ts:1408` stretches
+            // rather than repeats), so the corners must reach both extremes.
+            assert!(uv.iter().any(|c| c[0] <= 0.001) && uv.iter().any(|c| c[0] >= 0.999));
+        }
+    }
+
+    /// Unreferenced vertices must not ride along: a cap is a third of a box's
+    /// triangles and would otherwise ship a whole box's vertex buffer.
+    #[test]
+    fn the_split_drops_the_vertices_it_does_not_draw() {
+        let cube = Mesh::from(Cuboid::new(1.0, WALL_H, 1.0));
+        let caps = split_faces(&cube, FaceGroup::Cap).unwrap();
+        assert_eq!(caps.count_vertices(), 8, "two quads, four corners each");
+    }
+
+    fn tri_count(m: &Mesh) -> usize {
+        match m.indices() {
+            Some(Indices::U32(v)) => v.len() / 3,
+            Some(Indices::U16(v)) => v.len() / 3,
+            None => m.count_vertices() / 3,
+        }
+    }
 
     /// The wash buckets only ever read a WALKABLE tile's byte.
     ///
@@ -885,13 +1120,24 @@ mod tests {
         // here — not one tile was dropped.
         assert_eq!(s.culled, 0, "demo_floor has no interior fill to cull");
         assert!(
-            plan.batched_entities() <= 8,
+            plan.batched_entities() <= 8 * FACE_GROUPS,
             "batched to {} entities",
             plan.batched_entities()
         );
+        // ⚠️ This factor was 20 while a bucket was one entity. V-1's face split
+        // doubles the batched count BY CONSTRUCTION — that is the price of the
+        // oracle's two materials per box (coursed sides, dressed cap) under a
+        // one-material-per-mesh renderer — so the ratio it can possibly reach
+        // halved with it. Lowering the number without saying so would have hid
+        // a real regression behind an identical-looking green test, so: 10× is
+        // the same claim as the old 20×, restated against the new entity count,
+        // and the demo floor is the WORST case in the game for it (625 tiles,
+        // five buckets). A real floor is ~194×146.
         assert!(
-            s.per_tile_entities() > 20 * plan.batched_entities(),
-            "batching must be worth doing even on the demo floor"
+            s.per_tile_entities() > 10 * plan.batched_entities(),
+            "batching must be worth doing even on the demo floor: {} per-tile vs {} batched",
+            s.per_tile_entities(),
+            plan.batched_entities()
         );
     }
 
@@ -949,7 +1195,7 @@ mod tests {
             100.0 * s.culled_fraction()
         );
         assert!(
-            plan.batched_entities() <= 8,
+            plan.batched_entities() <= 8 * FACE_GROUPS,
             "batched to {} entities",
             plan.batched_entities()
         );
@@ -998,7 +1244,7 @@ mod tests {
             100.0 * s.culled_fraction()
         );
         assert!(
-            plan.batched_entities() <= 8,
+            plan.batched_entities() <= 8 * FACE_GROUPS,
             "batched to {} entities",
             plan.batched_entities()
         );

@@ -194,8 +194,9 @@ impl GuiLayer {
             // (intro-chrome.ts). It does NOT pause, and it must not capture the
             // keyboard: "PRESS ANY KEY" is handled by the intro's own listener
             // and swallowing keys here would make it a lie.
-            ScreenId::IntroChrome => ScreenEntry::new(id, false)
-                .with_design(INTRO_DESIGN_W, INTRO_DESIGN_H, INTRO_ZOOM),
+            ScreenId::IntroChrome => {
+                ScreenEntry::new(id, false).with_design(INTRO_DESIGN_W, INTRO_DESIGN_H, INTRO_ZOOM)
+            }
             // The counter PAUSES the room and takes the keyboard: the oracle's
             // vendor screens are modal over the walkable tavern, and a sheet
             // you can walk away from while it is open is how `openStation`

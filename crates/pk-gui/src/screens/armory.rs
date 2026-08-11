@@ -106,7 +106,7 @@ fn content_height(v: &ArmoryView) -> f64 {
         + REPAIR_H
         + ROW_H + GRID                                       // ELEMENTAL SETS heading
         + v.styles.len() as f64 * (STYLE_ROW_H + ROW_GAP)
-        + FOOT_H + GRID * 2.0                                // BACK, and the plate's own margin
+        + FOOT_H + GRID * 2.0 // BACK, and the plate's own margin
 }
 
 /// Paint it, and report the one action taken this frame.
@@ -246,7 +246,11 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView) -> Option<ArmoryAction> {
         well(f, &r, None);
         // The swatch is the row's identity — "matches the sprite's plate mid
         // tone", so a player recognises the set they are wearing.
-        crate::im::fill_rect(f, &rect(r.x + 4.0, r.y + 8.0, 4.0, 16.0), Rgba::hex(s.swatch));
+        crate::im::fill_rect(
+            f,
+            &rect(r.x + 4.0, r.y + 8.0, 4.0, 16.0),
+            Rgba::hex(s.swatch),
+        );
         text(
             f,
             &s.label,
@@ -331,11 +335,7 @@ fn heading(f: &mut UiFrame, r: &Rect, s: &str) {
             ..TextOpts::default()
         },
     );
-    crate::im::fill_rect(
-        f,
-        &rect(r.x, r.y + r.h - 3.0, r.w, 1.0),
-        Ui::SHEET_EDGE_LIT,
-    );
+    crate::im::fill_rect(f, &rect(r.x, r.y + r.h - 3.0, r.w, 1.0), Ui::SHEET_EDGE_LIT);
 }
 
 #[cfg(test)]
@@ -349,13 +349,47 @@ mod tests {
         ArmoryView {
             gold: 500,
             plate: vec![
-                PlateRow { label: "Helmet".into(), worn: 0, base: 3, price: 45, affordable: true },
-                PlateRow { label: "Armor".into(), worn: 2, base: 5, price: 70, affordable: true },
-                PlateRow { label: "Boots".into(), worn: 1, base: 1, price: 40, affordable: true },
+                PlateRow {
+                    label: "Helmet".into(),
+                    worn: 0,
+                    base: 3,
+                    price: 45,
+                    affordable: true,
+                },
+                PlateRow {
+                    label: "Armor".into(),
+                    worn: 2,
+                    base: 5,
+                    price: 70,
+                    affordable: true,
+                },
+                PlateRow {
+                    label: "Boots".into(),
+                    worn: 1,
+                    base: 1,
+                    price: 40,
+                    affordable: true,
+                },
             ],
             styles: vec![
-                StyleRow { label: "Glacier Plate".into(), blurb: "hoarfrost steel, cold-blue sheen".into(), price: 600, owned: false, worn: false, affordable: false, swatch: 0x6fd0e8 },
-                StyleRow { label: "Storm Plate".into(), blurb: "storm-slate chased with lightning gold".into(), price: 900, owned: true, worn: true, affordable: false, swatch: 0xffd98a },
+                StyleRow {
+                    label: "Glacier Plate".into(),
+                    blurb: "hoarfrost steel, cold-blue sheen".into(),
+                    price: 600,
+                    owned: false,
+                    worn: false,
+                    affordable: false,
+                    swatch: 0x6fd0e8,
+                },
+                StyleRow {
+                    label: "Storm Plate".into(),
+                    blurb: "storm-slate chased with lightning gold".into(),
+                    price: 900,
+                    owned: true,
+                    worn: true,
+                    affordable: false,
+                    swatch: 0xffd98a,
+                },
             ],
             repair_price: 40,
             repair_affordable: true,
@@ -407,8 +441,14 @@ mod tests {
         // cursor does not silently skip the row you are wearing.
         let mut input = empty_ui_input();
         input.accept = true;
-        assert_eq!(paint_with_focus(&input, 1).1, Some(ArmoryAction::BuyPlate(1)));
-        assert_eq!(paint_with_focus(&input, 2).1, Some(ArmoryAction::BuyPlate(2)));
+        assert_eq!(
+            paint_with_focus(&input, 1).1,
+            Some(ArmoryAction::BuyPlate(1))
+        );
+        assert_eq!(
+            paint_with_focus(&input, 2).1,
+            Some(ArmoryAction::BuyPlate(2))
+        );
         assert_eq!(paint_with_focus(&input, 3).1, Some(ArmoryAction::RepairAll));
         // Index 4 is the first set. In this view the purse is 500g and Glacier
         // is 600g, so it is a DISABLED button and accepting on it must do

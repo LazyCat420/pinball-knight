@@ -35,16 +35,18 @@
 //! [`hemi_over_ambient`] instead of being a constant that happens to be right in
 //! the room it was derived in.
 //!
-//! ## ⚠️ The ambient magnitude is calibrated on PLACEHOLDER albedos
+//! ## The ambient magnitude is calibrated on the albedo, and now on the real one
 //!
 //! Bevy's ambient carries an achromatic specular pedestal that three.js has no
 //! counterpart for, and cancelling it needs the albedo it is cancelled AT (see
-//! `tavern.rs`'s `AMBIENT_SPECULAR_PEDESTAL`). The dungeon's albedos today are
-//! the four flat greys `dungeon_render` picked for an UNLIT look, not the baked
-//! stone textures of V1. So [`SURFACE_ALBEDO_LUMA`] is a measurement of
-//! placeholder art and **must be re-derived when the textures land** — the A/B
-//! rig (`scripts/pk-ab-dungeon.mjs`) is what settles it, and it is the reason
-//! this number is a named constant with a note rather than an inline literal.
+//! `tavern.rs`'s `AMBIENT_SPECULAR_PEDESTAL`). [`SURFACE_ALBEDO_LUMA`] was a
+//! measurement of `dungeon_render`'s flat placeholder greys, with a note asking
+//! whoever landed the textures to re-derive it.
+//!
+//! **Done 2026-08-11 with V-1**: it is measured from the baked stone itself by
+//! `maze_art::mean_linear_luma`, and a test now prints that table and fails if
+//! a re-bake moves it. A note asking a future reader to remember is the weakest
+//! form a calibration can take, and this one had already survived one pass.
 
 use bevy::prelude::*;
 
@@ -72,12 +74,38 @@ const AMBIENT_ENV_BRDF: f32 = 0.4524;
 const AMBIENT_SPECULAR_PEDESTAL: f32 = 0.0148;
 /// The albedo the ambient is calibrated ON, in linear luma.
 ///
-/// Measured from what fills the frame TODAY: `dungeon_render`'s wall grey
-/// `srgb(0.34, 0.32, 0.30)` is 0.0977 linear luma and its floor
-/// `srgb(0.13, 0.11, 0.10)` is 0.0139; walls dominate the standing frame and
-/// the floor the plan view, so the midpoint is the honest single number.
-/// ⚠️ PLACEHOLDER — see the module header.
-const SURFACE_ALBEDO_LUMA: f32 = 0.055;
+/// **Re-derived from the BAKED stone, 2026-08-11 (V-3).** Measured by
+/// `maze_art::mean_linear_luma` over all four biomes' floor and plain-wall
+/// maps; walls dominate the standing frame and the floor the plan view, so the
+/// midpoint of the two means is the honest single number. The test
+/// `the_baked_albedo_is_what_the_ambient_is_calibrated_on` prints the table and
+/// fails if a re-bake moves it — this used to be a comment asking a future
+/// reader to remember, which is the weakest form a calibration can take.
+///
+/// The superseded figure was 0.055, measured on `dungeon_render`'s flat
+/// placeholder greys (wall `srgb(0.34, 0.32, 0.30)` = 0.0977, floor
+/// `srgb(0.13, 0.11, 0.10)` = 0.0139).
+///
+/// **The real art inverts that relationship**, which is why guessing it twice
+/// would not have converged: the placeholders had the wall seven times brighter
+/// than the floor, and the bake has the FLOOR brighter than the wall in every
+/// biome. Flagstone catches the light; coursed masonry is mostly mortar shadow.
+///
+/// ```text
+/// crypt       floor 0.0726  wall 0.0351  cap 0.0332
+/// warren      floor 0.0827  wall 0.0353  cap 0.0304
+/// bloodworks  floor 0.1002  wall 0.0489  cap 0.0471
+/// arcane      floor 0.1119  wall 0.0523  cap 0.0480
+/// mean wall 0.0429, mean floor 0.0918 → 0.0674
+/// ```
+const SURFACE_ALBEDO_LUMA: f32 = 0.0674;
+
+/// Read-only access for the measurement test in `maze_art`, which owns the
+/// pixels this figure is derived from.
+#[cfg(test)]
+pub(crate) fn surface_albedo_luma() -> f32 {
+    SURFACE_ALBEDO_LUMA
+}
 
 /// A floor's colour identity — `boot/biomes.ts`'s `BiomeTint`.
 #[derive(Clone, Copy, Debug)]
@@ -111,55 +139,46 @@ impl Default for Tint {
 /// `dungeon_render`'s four placeholder greys were picked to look right UNLIT
 /// and answer to no biome at all.
 ///
-/// These are the palette entries the triple resolves to, so the placeholder
-/// materials are the right FAMILY before they are the right texture. Values
-/// from `render/palette.ts PALETTE_HEX`.
-#[derive(Clone, Copy, Debug)]
+/// ## Why this is an INDEX and no longer three hex values
+///
+/// It carried the resolved triple while `dungeon_render` painted flat colours,
+/// which got the stone FAMILY right ahead of the textures (median luma 23.2 →
+/// 40.6 against the oracle's 40.7). V-1 made that redundant: `crate::maze_art`
+/// ships the oracle's own pixels, with the remap already applied by the painter
+/// that owns it. Keeping the hexes here as well would be a SECOND copy of the
+/// biome's colour that no code reads and nothing compares — free to drift from
+/// the bake, and invisible when it did.
+///
+/// The index is what survives, because the one thing the port still has to
+/// decide is *which* biome, and it must be decided ONCE. Keyed on the NAME
+/// because that is what the authored floor's payload carries — the export has
+/// no biome index, and deriving one from the level would re-implement
+/// `biomeFor` in a second place, which is how two files come to disagree about
+/// what floor 9 is made of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stone {
-    pub dark: u32,
-    pub mid: u32,
-    pub light: u32,
+    /// Index into `BIOME_STONE`, and therefore into the baked texture sets.
+    pub biome: usize,
 }
 
 impl Default for Stone {
     /// Biome 0, The Cold Crypt: slots 2/3/4 unremapped.
     fn default() -> Self {
-        Self {
-            dark: 0x2b303b,
-            mid: 0x454f5e,
-            light: 0x6b7688,
-        }
+        Self { biome: 0 }
     }
 }
 
 impl Stone {
     /// The stone family for a biome name.
-    ///
-    /// Keyed on the NAME because that is what the authored floor's payload
-    /// carries — the export has no biome index, and deriving one from the level
-    /// would re-implement `biomeFor` in a second place, which is how two files
-    /// come to disagree about what floor 9 is made of.
     pub fn for_biome(name: &str) -> Self {
         match name {
             // [6, 7, 8] — mossed-through stone.
-            "The Rotting Warren" => Self {
-                dark: 0x1e2f1f,
-                mid: 0x3d5c3a,
-                light: 0x5f8a4f,
-            },
+            "The Rotting Warren" => Self { biome: 1 },
             // [11, 12, 13] — the walls weep red.
-            "The Bloodworks" => Self {
-                dark: 0x6b1f2a,
-                mid: 0xa83244,
-                light: 0xd95763,
-            },
+            "The Bloodworks" => Self { biome: 2 },
             // [29, 30, 4] — cold blue rock, NEUTRAL stone highlights. The third
             // slot is deliberately not remapped in the oracle either.
-            "The Arcane Deep" => Self {
-                dark: 0x1f3d52,
-                mid: 0x2e6d8f,
-                light: 0x6b7688,
-            },
+            "The Arcane Deep" => Self { biome: 3 },
             _ => Self::default(),
         }
     }

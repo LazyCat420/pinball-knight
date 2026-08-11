@@ -93,9 +93,39 @@ pub fn blob_image() -> Image {
 /// on afterwards; `create_texture_with_data` walks the levels in this order
 /// (mip-major, one layer) when it uploads.
 fn decode_mipmapped(png: &[u8]) -> Image {
-    let mut level = image::load_from_memory(png)
+    let rgba = image::load_from_memory(png)
         .expect("baked tavern PNG decodes")
         .to_rgba8();
+    mipmapped_image(
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        ImageSamplerDescriptor {
+            // Crisp if it is ever magnified (the oracle's NearestFilter)…
+            mag_filter: ImageFilterMode::Nearest,
+            // …trilinear when it is shrunk, which is the live case.
+            min_filter: ImageFilterMode::Linear,
+            mipmap_filter: ImageFilterMode::Linear,
+            ..default()
+        },
+    )
+}
+
+/// Build a full mip chain from a decoded image and wrap it as a texture.
+///
+/// Shared with [`crate::maze_art`], whose stone surfaces are minified even
+/// harder than the sign is — a floor tile is a handful of screen pixels at the
+/// far edge of the frustum. The format and sampler are the caller's because
+/// they are what differs: a diffuse map is sRGB and a NORMAL map must not be,
+/// and only the tiling surfaces repeat.
+///
+/// `Image::new` debug-asserts `data.len() == one mip level`, so the chain goes
+/// on afterwards; `create_texture_with_data` walks the levels in this order
+/// (mip-major, one layer) when it uploads.
+pub(crate) fn mipmapped_image(
+    mut level: image::RgbaImage,
+    format: TextureFormat,
+    sampler: ImageSamplerDescriptor,
+) -> Image {
     let (w, h) = level.dimensions();
     let levels = mip_level_count(w, h);
 
@@ -116,24 +146,17 @@ fn decode_mipmapped(png: &[u8]) -> Image {
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        TextureFormat::Rgba8UnormSrgb,
+        format,
         RenderAssetUsages::RENDER_WORLD,
     );
     img.texture_descriptor.mip_level_count = levels;
     img.data = Some(data);
-    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        // Crisp if it is ever magnified (the oracle's NearestFilter)…
-        mag_filter: ImageFilterMode::Nearest,
-        // …trilinear when it is shrunk, which is the live case.
-        min_filter: ImageFilterMode::Linear,
-        mipmap_filter: ImageFilterMode::Linear,
-        ..default()
-    });
+    img.sampler = ImageSampler::Descriptor(sampler);
     img
 }
 
 /// Levels in a full mip chain down to 1×1 — `floor(log2(max(w, h))) + 1`.
-fn mip_level_count(w: u32, h: u32) -> u32 {
+pub(crate) fn mip_level_count(w: u32, h: u32) -> u32 {
     32 - w.max(h).max(1).leading_zeros()
 }
 

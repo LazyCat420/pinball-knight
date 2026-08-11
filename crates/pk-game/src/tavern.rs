@@ -38,16 +38,14 @@ use pk_core::tavern::player::{step_tavern_movement, TavernInput, TavernPose, WAL
 use pk_core::tavern::state::{read_diorama, DioramaState, TavernStats};
 use pk_gui::screens::tavern::{PanelView, StationView, SummaryView};
 
-use pk_core::economy::armory::{
-    Loadout, ELEMENTAL_STYLE_IDS, GEAR_SLOTS, PRICE_REPAIR_GEAR,
-};
-use pk_core::economy::Wallet;
-use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
 use crate::gui::{set_view, Gui, GuiViews, ScreenId};
 use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
 use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
 use crate::{camera_offset, AppState, DungeonCamera, KnightArt, VIEW_H};
+use pk_core::economy::armory::{Loadout, ELEMENTAL_STYLE_IDS, GEAR_SLOTS, PRICE_REPAIR_GEAR};
+use pk_core::economy::Wallet;
+use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
 const STONE_DK: u32 = 0x171a22; // [1]

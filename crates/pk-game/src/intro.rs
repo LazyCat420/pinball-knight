@@ -26,13 +26,13 @@ use bevy::prelude::*;
 
 use crate::dungeon_light;
 use crate::gui::{GuiLayer, GuiViews, ScreenId};
-use pk_gui::screens::intro::{blink_phase, IntroChromeView};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use pk_core::intro::{
     aim_intro_camera, build_title_grid, fit_zoom, step_intro_ball, IntroBall, IntroCue, IntroPhase,
     IntroSeq, TitleLayout, SIM_DT_CLAMP, SWEEP_DUR,
 };
+use pk_gui::screens::intro::{blink_phase, IntroChromeView};
 
 use crate::overworld::{Overworld, BW};
 use crate::sfx::{Audio, SfxEvent};
@@ -184,6 +184,7 @@ fn intro_setup(
         &mut commands,
         &mut meshes,
         &mut materials,
+        &mut images,
         &layout.grid,
         // The title maze is not a dungeon floor and has no biome; the Cold
         // Crypt's unremapped slots are what the oracle paints before
