@@ -140,8 +140,16 @@ const html = `<!doctype html><meta charset=utf8>
 })();
 </script>`;
 
-const { page, browser } = await open(html, { width: 1500, height: 1000, scale: 1 });
-await page.waitForFunction(() => !!window.__out, null, { timeout: 120_000 });
+// `__out` IS this page's readiness flag — it is set on both the success and the
+// error path, so the harness waits for the bake itself rather than for a load
+// event that fires long before the first surface is painted.
+const { page, browser } = await open(html, {
+  width: 1500,
+  height: 1000,
+  scale: 1,
+  ready: "__out",
+  timeout: 180_000,
+});
 const res = await page.evaluate(() => window.__out);
 if (res.error) {
   console.error(res.error);

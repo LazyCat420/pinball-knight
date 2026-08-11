@@ -16,6 +16,7 @@
 import { chromium } from "playwright";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { connectRealGpu } from "./host-chrome.mjs";
 
 /** Read a `--flag value` argument, with a default. */
 export function arg(name, fallback) {
@@ -49,15 +50,71 @@ export async function bundle(contents) {
 }
 
 /**
- * Open a page on the given HTML, wait for `window.__ready`, and hand it back.
+ * ── THE BUNDLED CHROMIUM CANNOT RASTERISE AT ALL ON THIS BOX ────────────────
  *
- * SwiftShader rather than a real GPU: these harnesses paint 2D canvases, so
- * software rasterisation is both sufficient and reproducible. (It would NOT be
- * sufficient for anything measuring GPU timing — see the WebGPU notes.)
+ * This used to launch Playwright's own Chromium under `--use-gl=swiftshader`,
+ * on the reasoning that a 2D canvas needs no GPU. That reasoning is sound and
+ * the browser is broken anyway. Measured 2026-08-11, WSL2, chrome-headless-shell:
+ *
+ *   evaluate 1+1          2         (4 ms)     ← the renderer is alive
+ *   createElement canvas  {w:64}    (3 ms)
+ *   getContext("2d")      {ok:true} (1 ms)
+ *   ONE fillRect          TIMEOUT              ← and here it stops, forever
+ *
+ * ONE `fillRect` on a 64px canvas never returns. Not slow — hung: no crash, no
+ * page error, no renderer CPU. It reproduces with `--use-gl=swiftshader`,
+ * without any `--use-gl` flag, with `--disable-gpu`, with
+ * `willReadFrequently: true`, and on `OffscreenCanvas`. Everything downstream
+ * of the first raster op inherits it, which is why `bake-maze-textures.mjs`
+ * looked like "one biome exceeds thirteen minutes of painting" for a week: the
+ * painters were never the cost, and every one of the fourteen harnesses that
+ * calls this function was dead the same way.
+ *
+ * The same loop the bake was blamed for — 262,144 `fillStyle` + `fillRect(1,1)`
+ * on a 512×512 canvas, the floor painter's inner loop — runs on the HOST's
+ * Chrome in **60 ms**, with `toDataURL` at 148 ms. So there is nothing to
+ * optimise and nothing to transcribe into Rust (see docs/src/art/bake.md); the
+ * bake just needs the browser pk-check and both A/B rigs already use.
+ *
+ * `PK_HARNESS_BROWSER=bundled` forces the old path — for a machine that HAS a
+ * working bundled Chromium (CI, a native Linux box) and no host Chrome to
+ * reach. `host` is the default and falls back on its own if no Windows Chrome
+ * is found, so this file behaves correctly off WSL2 without being told.
  */
-export async function open(html, { width = 1400, height = 900, scale = 2 } = {}) {
+async function openBrowser({ width, height, scale }) {
+  if (process.env.PK_HARNESS_BROWSER !== "bundled") {
+    const browser = await connectRealGpu({ headed: false });
+    if (browser) {
+      // Over CDP the default context is the browser's own — `newContext()` is
+      // a separate, weaker path here, and the default one is what the A/B rigs
+      // drive. Viewport is set on the page instead of at context creation for
+      // the same reason.
+      const ctx = browser.contexts()[0] ?? (await browser.newContext());
+      const page = await ctx.newPage();
+      await page.setViewportSize({ width, height });
+      return { browser, page };
+    }
+    console.warn("[harness] no host Chrome — falling back to the bundled Chromium");
+  }
   const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+  return { browser, page };
+}
+
+/**
+ * Open a page on the given HTML, wait for `window.__ready`, and hand it back.
+ *
+ * Runs on the HOST's Chrome by default — see `openBrowser` above for the
+ * measurement that forced that, which is not the reason anyone would guess.
+ *
+ * `ready` names the flag this page raises when its work is done, and `timeout`
+ * how long that may take. The contact-sheet harnesses paint on load and are
+ * ready in under a second; a BAKE runs every surface in every biome before it
+ * publishes anything, so it needs both a different flag and a longer leash.
+ * Defaulting to `__ready`/20 s keeps all fourteen existing callers unchanged.
+ */
+export async function open(html, { width = 1400, height = 900, scale = 2, ready = "__ready", timeout = 20_000 } = {}) {
+  const { browser, page } = await openBrowser({ width, height, scale });
   page.on("pageerror", (e) => console.error("[pageerror]", e.message));
   page.on("console", (m) => {
     if (m.type() === "error") console.error("[page]", m.text());
@@ -76,7 +133,7 @@ export async function open(html, { width = 1400, height = 900, scale = 2 } = {})
     route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }),
   );
   await page.goto("http://harness.local/index.html");
-  await page.waitForFunction(() => window.__ready, null, { timeout: 20000 });
+  await page.waitForFunction((flag) => !!window[flag], ready, { timeout });
   await page.waitForTimeout(350);
   return { browser, page };
 }
