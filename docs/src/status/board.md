@@ -24,7 +24,8 @@ as the change it records.** Newest entries first within each section.
 
 - **2026-08-12 — the enemy-table drift gate was RED on one byte, and the port
   plan is re-baselined off the ledger ([v3](port-plan-v3.md)).**
-  `cargo test --workspace` was 505 passed / **1 failed** at `8cb9415`:
+  `cargo test --workspace` had **one failing test** at `8cb9415` (867 pass with
+  the fix, exit 0):
   `export-enemy-constants.mjs` ends with a trailing blank line, `cargo fmt`
   strips it from the committed `enemies.rs`, and the test compares byte for
   byte — so a generated file that **cannot round-trip through the formatter**

@@ -78,7 +78,7 @@ missing: `maze/build.ts` 1,898, `render/pinball-parts.ts` 1,611, `state.ts`
 
 | Gate | Command | Result |
 |---|---|---|
-| workspace tests | `cargo test --workspace` | **505 passed, 1 FAILED** — see §5 I-1 (fixed on this branch) |
+| workspace tests | `cargo test --workspace` | **1 FAILED** at `8cb9415` — see §5 I-1. With the fix: **867 passed, 0 failed, exit 0** |
 | browser parity (debug wasm) | `node scripts/pk-check.mjs` | **ALL GATES PASSED**, console clean, render FPS 31.3 |
 | browser parity (**release** wasm) | `trunk build --release` then `pk-check --no-build` | **2 GATES FAILED**, twice — see §5 I-7. FPS 32.1 |
 | oracle drift | `bash scripts/pk-drift.sh` | clean — *over `src/` only*, see §5 I-2 |
@@ -153,7 +153,8 @@ a queue, because it is the only place v3 changes what happens next.
 |---|---|---|
 | 2-1 | **Shatter is too slow and too big.** At t+0.45 s the oracle has collapsed to a thin band on black; the port still fills the frame with shards, and its knight plus echo trail draws far larger than the oracle's single small sprite. | `ab-intro-shatter` over32 from 79.2% into the band the still phases sit in, and the sheet read side by side |
 | 2-2 | Characterise the rig on the fast phases: three runs per side, publish the spread. | a stated ± on `bonk` and `shatter`, so 2-1's before/after is a measurement |
-| 2-3 | Torches, banners and decor on the title maze (the V-4 slice the intro needs) | `ab-intro-title` mean below 13.3 with the sconces lit |
+| 2-3 | Torches, banners and decor on the title maze (the V-4 slice the intro needs). The title sheet shows it plainly: the oracle's top wall carries lit sconces and doors, ours carries none, and that is most of the remaining brightness gap on a phase already down to 13.3 | `ab-intro-title` mean below 13.3 with the sconces lit |
+| 2-4 | **The sweep phase is framed differently, and it is not a zoom.** On `ab-intro-sweep` the oracle shows the whole board with its bottom edge inside the frame; ours is pushed up and cropped at the top, with the knight drawn several times larger. The handoff's measurement stands — both frustums are 20 × 11.25 at 16:9 and `1/zoom` is right — so this is a tilt or a geometry-height difference. **Measure before touching**, and 2-1's knight-scale question is the same question | the two frames' board edges land within a few pixels, at N=3 |
 
 ### Stage 3 — finish the tavern
 
