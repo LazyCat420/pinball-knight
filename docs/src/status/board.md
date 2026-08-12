@@ -74,6 +74,35 @@ as the change it records.** Newest entries first within each section.
     `cargo fmt --check` clean, per-crate clippy at deny clean, full intro A/B
     re-run in real host Chrome.
 
+- **2026-08-12 — Two more intro defects, both found by LOOKING at the run sheet
+  after the camera landed. One of them is a layer error, not a paint error.**
+  Filed as 2-5 and 2-6 in [the route to 1:1](one-to-one-route.md).
+  - **The intro HUD is in the wrong LAYER.** The oracle paints `WORLD 1-1`,
+    `COIN x00` and `ANY KEY — SKIP` *into the 2D overworld canvas*
+    (`intro/index.ts:662-680`) — 10 px / 8 px `PIXEL_FONT_LABEL`, white fill
+    with a **3 px `#1c2a38` stroke**. The port spawns them as Bevy `Text` UI
+    entities in `default_font`, unoutlined. The cosmetic half is visible on
+    `ab-intro-run`; **the behavioural half is what makes it a defect**:
+    `beginShatter` snapshots that canvas, so the oracle's HUD text breaks into
+    shards with the rest of the world and the port's structurally cannot. The
+    letters `COI` are legible among the oracle's shards. A layer error and a
+    font error look identical in a still frame — the SHATTER is what separates
+    them, and only because the two were photographed side by side.
+  - ⚠️ The oracle's string is `ANY KEY — SKIP` with U+2014, the port's a
+    hyphen. Same class as the U+2212 minus sign already pinned: **a glyph the
+    atlas lacks draws nothing, silently**, and `measure` still returns the
+    monospace advance for it.
+  - **The intro knight is the wrong sprite and too large.** Everything else in
+    that frame lands — sky gradient, clouds, hills, brick ground, the `?` block
+    — which is what makes the knight's rung/scale the whole of the run phase's
+    17.2. A frame that matches everywhere except its subject is a *cast* list
+    problem, not a renderer problem.
+  - ⚠️ **A worktree that `ExitWorktree` reported as KEPT was reaped anyway**,
+    taking a finished 5m46s release build with it. The commit survived because
+    it had already been merged `--ff-only` into `main` and pushed. Merge and
+    push before trusting a worktree to still be there — see
+    [[worktree-ownership-and-auto-reap]].
+
 - **2026-08-12 — B1, the sim's benchmark suite: the sim is 1 part in 100,000 of
   a frame, and the RELEASE build fails two pk-check gates.**
   `cargo run --release -p pk-core --example perf_suite`. The worst tick in the
