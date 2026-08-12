@@ -250,7 +250,7 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
                     .push(Placement {
                         pos: Vec3::new(
                             (x - n.x * 0.25) as f32,
-                            WALL_H / 2.0,
+                            shaped_height(low) / 2.0,
                             (z - n.z * 0.25) as f32,
                         ),
                         yaw,
@@ -267,7 +267,7 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
                     .push(Placement {
                         pos: Vec3::new(
                             (f64::from(i) + c.x - gw2) as f32,
-                            WALL_H / 2.0,
+                            shaped_height(low) / 2.0,
                             (f64::from(j) + c.z - gh2) as f32,
                         ),
                         yaw: 0.0,
@@ -332,12 +332,37 @@ fn bucket_shape(bucket: Bucket) -> Mesh {
     match bucket {
         Bucket::Full { .. } | Bucket::Moss { .. } => Mesh::from(Cuboid::new(1.0, WALL_H, 1.0)),
         Bucket::Low { .. } => Mesh::from(Cuboid::new(1.0, WALL_LOW, 1.0)),
-        // A wedge along the hypotenuse — a P3-debt approximation of the
-        // triangular prism, unchanged by this pass.
-        Bucket::Slant { .. } => {
-            Mesh::from(Cuboid::new(std::f64::consts::SQRT_2 as f32, WALL_H, 0.5))
-        }
-        Bucket::Round { .. } => Mesh::from(Cylinder::new(1.0, WALL_H)),
+        // ⚠️ A SHAPED RIM IS KNEE-HIGH, exactly as a square one is.
+        // The oracle picks `height = low ? WALL_LOW : WALL_H` for slants and
+        // round shells alike (`build.ts:1476`), and this port drew every shaped
+        // tile at `WALL_H` regardless — 10 tiles on L1, 8 on L3 and 12 on L5
+        // stood full-height where the camera-side rim exists precisely so the
+        // player can see over it. The `low` flag has been in the key since the
+        // batching pass so that this day cost one line; this is that line.
+        //
+        // A wedge along the hypotenuse is still a P3-debt approximation of the
+        // triangular prism — the SILHOUETTE is unchanged by this pass, only the
+        // height.
+        Bucket::Slant { low, .. } => Mesh::from(Cuboid::new(
+            std::f64::consts::SQRT_2 as f32,
+            shaped_height(low),
+            0.5,
+        )),
+        Bucket::Round { low, .. } => Mesh::from(Cylinder::new(1.0, shaped_height(low))),
+    }
+}
+
+/// How tall a shaped tile stands — `build.ts:1476`'s `low ? WALL_LOW : WALL_H`.
+///
+/// Named rather than inlined because THREE call sites have to agree: the mesh,
+/// the placement's Y (a Bevy primitive is centred on its origin, so a shorter
+/// box also sits lower) and the test that pins them together. Two of the three
+/// disagreeing is a tile sunk into the floor or floating over it.
+fn shaped_height(low: bool) -> f32 {
+    if low {
+        WALL_LOW
+    } else {
+        WALL_H
     }
 }
 
@@ -954,6 +979,103 @@ mod tests {
     /// id of a washed floor surface and no walkable one does, so a reader that
     /// skips the walkability branch produces buckets where the correct one
     /// produces none.
+    /// The lowest and highest y in a mesh's positions.
+    fn y_bounds(mesh: &Mesh) -> (f32, f32) {
+        let VertexAttributeValues::Float32x3(pos) = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .expect("a mesh has positions")
+        else {
+            panic!("positions are not Float32x3");
+        };
+        pos.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+            (lo.min(p[1]), hi.max(p[1]))
+        })
+    }
+
+    /// ⚠️ A SHAPED RIM STANDS KNEE-HIGH AND SITS ON THE FLOOR.
+    ///
+    /// Three things have to agree — the mesh height, the placement's Y, and
+    /// the rule itself — and two of the three agreeing is a tile sunk into the
+    /// floor or floating over it, which reads as a geometry bug rather than a
+    /// height one. This pins all three by measuring the mesh's own bounds
+    /// against the stamp that positions it.
+    ///
+    /// The port drew every shaped tile at `WALL_H` until this pass. Counted
+    /// over the shipped floors with the renderer's own filters — exposed, and
+    /// a slant or round shell (shapes 1-8; shape 9 is the ARC and renders
+    /// per-feature) — that is **10 tiles on L1, 8 on L3 and 12 on L5** standing
+    /// full-height where the camera-side rim exists so the player can SEE OVER
+    /// IT. A small set, and each one is a corner the camera cannot see past.
+    #[test]
+    fn a_shaped_rim_is_knee_high_and_its_base_sits_on_the_floor() {
+        for low in [false, true] {
+            let want = if low { WALL_LOW } else { WALL_H };
+            assert_eq!(shaped_height(low), want);
+
+            for bucket in [
+                Bucket::Slant { shape: 1, low },
+                Bucket::Round { shape: 5, low },
+            ] {
+                // Bounds from the VERTICES, not from a helper — this is the
+                // geometry the GPU will actually draw.
+                let mesh = bucket_shape(bucket);
+                let (lo, hi) = y_bounds(&mesh);
+                let h = hi - lo;
+                assert!(
+                    (h - want).abs() < 1e-4,
+                    "{bucket:?} is {h} tall, expected {want}"
+                );
+                // The stamp lifts it by half its height, so its base lands on
+                // y = 0. Anything else is a tile in the floor or in the air.
+                let base = want / 2.0 + lo;
+                assert!(
+                    base.abs() < 1e-4,
+                    "{bucket:?} would sit at y={base}, not on the floor"
+                );
+            }
+        }
+        // The rim must be SHORTER than a wall or none of this means anything.
+        // A const assert rather than a runtime one: both are compile-time
+        // constants, so this fails the BUILD rather than a test run.
+        const _: () = assert!(WALL_LOW < WALL_H);
+    }
+
+    /// …and the plan really does place them there, on a real grid.
+    #[test]
+    fn the_plan_stamps_shaped_rims_at_the_rim_height() {
+        let floor = crate::authored_floor::load(5, 1).expect("a shipped floor");
+        let plan = plan_walls(&floor.grid);
+        let mut low_seen = 0usize;
+        let mut tall_seen = 0usize;
+        for (bucket, cells) in &plan.buckets {
+            let low = match bucket {
+                Bucket::Slant { low, .. } | Bucket::Round { low, .. } => *low,
+                _ => continue,
+            };
+            let want = shaped_height(low) / 2.0;
+            for c in cells {
+                assert!(
+                    (c.pos.y - want).abs() < 1e-4,
+                    "{bucket:?} stamped at y={}, expected {want}",
+                    c.pos.y
+                );
+            }
+            if low {
+                low_seen += cells.len();
+            } else {
+                tall_seen += cells.len();
+            }
+        }
+        // ⚠️ TWELVE, NOT 147. A first cut of this asserted 147 and failed at
+        // 12 — the estimate counted every non-zero shape byte, and shape 9 is
+        // the ARC, which renders per-FEATURE and never per-tile. Slants and
+        // round shells are shapes 1-8, and L5 carries 12 exposed rims among
+        // them. If this hits zero the `low` flag stopped being computed and
+        // every shaped rim silently went full-height again.
+        assert_eq!(low_seen, 12, "L5's shaped rims went missing");
+        assert!(tall_seen > 0, "every shaped tile became a rim");
+    }
+
     /// ⚠️ THE WALL WASH IS A MULTIPLY, AND STONE IS WHITE.
     ///
     /// Two ways to get this wrong, both of which look fine in a byte count:
