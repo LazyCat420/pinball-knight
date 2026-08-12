@@ -20,6 +20,7 @@
 
 pub mod alchemist;
 pub mod armory;
+pub mod forge;
 
 /// A purchase's answer — the oracle's `ActionResult`, which is a message to
 /// flash or `null` for "nothing happened".

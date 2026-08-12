@@ -48,11 +48,17 @@ use pk_core::economy::alchemist::{
     RECIPES,
 };
 use pk_core::economy::armory::{Loadout, ELEMENTAL_STYLE_IDS, GEAR_SLOTS, PRICE_REPAIR_GEAR};
+use pk_core::economy::forge::{
+    add_slot, break_chance, insurance_cost, insure_weapon, repair_weapon, salvage_value,
+    salvage_weapon, upgrade_price, upgrade_weapon, ItemRarity, Weapon, WeaponId,
+    INSURANCE_MAX_TIER, PRICE_ADD_SLOT, PRICE_REPAIR_WEAPON,
+};
 use pk_core::economy::Wallet;
 use pk_gui::screens::alchemist::{
     AlchTab, AlchemistAction, AlchemistView, PouchChip, RecipeRow, ShelfRow,
 };
 use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
+use pk_gui::screens::forge::{ForgeAction, ForgeView, WeaponRow};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
 const STONE_DK: u32 = 0x171a22; // [1]
@@ -261,6 +267,19 @@ pub struct TavernRes {
     /// tab every time the sheet repainted.
     pub alch_tab: AlchTab,
     pub alch_selected: usize,
+    /// The weapon in your hand. `None` is a real state — the smith says so.
+    pub weapon: Option<Weapon>,
+    /// The upgrade level the player has already confirmed once, or `None`.
+    /// THE VISIT owns it, exactly like the oracle's `TavernUi.upgradeArmed`:
+    /// a screen that owned it would forget the confirm on every repaint.
+    pub forge_armed: Option<i32>,
+    /// The shatter roll's stream. Seeded, so a shatter is replayable and a
+    /// screenshot of one can be reproduced — `Math.random()` in the oracle.
+    pub forge_rng: pk_core::rng::Mulberry32,
+    /// Cards handed back by a sacrifice or saved from a shatter. Nothing reads
+    /// it yet — `cards.ts` is not ported — but dropping them on the floor
+    /// instead would make the insurance the player PAID for a lie.
+    pub card_stash: Vec<String>,
     /// The counter's last `ActionResult`, flashed under its heading.
     pub shop_message: Option<String>,
     pub stats: TavernStats,
@@ -788,6 +807,14 @@ fn setup_tavern(
         satchel: dev_satchel(),
         alch_tab: AlchTab::Shelf,
         alch_selected: 0,
+        // ⚠️ A DEV BLADE. The dungeon hands out no weapons yet (combat is P4),
+        // and an empty hand makes the whole counter one grey sentence. A rare
+        // sword with two sockets filled is the state that exercises every key:
+        // repair, socket, upgrade, insure, sacrifice.
+        weapon: Some(dev_weapon()),
+        forge_armed: None,
+        forge_rng: pk_core::rng::Mulberry32::new(0x5EED_F02E),
+        card_stash: Vec::new(),
         shop_message: None,
         stats,
         diorama,
@@ -813,6 +840,19 @@ fn dev_satchel() -> Satchel {
         s.add_reagent(id, 2);
     }
     s
+}
+
+/// The blade the smith works on until the dungeon drops one.
+///
+/// ⚠️ **DEV STOCK, NOT A RULE** — the same shape as [`dev_satchel`]. Worn to 12
+/// of 30 so REPAIR is live, rare so it has two sockets, and both sockets filled
+/// with real `cards.ts` ids so INSURE and the shatter's card arithmetic are
+/// reachable by hand. Nothing in the game grants a weapon yet.
+fn dev_weapon() -> Weapon {
+    let mut w = Weapon::new(WeaponId::Sword, ItemRarity::Rare);
+    w.durability = Some(12);
+    w.cards = vec!["goblintooth".into(), "bloodpact".into()];
+    w
 }
 
 /// Station props — every number is props.ts verbatim; secondary dressing is
@@ -1850,16 +1890,74 @@ fn tavern_frame(
             }
         }
     }
+    // ── The weaponsmith's action ──
+    if let Some(action) = layer.forge_action.take() {
+        let TavernRes {
+            weapon,
+            wallet,
+            shop_message,
+            open_panel,
+            forge_armed,
+            forge_rng,
+            card_stash,
+            ..
+        } = &mut *res;
+        // ⚠️ ANY ACTION BUT THE UPGRADE DISARMS A PENDING CONFIRM. The oracle
+        // does it inside the screen off `f.consumed`; the field lives here, so
+        // the rule lives here — arming a gamble and then wandering off must not
+        // leave it primed for the next stray press.
+        if action != ForgeAction::Upgrade {
+            *forge_armed = None;
+        }
+        match (action, weapon.as_mut()) {
+            (ForgeAction::Repair, Some(w)) => *shop_message = repair_weapon(w, wallet),
+            (ForgeAction::AddSocket, Some(w)) => *shop_message = add_slot(w, wallet),
+            (ForgeAction::Insure, Some(w)) => *shop_message = insure_weapon(w, wallet),
+            (ForgeAction::Upgrade, Some(w)) => {
+                // The roll is drawn HERE and passed in, so the rules stay pure
+                // and the stream is one the shell can seed and replay.
+                let roll = forge_rng.next_f64();
+                let (out, armed) = upgrade_weapon(w, wallet, *forge_armed, roll, |_| 0);
+                *forge_armed = armed;
+                if out.message.is_some() {
+                    *shop_message = out.message;
+                }
+                card_stash.extend(out.returned);
+                if out.destroyed {
+                    *weapon = None;
+                }
+            }
+            (ForgeAction::Sacrifice, Some(w)) => {
+                let out = salvage_weapon(w, wallet);
+                *shop_message = out.message;
+                card_stash.extend(out.returned);
+                *weapon = None;
+            }
+            // `Disarm` is the press a widget ate without asking for anything;
+            // the clear above has already done the work.
+            (ForgeAction::Disarm, _) => {}
+            (ForgeAction::Close, _) => {
+                *open_panel = None;
+                *shop_message = None;
+            }
+            // An action with no weapon in hand: the screen offers no keys in
+            // that state, so this is unreachable through the UI and must stay
+            // silent rather than inventing a message.
+            (_, None) => {}
+        }
+    }
     match res.open_panel {
         None => {
             layer.close(ScreenId::RunSummary);
             layer.close(ScreenId::StationPanel);
             layer.close(ScreenId::Armory);
             layer.close(ScreenId::Alchemist);
+            layer.close(ScreenId::Forge);
             set_view(&mut views.summary, None);
             set_view(&mut views.panel, None);
             set_view(&mut views.armory, None);
             set_view(&mut views.alchemist, None);
+            set_view(&mut views.forge, None);
         }
         Some(Panel::Summary) => {
             set_view(
@@ -1996,6 +2094,71 @@ fn tavern_frame(
                 }),
             );
             layer.open(ScreenId::Alchemist);
+        }
+        // The weaponsmith. Every price and predicate is resolved here from
+        // `pk_core::economy::forge`; the screen paints what it is handed.
+        Some(Panel::Vendor("forge")) => {
+            let gold = res.wallet.balance();
+            set_view(
+                &mut views.forge,
+                Some(ForgeView {
+                    gold,
+                    weapon: res.weapon.as_ref().map(|w| {
+                        let max = w.max_durability();
+                        let cards = w.cards.len() as i32;
+                        let tier = w.insured.min(INSURANCE_MAX_TIER);
+                        let ins_price = insurance_cost(tier, w.rarity);
+                        WeaponRow {
+                            name: format!(
+                                "{}{}",
+                                w.id.label().to_uppercase(),
+                                if w.upgrade > 0 {
+                                    format!(" +{}", w.upgrade)
+                                } else {
+                                    String::new()
+                                }
+                            ),
+                            icon: w.id.item_id().to_string(),
+                            // `∞` for a weapon that never wears — the oracle's
+                            // own glyph, and the one state a number cannot say.
+                            durability: match (w.durability, max) {
+                                (Some(d), Some(m)) => format!("{d}/{m}"),
+                                _ => "∞".to_string(),
+                            },
+                            wear: match (w.durability, max) {
+                                (Some(d), Some(m)) if m > 0 => Some(d as f64 / m as f64),
+                                _ => None,
+                            },
+                            sockets: w.slot_count(),
+                            cards,
+                            insured: tier,
+                            insure_max: INSURANCE_MAX_TIER,
+                            damage: w.damage(),
+                            rarity: w.rarity.label().to_string(),
+                            swatch: w.rarity.swatch(),
+                            upgrade: w.upgrade,
+                            repair_price: PRICE_REPAIR_WEAPON,
+                            repair_ok: gold >= PRICE_REPAIR_WEAPON
+                                && max.is_some_and(|m| w.durability.unwrap_or(m) < m),
+                            socket_price: PRICE_ADD_SLOT,
+                            socket_ok: gold >= PRICE_ADD_SLOT
+                                && w.slot_count() < pk_core::economy::forge::ADD_SLOT_REFUSES_AT,
+                            upgrade_price: upgrade_price(w.upgrade),
+                            upgrade_ok: gold >= upgrade_price(w.upgrade),
+                            risk: break_chance(w.upgrade),
+                            armed: res.forge_armed == Some(w.upgrade),
+                            insure_price: ins_price,
+                            insure_ok: cards > 0
+                                && tier < INSURANCE_MAX_TIER
+                                && tier < cards
+                                && gold >= ins_price,
+                            salvage_value: salvage_value(w),
+                        }
+                    }),
+                    message: res.shop_message.clone(),
+                }),
+            );
+            layer.open(ScreenId::Forge);
         }
         Some(panel) => {
             let (title, blurb, body, accent) = match panel {
