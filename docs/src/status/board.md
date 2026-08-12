@@ -5,6 +5,70 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-11 — A screen can now animate: `dt` reaches the frame, and a
+  quiet frame is no longer skipped out from under it.**
+  Groundwork for the gambler cabinet, whose four games are ticked state
+  machines (`BlackjackTable`, `ThrowMachine`) and a time-sampled ball
+  (`frame_at(&spin, t)`). Two things blocked it and both are now done.
+  - `paint_gui` short-circuits before `paint_stack` on any quiet frame over an
+    unchanged stack — worth a measured 36→14 fps when it regressed, so it
+    stays. A screen that moves opts out instead: `ScreenEntry::animating()`,
+    `UiStack::animates()` (ANY open screen, not just the top — an animation
+    under a modal keeps running, as the oracle's single RAF does), and a fourth
+    term in the skip, now named `GuiLayer::may_skip` so the rule is stated once.
+  - `dt` is a `paint_stack` PARAMETER, not a clock and not a field on
+    `UiInput`: `pk-gui` has no Bevy and must stay headless-deterministic, so
+    the shell owns the time and a test advances it in exact steps. On
+    `UiInput` it would have reached every non-top screen as `empty_ui_input()`
+    — a frozen `dt = 0`. `begin_ui` leaves it at 0.0, which is what a still
+    frame is, so the thirteen screen tests that build a frame directly are
+    unchanged. The shell clamps to 0.05 s, the value `gambler/index.ts:288`
+    clamps to.
+  - Seven tests, each shown to fail under sabotage. The load-bearing one drives
+    ten frames of a screen painting from an accumulated clock and asserts ten
+    DIFFERENT pictures; with `f.dt` forced to zero it collapses to one, which
+    is the frozen-cabinet bug it exists to catch.
+
+- **2026-08-11 — The oracle's minus sign is not in the font, so it is
+  substituted at draw time rather than baked.**
+  `cards.ts`'s `pct()` prints every negative stat with U+2212 MINUS SIGN, and
+  a glyph this atlas lacks draws NOTHING, silently — a card would have read
+  "12% durability" for a penalty. Adding it to the bake was tried and
+  reverted: Press Start 2P has no such glyph, so the harness browser
+  substituted a PROPORTIONAL face at advance 4.51 against a monospace 8, which
+  breaks the arithmetic every screen budgets by and desynced the cell packing
+  enough that the raster bled into its neighbour.
+  - The oracle has the identical hole (it draws in Press Start 2P too), so its
+    minus signs have always come from a fallback face. Copying the bytes
+    faithfully would import a browser's forgiveness into a UI that has none.
+  - `pk_core` keeps the oracle's exact string; `font::substitute` maps the
+    character in the one lookup measure and draw already share. The bake script
+    now says why, where the next reader will look for the omission.
+
+- **2026-08-11 — Fixed: the tavern knight's Y was not pinned, so the pixel
+  snap could move him. Real, bounded, and NOT the reported disappearance.**
+  `PixelSnapped` rounds along the CAMERA basis, whose up vector is
+  `(-0.435, 0.788, -0.435)` under the iso rig, so a snap moves the entity in
+  world Y — and `sync_tavern_knight` restored only `.x`/`.z`, defeating the
+  fixed point `snap.rs`'s header depends on. Fixed by assigning all three.
+  - Measured in real Chrome over ~11 s of walking a circuit: **0.0217 worst
+    deviation with the defect (one texel is 0.0229), 0.0000 with the fix.**
+  - ⚠️ **The first diagnosis claimed a runaway off the top of the screen and
+    was WRONG** — it simulated a camera parked at the origin, but
+    `tavern_camera` eases toward the player, so the offset the snap rounds
+    stays bounded. Caught by restoring the bug and measuring rather than
+    accepting the fix's green run. A mechanism can match every qualitative
+    symptom (tavern-only, walking-only, permanent) and still be off by two
+    orders of magnitude on the one that matters.
+  - So the probe gained `__pk.tavern.spriteY`, the RENDERED y after the snap —
+    not derivable from `TavernRes`, which has no y at all.
+  - **`pk-check` passed identically with and without the defect**, confirmed by
+    running it both ways. A screenshot gate cannot see a sub-quad positional
+    error, nor a disappearance until the subject is already out of frame.
+  - Reasoning in [incidents](incidents.md). The general rule: a per-frame
+    correction is idempotent only against a FULL assignment. Not "don't use
+    `+=`" — *assign every component you do not want the corrector to own*.
+
 - **2026-08-11 — `pk-ab-dungeon`: the measurement device the dungeon never had,
   and the defect it found in its first hour.**
   The tavern has had an A/B rig since it was ported; the dungeon had nothing, so
@@ -756,6 +820,18 @@ as the change it records.** Newest entries first within each section.
 
 ## Broken / not started
 
+- **The tavern knight sometimes DISAPPEARS while walking, and stays gone until
+  a restart or a trip to the maze.** Player-reported 2026-08-11, still open.
+  A Y-drift defect found while hunting it was real and is fixed (see Working
+  above), but measures 0.0217 world units on a 1.15-tall quad — far too small
+  to be this. Ruled out with evidence: NaN in the movement/collision maths,
+  a teleport out of the room, a missing animation clip, and the Y drift.
+  Next: the masked material clones and their `AlphaMode::Mask(0.5)` cutoff,
+  the `scale.x = -1.0` mirror for facing W, and anything that can leave
+  `MeshMaterial3d` pointing at a handle whose image was dropped.
+  `__pk.tavern.spriteY` now reports the rendered y, so the next hunt has an
+  instrument; a repro that pins WHICH station or direction precedes it would
+  narrow this a lot.
 - `cargo xtask bake` — only the `--tavern` leg exists (this change). The
   per-rung sprite bake, which is M0's real exit criterion (baked knight frame on
   screen), is still open.

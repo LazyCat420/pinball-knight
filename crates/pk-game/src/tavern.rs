@@ -294,7 +294,9 @@ pub struct TavernRes {
 #[derive(Component)]
 struct TavernScene;
 #[derive(Component)]
-struct TavernKnight;
+/// `pub(crate)` for the probe: `publish_stats` reports the knight's RENDERED
+/// y, which no resource carries — the sim pose has no y at all.
+pub(crate) struct TavernKnight;
 /// The tavern's OWN masked copies of the three knight sheet materials, carried
 /// on the knight so `sync_tavern_knight` animates the material it actually
 /// assigned (see the spawn block for why the shared ones can't be used).
@@ -2266,8 +2268,31 @@ fn sync_tavern_knight(
     let a = time.overstep_fraction() as f64;
     let x = res.prev.0 + (res.curr.0 - res.prev.0) * a;
     let z = res.prev.1 + (res.curr.1 - res.prev.1) * a;
-    tf.translation.x = x as f32;
-    tf.translation.z = z as f32;
+    // ⚠️ ASSIGN ALL THREE, never just x and z.
+    //
+    // `PixelSnapped` (post/snap.rs) rounds this transform onto the render
+    // lattice every frame in `PostUpdate`, along the CAMERA's basis — and
+    // under the 38°/45° iso rig the camera's up vector is
+    // (-0.435, 0.788, -0.435), so a snap of the "up" component moves the
+    // knight in world Y as well as X and Z.
+    //
+    // That is safe only against a full assignment, which is the contract
+    // snap.rs's header states: the correction has a fixed point, and reaching
+    // it makes the next snap a no-op. Restoring only x and z broke it — every
+    // frame handed the snap a fresh x/z with LAST frame's corrected y, so it
+    // computed a new residual instead of settling. Standing still was
+    // harmless (same x/z, so the snap reaches its fixed point and skips the
+    // store); walking left y unpinned.
+    //
+    // Measured in real Chrome over ~11s of walking a circuit of the room:
+    // worst |y - ground| was 0.0217 with the partial write and 0.0000 with
+    // this assignment. One texel is 0.0229, so the drift is BOUNDED, not a
+    // runaway — `tavern_camera` eases toward the player, so the offset this
+    // rounds stays roughly constant. An earlier diagnosis modelled a
+    // stationary camera, predicted a runaway off the top of the screen, and
+    // was wrong; see docs/src/status/incidents.md. The defect is real and
+    // worth fixing, but it is not big enough to hide the knight.
+    tf.translation = Vec3::new(x as f32, KNIGHT_QUAD_H / 2.0, z as f32);
 
     if let Ok(cam_tf) = cam.single() {
         tf.rotation = cam_tf.rotation;
@@ -2277,10 +2302,16 @@ fn sync_tavern_knight(
 
     // The blob is a sibling, so it tracks the feet by hand — the quad's origin
     // is its centre, so the feet are half a quad below the billboard's y.
+    //
+    // Also a full assignment, and for the same reason: the blob carries
+    // `PixelSnapped` too. It reads the knight's UNSNAPPED y (assigned just
+    // above) rather than accumulating its own, so the two cannot drift apart.
     if let Ok(mut blob) = blob_q.single_mut() {
-        blob.translation.x = tf.translation.x;
-        blob.translation.z = tf.translation.z;
-        blob.translation.y = tf.translation.y - tf.scale.y * KNIGHT_QUAD_H / 2.0 + BLOB_LIFT;
+        blob.translation = Vec3::new(
+            tf.translation.x,
+            tf.translation.y - tf.scale.y * KNIGHT_QUAD_H / 2.0 + BLOB_LIFT,
+            tf.translation.z,
+        );
     }
 
     // The MASKED clones, not `art.*.material` — see the spawn block. Driving

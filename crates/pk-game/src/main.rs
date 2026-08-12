@@ -359,6 +359,13 @@ fn publish_stats(
     plan: Res<FloorPlan>,
     gui: Option<Res<gui::GuiLayer>>,
     state: Res<State<AppState>>,
+    // The knight's RENDERED height, after `PixelSnapped` has had it.
+    //
+    // Not derivable from `TavernRes`: the sim pose has no y at all, and that
+    // gap is exactly how the sprite-drift bug hid. The transform is the only
+    // place the defect was ever visible, and a screenshot gate cannot see it
+    // until the knight has already left the screen.
+    knight_q: Query<&Transform, With<tavern::TavernKnight>>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
 ) {
@@ -386,9 +393,15 @@ fn publish_stats(
     // focus, open panel) so pk-check can drive the room from outside.
     let tavern_field = match (*state.get(), &tavern_res) {
         (AppState::Tavern, Some(t)) => format!(
-            r#"{{"x":{},"z":{},"facing":"{:?}","speed":{},"focus":{},"panel":{}}}"#,
+            r#"{{"x":{},"z":{},"spriteY":{},"facing":"{:?}","speed":{},"focus":{},"panel":{}}}"#,
             t.pose.x,
             t.pose.z,
+            // `null`, never NaN: `NaN` is not JSON and would break the parse
+            // for every other field in the probe, not just this one.
+            knight_q
+                .single()
+                .map(|tf| tf.translation.y.to_string())
+                .unwrap_or_else(|_| "null".into()),
             t.pose.facing,
             t.pose.speed,
             t.focus

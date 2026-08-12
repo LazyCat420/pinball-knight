@@ -21,6 +21,23 @@
 //! ASSIGNS the translation (`tf.translation = target + camera_offset()`)
 //! rather than accumulating into it, so the correction cannot compound across
 //! frames. A driver that ever switches to `+=` would need this revisited.
+//!
+//! ⚠️ AND SO WOULD A PARTIAL ONE — which is how this bit. The rule is not
+//! "don't use `+=`", it is **assign every component you do not want the snap
+//! to own**. `sync_tavern_knight` wrote `.x` and `.z` and left `.y` alone,
+//! which is not accumulation and still defeats the fixed point: the camera's
+//! up vector is (-0.435, 0.788, -0.435) under the iso rig, so rounding the up
+//! component moves a sprite in world Y, and handing back a fresh x/z with
+//! last frame's corrected y meant the snap recomputed a residual every frame
+//! instead of settling. Measured live over ~11s of walking: worst deviation
+//! 0.0217 world units with the partial write, 0.0000 with a full assignment
+//! (one texel is 0.0229).
+//!
+//! The drift is BOUNDED, not divergent, because the tavern camera eases
+//! toward the player — the offset this rounds stays roughly constant. A first
+//! diagnosis modelled a stationary camera, predicted a runaway off the top of
+//! the screen, and was wrong (docs/src/status/incidents.md). Pinned by
+//! `a_partial_restore_leaves_y_unpinned_and_a_full_assignment_does_not`.
 
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
@@ -294,6 +311,84 @@ mod tests {
         );
         let step = lattice_step(&sizing, &Projection::Orthographic(o)).expect("orthographic");
         assert!((step - 1.0 / (56.0 * 0.78)).abs() < 1e-6, "{step}");
+    }
+
+    /// A partial restore leaves Y for the snap to own; a full one pins it.
+    ///
+    /// The header promises this correction cannot compound, and that promise
+    /// rests on the driver ASSIGNING the whole translation. The tavern
+    /// knight's driver assigned x and z and left y alone — and under the iso
+    /// rig the camera's up vector is (-0.435, 0.788, -0.435), so rounding the
+    /// "up" component moves a sprite in world Y too. Feeding a fresh x/z back
+    /// with last frame's corrected y made the snap recompute a residual every
+    /// frame instead of settling on its fixed point.
+    ///
+    /// ⚠️ THE CAMERA FOLLOWS, so this is BOUNDED WANDER, not a runaway. The
+    /// loop below eases the origin toward the walker exactly as
+    /// `tavern_camera` does, because a model with a stationary camera makes
+    /// the offset grow without limit and predicts a divergence the real
+    /// system does not have — that error survived a whole diagnosis before a
+    /// live measurement caught it (docs/src/status/incidents.md). Live figures
+    /// over ~11s of walking: 0.0217 with the defect, 0.0000 with the fix.
+    ///
+    /// Both halves are pinned, because the fix is only meaningful against the
+    /// failure: a partial restore MOVES, a full assignment does not.
+    #[test]
+    fn a_partial_restore_leaves_y_unpinned_and_a_full_assignment_does_not() {
+        let rot = iso_rotation();
+        let (right, up, fwd) = (rot * Vec3::X, rot * Vec3::Y, rot * Vec3::NEG_Z);
+        let step = 1.0 / (56.0 * 0.78);
+        let ground = 1.15 / 2.0; // KNIGHT_QUAD_H / 2.0
+        let cam_off = Vec3::new(28.0, 24.6, 28.0);
+        // `tavern_camera`'s ease, so the origin this rounds against tracks the
+        // walker instead of receding from him.
+        let snap_once = |p: Vec3, cam: Vec3| {
+            let origin = cam + cam_off;
+            let d = p - origin;
+            origin
+                + right * snap(d.dot(right), step)
+                + up * snap(d.dot(up), step)
+                + fwd * d.dot(fwd)
+        };
+        let walk = |f: i32| Vec3::new(0.02 * f as f32, 0.0, 0.0);
+
+        // 600 frames of walking, restoring ONLY x and z — the old driver.
+        let mut y = ground;
+        let mut cam = Vec3::ZERO;
+        let mut worst: f32 = 0.0;
+        for f in 0..600 {
+            let p = walk(f);
+            cam += (p - cam) * 0.08;
+            y = snap_once(Vec3::new(p.x, y, p.z), cam).y;
+            worst = worst.max((y - ground).abs());
+        }
+        assert!(
+            worst > step * 0.5,
+            "the partial restore moved y by only {worst}, less than half a \
+             texel — if this stopped moving, the snap or the basis changed and \
+             the comment above is now the only record of why the driver \
+             assigns all three"
+        );
+        assert!(
+            worst < 1.15 / 2.0,
+            "y moved {worst}, half a quad or more. The live measurement is \
+             0.0217; a number this large means the camera ease is gone from \
+             this model (or from the game) and the loop has actually diverged"
+        );
+
+        // The same walk, assigning all three — what the driver does now.
+        let mut last = Vec3::ZERO;
+        let mut cam = Vec3::ZERO;
+        for f in 0..600 {
+            let p = walk(f);
+            cam += (p - cam) * 0.08;
+            last = snap_once(Vec3::new(p.x, ground, p.z), cam);
+        }
+        assert!(
+            (last.y - ground).abs() <= step,
+            "a full assignment must stay within one texel of the floor, got {}",
+            last.y - ground
+        );
     }
 
     #[test]

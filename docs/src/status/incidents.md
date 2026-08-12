@@ -2,6 +2,100 @@
 
 Diagnoses that outlive their patches. Write the reasoning, not just the fix.
 
+## 2026-08-11 — A partial transform restore lets the pixel snap move the
+## knight's Y — real, bounded, and NOT the disappearance it was hunted for
+
+**Status: the defect below is fixed and measured. The player-reported bug it
+was chased for is still OPEN — see the correction at the end.** This entry is
+kept in full because the wrong turn in it is more instructive than the fix.
+
+The report was *"my sprite for pinball knight will just disappear sometimes"*,
+narrowed by the player to: **tavern only, only while WALKING, permanent** —
+gone until a restart or a trip to the maze.
+
+**What was found.** `post/snap.rs::snap_sprites` rounds a `PixelSnapped`
+entity onto the render lattice along the *camera's* right/up basis, not world
+axes — the whole point of the module, since under a 45° yaw a world-axis snap
+misses the lattice (`snapping_world_axes_would_not_land_on_the_lattice`).
+Under the 38°/45° iso rig the camera's up vector is `(-0.435, 0.788, -0.435)`,
+so **rounding the "up" component moves the entity in world Y.**
+
+`snap.rs`'s header already stated the contract: this is idempotent only
+because every driver ASSIGNS the translation rather than accumulating into it,
+so the correction has a fixed point. `sync_tavern_knight` wrote `.x` and `.z`
+and never `.y` — not accumulation, but it defeats the fixed point just the
+same, because each frame hands the snap a fresh x/z carrying last frame's
+already-corrected y.
+
+**Fixed** by assigning all three components (and likewise the contact blob,
+which is independently `PixelSnapped`). The keepers at `tavern.rs:1723`/`:1749`
+already assigned all three; the knight was the only violator.
+
+**Measured in real Chrome, both ways**, via a new probe field (below), walking
+a full circuit of the room for ~11 s:
+
+| | worst \|y − 0.575\| |
+|---|---|
+| partial restore (the defect) | **0.0217** — y wanders, one texel is 0.0229 |
+| full assignment (the fix) | **0.0000** — pinned exactly, every sample |
+
+So the fix is real and does what it says. **But 0.0217 on a quad 1.15 tall is
+1.9% — the knight never leaves the floor, let alone the screen.**
+
+### The correction, which is the point of this entry
+
+The diagnosis originally claimed a RUNAWAY: y climbing 0.575 → 1.394 over 600
+walking frames, off the top of the frustum. That came from a simulation with
+**the camera parked at the origin**, so the knight's offset from it grew
+without bound and the rounding residual grew with it.
+
+The tavern camera does not do that. `tavern_camera` eases toward the player
+every frame (`ease_camera`, `tavern.rs:2355`), so `d = knight − camera` stays
+roughly constant while walking. Re-simulated with a following camera the drift
+is **bounded** — it wanders to ~0.13 and comes back — and the live browser
+measurement agrees at 0.0217. A ratcheting model produced a ratcheting answer;
+the code has a servo in it.
+
+The symptom match that made the story so convincing (tavern-only, walking-only,
+permanent) is genuinely a property of this defect — `PixelSnapped` is attached
+nowhere outside `tavern.rs`, identical x/z reaches the fixed point at rest, and
+only a scene rebuild resets y. **A mechanism can explain every qualitative
+symptom and still be the wrong magnitude.** The check that caught it was
+restoring the bug and measuring, rather than treating the fix's green run as
+proof; a one-sided pass would have shipped a false diagnosis with a real patch
+stapled to it.
+
+**Still open:** whatever actually makes the knight vanish. Ruled out with
+evidence, so nobody re-hunts them: NaN (every division in
+`step_tavern_movement` guards its denominator; `move_in_room` is pure clamps),
+a teleport out of the room (clamped twice), a missing animation frame (all
+three sheets carry idle *and* walk cells, and the empty-clip path early-returns
+*before* touching the material, so it would freeze a frame, not blank it), and
+now this Y drift. Next places to look: the masked material clones and their
+`AlphaMode::Mask(0.5)` cutoff, the billboard's `scale.x = -1.0` mirror for
+facing W, and anything that can leave `MeshMaterial3d` pointing at a handle
+whose image was dropped.
+
+### What this proved about the harness
+
+`pk-check` passed identically with and without the defect — verified by
+restoring it and running the whole gate to a green `ALL GATES PASSED`. Its
+longest key-hold is 1.1 s. A screenshot gate cannot see a sub-quad positional
+error at all, and cannot see a disappearance until the subject is already
+missing from the photograph.
+
+So the probe gained `__pk.tavern.spriteY`: the knight's RENDERED y, after the
+snap. It is not derivable from `TavernRes` — the sim pose has no y — and that
+gap is exactly why this went unmeasured. Emitted as `null` rather than `NaN`
+when the entity is absent, since `NaN` is not JSON and would break the parse
+for every other field in the probe.
+
+**The general shape worth keeping:** a per-frame correction is idempotent only
+against a FULL assignment. "Don't use `+=`" is the wrong rule; the rule is
+*assign every component you do not want the corrector to own*. The dungeon's
+`sync_knight` (`main.rs:1153`) has the identical partial write and is harmless
+only because nothing there is snapped — latent, not live.
+
 ## 2026-08-10 — A pass boundary that pinned a COUNT, on the one pass whose
 ## draw counter cannot say anything
 
