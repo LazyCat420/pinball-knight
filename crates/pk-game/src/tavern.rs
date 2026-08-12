@@ -2140,12 +2140,36 @@ fn tavern_frame(
                     grade: res.stats.grade.to_string(),
                     kills: res.stats.kills.to_string(),
                     best_combo: format!("x{}", res.stats.best_combo),
-                    // ⚠️ NOT ZERO — `TavernStats` has no gear and no purse, because
-                    // the economy is P4. A "0 gold" here would be a number the game
-                    // never computed, and a number on a summary screen is read as
-                    // a measurement. An em dash is read as what it is.
-                    gear: "—".into(),
-                    purse: "—".into(),
+                    // ⚠️ THESE WERE EM DASHES UNTIL THE ECONOMY LANDED, and the
+                    // reason is worth keeping: a "0 gold" on a summary screen
+                    // is read as a MEASUREMENT, so a number the game had never
+                    // computed would have been a lie. It computes both now —
+                    // `Loadout::gear` is the plate, `Wallet` is the purse — so
+                    // they are real rows at last.
+                    //
+                    // Gear is "worn/total plate", not a count of pieces: a
+                    // knight in three cracked plates and one in three fresh
+                    // ones both own three, and only one of them is about to
+                    // die. `None` is a slot never bought, which soaks nothing.
+                    gear: {
+                        // `Loadout::gear` is indexed in `GEAR_SLOTS` order, so
+                        // zipping them is the whole mapping — a slot that is
+                        // `None` was never bought and contributes to neither
+                        // side of the ratio.
+                        let (worn, total) = GEAR_SLOTS.iter().zip(res.loadout.gear.iter()).fold(
+                            (0, 0),
+                            |(w, t), (slot, owned)| match owned {
+                                Some(_) => (w + res.loadout.worn(*slot), t + slot.base()),
+                                None => (w, t),
+                            },
+                        );
+                        if total == 0 {
+                            "no plate".into()
+                        } else {
+                            format!("{worn}/{total} soak")
+                        }
+                    },
+                    purse: format!("{}g", res.wallet.balance()),
                 }),
             );
             layer.open(ScreenId::RunSummary);
@@ -2613,6 +2637,47 @@ fn _rect_used(_r: &LRect) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ⚠️ THE SUMMARY'S GEAR ROW IS SOAK, NOT A COUNT OF PIECES.
+    ///
+    /// A knight in three cracked plates and one in three fresh ones both own
+    /// three pieces, and only one of them is about to die — so the row that
+    /// says how protected you are has to be the ratio, not the tally. A slot
+    /// never bought is `None` and belongs on NEITHER side of it: counting its
+    /// base in the denominator would report a fresh two-plate knight as
+    /// damaged.
+    #[test]
+    fn the_summary_gear_row_reports_soak_and_ignores_slots_never_bought() {
+        use pk_core::economy::armory::GearSlot;
+
+        let row = |l: &Loadout| -> (i32, i32) {
+            GEAR_SLOTS
+                .iter()
+                .zip(l.gear.iter())
+                .fold((0, 0), |(w, t), (slot, owned)| match owned {
+                    Some(_) => (w + l.worn(*slot), t + slot.base()),
+                    None => (w, t),
+                })
+        };
+
+        // Nothing bought: no plate at all, and no phantom denominator.
+        let empty = Loadout::default();
+        assert_eq!(row(&empty), (0, 0));
+
+        // One fresh helmet reads as FULL, not as a third of a set.
+        let mut one = Loadout::default();
+        one.gear[0] = Some(GearSlot::Helmet.base());
+        let (w, t) = row(&one);
+        assert_eq!(w, t, "a fresh single plate must read as undamaged");
+        assert_eq!(t, GearSlot::Helmet.base());
+
+        // A cracked plate shows the damage.
+        let mut hurt = Loadout::default();
+        hurt.gear[0] = Some(1);
+        let (w, t) = row(&hurt);
+        assert!(w < t, "a cracked plate must not read as full");
+        assert_eq!(w, 1);
+    }
 
     /// ⚠️ A REROLL MUST ADVANCE THE STREAM, OR IT SELLS THE SAME SHELF FOREVER.
     ///

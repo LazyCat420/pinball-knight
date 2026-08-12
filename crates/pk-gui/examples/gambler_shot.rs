@@ -69,7 +69,7 @@ fn main() {
                 p.push(GamePrim::Label {
                     x: x + rw / 2.0,
                     y: 30.0 + rh / 2.0 - 8.0,
-                    s: if i == 0 { "BUMPER" } else { "BUMPER" }.into(),
+                    s: "BUMPER".into(),
                     size: 8,
                     colour: 0x008f_d06f,
                     centre: true,
@@ -225,7 +225,7 @@ fn main() {
     ];
     {
         let mut p = Vec::new();
-        let mut row = |p: &mut Vec<GamePrim>, cards: &[&str], y: f64, hide: bool| {
+        let row = |p: &mut Vec<GamePrim>, cards: &[&str], y: f64, hide: bool| {
             for (i, c) in cards.iter().enumerate() {
                 let x = 24.0 + i as f64 * 31.0;
                 let down = hide && i == 1;

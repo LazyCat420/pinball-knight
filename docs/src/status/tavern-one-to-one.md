@@ -27,12 +27,12 @@ Sources on the oracle side, all under
 | station | what the old game does there | port |
 |---|---|---|
 | **Descend** (`board`) | commit the loadout, drop to the next floor | ✅ **DONE** — real hand-off through `FloorLoading` |
-| **Review Run** (`table`) | grade, floor, kills, best combo, gear, purse | 🟡 **CHROME ONLY** — six rows painted; `gear`/`purse` are em-dashes because `TavernStats` has neither |
+| **Review Run** (`table`) | grade, floor, kills, best combo, gear, purse | ✅ **DONE** — all six rows carry real numbers; gear is plate SOAK (`worn/total`), not a count of pieces |
 | **Manage Loadout** (`armory`) | 3 plate slots, repair-all, 4 elemental sets | ✅ **DONE** — rules in `pk_core::economy::armory`, art from the icon bake, silhouettes for the sets |
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
 | **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | ✅ **DONE** — `economy::dealer` + the card bake + `screens::dealer` (3 tabs, 12 tests), wired to the station: walk up and it opens |
-| **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | 🟡 **RULES DONE, NO UI** — `pk_core::gambler` is complete with 250 tests; the cabinet screen is unbuilt |
+| **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | ✅ **DONE** — `pk_core::gambler` + `gambler::drive` + `screens::gambler` + the `Cabinet` shell; all four playable, wired to the station |
 
 ## Where the port DEVIATES, and why
 
@@ -49,6 +49,13 @@ not to.
 2. **The brew book is an 8×2 icon grid with a detail strip**, not sixteen rows.
    Sixteen 22px rows is 352px of content in a 228px view; no shrinking closes
    that. First press selects, second brews.
+2c. **The gambler's viewport is 130px**, not the oracle's 520×200 canvas. The
+   oracle's cabinet is a DOM overlay with its own `requestAnimationFrame`; this
+   one is a sheet in a 322px box that also needs a game picker, a stake row and
+   a control row. At 200 the cabinet wants 360 and overflows by 38; at 130 it
+   lands at 296. The games also draw through a PAINT LIST (`GamePaint`) rather
+   than a canvas, so their animation stays in `pk_core` where the tests are and
+   the screen stays a layout.
 2b. **The dealer is THREE tabs** (shelf / sockets / stash), where the oracle has
    one scrolling body. A card cell is 78px tall and **cannot shrink**: only 56
    and 112 blit 1:1, so a smaller cell would resample the very art the two-tier
@@ -119,5 +126,24 @@ not yet hand the player anything:
   fallback also collapses portraits toward BLACK rather than mid-grey, which no
   spread-based statistic sees. The shipped gate counts lit pixels on the
   SUBJECT box and is verified to fail closed. See the script's header.
-- **The run summary has no economy behind it** — gear and purse are em-dashes.
+- ✅ **THE CASINO IS PLAYABLE** (2026-08-11) — the last unbuilt counter. Three
+  layers, split where the oracle splits them: `gambler::drive` (round clocks,
+  no pixels), `screens::gambler` (layout only), and `pk_game::gambler`'s
+  `Cabinet` (the only caller of `gambler::table`, which is the only thing that
+  moves gold). Two rules are pinned by tests because neither is visible in the
+  types:
+  - **every exit settles.** Four ways out — BACK, ESC, the sheet's close
+    button, `E` — and only the first is a `Close` action. The outcome is decided
+    at `play`, so a round abandoned by any of the other three still owes its
+    payout; without this "a teardown eats the stake".
+  - **all nine roulette bets fit on the control row.** At the first cut's
+    padding they needed 442px of a 434px row and `13-18` was dropped SILENTLY
+    by the overflow break — a third of the board unbettable, every test green.
+- ✅ **THE RUN SUMMARY IS COMPLETE** (2026-08-11) — gear and purse were em
+  dashes on purpose while the economy was unbuilt, because *a number on a
+  summary screen is read as a measurement* and a "0 gold" the game had never
+  computed would have been a lie. Both are real now: purse from `Wallet`, gear
+  as plate SOAK (`worn/total`) rather than a count of pieces — a knight in three
+  cracked plates and one in three fresh ones both own three, and only one of
+  them is about to die. A slot never bought is on neither side of the ratio.
 - **No persistence.** Nothing survives a relaunch.
