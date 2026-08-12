@@ -218,24 +218,69 @@ impl Plugin for PerfPlugin {
 /// **The exe's capture path**, and it is the one piece B3 called new work
 /// rather than wiring.
 ///
-/// `PK_PERF_LOG=<seconds>` makes the native/Windows build print one
-/// [`perf_json`] row to stdout every `<seconds>`. The play target is the
-/// Windows exe, so the number that decides *does it feel right* is the release
-/// exe's frame time — and until this existed there was no way to get one out of
-/// it at all. The browser's `__pk.perf` is reachable over CDP; a windowed exe
-/// on the host desktop is not, and pasting an on-screen readout into a chat
-/// window is not a measurement.
+/// `--perf-log [seconds]` (or `PK_PERF_LOG=<seconds>`) makes the native and
+/// Windows builds print one [`perf_json`] row to stdout at that interval. The
+/// play target is the Windows exe, so the number that decides *does it feel
+/// right* is the release exe's frame time — and until this existed there was no
+/// way to get one out of it at all. The browser's `__pk.perf` is reachable over
+/// CDP; a windowed exe on the host desktop is not, and pasting an on-screen
+/// readout into a chat window is not a measurement.
+///
+/// ⚠️ **THE FLAG EXISTS BECAUSE THE ENV VAR CANNOT REACH THE PLAY TARGET, AND
+/// THIS SHIPPED ENV-ONLY FIRST.** `scripts/pk-win.sh run` launches the `.exe`
+/// through WSL2 interop with a plain `exec`, and **a WSL-side environment
+/// variable does not cross into a Windows process unless it is named in
+/// `WSLENV`** — which is empty on this box. So `PK_PERF_LOG=2 pk-win.sh run`
+/// starts the game, renders on the host GPU, and prints nothing, for ever. The
+/// instrument was unusable on precisely the target it was built for, and the
+/// failure is *silence*, which is indistinguishable from "the feature works and
+/// the frames are fine".
+///
+/// The flag has no such problem: `pk-win.sh run` forwards its remaining
+/// arguments straight to the game, so the switch travels by the same channel as
+/// `--tavern` and `--level`. **When a feature's only control channel is one the
+/// launcher does not carry, the feature does not exist on that target.**
 ///
 /// Off unless asked for: a game that writes to stdout every second is a game
 /// whose stdout nobody reads.
 #[cfg(not(target_arch = "wasm32"))]
 fn perf_log_secs() -> Option<f32> {
-    let raw = std::env::var("PK_PERF_LOG").ok()?;
+    let args: Vec<String> = std::env::args().collect();
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let env = std::env::var("PK_PERF_LOG").ok();
+    resolve_perf_log(&argv, env.as_deref())
+}
+
+/// The interval rule, as a pure function of the two inputs.
+///
+/// ⚠️ **THE REAL PATH CALLS THIS — it is not a test-side copy.** A second
+/// implementation that a test drives while the shipping code keeps its own is a
+/// pair free to drift, and the test cannot see it happen. [`perf_log_secs`] does
+/// nothing but read `std::env::args()` and the environment and hand them here,
+/// because neither is safe to set from a test: `set_var` is `unsafe` and racy
+/// across the threads sharing this test binary.
+///
+/// The CLI wins over the environment, matching `read_floor_plan`'s precedence —
+/// the environment is the thing you forgot was exported.
+#[cfg(not(target_arch = "wasm32"))]
+fn resolve_perf_log(args: &[&str], env: Option<&str>) -> Option<f32> {
+    if let Some(k) = args.iter().position(|a| *a == "--perf-log") {
+        // The value is OPTIONAL and is taken only when it actually parses as a
+        // positive number. `--perf-log --tavern` must mean "every second, and
+        // also open the tavern" — swallowing the next token would eat a flag
+        // and leave the caller debugging why the tavern never opened.
+        return Some(
+            args.get(k + 1)
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| *v > 0.0)
+                .unwrap_or(1.0),
+        );
+    }
     // `PK_PERF_LOG=1` is the obvious thing to type and must mean "every
     // second", not "on". A bare `=on`/`=true` gets the same default rather
     // than being silently ignored — an instrument that declines to run because
     // its argument was spelled unexpectedly reads as a broken build.
-    match raw.trim() {
+    match env?.trim() {
         "" | "0" => None,
         "on" | "true" | "yes" => Some(1.0),
         s => s.parse::<f32>().ok().filter(|v| *v > 0.0).or(Some(1.0)),
@@ -493,6 +538,59 @@ mod tests {
         }
         assert_eq!(w.max(), Some(16.0), "the pre-reset frames are gone");
         assert_eq!(w.n(), 10, "and `n` proves the interval it actually got");
+    }
+
+    /// **The flag must reach the play target, and the env var cannot.**
+    ///
+    /// This shipped env-only and was unusable on the Windows exe: `pk-win.sh
+    /// run` `exec`s the `.exe` through WSL2 interop, and a WSL-side environment
+    /// variable does not cross into a Windows process unless it is named in
+    /// `WSLENV` — which is empty here. The game rendered on the host GPU and
+    /// printed nothing, which looks exactly like a healthy silent build.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_interval_comes_from_the_flag_the_launcher_actually_forwards() {
+        // Bare flag → the default second. This is the form `pk-win.sh run
+        // --release --perf-log` produces, and the one the env var could not.
+        assert_eq!(
+            resolve_perf_log(&["pk-game", "--perf-log"], None),
+            Some(1.0)
+        );
+        // With a value.
+        assert_eq!(
+            resolve_perf_log(&["pk-game", "--perf-log", "2.5"], None),
+            Some(2.5)
+        );
+        // ⚠️ The value is optional, so the next token must NOT be swallowed
+        // when it is another flag — otherwise `--perf-log --tavern` silently
+        // drops the tavern and the caller debugs the wrong thing.
+        assert_eq!(
+            resolve_perf_log(&["pk-game", "--perf-log", "--tavern"], None),
+            Some(1.0)
+        );
+        // The CLI beats the environment, which is the thing you forgot was
+        // exported.
+        assert_eq!(
+            resolve_perf_log(&["pk-game", "--perf-log", "3"], Some("9")),
+            Some(3.0)
+        );
+        // Env still works where it CAN be delivered (native runs, CI).
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("2")), Some(2.0));
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("on")), Some(1.0));
+        // Off by default, and explicitly off.
+        assert_eq!(resolve_perf_log(&["pk-game"], None), None);
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("0")), None);
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("")), None);
+        // A nonsense value asks for the instrument rather than declining it —
+        // a run that goes quiet because an argument was spelled oddly reads as
+        // a broken build.
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("banana")), Some(1.0));
+        // A non-positive interval would print every frame; refuse it.
+        assert_eq!(resolve_perf_log(&["pk-game"], Some("-1")), Some(1.0));
+        assert_eq!(
+            resolve_perf_log(&["pk-game", "--perf-log", "-1"], None),
+            Some(1.0)
+        );
     }
 
     /// A row without its target is not a measurement anyone can reuse.
