@@ -31,7 +31,7 @@ Sources on the oracle side, all under
 | **Manage Loadout** (`armory`) | 3 plate slots, repair-all, 4 elemental sets | ✅ **DONE** — rules in `pk_core::economy::armory`, art from the icon bake, silhouettes for the sets |
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
-| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **RULES + ART DONE, NO SCREEN** — `pk_core::cards`, `economy::dealer` and the card-face bake are all in; `screens::dealer` is the remaining work |
+| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **SCREEN PAINTED, NOT WIRED** — rules, art and `screens::dealer` (3 tabs, 11 tests) are all in; the shell does not open it yet |
 | **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | 🟡 **RULES DONE, NO UI** — `pk_core::gambler` is complete with 250 tests; the cabinet screen is unbuilt |
 
 ## Where the port DEVIATES, and why
@@ -49,6 +49,14 @@ not to.
 2. **The brew book is an 8×2 icon grid with a detail strip**, not sixteen rows.
    Sixteen 22px rows is 352px of content in a 228px view; no shrinking closes
    that. First press selects, second brews.
+2b. **The dealer is THREE tabs** (shelf / sockets / stash), where the oracle has
+   one scrolling body. A card cell is 78px tall and **cannot shrink**: only 56
+   and 112 blit 1:1, so a smaller cell would resample the very art the two-tier
+   bake exists to protect. Two card rows plus the sheet's chrome is 344 against
+   a 322 ceiling, so sockets and stash cannot share a plate — each gets its own,
+   and each lands with 90+px spare. Sockets are one row for all weapons (three
+   weapons × three sockets is nine cells, not three rows), and the stash pages
+   eight at a time with the pager on its heading line.
 3. **The pouch is gem chips**, not `Label xN` joined by spaces — fourteen labels
    do not fit in 528px, and the oracle's own row ellipsizes them away.
 4. **The elemental sets show a silhouette** of the armour in the set's steel.
