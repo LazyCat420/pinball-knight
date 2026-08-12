@@ -303,7 +303,12 @@ fn anvil(f: &mut UiFrame, body: &mut Rect, w: &WeaponRow, act: &mut Option<Forge
     // the blade is to being litter. `None` (fists) draws nothing at all rather
     // than a full bar that would read as "brand new".
     if let Some(t) = w.wear {
-        let bar = rect(tx + 130.0, r.y + 30.0, r.w - 130.0 - 54.0, 6.0);
+        // 96 wide and no wider. `bar()` fills in whole BLOCKS (a fractional
+        // edge shimmers as the value creeps), so a bar stretched across the
+        // panel reads as a dashed RULE rather than as a meter — measured on the
+        // first screenshot of this counter, where it ran 335px and looked like
+        // a typographic line under the stats.
+        let bar = rect(tx + 96.0, r.y + 30.0, 96.0, 6.0);
         crate::im::bar(
             f,
             &bar,
