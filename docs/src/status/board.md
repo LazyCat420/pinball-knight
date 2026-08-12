@@ -5,6 +5,34 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-11 — The tavern is 1:1: all seven stations do what the old game
+  does there.** The dealer (rules + a 100-PNG card-face bake + a three-tab
+  screen) and the gambler's cabinet (four games over the 4,123 lines of rules
+  that were already ported) were the last two counters, and the run summary's
+  `gear`/`purse` em-dashes became real numbers. Three findings worth keeping:
+  - **A copied gate can be inert.** The card bake's palette check came from the
+    icon bake and could not fire — `monsterPortrait()` installs the palette
+    itself. Removing both installs greys 76 of 100 faces and the copied gate
+    passed on every one; so did three replacement statistics, because the
+    fallback collapses portraits toward BLACK (spread ≈ 0, weight ≈ 0) rather
+    than to mid-grey. The shipped gate counts lit pixels on the SUBJECT box.
+  - **A budgeted widget is not a drawn widget.** `body_height` reserved
+    `FOOT_H` for a BACK key on all three dealer tabs and nothing drew one — the
+    counter had no way out, with eleven tests green.
+  - **A glyph the atlas lacks draws NOTHING**, and `measure` returns the
+    monospace advance for it, so even measuring looks right. `✦` was caught by
+    a test that walks every literal the screen can emit.
+
+- **2026-08-11 — V-2: the wall wash. A wall no longer hits differently than it
+  looks.** 618 solid tiles on L3 and 482 on L5 carry a non-stone `WALL_*` id
+  that already drove the physics and nothing painted. The bucket key gained a
+  `surface` and each bucket takes a material tinted by that surface's hex — the
+  merged-mesh equivalent of the oracle's per-instance `setColorAt`. Stone is an
+  explicit WHITE (in three.js an unwritten instance colour renders BLACK; here
+  the same hazard is a defaulted `base_color`), and the tint MULTIPLIES the bake
+  so the courses and the normal map still read. A/B mean 30.2 → 30.1, over32
+  33.8% → 33.6%; port-frame diff 21,411 px on wall faces, floor untouched.
+
 - **2026-08-11 — A screen can now animate: `dt` reaches the frame, and a
   quiet frame is no longer skipped out from under it.**
   Groundwork for the gambler cabinet, whose four games are ticked state
