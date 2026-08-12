@@ -12,9 +12,15 @@
 //! multiplayer pool (P8), room/prop mesh construction (the shell mirrors
 //! `build.ts`/`props.ts` geometry directly), and audio patches (P7).
 //!
+//! ⚠️ `camera.ts` DOES NOT EXIST. This list used to name it, because the Rust
+//! module is `tavern/camera.rs` and the file name was assumed from the module
+//! name. The camera math's real source is `core.ts`, which `camera.rs` cites
+//! itself (as PARTIAL — it is ten lines of a 906-line file). The citation went
+//! unnoticed because the dangling check exempted every path starting with
+//! `legacy/`; see `xtask/src/coverage.rs`.
+//!
 //! PORTS: `legacy/src/scenes/tavern/layout.ts`, `legacy/src/scenes/tavern/player.ts`,
-//! `legacy/src/scenes/tavern/npcs.ts`, `legacy/src/scenes/tavern/camera.ts`,
-//! `legacy/src/scenes/tavern/join-board.ts`
+//! `legacy/src/scenes/tavern/npcs.ts`, `legacy/src/scenes/tavern/join-board.ts`
 
 pub mod camera;
 pub mod join_board;

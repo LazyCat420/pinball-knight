@@ -48,52 +48,117 @@ seed, today, both sides really are photographing the same place.
 ```
 $ cargo xtask coverage
 
-legacy PK tree      104309 lines, 296 files
-excluded             15997 lines, 34 files   (decisions, see EXCLUSIONS)
-1:1 TARGET           88312 lines
+TIER 1 — legacy/src/game/pinball-knight (the 1:1 surface)
+  legacy PK tree    104309 lines, 296 files
+  excluded           15997 lines, 34 files  (decisions, see EXCLUSIONS)
+  1:1 TARGET         88312 lines
+    ported           22062 lines, 50 files
+    partial           5245 lines, 4 files
+    NOT STARTED      61005 lines, 208 files
+    converted        25.0%
 
-  ported             21215 lines, 48 files
-  partial              5245 lines, 4 files
-  NOT STARTED         61852 lines, 210 files
+TIER 2 — the rest of legacy/src (the game loads it too)
+  sibling tree       15430 lines, 57 files
+  deferred            1014 lines, 8 files  (decisions, see DEFERRED)
+    legacy/src/net/            594 lines, 4 files — multiplayer/co-op is P8
+    legacy/src/services/       420 lines, 4 files — leaderboard is P8
+  TIER 2 TARGET      14416 lines
+    ported            7145 lines, 22 files
+    partial            906 lines, 1 files
+    NOT STARTED       6365 lines, 26 files
+    converted        49.6%
 
-  converted        24.0%
+CUTOVER CONDITION: tier 1 = 100.0% AND tier 2 = 100.0% (of target − deferred),
+with the deferred list above reviewed. Today: 25.0% / 49.6%, 73521 lines to write.
 ```
 
-**24.0%.** Not an estimate: the ledger reads `//! PORTS:` declarations out of
-all 105 Rust modules and a citation naming no legacy file is a hard failure. It
-replaced `scripts/pk-coverage.sh`, a two-signal heuristic that scored
-`maze/decorate.ts` — 3,169 lines, zero written — as *done* off a prose comment.
-CI prints both, because resolving that gap silently would always resolve it
-toward the flattering number.
+Not an estimate: the ledger reads `//! PORTS:` declarations out of every Rust
+module and a citation naming no legacy file is a hard failure. It replaced
+`scripts/pk-coverage.sh`, a two-signal heuristic that scored `maze/decorate.ts`
+— 3,169 lines, zero written — as *done* off a prose comment. CI prints both,
+because resolving that gap silently would always resolve it toward the
+flattering number.
 
-The remainder, by legacy directory. The sixteen rows reconcile exactly to
-61,852:
+### 2026-08-12 — three defects IN THE LEDGER, and a second tier
+
+The headline moved 24.0% → 25.0% without a line of game code being written, and
+that is not good news; it is the measurement being wrong in three places at once.
+
+**(a) A typo inside a real prefix was exempt from the typo check.** The dangling
+check ended with `.filter(|p| !p.starts_with("legacy/") && !p.starts_with("src/"))`
+— an exemption written for genuine citations outside the PK tree, back when
+there was no second tier to resolve them against. But a *misspelling* of a real
+path starts with `legacy/` too. `pk-core/src/{surfaces,tile_shape}.rs` cited
+`legacy/.../engine/…` with a literal `...` ellipsis; both files are ported and
+tested, and **847 lines sat in NOT STARTED for the ledger's entire existence
+with no warning printed.** Fixed at the spelling *and* at the check: a path must
+now resolve in some tier, be excluded, or be deferred. Nothing gets a pass for
+its prefix.
+
+**(b) The denominator excluded most of the game.** `scan_legacy` walked
+`legacy/src/game/pinball-knight` and nothing else — but the game does not boot
+on that tree alone. `utils/audio-manager.ts` (845), `pixel/` (591), the tavern
+scene glue, the gambler's art and audio, `net/`, `services/`: **15,430 non-test
+lines, of which ~7,500 were in NO bucket at all** — not ported, not excluded,
+not even NOT STARTED. Since *"the ledger reads 100%"* is the cutover condition,
+a file in no bucket is a hole in the finish line. Tier 2 now counts them, and
+`DEFERRED` is a third bucket kept deliberately separate from `EXCLUSIONS`,
+because *"post-parity, by decision"* and *"nobody has looked"* must not print
+the same.
+
+Tier 2 is kept as a **separate percentage rather than merged** into one: merging
+would silently move the headline and make every figure recorded before today
+incomparable with every figure after it.
+
+**(c) Two modules claimed a 906-line file whole while porting ten lines of it.**
+Only visible once tier 2 was scored. `tavern/camera.rs` ports `core.ts`'s
+CAM_LEAN/CAM_LERP aim math and `fx/tavern_fx.rs` ports its `:467-476` emitter
+cadence — both said `PORTS`, so `openTavernScene`'s whole lifecycle counted as
+converted. Both are `PORTS-PARTIAL` now, with the remainder stated, which is why
+tier 2 reads 49.6% and not 55.8%. **The honest number went down.** A third
+citation, `legacy/src/scenes/tavern/camera.ts`, names a file that has never
+existed — the module is `camera.rs`, and the `.ts` name was assumed from it.
+
+Sabotage sweep on the repaired gate: **4 injected, 4 caught, 0 survived** —
+re-introduce the ellipsis (red, and the % falls back to 24.6), cite a
+nonexistent tier-2 file (red), delete the sibling-spelling normaliser (red),
+let tier 2 swallow the PK tree (red). Positive control on the clean tree: green,
+exit 0. Workspace **882 tests**, 0 failed.
+
+### The remainder, by legacy directory
+
+Nineteen rows, reconciling exactly to 67,370 — the two tiers' NOT STARTED
+together (61,005 + 6,365). The three new rows at the bottom of the tier-1 block
+(`scenes`, `utils`, `pixel`) are the ones tier 2 made visible.
 
 | Legacy dir | Lines | Files | The headline files |
 |---|---:|---:|---|
 | `maze/` | 12,014 | 25 | `decorate` 3,169 · `prefabs` 702 · `arc-sweeps` 694 · `doorway-funnels` 687 |
 | root | 9,523 | 38 | `hud-face` 1,330 · `abilities` 916 · `boss` 772 · `core` 593 |
 | `entities/` | 9,425 | 13 | `player` 2,445 · `zombie` 1,217 · `combat` 1,204 · `marble` 1,005 |
-| `engine/` | 5,907 | 19 | `render/sprite` 1,697 · `render/figure` 575 · `tile-shape` 529 |
 | `dev/` | 5,298 | 17 | `window-hooks` 1,054 (`__lab()`) · `pattern-census` 991 |
+| `engine/` | 5,060 | 17 | `render/sprite` 1,697 · `render/figure` 575 — **−847, (a) above** |
+| `scenes/` | 4,598 | 18 | **tier 2** — gambler art/audio + the tavern glue |
 | `gui/` | 4,523 | 18 | `screens/menu` 809 · `screens/debug` 717 · `screens/hud` 404 |
-| `render/` | 3,913 | 17 | `card-styles` 640 · `card-glyphs` 538 |
+| `render/` | 4,138 | 18 | `card-styles` 640 · `card-glyphs` 538 · **+ tier 2's `backend.ts` 225** |
 | `fx/` | 3,639 | 22 | `system` 540 + the element families |
 | `constants/` | 1,797 | 8 | `render` 671 |
 | `boot/` | 1,336 | 7 | `sheets` 586 |
 | `spawn/` | 1,192 | 4 | `factory` 525 · `floor-populate` 363 |
 | `run/` | 1,036 | 8 | `descend` 308 · `death` 251 |
+| `utils/` | 951 | 3 | **tier 2** — `audio-manager` 845 |
 | `economy/` | 885 | 5 | the DUNGEON economy; the tavern's is ported |
 | `sfx/` | 712 | 6 | `ambience` 222 · `bus` 161 |
+| `pixel/` | 591 | 4 | **tier 2** — the pixel/font canvas layer |
 | `sim/` | 528 | 2 | `loop` 506 |
 | `input/` | 124 | 1 | `keymap` |
-| | **61,852** | **210** | |
+| | **67,370** | **222** | |
 
-Plus four PARTIAL files the ledger prints the missing half of: `maze/build.ts`
+Plus five PARTIAL files the ledger prints the missing half of: `maze/build.ts`
 1,898 · `render/pinball-parts.ts` 1,611 · `state.ts` 1,556 ·
-`sim/simulate.ts` 180.
+`scenes/tavern/core.ts` 906 · `sim/simulate.ts` 180.
 
-And, outside the target, **228 vitest suites / 41,877 lines** to port
+And, outside both targets, **228 vitest suites / 41,877 lines** to port
 selectively as each subsystem lands (Stage 5).
 
 ---

@@ -13,7 +13,11 @@
 //! so a long frame emits one batch and never a burst of catch-up. Ported as
 //! written.
 //!
-//! PORTS: `legacy/src/scenes/tavern/core.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/core.ts` — only the ambient
+//! emitter cadence at `:467-476`, ten lines of 906. The header above already
+//! said so in prose; the declaration said `PORTS` and therefore scored the
+//! whole file. See `crates/pk-core/src/tavern/camera.rs` for the other half of
+//! the same mistake.
 
 use bevy::prelude::*;
 

@@ -9,7 +9,7 @@
 //! assigns a surface plays bit-identically to the pre-surface build. The tests
 //! assert that neutrality field by field.
 //!
-//! PORTS: `legacy/.../engine/surfaces.ts`
+//! PORTS: `legacy/src/game/pinball-knight/engine/surfaces.ts`
 
 // ── WALLS ────────────────────────────────────────────────────────────────────
 
