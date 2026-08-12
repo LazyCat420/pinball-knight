@@ -215,11 +215,24 @@ over N reps, because on a shared box a single number is not a measurement.
 
 **The finding that reorders everything below it: the sim is not where the frame
 goes.** A frame at the measured 32 fps is 31 ms; the worst tick in the game is
-0.0003 ms of it, about one part in 100,000. The obvious objection — *debug is
-several times slower, so these are numbers about the build* — was **tested
-rather than assumed and is false**: release wasm measures 32.1 fps against
-debug's 31.3. Everything that costs anything is render-side, **and nothing in
-this project can see inside it.**
+0.0003 ms of it, about one part in 100,000.
+
+**And then B2 measured the other 31 ms, and it was not a cost at all.** Release
+Windows exe, tavern, RTX 3090 Ti: **p50 31.23 ms with vsync on, 17.04 ms with
+`--no-vsync`.** The real render cost is 17 ms; the frame overruns a ~15.6 ms
+present interval by roughly **1.4 ms** and is charged a whole extra one for it.
+Getting under that interval **doubles the frame rate**, which makes 1.4 ms the
+most valuable millisecond in the project.
+
+⚠️ **This retracts the reasoning that stood here before**: *"release wasm
+measures 32.1 fps against debug's 31.3, so the frame rate is not build-bound."*
+That comparison was made entirely on the plateau — anything whose work lands
+between 15.6 and 31.2 ms reports the same 31-32 ms, so it could not have
+distinguished the two builds even if one were twice the other. Three readings
+across two backends, two GPUs and three build profiles all agreeing was never
+evidence of a shared cost; it was three readings of the same quantiser. What
+gave it away was the **spread**, not the median: p95 − p50 = 0.6 ms on a
+3090 Ti drawing 171 meshes. Work does not have variance that tight.
 
 **B2 — the frame-time series, measured in-engine.** `__pk.perf`: a per-frame
 accumulator (p50/p95/max/count over a window), **not** a sampled probe — the

@@ -267,9 +267,35 @@ fn main() {
     };
     let mut app = App::new();
     app.insert_resource(plan);
+    // ⚠️ `--no-vsync` IS A MEASUREMENT FLAG, NOT A PERFORMANCE SETTING.
+    //
+    // Bevy's default present mode is `Fifo` — vsync ON — and this project has
+    // spent its whole life reading the resulting frame time as a COST. Every
+    // performance note in the status board says "31 ms a frame", and B2's first
+    // run on the release Windows exe measured p50 **31.23 ms with p95 31.86 and
+    // p99 33.14**: a spread of 0.6 ms around the median, on an RTX 3090 Ti,
+    // drawing 171 meshes. Work does not have variance that tight. A PRESENT WAIT
+    // does.
+    //
+    // The suspicious part is that debug wasm (31.3), release wasm (32.1) and the
+    // release native exe (31.2) all agree — across two backends, two GPUs and
+    // three build profiles. A number that survives all of that is not describing
+    // the workload.
+    //
+    // So this flag exists to answer one question and nothing else: with the
+    // present wait removed, does the frame time collapse? If it does, "31 ms a
+    // frame" was never a cost and every conclusion drawn from it needs redoing.
+    // It is off by default because an uncapped game burns a GPU to draw frames
+    // nobody sees.
+    let no_vsync = std::env::args().any(|a| a == "--no-vsync");
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Pinball Knight (Rust slice)".into(),
+            present_mode: if no_vsync {
+                bevy::window::PresentMode::AutoNoVsync
+            } else {
+                bevy::window::PresentMode::default()
+            },
             ..default()
         }),
         ..default()
@@ -351,6 +377,36 @@ fn main() {
 /// from OUTSIDE the app that the sim ticks at 60 Hz and that input moves the
 /// knight. `intro` mirrors the legacy `__dungeonIntroPhase` probe: the phase
 /// name while the title sequence plays, null otherwise.
+/// B2's two resources, bundled — and the bundling is load-bearing, not tidiness.
+///
+/// ⚠️ **`publish_stats` WAS AT THE 16-PARAMETER LIMIT.** Bevy's `IntoSystem`
+/// impls stop at 16, and adding `PerfWindow` and `SceneCensus` as separate
+/// parameters took it to 17. The error is
+/// `does not describe a valid system configuration`, pointed at the
+/// `add_systems` line rather than at the function, and it names neither the
+/// parameter count nor the system — `intro.rs`'s `Shell` bundle exists for
+/// exactly this reason and says so in its own header.
+///
+/// ⚠️ **AND IT ONLY BREAKS ON WASM, WHICH IS WHY IT SHIPPED.** `publish_stats`
+/// is `#[cfg(target_arch = "wasm32")]`, so `cargo test --workspace`, per-crate
+/// clippy and every native run compile a tree in which this function **does not
+/// exist**. 876 tests were green over a binary that could not be built for the
+/// one target the probe is for. The lesson is not "remember to build wasm" — it
+/// is that **a `cfg`-gated function is not covered by any gate that does not
+/// compile that cfg**, and this repo has exactly one such gate (CI's
+/// target-parity job) which does not run locally.
+///
+/// ACCUMULATED every frame in `Last`, PUBLISHED on `publish_stats`'s cadence —
+/// see `perf.rs`'s header for why that order is the whole point. Reading the
+/// window here rather than sampling a frame time here is the difference between
+/// a p95 that contains the hitches and one that cannot.
+#[cfg(target_arch = "wasm32")]
+#[derive(bevy::ecs::system::SystemParam)]
+struct PerfProbe<'w> {
+    window: Res<'w, perf::PerfWindow>,
+    census: Res<'w, perf::SceneCensus>,
+}
+
 #[cfg(target_arch = "wasm32")]
 fn publish_stats(
     sim: Option<Res<Sim>>,
@@ -372,12 +428,7 @@ fn publish_stats(
     // until the knight has already left the screen.
     knight_q: Query<&Transform, With<tavern::TavernKnight>>,
     snap_peak: Option<Res<post::snap::SnapPeak>>,
-    // B2. ACCUMULATED every frame in `Last`, PUBLISHED on this system's
-    // cadence — see `perf.rs`'s header for why that order is the whole point.
-    // Reading it here rather than sampling a frame time here is the difference
-    // between a p95 that contains the hitches and one that cannot.
-    perf: Res<perf::PerfWindow>,
-    census: Res<perf::SceneCensus>,
+    perf: PerfProbe,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
 ) {
@@ -397,7 +448,7 @@ fn publish_stats(
     if !transient && *frame % 5 != 0 {
         return;
     }
-    let perf_field = perf::perf_json(&perf, &census);
+    let perf_field = perf::perf_json(&perf.window, &perf.census);
     let intro_field = match (*state.get(), &intro_res) {
         (AppState::Intro, Some(i)) => format!("\"{}\"", i.phase_name()),
         _ => "null".into(),

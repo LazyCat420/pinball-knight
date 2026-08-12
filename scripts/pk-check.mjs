@@ -7,7 +7,10 @@
  *   1. zero console errors / page errors (a wasm panic fails the run)
  *   2. the sim ticks (~60 Hz) via the window.__pk debug surface
  *   3. scripted input moves the knight (__pk.x advances under 'd')
- *   4. render FPS over a 3 s rAF sample (reported; budget-gated later)
+ *   4. frame cost from `__pk.perf` (B2's per-frame accumulator) AND the
+ *      presented rate from a 3 s rAF sample — reported separately and never
+ *      conflated: rAF is vsync-quantised and cannot see work (see the note at
+ *      the measurement itself)
  *   5. the title intro plays through its phases on a plain load, hands off
  *      to the TAVERN hub, and a click skips it (__pk.intro mirrors the legacy
  *      __dungeonIntroPhase probe)
@@ -599,7 +602,31 @@ async function main() {
       gate(Math.abs(x1 - x0) > 0.5, `input drives movement (Δx=${(x1 - x0).toFixed(2)})`);
     }
 
-    // FPS over a 3 s rAF sample (report always; budget can gate later).
+    // ── Frame cost, and the difference between two numbers that look alike ──
+    //
+    // ⚠️ THE rAF COUNT BELOW IS A PRESENTED RATE, NOT A COST, AND READING IT AS
+    // A COST MISLED THIS PROJECT FOR WEEKS.
+    //
+    // rAF is driven by the compositor's vsync, so this loop can never report
+    // faster than the display refreshes — and everything whose work lands
+    // anywhere inside one refresh interval reports the SAME number. Measured on
+    // the release Windows exe (2026-08-12): p50 31.23 ms with vsync on against
+    // **17.04 ms with `--no-vsync`**. The frame's real work is 17 ms; it
+    // overruns a ~15.6 ms present interval by ~1.4 ms and is charged a whole
+    // extra one.
+    //
+    // That is why debug wasm (31.3), release wasm (32.1) and the native exe
+    // (31.2) all agreed across two backends, two GPUs and three build profiles.
+    // It looked like strong evidence of a shared cost. It was three readings of
+    // the same quantiser, and the conclusion drawn from it — "the frame rate is
+    // not build-bound" — has been retracted on the status board.
+    //
+    // So BOTH are printed, labelled, and never conflated: `presented` is what
+    // the player's eye gets and is worth watching for stutter; `frame cost` is
+    // `__pk.perf`, B2's per-frame accumulator, and is the only number here that
+    // can move when the renderer gets faster. The p95 is printed beside the p50
+    // because the SPREAD is what named the mechanism in the first place — 0.6 ms
+    // between them on a 3090 Ti is a present wait, not work.
     const fps = await page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -613,7 +640,29 @@ async function main() {
           requestAnimationFrame(loop);
         }),
     );
-    log(true, `render FPS: ${fps.toFixed(1)}`);
+    log(true, `presented: ${fps.toFixed(1)} fps (vsync-quantised — NOT a cost)`);
+
+    const perf = (await pk())?.perf ?? null;
+    if (perf && perf.n > 0) {
+      // `n` rides along because a percentile over a handful of frames is not a
+      // percentile, and a reader who cannot see the count cannot tell a quiet
+      // measurement from an empty one.
+      log(
+        true,
+        `frame cost: p50 ${perf.p50?.toFixed(2)} ms · p95 ${perf.p95?.toFixed(2)} ` +
+          `· max ${perf.max?.toFixed(2)} (n=${perf.n}, ${perf.build}/${perf.target})`,
+      );
+      log(
+        true,
+        `scene: ${perf.entities} entities · ${perf.meshes} meshes · ` +
+          `${perf.lights} lights · ${perf.materials} materials · ${perf.uiNodes} ui`,
+      );
+    } else {
+      // Not a gate failure — B2 may predate this build — but it must be VISIBLE,
+      // because the alternative is silently falling back to the presented rate
+      // and calling it a frame cost, which is the exact confusion above.
+      log(true, "frame cost: UNAVAILABLE (__pk.perf absent — B2 not in this build)");
+    }
 
     await mkdir(join(ROOT, ".checks"), { recursive: true });
     const shot = join(ROOT, ".checks", `pk-check-${Date.now()}.png`);

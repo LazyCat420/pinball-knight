@@ -5,6 +5,86 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — THE 31 ms FRAME WAS NEVER A COST. It is 17 ms of work missing
+  a vblank by ~1.4 ms and paying for a whole extra one.** B2's first real run
+  on the play target, and it retracts the conclusion the entry below it drew.
+  Release Windows exe, tavern, RTX 3090 Ti, `--perf-log 2`, 240-frame window:
+
+  | | p50 | p95 | p99 | min | max |
+  |---|---:|---:|---:|---:|---:|
+  | vsync on (Bevy default `Fifo`) | **31.23** | 31.86 | 33.14 | 28.69 | 33.97 |
+  | `--no-vsync` | **17.04** | 18.24 | 18.81 | 14.29 | 19.03 |
+
+  - **The real render cost is 17.0 ms.** `31.23 / 2 = 15.6 ms` implies a
+    ~64 Hz present interval, so the frame overruns it by roughly **1.4 ms** and
+    is charged 1.83× for the miss. That is the vsync cliff, and the game is
+    sitting just over its edge. **Getting under ~15.6 ms doubles the frame
+    rate**, which makes ~1.4 ms the most valuable millisecond in the project.
+    (The 64 Hz is INFERRED from the doubled value, not read from the display —
+    label it as such until someone queries the mode.)
+  - ⚠️ **RETRACTED: "release wasm measures 32.1 fps against debug's 31.3, so the
+    frame rate is not build-bound."** That comparison was made entirely ON THE
+    PLATEAU. Everything whose work lands anywhere in 15.6–31.2 ms reports the
+    same 31–32 ms, so the test could not have distinguished the two builds even
+    if one were twice the other. Debug wasm 31.3, release wasm 32.1 and the
+    release exe 31.2 agreeing across two backends, two GPUs and three build
+    profiles was never evidence of a shared cost — it was **three readings of
+    the same quantiser.** A measurement that cannot vary is not a measurement.
+  - **What gave it away was the SPREAD, not the median.** p95 − p50 = 0.6 ms on
+    a 3090 Ti drawing 171 meshes. Work does not have variance that tight; a
+    present wait does. The median had been on the board for days; nobody had
+    the p95 until B2 existed, and the p95 is what named the mechanism.
+  - `--no-vsync` is a **measurement flag, not a performance setting**, and says
+    so in `main.rs`: an uncapped game burns a GPU drawing frames nobody sees.
+  - **`pk-check` now reports both, and the first run demonstrated the plateau
+    on a second build.** Its FPS line has been a 3-second rAF count since P0 —
+    a PRESENTED rate, which cannot report faster than the display and therefore
+    **could never respond to a renderer optimisation**. It now prints the rAF
+    number labelled as cadence and, beside it, `__pk.perf`:
+
+    | build | presented | p50 | **p95** | spread |
+    |---|---:|---:|---:|---:|
+    | release exe (native) | 31.2 fps | 31.23 | **31.86** | 0.6 ms |
+    | debug wasm (pk-check) | 31.7 fps | 30.80 | **48.50** | 17.7 ms |
+
+    Nearly the same presented rate and nearly the same median, with spreads
+    **30× apart**: the exe is 17 ms of work quantised up to a missed vblank,
+    debug wasm genuinely costs ~31 ms. *Two different causes, one
+    indistinguishable number.* (⚠️ that row pair varies BOTH profile and
+    target — it demonstrates the plateau, it does not isolate either variable.)
+    When `__pk.perf` is absent the line says so out loud rather than falling
+    back to the presented rate, which is the exact substitution that produced
+    the retraction above.
+  - Still open, and now the interesting question: **what is the 17 ms?** B2
+    publishes the counts beside the timings (198 entities, 171 meshes, 15
+    lights, 124 materials, 8 UI nodes) but cannot yet split CPU from GPU. The
+    scene-count sweep in B2's spec — an empty floor against L5's 121 parts —
+    separates *the room is expensive* from *the chain is*, and it is now a
+    sweep with a target instead of a fishing trip.
+
+- **2026-08-12 — B2's exe capture path could not be switched on from the exe's
+  own launcher, and the failure mode was SILENCE.**
+  `PK_PERF_LOG` shipped as the only control channel. `scripts/pk-win.sh run`
+  `exec`s the `.exe` through WSL2 interop, and **a WSL-side environment variable
+  does not cross into a Windows process unless it is named in `WSLENV`** —
+  empty on this box. Measured, not reasoned: the game started, created its
+  window, reported `adapter=NVIDIA GeForce RTX 3090 Ti (DiscreteGpu, Vulkan)`,
+  rendered, and printed nothing for as long as it was left running.
+  - **An instrument that cannot be turned on is not a broken instrument, it is
+    an absent one — and it reports absence exactly the way a healthy quiet
+    build does.** Seven unit tests were green throughout, because they test the
+    window arithmetic and not the switch.
+  - `--perf-log [seconds]` fixes it: `pk-win.sh run` forwards its remaining
+    arguments to the game, the same channel `--tavern` and `--level` ride.
+    **When a feature's only control channel is one the launcher does not carry,
+    the feature does not exist on that target.**
+  - The value is optional and taken only when it parses as a positive number,
+    so `--perf-log --tavern` does not swallow the tavern flag.
+  - ⚠️ The parser was first written TWICE — a shipping copy reading `argv` and
+    a testable copy taking data. `perf_log_secs` now does nothing but read the
+    two inputs and hand them to `resolve_perf_log`, so the test drives the real
+    path.
+
 - **2026-08-12 — THE INTRO CAMERA WAS FRAMED 1.714× TOO CLOSE, AND THE TITLE
   PHASE COULD NOT SEE IT. Plus B2, the frame-time instrument.**
   `pixel-pass.ts syncCameraFrustum` is called from `render()` — scene-agnostic —
