@@ -31,7 +31,7 @@ Sources on the oracle side, all under
 | **Manage Loadout** (`armory`) | 3 plate slots, repair-all, 4 elemental sets | ✅ **DONE** — rules in `pk_core::economy::armory`, art from the icon bake, silhouettes for the sets |
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
-| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | ❌ **PLACEHOLDER** — needs `cards.ts` AND a card-face bake |
+| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **RULES UNBLOCKED** — `pk_core::cards` is ported; still needs `economy::dealer`, a screen, and a card-face bake |
 | **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | 🟡 **RULES DONE, NO UI** — `pk_core::gambler` is complete with 250 tests; the cabinet screen is unbuilt |
 
 ## Where the port DEVIATES, and why
@@ -72,11 +72,15 @@ not yet hand the player anything:
 
 ## What is missing that no counter can hide
 
-- **`cards.ts` is not ported** (885 lines). It blocks the dealer entirely and
-  the *socket* half of the forge. It also holds the one thing the forge already
-  needs and does not have: a rarity RANK, which is what makes insurance save
-  "the rarest first" rather than "the first two" — `insured_cards` takes the
-  rank as an argument and the shell currently passes a flat 0.
+- ✅ **`cards.ts` IS PORTED** (2026-08-11) — `pk_core::cards`, 35 tests, with
+  the 25-card catalogue generated from the oracle's own literal and diffed back
+  against it field for field. The rarity RANK the forge was missing now exists,
+  so **insurance really does save the rarest first**: the shell passed a flat
+  `|_| 0` from the day the forge shipped, which made the stable sort a no-op
+  and "rarest" silently mean "socket order". An unknown id ranks −1, below
+  common, and is dropped first — the oracle's `indexOf(undefined)`, kept.
+- **The dealer still needs its screen and its shop rules.** `cards.ts` was the
+  blocker; `economy::dealer` and `screens::dealer` are the remaining work.
 - **Card faces are a separate bake.** A card in the UI is `cardFaceAt()`, a
   different renderer at a different aspect — not an `itemIcon`.
 - **The run summary has no economy behind it** — gear and purse are em-dashes.

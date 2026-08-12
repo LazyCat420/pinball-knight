@@ -27,6 +27,7 @@
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
+use pk_core::cards::card_def;
 use pk_core::state::Facing;
 use pk_core::tavern::camera::{camera_target, ease_camera, ROOM_FOOTPRINT_TILES_H};
 use pk_core::tavern::layout::{
@@ -842,6 +843,17 @@ fn dev_satchel() -> Satchel {
         s.add_reagent(id, 2);
     }
     s
+}
+
+/// A card's rarity as a sort key, for the forge's insurance.
+///
+/// ⚠️ AN UNKNOWN ID RANKS −1, BELOW COMMON, and is dropped FIRST. That is the
+/// oracle's own behaviour, not an oversight: it writes
+/// `CARD_RANK.indexOf(cardDef(id)?.rarity)`, and `indexOf(undefined)` is −1.
+/// Insurance saving a card nobody can identify, ahead of a legendary, would be
+/// the worse answer.
+fn card_rank(id: &str) -> i32 {
+    card_def(id).map_or(-1, |c| c.rarity().rank())
 }
 
 /// The blade the smith works on until the dungeon drops one.
@@ -1919,7 +1931,7 @@ fn tavern_frame(
                 // The roll is drawn HERE and passed in, so the rules stay pure
                 // and the stream is one the shell can seed and replay.
                 let roll = forge_rng.next_f64();
-                let (out, armed) = upgrade_weapon(w, wallet, *forge_armed, roll, |_| 0);
+                let (out, armed) = upgrade_weapon(w, wallet, *forge_armed, roll, card_rank);
                 *forge_armed = armed;
                 if out.message.is_some() {
                     *shop_message = out.message;
@@ -2376,6 +2388,43 @@ fn _rect_used(_r: &LRect) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Insurance now saves the RAREST cards, not the first two socketed.
+    ///
+    /// The shell passed `|_| 0` from the day the forge shipped, because
+    /// `cards.ts` was not ported and there was no rarity to rank by. A flat
+    /// rank makes a stable sort a no-op, so "rarest first" silently meant
+    /// "socket order". This is the end-to-end half of
+    /// `forge::insurance_saves_the_rarest_first`.
+    #[test]
+    fn the_forge_ranks_a_card_by_its_real_rarity() {
+        // goblintooth is rare, bloodpact mythic, shamblerhide common.
+        assert!(card_rank("bloodpact") > card_rank("goblintooth"));
+        assert!(card_rank("goblintooth") > card_rank("shamblerhide"));
+        // A levelled id resolves to the same rarity as its base.
+        assert_eq!(card_rank("bloodpact#7s"), card_rank("bloodpact"));
+        // ⚠️ An unknown id ranks BELOW common and is dropped first — the
+        // oracle's `indexOf(undefined) === -1`, kept deliberately.
+        assert_eq!(card_rank("not_a_card"), -1);
+        assert!(card_rank("not_a_card") < card_rank("shamblerhide"));
+    }
+
+    /// The dev weapon's two sockets carry real ids, so the counter's insurance
+    /// arithmetic is reachable by hand rather than only in a test.
+    #[test]
+    fn the_dev_weapons_cards_are_real_and_rankable() {
+        let w = dev_weapon();
+        assert_eq!(w.cards.len(), 2);
+        for id in &w.cards {
+            assert!(
+                card_rank(id) >= 0,
+                "{id} is not a catalogue card, so INSURE would rank it below common"
+            );
+        }
+        // …and they are not the same rarity, so a rarest-first save is
+        // observably different from a first-two save on this very weapon.
+        assert_ne!(card_rank(&w.cards[0]), card_rank(&w.cards[1]));
+    }
 
     /// The baked billboard has to point the quad's face AT the camera. Nothing
     /// on screen says so quietly: a wrong Euler order or a sign flip shows up
