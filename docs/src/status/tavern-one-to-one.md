@@ -49,14 +49,7 @@ not to.
 2. **The brew book is an 8×2 icon grid with a detail strip**, not sixteen rows.
    Sixteen 22px rows is 352px of content in a 228px view; no shrinking closes
    that. First press selects, second brews.
-2c. **The gambler's viewport is 130px**, not the oracle's 520×200 canvas. The
-   oracle's cabinet is a DOM overlay with its own `requestAnimationFrame`; this
-   one is a sheet in a 322px box that also needs a game picker, a stake row and
-   a control row. At 200 the cabinet wants 360 and overflows by 38; at 130 it
-   lands at 296. The games also draw through a PAINT LIST (`GamePaint`) rather
-   than a canvas, so their animation stays in `pk_core` where the tests are and
-   the screen stays a layout.
-2b. **The dealer is THREE tabs** (shelf / sockets / stash), where the oracle has
+3. **The dealer is THREE tabs** (shelf / sockets / stash), where the oracle has
    one scrolling body. A card cell is 78px tall and **cannot shrink**: only 56
    and 112 blit 1:1, so a smaller cell would resample the very art the two-tier
    bake exists to protect. Two card rows plus the sheet's chrome is 344 against
@@ -64,12 +57,19 @@ not to.
    and each lands with 90+px spare. Sockets are one row for all weapons (three
    weapons × three sockets is nine cells, not three rows), and the stash pages
    eight at a time with the pager on its heading line.
-3. **The pouch is gem chips**, not `Label xN` joined by spaces — fourteen labels
+4. **The gambler's viewport is 130px**, not the oracle's 520×200 canvas. The
+   oracle's cabinet is a DOM overlay with its own `requestAnimationFrame`; this
+   one is a sheet in a 322px box that also needs a game picker, a stake row and
+   a control row. At 200 the cabinet wants 360 and overflows by 38; at 130 it
+   lands at 296. The games also draw through a PAINT LIST (`GamePaint`) rather
+   than a canvas, so their animation stays in `pk_core` where the tests are and
+   the screen stays a layout.
+5. **The pouch is gem chips**, not `Label xN` joined by spaces — fourteen labels
    do not fit in 528px, and the oracle's own row ellipsizes them away.
-4. **The elemental sets show a silhouette** of the armour in the set's steel.
+6. **The elemental sets show a silhouette** of the armour in the set's steel.
    The oracle draws a 3px colour bar; beside three rows of real gear that reads
    as a bullet point.
-5. **The upgrade roll is an argument.** `upgradeWeapon` calls `Math.random()`;
+7. **The upgrade roll is an argument.** `upgradeWeapon` calls `Math.random()`;
    the port draws from a seeded `Mulberry32` in the shell and passes the value
    in, so the rules stay pure and a shatter is replayable.
 
