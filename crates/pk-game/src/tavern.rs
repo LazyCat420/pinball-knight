@@ -297,6 +297,9 @@ pub struct TavernRes {
     pub dealer_page: usize,
     /// The shelf's stream. Seeded like the forge's, so a shelf is replayable.
     pub dealer_rng: pk_core::rng::Mulberry32,
+    /// The casino. Owns the four games' live state, the visit's round limit and
+    /// the only calls into `pk_core::gambler::table` — see `crate::gambler`.
+    pub cabinet: crate::gambler::Cabinet,
     /// The counter's last `ActionResult`, flashed under its heading.
     pub shop_message: Option<String>,
     pub stats: TavernStats,
@@ -839,6 +842,7 @@ fn setup_tavern(
         dealer_picked: None,
         dealer_page: 0,
         dealer_rng: pk_core::rng::Mulberry32::new(0x0DEA_1E12),
+        cabinet: crate::gambler::Cabinet::new(0x6A_11E5),
         card_stash: Vec::new(),
         shop_message: None,
         stats,
@@ -1805,6 +1809,21 @@ fn tavern_frame(
     // The last two both surface as `layer.closed`, so this reads that FIRST and
     // never guesses — an `open_panel` that disagreed with the stack is how a
     // frozen room with no menu on it happens.
+    // ⚠️ EVERY EXIT SETTLES THE CASINO.
+    //
+    // There are FOUR ways out of the cabinet — its own BACK key, ESC, the
+    // sheet's close button, and `E` — and only the first goes through
+    // `GamblerAction::Close`. A round abandoned by any of the other three still
+    // owes its payout, because the outcome was decided at `play`. Closing one
+    // of them and not the rest is how "walking away eats the stake" ships.
+    let leaving_cabinet = res.open_panel == Some(Panel::Gambler)
+        && (layer.closed.is_some() || keys.just_pressed(KeyCode::KeyE));
+    if leaving_cabinet {
+        let TavernRes {
+            cabinet, wallet, ..
+        } = &mut *res;
+        cabinet.forfeit(wallet);
+    }
     if layer.closed.is_some() {
         res.open_panel = None;
     }
@@ -1982,6 +2001,40 @@ fn tavern_frame(
             (_, None) => {}
         }
     }
+    // ── The casino ──
+    //
+    // The TICK comes first and runs whenever the cabinet is open, because a
+    // round is an animation: without it a spin starts and never lands, and the
+    // controls stay locked forever behind `busy()`.
+    if res.open_panel == Some(Panel::Gambler) {
+        let TavernRes {
+            cabinet, wallet, ..
+        } = &mut *res;
+        cabinet.tick(dt, wallet);
+    }
+    if let Some(action) = layer.gambler_action.take() {
+        use pk_gui::screens::gambler::GamblerAction;
+        let TavernRes {
+            cabinet,
+            wallet,
+            open_panel,
+            ..
+        } = &mut *res;
+        match action {
+            GamblerAction::Pick(g) => cabinet.pick(g, wallet),
+            GamblerAction::Stake(s) => cabinet.set_stake(s),
+            GamblerAction::Play => cabinet.play(wallet),
+            GamblerAction::Control(id) => cabinet.control(&id, wallet),
+            GamblerAction::Close => {
+                // ⚠️ SETTLE BEFORE CLOSING. The outcome was decided at `play`,
+                // so walking out mid-spin owes the player their payout — the
+                // oracle keeps a `forfeitRound` closure for exactly this, and
+                // without it "a teardown eats the stake".
+                cabinet.forfeit(wallet);
+                *open_panel = None;
+            }
+        }
+    }
     // ── The card dealer's action ──
     if let Some(action) = layer.dealer_action.take() {
         use pk_core::economy::dealer::{buy_card, reroll_bar, socket_stash_card, unsocket_card};
@@ -2070,12 +2123,14 @@ fn tavern_frame(
             layer.close(ScreenId::Alchemist);
             layer.close(ScreenId::Forge);
             layer.close(ScreenId::Dealer);
+            layer.close(ScreenId::Gambler);
             set_view(&mut views.summary, None);
             set_view(&mut views.panel, None);
             set_view(&mut views.armory, None);
             set_view(&mut views.alchemist, None);
             set_view(&mut views.forge, None);
             set_view(&mut views.dealer, None);
+            set_view(&mut views.gambler, None);
         }
         Some(Panel::Summary) => {
             set_view(
@@ -2212,6 +2267,12 @@ fn tavern_frame(
                 }),
             );
             layer.open(ScreenId::Alchemist);
+        }
+        // The casino. Everything it shows comes from the cabinet, which is the
+        // only thing here that may call `gambler::table`.
+        Some(Panel::Gambler) => {
+            set_view(&mut views.gambler, Some(res.cabinet.view(&res.wallet)));
+            layer.open(ScreenId::Gambler);
         }
         // The card dealer. The shelf is rolled ONCE per run here, not per
         // open: the oracle keeps its bar between visits, and re-rolling on
@@ -2364,15 +2425,8 @@ fn tavern_frame(
                         s.accent,
                     )
                 }
-                Panel::Gambler => (
-                    "RISK GOLD".to_string(),
-                    "slots · roulette · blackjack · darts".to_string(),
-                    "All four games are ported and tested in pk-core::gambler, \
-                     RTP Monte-Carlos included. The cabinet screen that drives \
-                     them lands with the P5 economy."
-                        .to_string(),
-                    GOLD,
-                ),
+                // Handled above — the cabinet is a real screen now.
+                Panel::Gambler => unreachable!("the gambler opens its own screen"),
             };
             set_view(
                 &mut views.panel,

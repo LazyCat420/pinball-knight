@@ -16,6 +16,7 @@ pub mod blackjack;
 pub mod blackjack_table;
 pub mod darts;
 pub mod darts_throw;
+pub mod drive;
 pub mod roulette;
 pub mod roulette_physics;
 pub mod slots;

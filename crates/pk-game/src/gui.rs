@@ -44,6 +44,7 @@ use pk_gui::screens::alchemist::{paint_alchemist, AlchemistAction, AlchemistView
 use pk_gui::screens::armory::{paint_armory, ArmoryAction, ArmoryView};
 use pk_gui::screens::dealer::{paint_dealer, DealerAction, DealerView};
 use pk_gui::screens::forge::{paint_forge, ForgeAction, ForgeView};
+use pk_gui::screens::gambler::{paint_gambler, GamblerAction, GamblerView};
 use pk_gui::screens::intro::{
     paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
     DESIGN_W as INTRO_DESIGN_W,
@@ -89,6 +90,8 @@ pub enum ScreenId {
     Forge,
     /// The card dealer's counter — "Cards": the shelf, the sockets, the stash.
     Dealer,
+    /// The gambler's cabinet — "Risk Gold": slots, roulette, darts, blackjack.
+    Gambler,
 }
 
 /// WHAT the open screens say. Filled by whoever owns the scene, read here.
@@ -108,6 +111,7 @@ pub struct GuiViews {
     pub alchemist: Option<AlchemistView>,
     pub forge: Option<ForgeView>,
     pub dealer: Option<DealerView>,
+    pub gambler: Option<GamblerView>,
 }
 
 /// Assign only if the value actually differs.
@@ -149,6 +153,8 @@ pub struct GuiLayer {
     pub forge_action: Option<ForgeAction>,
     /// …and the card dealer's.
     pub dealer_action: Option<DealerAction>,
+    /// …and the gambler's.
+    pub gambler_action: Option<GamblerAction>,
     /// Has the texture got pixels on it that the stack no longer accounts for?
     ///
     /// Set by every paint, taken by the first idle frame. Without it, closing
@@ -242,9 +248,11 @@ impl GuiLayer {
             // Both counters are modal over the walkable room and both were
             // authored in the same box, so they zoom together — two vendor
             // sheets at different scales read as two different games.
-            ScreenId::Armory | ScreenId::Alchemist | ScreenId::Forge | ScreenId::Dealer => {
-                ScreenEntry::new(id, true).with_design(600.0, 338.0, 2)
-            }
+            ScreenId::Armory
+            | ScreenId::Alchemist
+            | ScreenId::Forge
+            | ScreenId::Dealer
+            | ScreenId::Gambler => ScreenEntry::new(id, true).with_design(600.0, 338.0, 2),
         };
         self.stack.push(entry);
     }
@@ -329,6 +337,7 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         alchemist_action: None,
         forge_action: None,
         dealer_action: None,
+        gambler_action: None,
         dirty: false,
         views_gen: 0,
         last_pointer: None,
@@ -550,6 +559,7 @@ fn paint_gui(
     let mut alchemist_action = None;
     let mut forge_action = None;
     let mut dealer_action = None;
+    let mut gambler_action = None;
     // Clamped, as the oracle clamps it: a backgrounded tab hands back a delta
     // of whole seconds, and stepping an animation that far in one frame skips
     // the very thing it exists to show.
@@ -587,6 +597,14 @@ fn paint_gui(
             ScreenId::Alchemist => {
                 if let Some(v) = &views.alchemist {
                     alchemist_action = paint_alchemist(f, v, &mut entry.scroll);
+                }
+            }
+            ScreenId::Gambler => {
+                if let Some(v) = &views.gambler {
+                    // No scroll cursor: the cabinet is one fixed layout that
+                    // fits the design box outright — that is what forced the
+                    // game viewport down to 130px.
+                    gambler_action = paint_gambler(f, v);
                 }
             }
             ScreenId::Dealer => {
@@ -633,6 +651,7 @@ fn paint_gui(
     layer.alchemist_action = alchemist_action;
     layer.forge_action = forge_action;
     layer.dealer_action = dealer_action;
+    layer.gambler_action = gambler_action;
     if result.painted {
         layer.dirty = true;
         upload(&mut images, &layer);
@@ -693,6 +712,7 @@ mod tests {
             alchemist_action: None,
             forge_action: None,
             dealer_action: None,
+            gambler_action: None,
             dirty: false,
             views_gen: 0,
             last_pointer: None,

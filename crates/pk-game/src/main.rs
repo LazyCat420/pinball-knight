@@ -32,6 +32,7 @@ mod dungeon_light;
 mod dungeon_render;
 mod floor_loading;
 mod fx;
+mod gambler;
 mod gui;
 mod intro;
 mod maze_art;
