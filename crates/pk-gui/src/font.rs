@@ -46,6 +46,32 @@ pub struct Glyph {
     pub advance: f64,
 }
 
+/// Characters the FACE does not have, mapped to the one it does.
+///
+/// ⚠️ **U+2212 MINUS SIGN.** `cards.ts`'s `pct()` prints every negative stat
+/// with it — "−12% durability" — and it is deliberately not the ASCII hyphen.
+/// Press Start 2P has no such glyph. Baking it anyway was tried and rejected:
+/// the browser silently substitutes a proportional system face, so the cell
+/// came out 4.51px wide against a monospace 8, which both breaks the layout
+/// arithmetic (every screen budgets `size` px per character) and desynced the
+/// atlas packing badly enough that the raster bled into its neighbour.
+///
+/// The oracle has the exact same hole — it draws in Press Start 2P too, so its
+/// own minus signs have always been rendered by a fallback face. Copying the
+/// bytes faithfully would import that defect into a pixel UI that has no
+/// fallback to save it: a glyph the atlas lacks draws NOTHING, and the player
+/// reads "12% durability" on a card that makes armour worse.
+///
+/// So the string stays the oracle's all the way through `pk_core`, and the
+/// substitution happens here, at the last possible moment, where it is a
+/// rendering decision about a face rather than a rule about a card.
+fn substitute(ch: char) -> char {
+    match ch {
+        '\u{2212}' => '-', // MINUS SIGN → HYPHEN-MINUS
+        c => c,
+    }
+}
+
 pub struct Atlas {
     pub px: u32,
     pub cell_w: u32,
@@ -103,7 +129,7 @@ impl Atlas {
     }
 
     pub fn glyph(&self, ch: char) -> Option<&Glyph> {
-        self.glyphs.get(&ch)
+        self.glyphs.get(&substitute(ch))
     }
 
     /// This atlas at `k`× its size, by nearest-neighbour on the coverage.
@@ -365,6 +391,30 @@ mod tests {
         assert_eq!(fonts.measure("ABC", 8), 24.0);
         assert_eq!(fonts.measure("[E] FORGE / REPAIR", 8), 18.0 * 8.0);
         assert_eq!(fonts.measure("RUN SUMMARY", 16), 11.0 * 16.0);
+    }
+
+    /// A minus sign draws, and it draws at the monospace width.
+    ///
+    /// `cards.ts` prints "−12%" with U+2212, which Press Start 2P does not
+    /// have. Unsubstituted it would measure 0 and draw nothing — the card
+    /// would read "12% durability" for a penalty, which is the opposite of
+    /// the truth. See [`substitute`] for why this is not fixed in the bake.
+    #[test]
+    fn the_oracles_minus_sign_draws_as_a_hyphen_at_full_width() {
+        let fonts = Fonts::load_embedded();
+        assert_eq!(
+            fonts.measure("\u{2212}12%", 8),
+            4.0 * 8.0,
+            "a substituted glyph still occupies exactly one monospace cell"
+        );
+        // …and it is the SAME raster as the hyphen, not an empty cell that
+        // merely reserves the right amount of room.
+        let a = fonts.atlas(8).expect("8px atlas");
+        assert_eq!(
+            a.glyph('\u{2212}').map(|g| g.index),
+            a.glyph('-').map(|g| g.index)
+        );
+        assert!(a.glyph('-').is_some());
     }
 
     #[test]

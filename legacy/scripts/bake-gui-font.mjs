@@ -48,6 +48,15 @@ process.chdir(LEGACY);
  * The pinned charset. ASCII 0x20–0x7E plus the non-ASCII the GUI actually
  * draws: … (ellipsize), · (blurbs), ’ — × (copy). Pinned as a constant so the
  * metrics JSON and the Rust loader agree on the exact set forever.
+ *
+ * ⚠️ **DO NOT ADD U+2212 MINUS SIGN HERE.** `cards.ts`'s `pct()` prints every
+ * negative stat with it, so it looks like an omission. It is not: Press Start
+ * 2P has no such glyph, and baking it makes the browser substitute a
+ * PROPORTIONAL system face — measured at advance 4.51 against this atlas's
+ * monospace 8, which breaks every screen's layout arithmetic and desyncs the
+ * cell packing enough that the raster bleeds into its neighbour. Tried,
+ * rendered, reverted. `pk_gui::font::substitute` maps it to the ASCII hyphen
+ * at draw time instead, which is where a decision about a FACE belongs.
  */
 const EXTRAS = ["…", "·", "’", "—", "×"];
 const CHARSET = [];
