@@ -107,14 +107,46 @@ function killByUserDataDir(name) {
 }
 
 /**
+ * Are all of `wanted` present on the live browser's command line?
+ *
+ * The rule affinity already lives by, for the same reason: ATTACHING IS NOT
+ * CONFIGURING. A browser launched without `--disable-gpu-vsync` and reused by
+ * a caller that asked for it reports vsync-quantised frame times that look
+ * exactly like real work — the plateau this project has already had to retract
+ * a conclusion over. Unreadable counts as WRONG, so the fallback is a respawn.
+ */
+async function argsMatch(port, wanted) {
+  if (!wanted.length) return true;
+  try {
+    const out = psRun(
+      `$p = ${BROWSERS} | Where-Object { $_.CommandLine -match '--remote-debugging-port=${port}\\b' -and $_.CommandLine -notmatch '--type=' } | Select-Object -First 1
+       if ($p) { $p.CommandLine }`,
+    ).trim();
+    return out !== "" && wanted.every((f) => out.includes(f));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Launch (or reuse) a real-GPU browser and connect over CDP. Returns null when
  * no host browser can be found, so a caller can fall back loudly rather than
  * silently measuring software rendering.
+ *
+ * `extraArgs` are Chrome switches this run REQUIRES. They are enforced on the
+ * reuse path too, because a switch that only applies on a cold launch is a
+ * switch that silently does nothing on the warm one.
  */
-export async function connectRealGpu({ port = ENV_PORT ?? 9333, headed = false, sound = false, log = console.log } = {}) {
+export async function connectRealGpu({ port = ENV_PORT ?? 9333, headed = false, sound = false, extraArgs = [], log = console.log } = {}) {
   if (await cdpAlive(port)) {
     if (ENV_AFFINITY && !(await affinityMatches(port, ENV_AFFINITY))) {
       log(`▶ live browser on :${port} has the wrong affinity — killing and respawning pinned`);
+      try { killByCdpPort(port); } catch { /* best effort */ }
+      for (let i = 0; i < 20 && (await cdpAlive(port)); i++) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } else if (!(await argsMatch(port, extraArgs))) {
+      log(`▶ live browser on :${port} lacks [${extraArgs.join(" ")}] — killing and respawning with them`);
       try { killByCdpPort(port); } catch { /* best effort */ }
       for (let i = 0; i < 20 && (await cdpAlive(port)); i++) {
         await new Promise((r) => setTimeout(r, 500));
@@ -145,6 +177,7 @@ export async function connectRealGpu({ port = ENV_PORT ?? 9333, headed = false, 
     `--user-data-dir=C:\\Temp\\${userDataDirName()}`,
     "--no-first-run",
     "--no-default-browser-check",
+    ...extraArgs,
     "about:blank",
   ];
 
