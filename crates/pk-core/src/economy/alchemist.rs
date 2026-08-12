@@ -484,6 +484,21 @@ impl Satchel {
         *self.pouch.entry(id).or_insert(0) += n;
     }
 
+    /// Spend `n` of a reagent, or nothing at all.
+    ///
+    /// ALL-OR-NOTHING and `#[must_use]`, the same contract `Wallet::spend`
+    /// carries: a partial take would leave a caller believing it had paid for
+    /// something it could not afford. The dealer's card forge is the first
+    /// consumer — it burns one Grim Bone per craft.
+    #[must_use]
+    pub fn take_reagent(&mut self, id: ReagentId, n: i32) -> bool {
+        if n <= 0 || self.reagents(id) < n {
+            return false;
+        }
+        *self.pouch.entry(id).or_insert(0) -= n;
+        true
+    }
+
     /// How many of this potion are on the belt.
     pub fn count(&self, id: PotionId) -> i32 {
         self.belt

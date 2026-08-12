@@ -20,6 +20,7 @@
 
 pub mod alchemist;
 pub mod armory;
+pub mod dealer;
 pub mod forge;
 
 /// A purchase's answer — the oracle's `ActionResult`, which is a message to
