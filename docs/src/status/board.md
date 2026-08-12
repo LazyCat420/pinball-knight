@@ -5,6 +5,23 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — B1, the sim's benchmark suite: the sim is 1 part in 100,000 of
+  a frame, and the RELEASE build fails two pk-check gates.**
+  `cargo run --release -p pk-core --example perf_suite`. The worst tick in the
+  game — the pinball ride, sub-stepping — is **299 ns**; a frame at the measured
+  32 fps is **31 ms**. The obvious objection, *debug is several times slower so
+  these are numbers about the build*, was **tested rather than assumed and is
+  false**: release wasm measures **32.1 fps against debug's 31.3**. Everything
+  that costs anything is render-side and nothing in this project can see inside
+  it — that is B2 in [plan v3](port-plan-v3.md) §4.
+  - **The price of determinism, measured for the first time**: `js_pow` is
+    **4.2×** `std::powf` (36.8 vs 8.7 ns), and `js_hypot` is *faster* than std
+    (2.7 vs 3.9). Worth paying; no longer a shrug.
+  - **The horde's AI will never be the bottleneck**: `flow_step` is 7.6 ns, so
+    72 monsters steering at 60 Hz is 33 µs/s.
+  - **A floor build is 3.31 / 4.20 / 5.28 ms** (L1/L3/L5) for nine of
+    twenty-three passes — the loading-screen budget's first number.
+
 - **2026-08-12 — the enemy-table drift gate was RED on one byte, and the port
   plan is re-baselined off the ledger ([v3](port-plan-v3.md)).**
   `cargo test --workspace` was 505 passed / **1 failed** at `8cb9415`:
@@ -961,6 +978,18 @@ as the change it records.** Newest entries first within each section.
   manifests.
 
 ## Broken / not started
+
+- **2026-08-12 — `pk-check` has only ever gated a DEBUG build, and the RELEASE
+  build fails two of its gates.** Reproduced twice on `trunk build --release`:
+  *intro hands off to the tavern hub* and *tavern probe carries a pose (no
+  probe)*. The click-skip path into the tavern passes on the same run, and every
+  tavern gate after it passes, so the hub does build — the likely mechanism is
+  the **sampling edge**: the loop takes its one reading at the first poll where
+  `intro === null`, and on a faster build that instant can land before
+  `TavernRes` exists. That is the suspect, not the diagnosis; widen the poll and
+  re-run. Same pair of runs: the sim-rate gate reads **66 Hz on debug and 72 Hz
+  on release** for a sim that should be fixed-step, which wants its own look.
+  Until this is closed, **the shipped artefact has never passed the gate.**
 
 - **The tavern knight sometimes DISAPPEARS while walking.** Player-reported
   2026-08-11; **reported gone since the Y fix shipped, but the cause is NOT
