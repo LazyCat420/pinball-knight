@@ -51,6 +51,7 @@ pub mod intro;
 pub mod jsmath;
 pub mod jssort;
 pub mod maze;
+pub mod movement;
 pub mod pinball;
 pub mod rail;
 pub mod rng;
