@@ -5,6 +5,75 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — THE INTRO CAMERA WAS FRAMED 1.714× TOO CLOSE, AND THE TITLE
+  PHASE COULD NOT SEE IT. Plus B2, the frame-time instrument.**
+  `pixel-pass.ts syncCameraFrustum` is called from `render()` — scene-agnostic —
+  and re-frames the ortho half-extents to `renderW/(2·PPU) × renderH/(2·PPU)`
+  on every frame: **34.29 × 19.29** world units at 1920×1080 and PPU 56. The
+  port's intro pinned `ScalingMode::FixedVertical { VIEW_H }` with
+  `VIEW_H = 11.25`, the `engineConfig.camera.viewH` **default**.
+  - **This is the SAME defect `drive_scene_camera` fixed for the dungeon on
+    08-11, and that fix is what left it standing.** It was written as a `match`
+    over `AppState` whose `_ => None` arm excluded the intro BY NAME, reasoning
+    that the intro owns its own projection. The intro owns its *zoom*. Owning a
+    zoom is not owning a frustum. A per-scene copy of an engine-wide rule is a
+    copy free to drift, and both drifts framed every screenshot of their scene.
+  - **Why three days of A/B sheets did not report it.** `fit_zoom`'s margins
+    (`+1.5`, `+2.2`) are world-unit constants in the DENOMINATOR, so scaling
+    both half-extents by k scales `fit` by exactly k — and the visible height,
+    `frustum / zoom`, is k-invariant at `sweep_u = 1` where `zoom == fit`. The
+    two frustums cancel **to the last bit** at the title. At `sweep_u = 0` the
+    zoom is the absolute constant `ZOOM_FROM = 2.3`, nothing cancels, and the
+    error is the full k, decaying as `k^(1-u)`. That is exactly the shape of the
+    A/B table — title 13.3 (correct), sweep 25.3, shatter 60.7, **ranked by how
+    little of the interpolation each phase had run.** Plan v3 filed the shatter
+    size, the sweep framing and the knight scale as three separate items; they
+    are one line. ⚠️ **A defect that vanishes at one end of an interpolation
+    reads as a small defect and is not one.**
+  - `the_title_zoom_cancels_the_frustum_and_the_shatter_zoom_cannot` pins the
+    cancellation itself in pk-core, with no Bevy, so it survives whatever the
+    shell does to its camera next. `PixelSizing::frustum(zoom)` is now the one
+    derivation for all three scenes, and `drive_scene_camera`'s `match` **lost
+    its `_` arm** — a scene added later cannot inherit a framing decision by
+    falling through; it is a compile error until someone states which frustum
+    it wants.
+  - ⚠️ **THE A/B MEAN COULD NOT ADJUDICATE ITS OWN FIX, AND SAYING SO IS THE
+    RESULT.** Measured after: shatter **60.7 → 55.0**, over32 79.2% → 68.3%;
+    sweep **25.3 → 26.6**; title 13.3 → 13.4; run/bonk unmoved (they are a 2D
+    canvas and never touched the 3D camera). The rig's own stated precision on
+    the fast phases is ±4-5 at N=1 (I-3), so *none* of those deltas is
+    resolvable — including the one that went the "wrong" way. Correctness here
+    rests on the source arithmetic, which is exact, and on the sheets, which
+    show the knight going from filling the frame to a small sprite. **The sweep
+    mean rose because the board MOVED into pixels that were previously black:
+    a diff mean is not monotone in correctness when geometry moves.**
+  - ⚠️ **A scale probe was built and CUT rather than shipped half-working.**
+    Bounding-box extent cannot answer "same zoom?" — at the wrong scale both
+    sides clip and both extents are lower bounds that look alike. Tile-pitch by
+    autocorrelation resolved the port side (46.08 → 24.70 px) and returned NO
+    SIGNAL on the oracle, on the dungeon sheet, on both sides. The cause is
+    worth keeping: **averaging rows before autocorrelating cancels a DIAGONAL
+    lattice** — at yaw 45° the tile phase shifts row to row. The next attempt
+    must sample along the lattice axis, or read the frustum off both probes
+    directly, which is exact and cheaper than inferring it from pixels.
+  - **B2 SHIPPED** (`pk-game/src/perf.rs`): a per-frame `PerfWindow`
+    accumulator — p50/p95/p99/max/min/mean over 240 frames — plus a
+    `SceneCensus` (entities, meshes, lights, materials, UI nodes), published on
+    `__pk.perf`. **It accumulates every frame and publishes on a cadence, never
+    the other way round**; a sampled frame time misses exactly the excursions a
+    budget is about, and a 5-frame sampler sees 48 of 240 frames. The window
+    resets on a scene change, because a p95 that straddles a descend describes
+    neither room. `PK_PERF_LOG=<secs>` gives the **native/Windows exe a capture
+    path**, which B3 named as its one piece of new work — a windowed exe on the
+    host desktop is not reachable over CDP and an on-screen readout pasted into
+    a chat window is not a measurement.
+  - **[The route to 1:1](one-to-one-route.md)** is the new front page for the
+    remainder: 24.0% converted, **61,852 lines across 210 files not started**,
+    reconciled per directory, with what a player sees missing beside it.
+  - Gates: `cargo test --workspace` **876 passed, 0 failed, exit 0** (867 + 9),
+    `cargo fmt --check` clean, per-crate clippy at deny clean, full intro A/B
+    re-run in real host Chrome.
+
 - **2026-08-12 — B1, the sim's benchmark suite: the sim is 1 part in 100,000 of
   a frame, and the RELEASE build fails two pk-check gates.**
   `cargo run --release -p pk-core --example perf_suite`. The worst tick in the

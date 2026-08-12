@@ -497,6 +497,106 @@ mod tests {
     use crate::collide::circle_collides;
     use crate::grid::{at, is_walkable};
 
+    /// WHY THE INTRO SHIPPED 1.714× TOO CLOSE AND ITS OWN A/B SAID IT WAS FINE.
+    ///
+    /// The shell used to hand `fit_zoom` the `VIEW_H` config default (20 × 11.25
+    /// at 16:9) while legacy hands it the live lattice frustum
+    /// (`renderW/PPU × renderH/PPU`, 34.29 × 19.29 at 1920×1080 and PPU 56).
+    ///
+    /// `fit_zoom`'s margins — `+1.5` and `+2.2` — are world-unit constants in
+    /// the DENOMINATOR, so scaling both half-extents by k scales `fit` by
+    /// exactly k. The visible world height is `frustum_h / zoom`, so at
+    /// `sweep_u = 1`, where `zoom == fit`, the k cancels TO THE LAST BIT and
+    /// both frustums render an identical title. At `sweep_u = 0` the zoom is the
+    /// absolute constant [`ZOOM_FROM`], nothing cancels, and the error is the
+    /// full k.
+    ///
+    /// That asymmetry is the whole story of the A/B table: `title` measured 13.3
+    /// (correct), `sweep` 25.3 and `shatter` 60.7 — ranked by how little of the
+    /// interpolation each phase had run. **A defect that vanishes at one end of
+    /// an interpolation reads as a small defect and is not one.**
+    ///
+    /// This test would have failed against the shipped code the moment anyone
+    /// asked it the `sweep_u = 0` question, and it is kept HERE — in pk-core,
+    /// with no Bevy — so it survives whatever the shell does to its camera next.
+    #[test]
+    fn the_title_zoom_cancels_the_frustum_and_the_shatter_zoom_cannot() {
+        let layout = build_title_grid();
+        let (gw, gh) = (f64::from(layout.grid.w), f64::from(layout.grid.h));
+        const WALL_H: f64 = 1.0; // constants/world.ts, as the shell passes it
+
+        // The two frustums, at the one matched regime the A/B rigs photograph.
+        const PPU: f64 = 56.0;
+        let pinned = (11.25 * (16.0 / 9.0) / 2.0, 11.25 / 2.0); // the defect
+        let lattice = (1920.0 / PPU / 2.0, 1080.0 / PPU / 2.0); // the oracle
+        let k = lattice.1 / pinned.1;
+        assert!((k - 1920.0 / PPU / 20.0).abs() < 1e-12, "k = {k}");
+        assert!((k - 1.714_285_714_285_714_2).abs() < 1e-12, "k = {k}");
+        // Both axes scale by the SAME k, which is what makes `min` scale by it.
+        assert!((lattice.0 / pinned.0 - k).abs() < 1e-12);
+
+        let fit_pinned = fit_zoom(gw, gh, WALL_H, pinned.0, pinned.1);
+        let fit_lattice = fit_zoom(gw, gh, WALL_H, lattice.0, lattice.1);
+        assert!(
+            (fit_lattice - k * fit_pinned).abs() < 1e-12,
+            "fit_zoom must scale linearly with the half-extents: \
+             {fit_lattice} vs {}",
+            k * fit_pinned
+        );
+
+        // Visible world height = frustum height / zoom.
+        let vis = |half_h: f64, zoom: f64| 2.0 * half_h / zoom;
+
+        // sweep_u = 1 — the title. The two frustums AGREE, exactly.
+        let title_pinned = vis(
+            pinned.1,
+            aim_intro_camera(1.0, (0.0, 0.0), (0.0, 0.0), fit_pinned).zoom,
+        );
+        let title_lattice = vis(
+            lattice.1,
+            aim_intro_camera(1.0, (0.0, 0.0), (0.0, 0.0), fit_lattice).zoom,
+        );
+        assert!(
+            (title_pinned - title_lattice).abs() < 1e-9,
+            "the title phase cannot tell the two frustums apart: \
+             {title_pinned} vs {title_lattice}"
+        );
+
+        // sweep_u = 0 — the shatter. The pinned frustum shows k times LESS
+        // world, i.e. everything on screen is k times bigger.
+        let shatter_pinned = vis(
+            pinned.1,
+            aim_intro_camera(0.0, (0.0, 0.0), (0.0, 0.0), fit_pinned).zoom,
+        );
+        let shatter_lattice = vis(
+            lattice.1,
+            aim_intro_camera(0.0, (0.0, 0.0), (0.0, 0.0), fit_lattice).zoom,
+        );
+        assert!(
+            (shatter_lattice / shatter_pinned - k).abs() < 1e-9,
+            "the shatter phase is off by the full frustum ratio: {} vs {k}",
+            shatter_lattice / shatter_pinned
+        );
+
+        // And the error decays monotonically across the sweep, which is the
+        // shape the A/B table reports. Checked, not asserted by narrative.
+        let mut prev = f64::INFINITY;
+        for step in 0..=10 {
+            let u = f64::from(step) / 10.0;
+            let ratio = vis(
+                lattice.1,
+                aim_intro_camera(u, (0.0, 0.0), (0.0, 0.0), fit_lattice).zoom,
+            ) / vis(
+                pinned.1,
+                aim_intro_camera(u, (0.0, 0.0), (0.0, 0.0), fit_pinned).zoom,
+            );
+            assert!(ratio <= prev + 1e-12, "u={u}: {ratio} rose above {prev}");
+            assert!(ratio >= 1.0 - 1e-9, "u={u}: {ratio} fell below 1");
+            prev = ratio;
+        }
+        assert!((prev - 1.0).abs() < 1e-9, "it must land at 1.0, not {prev}");
+    }
+
     fn ascii(g: &Grid) -> String {
         let mut out = String::new();
         for j in 0..g.h {

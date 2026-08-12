@@ -89,6 +89,28 @@ impl PixelSizing {
         fit_zoom(self.render_w, self.render_h)
     }
 
+    /// **The frustum, in world units — the ONE derivation every scene uses.**
+    ///
+    /// `pixel-pass.ts syncCameraFrustum` sets the ortho half-extents to
+    /// `renderW/(2·PPU)` and `renderH/(2·PPU)` from inside `render()`, which is
+    /// scene-agnostic: the intro, the tavern and the dungeon are all re-framed
+    /// to the live lattice on every frame. PPU stays pinned and the FRUSTUM is
+    /// what moves, because the sprite identity `SPRITE_UNITS * PPU ===
+    /// SPRITE_PIXEL_GRID` breaks the other way round.
+    ///
+    /// ⚠️ THIS EXISTS BECAUSE THE SAME DEFECT LANDED TWICE. The dungeon shipped
+    /// pinned to `VIEW_H = 11.25` — the config default — until 2026-08-11, and
+    /// the fix that repaired it was written as a `match` over `AppState` whose
+    /// `_ => None` arm left the INTRO pinned to the same constant for another
+    /// day (see [`crate::intro::aim_camera`]). A per-scene copy of an
+    /// engine-wide rule is a copy free to drift, and both drifts framed every
+    /// screenshot of their scene 1.714× too close. One function now, and the
+    /// only thing a scene chooses is its `zoom`.
+    pub fn frustum(&self, zoom: f32) -> (f32, f32) {
+        let ppu = PPU * zoom.max(f32::EPSILON);
+        (self.render_w as f32 / ppu, self.render_h as f32 / ppu)
+    }
+
     /// One render-target texel, in world units, for a camera at `zoom`.
     ///
     /// The oracle's `1 / (PPU * zoom)` (`engine/camera.ts:163`). Getting this
@@ -497,13 +519,21 @@ fn drive_scene_camera(
             // `fitZoom` (`sizing.zoom()`), and the dungeon does not — legacy's
             // comment on that line is explicit that `zoom` is left untouched
             // there because the tavern is the only thing using it.
+            // ⚠️ THE `_` ARM IS A FRUSTUM DECISION, NOT A DEFAULT. It used to
+            // read "the intro owns its own projection", which was half true —
+            // the intro owns its ZOOM, and owning a zoom is not owning a
+            // frustum. It kept `FixedVertical { VIEW_H }` there for a day after
+            // this system fixed the dungeon. `Intro` is now excluded because
+            // `intro::aim_camera` calls `sizing.frustum()` ITSELF (its zoom
+            // changes every frame along the sweep and cannot be a constant
+            // here) — the same derivation, not a different one.
             let framed = match *state.get() {
-                AppState::Tavern => Some(PPU * sizing.zoom()),
-                AppState::Dungeon => Some(PPU),
-                _ => None,
+                AppState::Tavern => Some(sizing.zoom()),
+                AppState::Dungeon => Some(1.0),
+                AppState::Intro | AppState::FloorLoading => None,
             };
-            if let Some(ppu) = framed {
-                let (want_w, want_h) = (sizing.render_w as f32 / ppu, sizing.render_h as f32 / ppu);
+            if let Some(zoom) = framed {
+                let (want_w, want_h) = sizing.frustum(zoom);
                 // `ScalingMode` has no `PartialEq` in 0.17, so the "did it
                 // change" test is a match rather than a comparison — worth
                 // keeping, since writing the projection every frame would
@@ -700,6 +730,58 @@ mod tests {
                 "{w}x{h}: {height}"
             );
         }
+    }
+
+    /// The frustum is ONE derivation and every scene is on it.
+    ///
+    /// The dungeon and the intro were pinned to `VIEW_H = 11.25` in turn, a day
+    /// apart, by two different pieces of code holding a private copy of an
+    /// engine-wide rule. This asserts the rule itself: at 1920×1080 the frustum
+    /// is the lattice over PPU — 34.29 × 19.29 world units — and specifically is
+    /// NOT the 20 × 11.25 config default that both defects rendered at.
+    ///
+    /// The other half of the guard is not a test at all: `drive_scene_camera`'s
+    /// `match` over `AppState` no longer has a `_` arm, so a scene added later
+    /// cannot inherit a framing decision by falling through — it is a compile
+    /// error until someone states which frustum it wants.
+    #[test]
+    fn every_scene_frames_from_the_same_lattice() {
+        let sizing = s(1920.0, 1080.0);
+        assert_eq!((sizing.render_w, sizing.render_h), (1920, 1080));
+
+        let (w, h) = sizing.frustum(1.0);
+        assert!((w - 1920.0 / PPU).abs() < 1e-4, "{w}");
+        assert!((h - 1080.0 / PPU).abs() < 1e-4, "{h}");
+        // The numbers, spelled out, so a changed PPU fails HERE and not in a
+        // screenshot three scenes away.
+        assert!((w - 34.285_714).abs() < 1e-3, "{w}");
+        assert!((h - 19.285_714).abs() < 1e-3, "{h}");
+        // ⚠️ The defect both scenes shipped: the config default.
+        assert!(
+            (h - 11.25).abs() > 1.0,
+            "the frustum is the VIEW_H default again: {h}"
+        );
+        // And the ratio the intro's A/B was off by, named.
+        assert!((h / 11.25 - 1.714_285).abs() < 1e-3, "{}", h / 11.25);
+
+        // A zoom divides it — that is the ONLY freedom a scene has here.
+        let (zw, zh) = sizing.frustum(2.0);
+        assert!((zw - w / 2.0).abs() < 1e-4 && (zh - h / 2.0).abs() < 1e-4);
+
+        // The dungeon's live camera must agree with the function, not merely
+        // resemble it: same lattice in, same extents out.
+        let mut app = harness(1920, 1080, AppState::Dungeon);
+        let mut cams = app
+            .world_mut()
+            .query_filtered::<&Projection, With<DungeonCamera>>();
+        let Projection::Orthographic(o) = cams.single(app.world()).expect("the scene camera")
+        else {
+            panic!("orthographic")
+        };
+        let ScalingMode::Fixed { width, height } = o.scaling_mode else {
+            panic!("the dungeon frustum did not flex")
+        };
+        assert!((width - w).abs() < 1e-4 && (height - h).abs() < 1e-4);
     }
 
     #[test]

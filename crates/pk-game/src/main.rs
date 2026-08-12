@@ -39,6 +39,7 @@ mod gui;
 mod intro;
 mod maze_art;
 mod overworld;
+mod perf;
 mod post;
 mod real_floor;
 mod sfx;
@@ -283,6 +284,7 @@ fn main() {
     .add_plugins(gui::GuiPlugin)
     .add_plugins(FloorLoadingPlugin)
     .add_plugins(post::PostPlugin)
+    .add_plugins(perf::PerfPlugin)
     .add_plugins(fx::FxPlugin)
     .add_plugins(sfx::SfxPlugin)
     .add_systems(Startup, setup_common)
@@ -370,6 +372,12 @@ fn publish_stats(
     // until the knight has already left the screen.
     knight_q: Query<&Transform, With<tavern::TavernKnight>>,
     snap_peak: Option<Res<post::snap::SnapPeak>>,
+    // B2. ACCUMULATED every frame in `Last`, PUBLISHED on this system's
+    // cadence — see `perf.rs`'s header for why that order is the whole point.
+    // Reading it here rather than sampling a frame time here is the difference
+    // between a p95 that contains the hitches and one that cannot.
+    perf: Res<perf::PerfWindow>,
+    census: Res<perf::SceneCensus>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
 ) {
@@ -389,6 +397,7 @@ fn publish_stats(
     if !transient && *frame % 5 != 0 {
         return;
     }
+    let perf_field = perf::perf_json(&perf, &census);
     let intro_field = match (*state.get(), &intro_res) {
         (AppState::Intro, Some(i)) => format!("\"{}\"", i.phase_name()),
         _ => "null".into(),
@@ -531,7 +540,7 @@ fn publish_stats(
             // sim-less count frozen at hand-off plus the sim's own tick: one
             // monotonic series across every state.
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floorSource":"{}","authoredFloor":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{}}}"#,
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floorSource":"{}","authoredFloor":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{},"perf":{}}}"#,
                 *ticks + sim.0.tick,
                 p.x,
                 p.z,
@@ -545,7 +554,8 @@ fn publish_stats(
                 floor_error_field,
                 loading_field,
                 run_level_field,
-                gui_field
+                gui_field,
+                perf_field
             )
         }
         // No dungeon sim (e.g. the tavern owns the screen, or a real-floor
@@ -554,7 +564,7 @@ fn publish_stats(
         None => {
             *ticks += 1;
             format!(
-                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floorSource":"{source}","authoredFloor":{authored_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field},"runLevel":{run_level_field},"gui":{gui_field}}}"#,
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floorSource":"{source}","authoredFloor":{authored_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field},"runLevel":{run_level_field},"gui":{gui_field},"perf":{perf_field}}}"#,
                 *ticks,
                 source = plan.source.label()
             )

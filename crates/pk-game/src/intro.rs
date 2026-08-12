@@ -37,10 +37,11 @@ use pk_core::intro::{
 use pk_gui::screens::intro::{blink_phase, IntroChromeView};
 
 use crate::overworld::{Overworld, BW};
+use crate::post::sizing::PixelSizing;
 use crate::sfx::{Audio, SfxEvent};
 use crate::{
     camera_offset_angles, spawn_grid_meshes, AppState, DungeonCamera, FadeOverlay, KnightArt,
-    VIEW_H, WALL_H,
+    WALL_H,
 };
 use pk_audio::Patch;
 
@@ -407,7 +408,7 @@ fn intro_tick(
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut next: ResMut<NextState<AppState>>,
-    window: Query<&Window, With<PrimaryWindow>>,
+    sizing: Res<PixelSizing>,
     mut tf_q: Query<&mut Transform>,
     mut proj_q: Query<&mut Projection>,
     mut vis_q: Query<&mut Visibility>,
@@ -540,7 +541,7 @@ fn intro_tick(
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
                 shell.sfx.write(SfxEvent::Bumper);
             }
-            aim_camera(&mut res, 0.0, &window, &mut tf_q, &mut proj_q);
+            aim_camera(&mut res, 0.0, &sizing, &mut tf_q, &mut proj_q);
             res.ow.paint_shatter(dt, pt);
             canvas_dirty = true;
         }
@@ -548,13 +549,13 @@ fn intro_tick(
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
                 shell.sfx.write(SfxEvent::Bumper);
             }
-            aim_camera(&mut res, pt / SWEEP_DUR, &window, &mut tf_q, &mut proj_q);
+            aim_camera(&mut res, pt / SWEEP_DUR, &sizing, &mut tf_q, &mut proj_q);
         }
         IntroPhase::Title => {
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
                 shell.sfx.write(SfxEvent::Bumper);
             }
-            aim_camera(&mut res, 1.0, &window, &mut tf_q, &mut proj_q);
+            aim_camera(&mut res, 1.0, &sizing, &mut tf_q, &mut proj_q);
             // A 1.1s step blink, from wall clock (intro-chrome.ts). The
             // modulus itself lives in `pk_gui::screens::intro::blink_phase` so
             // the port has ONE of it.
@@ -643,19 +644,42 @@ fn sim_ball(
 }
 
 /// aimIntroCamera: side-on → isometric, zoom fitted to frame the whole title.
+///
+/// ⚠️ THE FRUSTUM IS THE LATTICE, NOT `VIEW_H` — and pinning it framed every
+/// intro screenshot this port ever took 1.714× too close.
+///
+/// This is the SAME defect [`crate::post::sizing::drive_scene_camera`] fixed for
+/// the dungeon on 2026-08-11, and that fix's own `_ => None` arm is what left it
+/// standing here: it excluded `Intro` by name, on the reasoning that "the
+/// intro's `o.scale` zoom fit" owns its projection. It does own the ZOOM. It
+/// never owned the FRUSTUM. Legacy's `pixel-pass.ts syncCameraFrustum` is called
+/// from `render()`, which is scene-agnostic — the intro's camera is re-framed to
+/// `renderW/(2·PPU) × renderH/(2·PPU)` on every frame just like the dungeon's.
+/// At 1920×1080 and PPU 56 that is 34.29 × 19.29 world units against the
+/// `VIEW_H` default's 20 × 11.25, a factor of 1.7143.
+///
+/// **Why the title phase looked right anyway, which is why this survived.**
+/// `fit_zoom`'s margins (`+1.5`, `+2.2`) are world-unit constants in the
+/// DENOMINATOR, so scaling `half_w`/`half_h` by k scales `fit` by exactly k —
+/// and the visible height `frustum / fit` is therefore k-invariant. At
+/// `sweep_u = 1` the two sides cancel to the last bit. At `sweep_u = 0` the zoom
+/// is the absolute constant `ZOOM_FROM = 2.3` and nothing cancels, so the error
+/// is the full 1.7143 and decays as `1.7143^(1-u)` across the sweep. That is
+/// exactly the shape of the A/B table: title 13.3 (correct), sweep 25.3,
+/// shatter 60.7 — the phases ranked by how little of the sweep they had run.
+/// A defect that hides at one end of an interpolation is not a small defect.
 fn aim_camera(
     res: &mut IntroRes,
     sweep_u: f64,
-    window: &Query<&Window, With<PrimaryWindow>>,
+    sizing: &PixelSizing,
     tf_q: &mut Query<&mut Transform>,
     proj_q: &mut Query<&mut Projection>,
 ) {
-    let aspect = window
-        .single()
-        .map(|w| f64::from(w.width()) / f64::from(w.height().max(1.0)))
-        .unwrap_or(16.0 / 9.0);
-    let half_h = f64::from(VIEW_H) / 2.0;
-    let half_w = half_h * aspect;
+    // Zoom 1.0: `fit_zoom` is handed the UNZOOMED half-extents and the pose's
+    // zoom is applied to the projection separately, exactly as three.js applies
+    // `camera.zoom` on top of the left/right/top/bottom `syncCameraFrustum` set.
+    let (frustum_w, frustum_h) = sizing.frustum(1.0);
+    let (half_w, half_h) = (f64::from(frustum_w) / 2.0, f64::from(frustum_h) / 2.0);
     let g = &res.layout.grid;
     let fit = fit_zoom(
         f64::from(g.w),
@@ -672,8 +696,9 @@ fn aim_camera(
     }
     if let Ok(mut proj) = proj_q.get_mut(res.cam_e) {
         if let Projection::Orthographic(o) = &mut *proj {
-            o.scaling_mode = ScalingMode::FixedVertical {
-                viewport_height: VIEW_H,
+            o.scaling_mode = ScalingMode::Fixed {
+                width: frustum_w,
+                height: frustum_h,
             };
             o.scale = (1.0 / pose.zoom) as f32;
         }

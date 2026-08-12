@@ -149,12 +149,21 @@ a queue, because it is the only place v3 changes what happens next.
 
 ### Stage 2 — finish the intro *(smallest scene, gate exists)*
 
+> **2026-08-12: 2-1 and 2-4 were ONE defect, and it is fixed.** The intro camera
+> was pinned to `VIEW_H = 11.25` while legacy re-frames every scene to
+> `renderH/PPU = 19.29` on every frame — **1.7143× too close**, at every
+> `sweep_u` except 1, where `fit_zoom` cancels it exactly. "Shatter too big",
+> "sweep framed differently" and "the knight draws several times larger" are
+> three symptoms of that one line. See [the route to 1:1](one-to-one-route.md)
+> §4 and the board. What remains under 2-1 is the SHARD RATE — the 2D canvas,
+> which never touched the camera.
+
 | # | Item | Acceptance |
 |---|---|---|
-| 2-1 | **Shatter is too slow and too big.** At t+0.45 s the oracle has collapsed to a thin band on black; the port still fills the frame with shards, and its knight plus echo trail draws far larger than the oracle's single small sprite. | `ab-intro-shatter` over32 from 79.2% into the band the still phases sit in, and the sheet read side by side |
+| 2-1 | ~~Shatter is too big~~ **(fixed — the frustum)**. What is left: at t+0.45 s the oracle has collapsed to a thin band on black and the port still fills the frame with SHARDS. Those are `paint_shatter`'s 2D canvas, not the 3D board, so this is a rate/count question with a different owner. | `ab-intro-shatter` over32 from 68.3% into the band the still phases sit in, at N=3 |
 | 2-2 | Characterise the rig on the fast phases: three runs per side, publish the spread. | a stated ± on `bonk` and `shatter`, so 2-1's before/after is a measurement |
 | 2-3 | Torches, banners and decor on the title maze (the V-4 slice the intro needs). The title sheet shows it plainly: the oracle's top wall carries lit sconces and doors, ours carries none, and that is most of the remaining brightness gap on a phase already down to 13.3 | `ab-intro-title` mean below 13.3 with the sconces lit |
-| 2-4 | **The sweep phase is framed differently, and it is not a zoom.** On `ab-intro-sweep` the oracle shows the whole board with its bottom edge inside the frame; ours is pushed up and cropped at the top, with the knight drawn several times larger. The handoff's measurement stands — both frustums are 20 × 11.25 at 16:9 and `1/zoom` is right — so this is a tilt or a geometry-height difference. **Measure before touching**, and 2-1's knight-scale question is the same question | the two frames' board edges land within a few pixels, at N=3 |
+| 2-4 | ~~**The sweep phase is framed differently, and it is not a zoom.**~~ **RESOLVED — it was exactly a zoom.** ⚠️ The reasoning that closed this off is the trap worth keeping: *"both frustums are 20 × 11.25 at 16:9 and `1/zoom` is right"* was true, and measured against the **config default** rather than against what the oracle runs. `syncCameraFrustum` overwrites that default every frame, in `render()`, for every scene. **A frustum that agrees with a config is not a frustum that agrees with the oracle.** What is left on this phase: a **~148 px vertical offset** (the port's board sits high and clips at the top) and the missing top wall / doors / sconces, which is 2-3 | the two frames' board edges land within a few pixels, at N=3 |
 
 ### Stage 3 — finish the tavern
 
