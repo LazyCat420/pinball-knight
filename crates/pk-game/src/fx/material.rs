@@ -20,6 +20,8 @@
 //! `StandardMaterial`). That key also sets `depth_write_enabled = false` with
 //! the depth test still on, which is the legacy `depthTest: true,
 //! depthWrite: false` pair.
+//!
+//! PORTS-NOTHING — wgpu material plumbing for the FX pools
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{MeshVertexBufferLayoutRef, PrimitiveTopology};

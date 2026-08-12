@@ -40,6 +40,8 @@
 //! Silence is the correct failure mode for a sound effect. [`Sfx::new`] is
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
+//!
+//! PORTS-NOTHING — the AudioBackend trait + bus; the WebAudio shape it mirrors is ported in patches.rs/synth.rs
 
 #![forbid(unsafe_code)]
 

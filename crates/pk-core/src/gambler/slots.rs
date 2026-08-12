@@ -2,6 +2,8 @@
 //! `legacy/src/scenes/tavern/gambler/slots.ts`: weighted reel strip, target
 //! RTP ~90%, pure and injectable-random so the tests Monte-Carlo the real
 //! return instead of trusting the paytable arithmetic.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/slots.ts`
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Symbol {

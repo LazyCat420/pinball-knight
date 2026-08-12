@@ -1,6 +1,8 @@
 //! Port of `entities/rail.ts` — BANKED RAILS, the inside-curve ride you have
 //! to earn. Pure math, mirrored line-for-line; the caller owns the geometry
 //! (concave lane contact from `move_circle`), this owns only the rules.
+//!
+//! PORTS: `entities/rail.ts`
 
 use crate::pinball::{
     PINBALL_MAX_SPEED, RAIL_ACCEL, RAIL_DECAY, RAIL_GRACE, RAIL_HOLD_DOT, RAIL_MIN_SPEED,

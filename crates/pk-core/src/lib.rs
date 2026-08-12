@@ -24,6 +24,8 @@
 //!
 //! Nothing here is a correctness lint. Anything that could change a digest
 //! stays on, and CI runs clippy at deny level per crate.
+//!
+//! PORTS:
 #![allow(
     // `for i in 0..STATIONS.len()` mirrors `for (let i = 0; i < …; i++)`. The
     // iterator rewrite is better Rust and worse evidence: several of these

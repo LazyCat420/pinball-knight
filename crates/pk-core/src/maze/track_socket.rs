@@ -49,6 +49,8 @@
 //! the handful of demotions, and the sabotage sweep in `track_floor`'s header
 //! reads directly off this table: the two passes doing hundreds of tiles' worth
 //! of work are well gated, and the one doing nothing gates nothing.
+//!
+//! PORTS: `maze/track-socket.ts`
 
 use super::TrackMask;
 use crate::grid::{at, idx, is_walkable, set_tile, Grid, T_CRACKED, T_FLOOR, T_STAIRS, T_WALL};

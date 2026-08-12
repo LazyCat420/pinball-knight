@@ -49,6 +49,8 @@
 //!   unreadable. That is `card-face.ts`'s own argument confirmed in pixels — a
 //!   card's whole job is carrying a title and stat lines, and a nearest resample
 //!   destroys exactly the part that had to be read.
+//!
+//! PORTS: `gui/card-face.ts`, `render/holo-card.ts`, `gui/card-face.ts`
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

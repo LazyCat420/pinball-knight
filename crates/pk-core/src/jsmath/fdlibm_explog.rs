@@ -65,6 +65,8 @@
 //!
 //! Ported verbatim from fdlibm 5.3 `e_exp.c` and `e_log.c`, and gated by
 //! `crates/pk-core/tests/jsmath_oracle.rs` over the ranges tabulated above.
+//!
+//! PORTS-NOTHING — Sun fdlibm exp/log, same reason
 
 // Same rationale as `fdlibm.rs`: the constants are transcribed DIGIT FOR DIGIT
 // from the C, which writes more decimals than an f64 can hold. Keeping the

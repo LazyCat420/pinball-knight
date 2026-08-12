@@ -11,6 +11,8 @@
 //! every baked size) equals the `s·z` raster. So blits come from the `s·z`
 //! atlas while measurement uses base-size advances, exactly like
 //! `measureText` under a transform.
+//!
+//! PORTS-NOTHING — bitmap font atlas loader for the baked faces
 
 use std::collections::HashMap;
 

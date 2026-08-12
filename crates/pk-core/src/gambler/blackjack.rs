@@ -6,6 +6,8 @@
 //! Hit / Stand / Double only. Lands near 98% under decent play. Everything
 //! pure: a seedable deck, resolution as data, RTP measured by simulating
 //! basic strategy.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/blackjack.ts`
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Suit {

@@ -21,6 +21,8 @@
 //! them would mean a helper crate both sides import, and then a bug in the
 //! helper reads as agreement. Two transcriptions of the same twelve lines that
 //! must produce the same u32 is the cheaper check.
+//!
+//! PORTS-NOTHING — a wasm probe harness for the jsmath gate
 
 use pk_core::jsmath::{js_cos, js_exp, js_log, js_pow, js_sin};
 use pk_core::maze::digest::Fnv1a;

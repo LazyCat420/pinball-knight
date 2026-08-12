@@ -5,6 +5,8 @@
 //!
 //! Axes match the dungeon: +x east, +z south (toward the camera), 1 unit = 1
 //! dungeon tile.
+//!
+//! PORTS: `legacy/src/scenes/tavern/layout.ts`
 
 /// An axis-aligned box on the floor. Used for both props and collision.
 /// Centre + FULL extents (not half), exactly the legacy `Rect`.

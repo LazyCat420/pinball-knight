@@ -9,6 +9,8 @@
 //!   pre-crushed per-rung atlas pages. The Rust game consumes only this; any
 //!   art source (TS painters, sprite-forge AI sheets, pixel-trace, hand PNGs,
 //!   a future Rust art tool) that emits it can feed the game.
+//!
+//! PORTS-NOTHING — the Rust-side sprite/atlas manifest SCHEMA — the art contract, no TS counterpart
 
 pub mod published {
     use serde::{Deserialize, Serialize};

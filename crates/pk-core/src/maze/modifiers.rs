@@ -18,6 +18,8 @@
 //!
 //! ⚠️ Verified against the fixture's `drawsBeforeTrack`, which is 0, 1, 2 or 3
 //! across the corpus precisely because of the two early returns below.
+//!
+//! PORTS: `maze/modifiers.ts`
 
 use crate::maze::CountingRng;
 

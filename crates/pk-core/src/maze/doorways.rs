@@ -113,6 +113,8 @@
 //! reported, and it will be a real defect the first time two placements compete.
 //! Every number above is pinned by that test, so the table cannot go stale
 //! silently.
+//!
+//! PORTS: `maze/doorways.ts`
 
 use std::collections::HashSet;
 

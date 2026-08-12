@@ -26,6 +26,8 @@
 //! it. `SfxEvent::LevelStart` fires immediately; for the scheduled form call
 //! [`Audio::play`] with `Patch::LevelStart { at_offset }` directly, which is
 //! why that method is public.
+//!
+//! PORTS-NOTHING — the Bevy<->pk-audio bridge
 
 // Most of this surface is dead until those call sites land — raising the
 // messages is deliberately not this module's job. Drop this allow once

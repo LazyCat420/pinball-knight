@@ -29,6 +29,8 @@
 //! records the resolved profile VERBATIM for each corpus floor, and
 //! `tests/maze_pass_digests.rs` compares this table against it field by field.
 //! A typo in a constant is a different floor, silently.
+//!
+//! PORTS: `maze/archetypes.ts`
 
 use crate::maze::CountingRng;
 

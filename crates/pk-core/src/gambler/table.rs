@@ -4,6 +4,8 @@
 //! Stake limits, the per-visit round limit, and the only code allowed to move
 //! gold. No game touches the wallet directly: routing everything through here
 //! is what makes the caps and the round limit impossible to bypass.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/table.ts`
 
 /// Which game a round belongs to. Used for the round log and telemetry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -38,6 +38,8 @@
 //! diagnosis modelled a stationary camera, predicted a runaway off the top of
 //! the screen, and was wrong (docs/src/status/incidents.md). Pinned by
 //! `a_partial_restore_leaves_y_unpinned_and_a_full_assignment_does_not`.
+//!
+//! PORTS-NOTHING — pixel-snapping the camera on Bevy
 
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;

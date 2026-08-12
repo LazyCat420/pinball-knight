@@ -28,6 +28,8 @@
 //! single floor. A digest that is subtly wrong (a missed length fold, a
 //! big-endian f64) fails against every pass of every floor and reads exactly
 //! like a broken generator, so the instrument is checked first and separately.
+//!
+//! PORTS: `dev/floor-census.ts`
 
 use crate::tile_shape::ArcFeature;
 

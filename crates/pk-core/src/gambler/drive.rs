@@ -21,6 +21,8 @@
 //! and then pays something else is the single worst bug a slot machine can
 //! have."* So `play()` rolls the result immediately and the tick only reveals
 //! it — and a driver that is torn down mid-round still knows what it owed.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/slots-game.ts`, `legacy/src/scenes/tavern/gambler/roulette-game.ts`, `legacy/src/scenes/tavern/gambler/darts-game.ts`
 
 use super::darts_throw::{ThrowEvent, ThrowMachine};
 use super::roulette::{settle_bet, spin_wheel, BetDef};

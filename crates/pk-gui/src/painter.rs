@@ -12,6 +12,8 @@
 //! for the one translucent draw (the scrim, onto a cleared buffer) the
 //! round-trip difference is ≤1 LSB — inside the fixture compare's tolerance.
 //! Glyphs are baked white so their readback was lossless (see bake-gui-font).
+//!
+//! PORTS-NOTHING — the CPU raster target pk-gui paints into; the oracle paints to a canvas
 
 /// A straight-alpha colour. Palette entries are opaque.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

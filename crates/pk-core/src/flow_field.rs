@@ -26,6 +26,8 @@
 //! neighbours are examined up, down, left, right, and the queue is FIFO — and
 //! the order decides nothing about the distances but everything about which of
 //! several equidistant tiles a consumer's `>` comparison reaches first.
+//!
+//! PORTS: `engine/flow-field.ts`
 
 use crate::grid::{idx, is_walkable, Grid};
 

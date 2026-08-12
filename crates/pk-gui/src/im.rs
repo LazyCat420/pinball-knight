@@ -4,6 +4,8 @@
 //!
 //! Every doc-comment war story lives in the oracle; here only the load-bearing
 //! invariants are restated at the site that carries them.
+//!
+//! PORTS: `gui/im.ts`
 
 use std::collections::BTreeSet;
 

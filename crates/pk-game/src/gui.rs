@@ -31,6 +31,8 @@
 //! nothing. `UiStats` counts both halves — frames driven and frames painted —
 //! and `__pk.gui` publishes them, so the question is one query rather than an
 //! afternoon.
+//!
+//! PORTS-NOTHING — the Bevy<->pk-gui bridge (input plumbing, texture upload)
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};

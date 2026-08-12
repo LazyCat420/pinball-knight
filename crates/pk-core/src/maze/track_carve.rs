@@ -56,6 +56,8 @@
 //!   is 1 and a lane mark is 1 and at this boundary the two arrays hold the same
 //!   bytes. A port that returned the tile array as the mask would pass both;
 //!   `sealed` and `dist` are what separate them.
+//!
+//! PORTS: `maze/track-carve.ts`
 
 use crate::grid::{at, ensure_arcs, idx, is_walkable, set_shape, set_tile, Grid, T_FLOOR, T_WALL};
 use crate::jsmath::{js_cos, js_hypot, js_sin};

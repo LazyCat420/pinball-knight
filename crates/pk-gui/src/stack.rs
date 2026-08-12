@@ -7,6 +7,8 @@
 //! raised); `remove` takes exactly one screen wherever it sits — the always-on
 //! layers (station prompt, HUD) live at the bottom and must never take the
 //! stack with them (stack.ts's 2026-07-29 war story).
+//!
+//! PORTS: `gui/stack.ts`
 
 /// The logical box a screen was authored for. The driver hands the screen the
 /// largest INTEGER zoom at which the box still fits the grid, capped by `max`.

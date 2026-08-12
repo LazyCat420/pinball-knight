@@ -13,6 +13,8 @@
 //!    WebAudio exponential ramps cannot reach zero, so the curve is
 //!    `v(t) = v0 * (0.001/v0)^(t/dur)`; substituting a linear release is
 //!    plainly audible on the 0.07–0.09 s stings.
+//!
+//! PORTS: `sfx/synth.ts`
 
 use crate::{AudioBackend, AudioParam, FilterType, Rng, Waveform};
 

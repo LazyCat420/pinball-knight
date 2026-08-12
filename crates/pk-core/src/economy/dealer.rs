@@ -17,6 +17,8 @@
 //! blanking it, so indices shift and the focusable count changes between
 //! frames. That is the oracle's behaviour and it is what makes the shelf feel
 //! like a counter rather than a menu; a reviewer will read it as a bug.
+//!
+//! PORTS: `economy/tavern-shop.ts`
 
 use crate::cards::{
     card_base, card_def, card_fits_kind, card_key, cards_of_rarity, roll_card_level, roll_shiny,

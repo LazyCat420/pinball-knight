@@ -36,6 +36,8 @@
 //! have is the thing a shell needs: a connected walkable grid with a spawn on
 //! it, byte-identical to the oracle's grid at the `plan-doorways` boundary on
 //! all ten corpus floors.
+//!
+//! PORTS: `maze/floor-rules.ts`, `maze/modifiers.ts`
 
 use super::archetypes::{archetype_for, level_cells, windiness_for, FloorArchetype};
 use super::modifiers::{roll_modifier, ModifierId};

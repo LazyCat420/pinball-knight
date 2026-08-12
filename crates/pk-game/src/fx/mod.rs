@@ -21,6 +21,8 @@
 //! WHY NOT `bevy_hanabi`: `docs/src/game/architecture.md` picks hand-written
 //! WGSL with storage-buffer instancing for exactly this, so the effect
 //! constants stay readable next to the oracle they were copied from.
+//!
+//! PORTS: `fx/pools/particle-pool.ts`
 
 use bevy::asset::embedded_asset;
 use bevy::camera::visibility::NoFrustumCulling;

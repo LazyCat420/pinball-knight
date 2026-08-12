@@ -15,6 +15,8 @@
 //! Marble materials (marble.ts) are not ported yet: every `material*()` hook
 //! reads through `MarbleHooks::default()`, whose values are the legacy
 //! no-material fallbacks. When marble.ts ports, the hooks get a real source.
+//!
+//! PORTS: `entities/pinball-collide.ts`, `constants/pinball.ts`
 
 use crate::collide::move_circle;
 use crate::combo::{

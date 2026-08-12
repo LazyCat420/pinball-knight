@@ -5,6 +5,8 @@
 //! dart, at the instant of release, on the same post-wobble coordinate the
 //! renderer then draws the dart at. The round total is the sum of those
 //! stored hits — there is no second calculation anywhere to drift apart.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/darts-throw.ts`
 
 use super::darts::{
     apply_wobble, payout_for, score_at, throw_speed, wobble_radius, y_half_range, Hit,

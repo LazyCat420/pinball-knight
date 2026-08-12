@@ -5,6 +5,8 @@
 //! widget count is true, then handle cancel. The shell owns when this runs
 //! (immediately before the texture upload) and what input it is fed (empty
 //! unless the stack pauses — capture follows the pause flag, not openness).
+//!
+//! PORTS: `gui/root.ts`
 
 use crate::font::Fonts;
 use crate::im::{begin_ui, clamp_focus, empty_ui_input, move_focus, UiFrame, UiInput};

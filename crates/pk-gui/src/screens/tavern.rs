@@ -6,6 +6,8 @@
 //! panel is the port's own composition — the real vendor counters land with
 //! P4's economy, but their CHROME (sheet, heading, footer) is the legacy
 //! vocabulary already, so the placeholder wears it instead of a flat rect.
+//!
+//! PORTS: `legacy/src/scenes/tavern/scene-screens.ts`
 
 use crate::im::{
     button, cut_top, fill_rect, rect, scrim, sheet, stroke_rect, text, wrap, Align, ButtonOpts,

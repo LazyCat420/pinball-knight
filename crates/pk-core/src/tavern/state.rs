@@ -2,6 +2,8 @@
 //!
 //! Everything PERSISTENT (gold, weapons, gear, cards) stays with the run;
 //! this module owns only what the diorama needs to report a run.
+//!
+//! PORTS: `legacy/src/scenes/tavern/state.ts`
 
 /// Run stats handed in by the dungeon when it opens the tavern.
 #[derive(Debug, Clone)]

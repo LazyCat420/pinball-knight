@@ -5,6 +5,32 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — P-1: `cargo xtask coverage`, the provenance ledger. The port
+  is 22.4% converted, and the number is now defensible.** Every one of the 105
+  Rust modules declares `PORTS:` / `PORTS-PARTIAL:` / `PORTS-NOTHING`, the tool
+  reads DECLARATIONS rather than substrings, and a citation naming no legacy
+  file is a hard failure. **63,242 lines across 212 files are NOT STARTED.**
+  - **The heuristic and the ledger disagree by design**: `pk-coverage.sh` says
+    50% uncovered, the ledger says 22.4% converted. CI now prints both, because
+    resolving the gap silently would always resolve it toward the flattering
+    number. `scripts/pk-coverage.sh` counts a legacy file as covered when any
+    `.rs` merely mentions it — which scored `maze/decorate.ts` (3,169 lines,
+    zero written) as done off a **prose comment** at `track_floor.rs:77`,
+    `entities/player.ts` (2,445) off `tavern/player.rs`, and `maze/build.ts`
+    off two Cargo **build scripts**. `the_biggest_gaps_are_reported_as_gaps`
+    pins all three against the live tree.
+  - **Bootstrapping it found two false claims and a self-inflating one.** 85 of
+    105 modules already cited their source in prose, so the declarations were
+    derived from what was there — and the derivation was wrong twice:
+    `tavern/mod.rs` cites five files inside a *"Deliberately NOT here"*
+    paragraph, and `state.rs` calls itself "the SEED of the port" (now
+    `PORTS-PARTIAL`). Worse, the tool read **its own documentation** — which
+    names `decorate.ts` while explaining the bug — and filed it as a port,
+    inflating the count by ~7,600 lines. It skips its own source now.
+  - **An `include!`d file cannot carry `//!` at all** — rustc rejects it, which
+    is why `cards_catalogue.rs` always had `//` comments. The parser reads both
+    forms; the first attempt to "fix" that file broke the build.
+
 - **2026-08-12 — 4A-2: the walk is the oracle's walk — accel/friction ramp,
   the floor underfoot, and SPRINT.** The dungeon moved at a flat
   `PLAYER_SPEED`, ignoring both the smoothed `curSpeed` ramp

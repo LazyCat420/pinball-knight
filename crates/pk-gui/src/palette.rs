@@ -4,6 +4,8 @@
 //! `theme`), because the legacy UI composites before a (now default-off)
 //! palette snap and picking off-palette colours meant the shader silently
 //! decided what the UI looked like.
+//!
+//! PORTS: `render/palette.ts`
 
 use crate::painter::Rgba;
 

@@ -69,6 +69,8 @@
 //!   is the minimap's room outline, which therefore draws none in the oracle
 //!   either. The field is parsed and kept so the day a fallback floor is
 //!   exported it does not silently vanish.
+//!
+//! PORTS:
 
 use bevy::prelude::Resource;
 use pk_core::grid::{world_to_tile, Grid};

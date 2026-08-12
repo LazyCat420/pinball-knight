@@ -11,6 +11,8 @@
 //! outcome; every movement of gold goes through `table` (the `TableDeps` /
 //! `BlackjackApi` seams), so the stake caps and the per-visit round limit
 //! cannot be bypassed.
+//!
+//! PORTS-NOTHING — module tree
 
 pub mod blackjack;
 pub mod blackjack_table;

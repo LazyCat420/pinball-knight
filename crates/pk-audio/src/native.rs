@@ -19,6 +19,8 @@
 //! was never started, so both are latched here. A double-`stop` on the tavern
 //! bed (leave the room twice in a frame) must be a no-op, not a crash inside
 //! the render loop.
+//!
+//! PORTS-NOTHING — native backend (web-audio-api crate) — the browser half is web.rs
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};

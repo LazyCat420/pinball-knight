@@ -12,6 +12,8 @@
 //! glyph instead of the pixel font, and the knight paints into this buffer
 //! rather than a second display-resolution canvas (slightly softer sprite).
 //! Particle jitter uses a seeded Mulberry32 where legacy used Math.random().
+//!
+//! PORTS: `intro/index.ts`
 
 use pk_core::intro::{BONK_DUR, JUMP_T, RUN_DUR, SHATTER_DUR};
 use pk_core::rng::Mulberry32;

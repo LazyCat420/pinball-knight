@@ -72,6 +72,8 @@
 //! Also true, and the reason `js_hypot`'s argument order is still written to
 //! match the legacy call sites: V8's hypot is a compensated sum, so
 //! `js_hypot(dx, dz)` and `js_hypot(dz, dx)` are not interchangeable.
+//!
+//! PORTS: `maze/track-path.ts`
 
 use crate::jsmath::{js_cos, js_hypot, js_sin};
 use crate::maze::track_grow::TrackGraph;

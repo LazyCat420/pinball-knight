@@ -5,6 +5,8 @@
 //! path constants from `intro/index.ts`, and the skip gate that
 //! `intro/entry.test.ts` pins. The Bevy shell (`pk-game/src/intro.rs`) is a
 //! view over this module and owns nothing that ticks.
+//!
+//! PORTS: `intro/title-grid.ts`, `intro/clock.ts`, `intro/index.ts`
 
 use crate::collide::move_circle;
 use crate::grid::{Grid, T_FLOOR, T_WALL};

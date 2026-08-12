@@ -1,7 +1,7 @@
 //! THE ECONOMY — the tavern's rules, as pure data and pure functions.
 //!
 //! PORTS: `economy/tavern-shop.ts`, `items.ts` (gear), `armor-styles.ts`,
-//! `utils/gold-wallet.ts`.
+//! `legacy/src/utils/gold-wallet.ts`.
 //!
 //! Track T in `docs/src/status/one-to-one.md` — 1,845 lines and, until this
 //! module, **0% ported**, while `pk_core::gambler` next door was complete with
@@ -11,7 +11,7 @@
 //! ## Why the wallet lives here and not in the shell
 //!
 //! The oracle's wallet is `localStorage` behind `getBalance`/`spendGold`
-//! (`utils/gold-wallet.ts`), and its persistence is a *shell* concern — native
+//! (`legacy/src/utils/gold-wallet.ts`), and its persistence is a *shell* concern — native
 //! writes a file, wasm writes `localStorage`. What is NOT a shell concern is
 //! the ARITHMETIC: `spendGold` floors the amount, refuses when the balance is
 //! short, and returns a boolean the caller must honour. Every purchase in the
@@ -31,7 +31,7 @@ pub mod forge;
 /// slot, already owned), and it is the only one that must not charge.
 pub type ActionResult = Option<String>;
 
-/// The player's persistent purse. `utils/gold-wallet.ts`'s balance, with the
+/// The player's persistent purse. `legacy/src/utils/gold-wallet.ts`'s balance, with the
 /// storage left to the shell.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Wallet {

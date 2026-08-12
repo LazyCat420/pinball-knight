@@ -12,6 +12,8 @@
 //! The timer RESETS rather than accumulating (`moteT = 0.14`, not `+= 0.14`),
 //! so a long frame emits one batch and never a burst of catch-up. Ported as
 //! written.
+//!
+//! PORTS: `legacy/src/scenes/tavern/core.ts`
 
 use bevy::prelude::*;
 

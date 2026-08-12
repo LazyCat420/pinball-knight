@@ -19,6 +19,8 @@
 //! time. A suspended context (backgrounded tab, autoplay block) then does not
 //! burn through the budget while nothing is audible, and the gate and the
 //! scheduling share one timeline.
+//!
+//! PORTS: `sfx/pinball.ts`, `sfx/combat.ts`, `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `legacy/src/scenes/tavern/audio.ts`
 
 use std::sync::{Mutex, MutexGuard};
 

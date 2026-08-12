@@ -17,6 +17,8 @@
 //! teardown eats the stake"*. Closing the cabinet, walking away, or switching
 //! games mid-round all route through [`Cabinet::forfeit`], which settles the
 //! round rather than dropping it.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/index.ts`
 
 use pk_core::gambler::blackjack::{fresh_deck, shuffle};
 use pk_core::gambler::blackjack_table::{BjPhase, BlackjackApi, BlackjackTable};

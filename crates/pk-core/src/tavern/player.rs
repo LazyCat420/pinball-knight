@@ -6,6 +6,8 @@
 //!
 //! Deliberately NOT the dungeon's 1500-line controller: axis → velocity ramp →
 //! rect collision → facing is the whole job.
+//!
+//! PORTS: `legacy/src/scenes/tavern/player.ts`
 
 use super::layout::{move_in_room, PLAYER_RADIUS, SPAWN};
 use crate::jsmath::js_hypot;

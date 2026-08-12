@@ -14,6 +14,8 @@
 //! diagonal).
 //!
 //! Tile-local coordinates are [0,1]² with the tile's NW corner at (0,0).
+//!
+//! PORTS: `legacy/.../engine/tile-shape.ts`
 
 pub const SHAPE_FULL: u8 = 0;
 pub const SHAPE_SLANT_NE: u8 = 1;

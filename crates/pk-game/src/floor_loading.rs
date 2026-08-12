@@ -51,6 +51,8 @@
 //! step is a state machine of its own — [`loading_step`] — which is a pure
 //! function precisely so the ordering can be tested without standing up an
 //! `App`, and which will not say `Build` until the screen has been painted.
+//!
+//! PORTS-NOTHING — the Bevy loading-screen state machine; the oracle hides the descend behind a DOM overlay, which has no analogue
 
 use bevy::prelude::*;
 use pk_core::grid::Grid;

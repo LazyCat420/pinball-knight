@@ -21,6 +21,8 @@
 //! and no blending, and `COMBO_CEIL_K` is a tuning constant. Either of those
 //! moving would make the divergence reachable, and it would arrive as a
 //! physics desync nobody would think to trace back to a logarithm.
+//!
+//! PORTS: `entities/combo-curve.ts`
 
 use crate::jsmath::{js_exp, js_log};
 use crate::pinball::{

@@ -134,15 +134,25 @@ jobs:
     # per run makes "how much is left" a fact of the build rather than a
     # measurement someone has to remember to re-take.
     #
-    # REPORTED, not enforced. A ratchet here would be wrong today: the scan is
-    # a two-signal heuristic and an UPPER bound on coverage (a Rust file that
-    # merely mentions a legacy path counts it), so a threshold would gate real
-    # work on a number that can move without anything being ported. The exact
-    # ledger is WORK ITEM P-1.
+    # REPORTED, not enforced — for BOTH numbers below. A ratchet on the
+    # heuristic would gate real work on a value that moves without anything
+    # being ported; a ratchet on the ledger has to wait until the exclusion
+    # registry is complete, or it gates against an unreachable ceiling.
+    #
+    # ⚠️ The two disagree, and the ledger is the honest one. Measured
+    # 2026-08-12: heuristic 50% uncovered, ledger 22.4% CONVERTED. The gap is
+    # ASSUMPTION-1 made concrete — the shell scan counts a legacy file as
+    # covered when any `.rs` merely mentions it, which scored `maze/decorate.ts`
+    # (3,169 lines, zero written) as done off a prose comment. Both are printed
+    # so the divergence stays visible rather than being quietly resolved in
+    # favour of the flattering one.
     steps:
       - uses: actions/checkout@v4
-      - name: uncovered legacy lines
+      - uses: dtolnay/rust-toolchain@stable
+      - name: the heuristic (upper bound — C-1)
         run: bash scripts/pk-coverage.sh
+      - name: the provenance ledger (exact — P-1)
+        run: cargo run -q -p xtask -- coverage --todo
 
   drift:
     name: oracle rot (D-1)

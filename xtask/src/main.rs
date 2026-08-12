@@ -1,6 +1,10 @@
 //! `cargo xtask <task>` — deterministic workspace chores, no shell scripts.
 //!
 //! Wire an alias in .cargo/config.toml: `xtask = "run -p xtask --"`.
+//!
+//! PORTS-NOTHING — workspace chores
+
+mod coverage;
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -12,8 +16,12 @@ fn main() -> ExitCode {
         "docs" => docs(),
         "bake" => bake(),
         "dist" => dist(),
+        "coverage" => {
+            let args: Vec<String> = env::args().skip(2).collect();
+            coverage::run(&workspace_root(), &args)
+        }
         _ => {
-            eprintln!("usage: cargo xtask <docs|bake|dist>");
+            eprintln!("usage: cargo xtask <docs|bake|dist|coverage>");
             eprintln!("  docs           build + serve the mdbook at docs/");
             eprintln!(
                 "  bake           run the legacy painter/crush export into assets/sprites/ (M0+)"
@@ -25,6 +33,8 @@ fn main() -> ExitCode {
             eprintln!(
                 "  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)"
             );
+            eprintln!("  coverage       the provenance ledger: which legacy files are converted");
+            eprintln!("                 --todo | --undeclared | --verbose");
             ExitCode::FAILURE
         }
     }

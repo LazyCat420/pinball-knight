@@ -27,6 +27,8 @@
 //! armors"* — every row was present; the GEAR was not. The alchemist (24px) and
 //! the weapons vendor (36px) have the same hole, so the whole item set is baked
 //! rather than the three pieces one counter happens to need.
+//!
+//! PORTS: `gui/icons.ts`, `render/cel-painter.ts`
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

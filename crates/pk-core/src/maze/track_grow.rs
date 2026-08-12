@@ -43,6 +43,8 @@
 //!  4. **Stable sorts.** Both sorts here are ties-preserving in JS (spec since
 //!     ES2019) and in Rust; the comparators subtract, which is exact for f64s
 //!     close enough to matter (Sterbenz), so ties really are ties.
+//!
+//! PORTS: `maze/track-grow.ts`
 
 use crate::jsmath::{js_cos, js_hypot, js_pow, js_sin};
 use crate::maze::archetypes::NodeLayout;

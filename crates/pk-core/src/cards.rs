@@ -29,6 +29,8 @@
 //! RNG is threaded as `&mut dyn FnMut() -> f64`, not the single `roll: f64`
 //! value [`crate::economy::forge`] takes: these functions make a VARIABLE
 //! number of draws, and the count and order is the thing the tests pin.
+//!
+//! PORTS: `cards.ts`
 
 use std::borrow::Cow;
 

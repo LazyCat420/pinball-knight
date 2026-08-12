@@ -5,6 +5,8 @@
 //! bake --tavern` writes the PNGs this module embeds; they are `include_bytes!`
 //! so native and wasm load identically and a missing/renamed bake is a BUILD
 //! error rather than an invisible sprite at runtime.
+//!
+//! PORTS-NOTHING — embeds + uploads the BAKED tavern PNGs; the painters that made them are excluded by decision
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};

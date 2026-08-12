@@ -27,6 +27,8 @@
 //! `e_rem_pio2.c` and `k_rem_pio2.c`, and verified against the runtime by
 //! whole-curve digest over ranges chosen to cross every branch boundary — see
 //! `crates/pk-core/tests/jsmath_oracle.rs`.
+//!
+//! PORTS-NOTHING — Sun fdlibm sin/cos, the implementation the JS runtime runs
 
 // ─── why this file suppresses four lints ─────────────────────────────────────
 //

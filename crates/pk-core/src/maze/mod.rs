@@ -26,6 +26,8 @@
 //! The generator then lands pass by pass against `PASS_ORDER`, and each new
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
+//!
+//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`
 
 pub mod archetypes;
 pub mod digest;

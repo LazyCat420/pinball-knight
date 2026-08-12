@@ -61,6 +61,8 @@
 //! would need the same twin `cos` and `sin` do. It agrees anyway, and std does
 //! not. There is no "the trig family behaves like X" rule to be had here;
 //! there is only the sweep.
+//!
+//! PORTS-NOTHING — dispatch to the target-correct implementations below
 
 mod fdlibm;
 mod fdlibm_explog;

@@ -89,6 +89,8 @@
 //! · `f64::mul_add` on wasm lowers to a `compiler_builtins` softfloat `fma` —
 //!   exactly rounded, and slower. At ~140 pow calls per generated floor that
 //!   cost is not worth a second thought.
+//!
+//! PORTS-NOTHING — ARM optimized-routines pow, matching V8 fusion-for-fusion
 
 use super::pow_data::{
     EXP_POLY, EXP_TAB, INV_LN2N, LN2HI, LN2LO, LOG_POLY, LOG_TAB, NEG_LN2HI_N, NEG_LN2LO_N, SHIFT,

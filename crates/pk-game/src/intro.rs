@@ -18,6 +18,8 @@
 //! `__skipDungeonIntro`, prefers-reduced-motion — and it plays ONCE per
 //! launch (deliberately not persisted: a saved flag would mean nobody ever
 //! sees it again, including whoever has to change it).
+//!
+//! PORTS: `intro/index.ts`
 
 use bevy::camera::ScalingMode;
 use bevy::image::{Image, ImageSampler};

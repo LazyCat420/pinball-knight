@@ -14,6 +14,8 @@
 //! porting them is parity-neutral rather than visual debt — their uniforms
 //! exist pinned at 0 so turning one on later is a flip and a filled stub,
 //! never a reorder.
+//!
+//! PORTS-NOTHING — module tree
 
 use bevy::prelude::*;
 

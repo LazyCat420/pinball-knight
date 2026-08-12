@@ -2,6 +2,8 @@
 //! Pure grouping logic of `legacy/src/scenes/tavern/join-board.ts` (+ the
 //! `floorOfScene` parser it re-exports from `net/rally.ts`). The realtime
 //! presence layer itself is P8 scope; this is the data shape the board reads.
+//!
+//! PORTS: `legacy/src/scenes/tavern/join-board.ts`
 
 /// A pool-mate as presence reports them — only the fields the board reads.
 #[derive(Debug, Clone)]

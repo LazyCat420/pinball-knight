@@ -31,6 +31,8 @@
 //! quietly returning a plausible order with the wrong number of draws behind
 //! it. Porting a longer JS sort means measuring TimSort first, not raising the
 //! constant.
+//!
+//! PORTS: `maze/track-carve.ts`
 
 /// The longest array this implementation has been verified against node for.
 /// See the module header: eight is where TimSort's run detection takes over.

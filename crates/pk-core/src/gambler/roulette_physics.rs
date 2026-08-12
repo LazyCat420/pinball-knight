@@ -7,6 +7,8 @@
 //! ball moves, and `plan_spin` SEARCHES physically plausible launch speeds for
 //! an untouched trajectory that happens to land in that pocket. Every frame
 //! the player sees is a genuine solution of the model.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/roulette-physics.ts`
 
 use crate::rng::Mulberry32;
 

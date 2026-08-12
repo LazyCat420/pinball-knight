@@ -12,6 +12,8 @@
 //!    comes BEFORE the dealer draws, the dealer draws on an audible beat.
 //!  · `busy()` covers EVERY phase still doing something — including the
 //!    settle hold, which is the only time the outcome is on screen.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/blackjack-game.ts`
 
 use super::blackjack::{dealer_should_hit, hand_value, is_blackjack, settle_hand, Card, Outcome};
 

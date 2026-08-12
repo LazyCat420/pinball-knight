@@ -22,6 +22,8 @@
 //! [`WebParam`], which every later call no-ops on. A context torn down
 //! mid-frame (a browser reclaiming it, a hostile embed) must go quiet, not
 //! unwind into whatever the game loop was doing.
+//!
+//! PORTS: `legacy/src/scenes/tavern/audio.ts`
 
 use web_sys::{
     AudioBufferSourceNode, AudioContext, AudioNode, AudioParam as JsParam, BiquadFilterNode,

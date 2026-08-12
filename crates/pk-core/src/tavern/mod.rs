@@ -11,6 +11,10 @@
 //! seam), `presentMode` (Bevy has no skip-present seam), the realtime
 //! multiplayer pool (P8), room/prop mesh construction (the shell mirrors
 //! `build.ts`/`props.ts` geometry directly), and audio patches (P7).
+//!
+//! PORTS: `legacy/src/scenes/tavern/layout.ts`, `legacy/src/scenes/tavern/player.ts`,
+//! `legacy/src/scenes/tavern/npcs.ts`, `legacy/src/scenes/tavern/camera.ts`,
+//! `legacy/src/scenes/tavern/join-board.ts`
 
 pub mod camera;
 pub mod join_board;

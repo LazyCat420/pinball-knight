@@ -6,6 +6,8 @@
 //! on the same 5.26% house edge a real single-zero table has while staying
 //! legible as a ring of chunky pixels. Every bet type carries the SAME edge:
 //! the choice is about variance, not value.
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/roulette.ts`
 
 /// Numbered pockets, not counting the zero.
 pub const WHEEL_NUMBERS: i32 = 18;

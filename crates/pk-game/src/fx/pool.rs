@@ -24,6 +24,8 @@
 //! determinism contract enforced by bit-exact trace fixtures; particles are
 //! presentation and must not be able to perturb it. That is why the pool owns
 //! its own generator instead of taking one.
+//!
+//! PORTS: `fx/pools/particle-pool.ts`
 
 use bevy::prelude::*;
 

@@ -47,6 +47,8 @@
 //! `maze_art::mean_linear_luma`, and a test now prints that table and fails if
 //! a re-bake moves it. A note asking a future reader to remember is the weakest
 //! form a calibration can take, and this one had already survived one pass.
+//!
+//! PORTS: `boot/lighting.ts`
 
 use bevy::prelude::*;
 

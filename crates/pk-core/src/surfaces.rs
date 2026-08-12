@@ -8,6 +8,8 @@
 //! every multiplier exactly 1, every additive exactly 0 — so a grid that never
 //! assigns a surface plays bit-identically to the pre-surface build. The tests
 //! assert that neutrality field by field.
+//!
+//! PORTS: `legacy/.../engine/surfaces.ts`
 
 // ── WALLS ────────────────────────────────────────────────────────────────────
 

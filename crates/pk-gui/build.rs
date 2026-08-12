@@ -15,6 +15,8 @@
 //! `rerun-if-changed` on the DIRECTORY as well as the manifest: cargo only
 //! re-runs a build script when a watched path's mtime moves, and a new PNG
 //! changes the directory's.
+//!
+//! PORTS-NOTHING — Cargo build script
 
 use std::fmt::Write as _;
 use std::path::Path;

@@ -8,6 +8,8 @@
 //! against the same oracle.
 //!
 //! The derivations stay with the constants; they are the whole value.
+//!
+//! PORTS-NOTHING — THREE.js -> Bevy unit conversions; the constants they convert are cited where they are used
 
 use bevy::prelude::*;
 

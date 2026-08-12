@@ -5,6 +5,8 @@
 //! scales with the stake and the dart number — the whole risk/reward axis.
 //! The payout bands are FITTED to a measured perfect-timing RTP in
 //! [1.05, 1.35] (about one floor's income per visit for a master).
+//!
+//! PORTS: `legacy/src/scenes/tavern/gambler/darts.ts`
 
 use super::table::{MAX_STAKE_ABS, MIN_STAKE};
 use crate::jsmath::js_hypot;

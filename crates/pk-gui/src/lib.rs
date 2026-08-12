@@ -29,6 +29,8 @@
 //!   been measured painting at 2 fps under load, and booleans collapse repeats.
 //! - Hit testing happens in CONTENT space (`origin_y`) so scrolled lists don't
 //!   answer clicks `offset` pixels off (im.ts's debug-console war story).
+//!
+//! PORTS: `gui/im.ts`
 
 pub mod cards;
 pub mod font;

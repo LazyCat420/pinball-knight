@@ -10,6 +10,8 @@
 //! axis is what produces wall SLIDING for free.
 //!
 //! Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
+//!
+//! PORTS: `engine/collision.ts`
 
 use crate::grid::{arc_feature_at, arc_index_at, is_walkable, shape_at, surface_at, Grid};
 use crate::tile_shape::{

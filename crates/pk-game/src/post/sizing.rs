@@ -14,6 +14,8 @@
 //! pixel alternately 1 and 2 screen pixels wide, in a fixed comb across the
 //! whole screen — which reads as "the game is blurry" rather than as a bug in
 //! any one asset. Integer-only is the invariant; a letterbox is the fallback.
+//!
+//! PORTS-NOTHING — render-target sizing for the pixel pass on Bevy; derived from the oracle`s zoom rules cited in pipeline.rs
 
 use bevy::camera::ScalingMode;
 use bevy::camera::{Camera, RenderTarget};

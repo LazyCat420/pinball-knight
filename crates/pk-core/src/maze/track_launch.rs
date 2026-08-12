@@ -65,6 +65,8 @@
 //! any step wrong changes which site the same random number selects — which is
 //! why `BAND_FRAC` and `EDGE_NARROW` are caught on floors whose geometry is
 //! otherwise identical.
+//!
+//! PORTS: `maze/track-launch.ts`
 
 use super::track_carve::carve_stroke;
 use super::TrackMask;

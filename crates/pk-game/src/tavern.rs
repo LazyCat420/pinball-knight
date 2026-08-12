@@ -23,6 +23,8 @@
 //!    and T in the dungeon stands in for the P5 run flow (death/floor-clear).
 //!    DESCEND is the real hand-off: it tears the tavern down and builds a
 //!    fresh dungeon floor.
+//!
+//! PORTS: `legacy/src/scenes/tavern/props.ts`
 
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;

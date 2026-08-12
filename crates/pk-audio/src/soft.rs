@@ -26,6 +26,8 @@
 //! block rather than per sample, which is inaudible for the one modulated
 //! cutoff we have (a 0.23 Hz LFO). Neither affects the envelope and level
 //! assertions this renderer exists to make.
+//!
+//! PORTS-NOTHING — offline software renderer, so tests need no audio device. No TS counterpart
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};

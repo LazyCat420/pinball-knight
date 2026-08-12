@@ -24,6 +24,8 @@
 //! Without<D>)>` is likewise a type by construction; aliasing it moves the
 //! filter out of the line where the borrow conflict has to be checked, and this
 //! shell already hit Bevy's B0001 once for exactly that reason.
+//!
+//! PORTS-NOTHING — the Bevy app: schedule, states, input map, telemetry. Every ported subsystem it drives declares its own provenance
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod authored_floor;

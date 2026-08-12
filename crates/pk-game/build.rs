@@ -6,6 +6,8 @@
 //! without refreshing the stamp. The number therefore reads "when pk-game was
 //! last compiled", which is what the readout exists to answer — am I looking
 //! at the build I just made, or a stale window I forgot to close.
+//!
+//! PORTS-NOTHING — Cargo build script
 
 fn main() {
     println!("cargo::rerun-if-changed=src");

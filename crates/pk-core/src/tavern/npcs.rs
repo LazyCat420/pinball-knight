@@ -6,6 +6,8 @@
 //! (the smith's hammer, the tout's darts) are real work loops with a strike
 //! beat the VFX and audio hang off. The shell reads the pose this sim
 //! produces; the sim never touches a mesh.
+//!
+//! PORTS: `legacy/src/scenes/tavern/npcs.ts`
 
 use super::layout::KEEPER_SPOTS;
 

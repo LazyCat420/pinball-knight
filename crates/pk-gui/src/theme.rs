@@ -5,6 +5,8 @@
 //! GREEN — the leather ramp is the stable choice, not an aesthetic one).
 //! Body text steps DOWN from cream on purpose: max-contrast 8px text shimmers
 //! under scanlines.
+//!
+//! PORTS: `gui/theme.ts`
 
 use crate::painter::Rgba;
 use crate::palette::c;

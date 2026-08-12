@@ -30,6 +30,8 @@
 //! caller passes `blink_on` and [`blink_phase`] is the shared derivation of it.
 //! Two implementations of one modulus is how the port's blink ends up 40 ms out
 //! of step with the oracle's and nobody can say why.
+//!
+//! PORTS: `gui/screens/intro-chrome.ts`
 
 use crate::im::{button, fill_rect, rect, text, Align, ButtonOpts, Rect, TextOpts, UiFrame};
 use crate::painter::Rgba;

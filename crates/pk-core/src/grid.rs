@@ -5,6 +5,8 @@
 //! accessors and world mapping) and the GENERATION of a maze into it (M3).
 //! Deliberately render-free: this and `collide` are the sim's real test
 //! surface, exactly as in the TS original.
+//!
+//! PORTS: `engine/grid.ts`
 
 pub const T_WALL: u8 = 0;
 pub const T_FLOOR: u8 = 1;
