@@ -58,12 +58,48 @@ pub struct SnapPlugin;
 
 impl Plugin for SnapPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<SnapPeak>();
         app.add_systems(
             PostUpdate,
-            (snap_camera, snap_sprites)
+            (snap_camera, snap_sprites, track_snap_peak)
                 .chain()
                 .before(TransformSystems::Propagate),
         );
+    }
+}
+
+/// The most extreme Y a snapped sprite has been left at, EVER, this session.
+///
+/// Sampling the probe from outside sees one frame in three at best, so a
+/// per-frame excursion hides between samples — which is exactly the mistake
+/// that made an earlier measurement of the knight's drift read as harmless.
+/// This watches every frame, after the snap, and only ever widens.
+#[derive(Resource, Debug)]
+pub struct SnapPeak {
+    pub min_y: f32,
+    pub max_y: f32,
+    pub frames: u64,
+}
+
+impl Default for SnapPeak {
+    fn default() -> Self {
+        Self {
+            min_y: f32::INFINITY,
+            max_y: f32::NEG_INFINITY,
+            frames: 0,
+        }
+    }
+}
+
+fn track_snap_peak(mut peak: ResMut<SnapPeak>, q: Query<&Transform, With<PixelSnapped>>) {
+    for tf in &q {
+        // Only the knight rides at half a quad; keepers stand on their feet at
+        // y≈0 and the blob sits at BLOB_LIFT, so filter to the tall one.
+        if tf.translation.y > 0.3 {
+            peak.min_y = peak.min_y.min(tf.translation.y);
+            peak.max_y = peak.max_y.max(tf.translation.y);
+            peak.frames += 1;
+        }
     }
 }
 

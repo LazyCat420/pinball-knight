@@ -31,18 +31,40 @@ already-corrected y.
 which is independently `PixelSnapped`). The keepers at `tavern.rs:1723`/`:1749`
 already assigned all three; the knight was the only violator.
 
-**Measured in real Chrome, both ways**, via a new probe field (below), walking
-a full circuit of the room for ~11 s:
+**Measured in real Chrome, both ways.** Twice, because the first measurement
+was wrong — see "the second correction" below.
 
-| | worst \|y − 0.575\| |
-|---|---|
-| partial restore (the defect) | **0.0217** — y wanders, one texel is 0.0229 |
-| full assignment (the fix) | **0.0000** — pinned exactly, every sample |
+| | worst \|y − 0.575\| | of a 1.15 quad |
+|---|---|---|
+| partial restore (the defect) | **0.1606** | 14.0% |
+| full assignment (the fix) | **0.0090** | 0.8% |
 
-So the fix is real and does what it says. **But 0.0217 on a quad 1.15 tall is
-1.9% — the knight never leaves the floor, let alone the screen.**
+Over ~90 s of scripted reversing (every key pair, a 120 ms flutter, and
+diagonals), 1,634 and 1,484 frames watched respectively. The fix cuts the
+wobble **18×**. It does not eliminate it — a snapped sprite is allowed to move
+a sub-texel as the camera eases, which is the tradeoff the module documents.
 
-### The correction, which is the point of this entry
+### The SECOND correction: a sampled probe is not a maximum
+
+The table above replaces an earlier one reading **0.0217** for the defect,
+which I used to argue the drift was "1.9% of a quad, far too small to be the
+reported disappearance" and to file the player's bug as still open.
+
+That 0.0217 came from a Playwright loop polling `__pk` every ~50 ms — **one
+frame in three at 60 fps**. It reported a *sample*, not a peak, and the true
+per-frame maximum is 7.4× larger. The fix is now measured by `SnapPeak`, a
+resource updated in `PostUpdate` immediately after `snap_sprites`, which only
+ever widens its min/max. Instrument the engine, not the poll: an external
+sampler cannot see an excursion narrower than its own interval.
+
+Whether 14% of a quad is what the player was seeing is still not proven —
+0.16 world units against a frustum half-height of 5.6 does not put the knight
+off screen, and the mechanism for a full disappearance remains unidentified.
+The player reports it has stopped since this shipped. That is evidence, not
+proof, and the two other commits in the same window touched neither the tavern
+nor the knight, so this is the only candidate.
+
+### The FIRST correction, which is the point of this entry
 
 The diagnosis originally claimed a RUNAWAY: y climbing 0.575 → 1.394 over 600
 walking frames, off the top of the frustum. That came from a simulation with
@@ -65,15 +87,25 @@ restoring the bug and measuring, rather than treating the fix's green run as
 proof; a one-sided pass would have shipped a false diagnosis with a real patch
 stapled to it.
 
-**Still open:** whatever actually makes the knight vanish. Ruled out with
-evidence, so nobody re-hunts them: NaN (every division in
+**Status of the player's bug: reported gone since this shipped, cause not
+proven.** The player's repro was "walk one direction then the opposite", which
+is what the 90 s A/B above scripts, and the defect is 18× smaller now. But
+0.16 world units is not a disappearance on a frustum 11.25 tall, so either the
+wobble was compounding with something unidentified, or the cure is
+coincidental. Do not close this as understood.
+
+Ruled out with evidence, so nobody re-hunts them: NaN (every division in
 `step_tavern_movement` guards its denominator; `move_in_room` is pure clamps),
 a teleport out of the room (clamped twice), a missing animation frame (all
 three sheets carry idle *and* walk cells, and the empty-clip path early-returns
 *before* touching the material, so it would freeze a frame, not blank it), and
-now this Y drift. Next places to look: the masked material clones and their
+`facing_from_velocity` (total, every branch returns, no gap at the reversal).
+If it returns, look at: the masked material clones and their
 `AlphaMode::Mask(0.5)` cutoff, the billboard's `scale.x = -1.0` mirror for
-facing W, and anything that can leave `MeshMaterial3d` pointing at a handle
+facing W (the keepers carry an explicit `|scale_x| >= 0.06` clamp with a
+comment that a zero-determinant matrix "NaNs the normals and the sprite
+disappears for good" — the knight has no such guard, though its scale is a
+hard ±1.0), and anything that can leave `MeshMaterial3d` pointing at a handle
 whose image was dropped.
 
 ### What this proved about the harness

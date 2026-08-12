@@ -51,8 +51,14 @@ as the change it records.** Newest entries first within each section.
   `(-0.435, 0.788, -0.435)` under the iso rig, so a snap moves the entity in
   world Y — and `sync_tavern_knight` restored only `.x`/`.z`, defeating the
   fixed point `snap.rs`'s header depends on. Fixed by assigning all three.
-  - Measured in real Chrome over ~11 s of walking a circuit: **0.0217 worst
-    deviation with the defect (one texel is 0.0229), 0.0000 with the fix.**
+  - Measured in real Chrome over ~90 s of scripted REVERSING (the player's own
+    repro), peak tracked in-engine every frame: **0.1606 worst deviation with
+    the defect, 0.0090 with the fix — an 18× reduction.**
+  - ⚠️ An earlier reading of **0.0217** was a Playwright poll every ~50 ms —
+    one frame in three, so a *sample*, not a maximum, and 7.4× low. It is why
+    this was first written off as "too small to matter". `SnapPeak` now tracks
+    min/max in `PostUpdate` right after the snap. Instrument the engine, not
+    the poll.
   - ⚠️ **The first diagnosis claimed a runaway off the top of the screen and
     was WRONG** — it simulated a camera parked at the origin, but
     `tavern_camera` eases toward the player, so the offset the snap rounds
@@ -820,18 +826,24 @@ as the change it records.** Newest entries first within each section.
 
 ## Broken / not started
 
-- **The tavern knight sometimes DISAPPEARS while walking, and stays gone until
-  a restart or a trip to the maze.** Player-reported 2026-08-11, still open.
-  A Y-drift defect found while hunting it was real and is fixed (see Working
-  above), but measures 0.0217 world units on a 1.15-tall quad — far too small
-  to be this. Ruled out with evidence: NaN in the movement/collision maths,
-  a teleport out of the room, a missing animation clip, and the Y drift.
-  Next: the masked material clones and their `AlphaMode::Mask(0.5)` cutoff,
-  the `scale.x = -1.0` mirror for facing W, and anything that can leave
-  `MeshMaterial3d` pointing at a handle whose image was dropped.
-  `__pk.tavern.spriteY` now reports the rendered y, so the next hunt has an
-  instrument; a repro that pins WHICH station or direction precedes it would
-  narrow this a lot.
+- **The tavern knight sometimes DISAPPEARS while walking.** Player-reported
+  2026-08-11; **reported gone since the Y fix shipped, but the cause is NOT
+  proven** — do not close this as understood. The player's repro was "walk one
+  direction then the opposite", the Y wobble on that exact motion is now 18×
+  smaller, and no other commit in the window touched the tavern or the knight.
+  But 0.16 world units is not a disappearance on a frustum 11.25 tall, so
+  either the wobble compounded with something unidentified or the cure is
+  coincidental.
+  Ruled out with evidence: NaN in the movement/collision maths, a teleport out
+  of the room, a missing animation clip, `facing_from_velocity` (total, no gap
+  at the reversal), and the Y drift itself as a sole cause.
+  If it returns: the masked material clones and their `AlphaMode::Mask(0.5)`
+  cutoff, the `scale.x = -1.0` mirror for facing W (keepers clamp
+  `|scale_x| >= 0.06` against a zero-determinant NaN; the knight has no such
+  guard), and a `MeshMaterial3d` handle whose image was dropped.
+  Instruments now available: `__pk.tavern.sprite` (full rendered transform,
+  with a `bad` flag for non-finite or zero scale) and `__pk.tavern.peak`
+  (per-frame min/max y, tracked in-engine).
 - `cargo xtask bake` — only the `--tavern` leg exists (this change). The
   per-rung sprite bake, which is M0's real exit criterion (baked knight frame on
   screen), is still open.

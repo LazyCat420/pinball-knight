@@ -366,6 +366,7 @@ fn publish_stats(
     // place the defect was ever visible, and a screenshot gate cannot see it
     // until the knight has already left the screen.
     knight_q: Query<&Transform, With<tavern::TavernKnight>>,
+    snap_peak: Option<Res<post::snap::SnapPeak>>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
 ) {
@@ -393,15 +394,35 @@ fn publish_stats(
     // focus, open panel) so pk-check can drive the room from outside.
     let tavern_field = match (*state.get(), &tavern_res) {
         (AppState::Tavern, Some(t)) => format!(
-            r#"{{"x":{},"z":{},"spriteY":{},"facing":"{:?}","speed":{},"focus":{},"panel":{}}}"#,
+            r#"{{"x":{},"z":{},"sprite":{},"peak":{},"facing":"{:?}","speed":{},"focus":{},"panel":{}}}"#,
             t.pose.x,
             t.pose.z,
-            // `null`, never NaN: `NaN` is not JSON and would break the parse
-            // for every other field in the probe, not just this one.
+            // The knight's whole RENDERED transform, because a sprite can
+            // vanish without its position moving: a zero or NaN scale
+            // collapses the quad, and a NaN anywhere culls it silently.
+            // `null` rather than NaN — NaN is not JSON and would break the
+            // parse for every other field in the probe, not just this one.
             knight_q
                 .single()
-                .map(|tf| tf.translation.y.to_string())
+                .map(|tf| {
+                    let (t, s) = (tf.translation, tf.scale);
+                    let bad = !t.is_finite() || !s.is_finite() || s.x == 0.0 || s.y == 0.0;
+                    format!(
+                        r#"{{"x":{},"y":{},"z":{},"sx":{},"sy":{},"bad":{}}}"#,
+                        t.x, t.y, t.z, s.x, s.y, bad
+                    )
+                })
                 .unwrap_or_else(|_| "null".into()),
+            // The per-frame extremes, tracked in-engine after the snap. A
+            // sampled probe sees one frame in three and misses excursions.
+            snap_peak.as_ref().map_or("null".to_string(), |p| {
+                format!(
+                    r#"{{"minY":{},"maxY":{},"frames":{}}}"#,
+                    if p.min_y.is_finite() { p.min_y } else { 0.0 },
+                    if p.max_y.is_finite() { p.max_y } else { 0.0 },
+                    p.frames
+                )
+            }),
             t.pose.facing,
             t.pose.speed,
             t.focus
