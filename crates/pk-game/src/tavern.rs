@@ -2232,4 +2232,48 @@ mod tests {
         assert!(min.abs() < 1e-6, "feet at {min}, not 0");
         assert!((max - SPRITE_UNITS).abs() < 1e-6, "head at {max}");
     }
+
+    /// EVERY ID A COUNTER DRAWS HAS A BAKED ICON.
+    ///
+    /// This is the only place the two halves meet: `pk-core` owns the ids and
+    /// `pk-gui` owns the pixels, and neither crate can see the other. So the
+    /// shell — which imports both — is where "the alchemist names a reagent the
+    /// bake never produced" becomes a test failure instead of a blank square in
+    /// a strip of gems.
+    ///
+    /// ⚠️ It has already caught one. `goblintooth` is BOTH a rare crit card and
+    /// the goblin's reagent; `ITEM_PAINTS` spreads cards first and reagents
+    /// last, so the painter is the GEM — but the bake excluded everything in
+    /// `CARD_IDS` and dropped it. The pouch drew fourteen chips and one hole.
+    #[test]
+    fn every_id_the_counters_draw_resolves_to_a_baked_icon() {
+        let mut missing: Vec<String> = Vec::new();
+        for s in GEAR_SLOTS {
+            if pk_gui::icons::icon(s.item_id()).is_none() {
+                missing.push(format!("gear {}", s.item_id()));
+            }
+        }
+        for p in POTION_STOCK {
+            if pk_gui::icons::icon(p.item_id()).is_none() {
+                missing.push(format!("potion {}", p.item_id()));
+            }
+        }
+        for r in REAGENT_IDS {
+            if pk_gui::icons::icon(r.item_id()).is_none() {
+                missing.push(format!("reagent {}", r.item_id()));
+            }
+        }
+        for r in RECIPES {
+            if let pk_core::economy::alchemist::RecipeOutput::Potion(p) = r.output {
+                if pk_gui::icons::icon(p.item_id()).is_none() {
+                    missing.push(format!("recipe {} → {}", r.id, p.item_id()));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "no baked icon for: {} — re-run legacy/scripts/bake-gui-icons.mjs",
+            missing.join(", ")
+        );
+    }
 }

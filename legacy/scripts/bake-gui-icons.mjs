@@ -92,14 +92,33 @@ const js = await bundle(`
 import { itemIcon, ICON_PX } from "./src/game/pinball-knight/gui/icons";
 import { ITEM_PAINTS } from "./src/game/pinball-knight/render/cel-painter";
 import { CARD_IDS } from "./src/game/pinball-knight/cards";
+import { REAGENT_IDS } from "./src/game/pinball-knight/reagents";
+import { POTIONS, WEAPONS } from "./src/game/pinball-knight/items";
 import { installPalette } from "./src/game/pinball-knight/render/palette";
 // BEFORE any painter runs, and before anything memoises a palette derivation.
 installPalette();
-const cards = new Set(CARD_IDS);
+
+// ⚠️ A CARD ID CAN ALSO BE AN ITEM ID, AND ONE OF THEM IS.
+// \`ITEM_PAINTS\` is a spread of cards, then weapons, then gear, then potions,
+// then reagents — LAST WRITE WINS. \`goblintooth\` is both a rare crit card and
+// the goblin's reagent, so its painter is the reagent GEM, and excluding
+// everything in CARD_IDS dropped it. The pouch then had a hole in it that read
+// as a missing bake rather than as a namespace collision.
+//
+// So the exclusion is "a card and nothing else": card ids that no later table
+// re-declares. Cards in the UI are \`cardFaceAt()\` — a different renderer at a
+// different aspect — which is why they are excluded at all.
+const alsoAnItem = new Set([
+  ...REAGENT_IDS,
+  ...Object.keys(POTIONS),
+  ...Object.keys(WEAPONS),
+]);
+const cardsOnly = new Set(CARD_IDS.filter((id) => !alsoAnItem.has(id)));
 window.__bake = {
   itemIcon,
   ICON_PX,
-  ids: Object.keys(ITEM_PAINTS).filter((id) => !cards.has(id)).sort(),
+  ids: Object.keys(ITEM_PAINTS).filter((id) => !cardsOnly.has(id)).sort(),
+  reagents: REAGENT_IDS,
 };
 `);
 
@@ -133,6 +152,11 @@ const html = `<!doctype html><meta charset=utf8>
   }
   for (const id of ${JSON.stringify(REQUIRED)}) {
     if (!png[id]) throw new Error("REQUIRED icon '" + id + "' did not paint — a counter would show a hole");
+  }
+  // EVERY reagent, because the alchemist's pouch draws one chip per material
+  // and a missing gem is a blank square in a strip of gems.
+  for (const id of B.reagents) {
+    if (!png[id]) throw new Error("reagent '" + id + "' has no icon — the pouch will show a hole");
   }
   // ── THE PALETTE GATE ──
   // Read the pixels back and prove they are not grey. See COLOUR_PROBES.
