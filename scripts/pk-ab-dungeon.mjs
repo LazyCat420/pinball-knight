@@ -494,7 +494,12 @@ async function main() {
       `rust    ${imgs.rust.w}x${imgs.rust.h}  ${rust.probe.w}x${rust.probe.h}  ` +
         `source=${rust.source}  archetype=${rust.probe.archetype}  ` +
         (rust.source === "authored"
-          ? `torches=${rust.probe.torches} parts=${rust.probe.parts} props=${rust.probe.props}`
+          ? `torches=${rust.probe.torches} parts=${rust.probe.parts}` +
+            // Live vs planned, because they are different numbers: ten of the
+            // seventeen exported kinds are P1 verbs that draw and do nothing.
+            // A sheet that recorded only `parts` could not tell a wired machine
+            // from the diorama the floor was until 2026-08-12.
+            `(${rust.probe.liveParts ?? 0} live) props=${rust.probe.props}`
           : `pass=P${rust.probe.pass}`),
     );
     log(`        ${rust.file}`);

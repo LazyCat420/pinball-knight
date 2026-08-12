@@ -444,7 +444,11 @@ fn publish_stats(
     // published — see `FloorSource::label`.
     let authored_field = match &authored_res {
         Some(f) => format!(
-            r#"{{"level":{},"requestedLevel":{},"runSeed":{},"biome":"{}","archetype":"{}","w":{},"h":{},"torches":{},"parts":{},"props":{},"items":{},"spawns":{}}}"#,
+            // `parts` is what the floor PLANNED and `liveParts` is what the ball
+            // can hit — published separately because they are different numbers
+            // and a gate reading only the first cannot tell a wired machine from
+            // a diorama. `liveParts` is 0 for the whole port up to 08-12.
+            r#"{{"level":{},"requestedLevel":{},"runSeed":{},"biome":"{}","archetype":"{}","w":{},"h":{},"torches":{},"parts":{},"liveParts":{},"props":{},"items":{},"spawns":{}}}"#,
             f.level,
             f.requested_level,
             f.run_seed,
@@ -454,6 +458,10 @@ fn publish_stats(
             f.grid.h,
             f.plan.torches.len(),
             f.plan.parts.len(),
+            // Read off the LIVE sim, not re-derived from the plan: this must
+            // report what the physics is holding. A recomputation here would
+            // agree with itself even if the install never ran.
+            sim.as_ref().map(|s| s.0.parts.len()).unwrap_or(0),
             f.plan.props.len(),
             f.plan.items.len(),
             f.plan.spawns.len(),
@@ -914,7 +922,44 @@ fn setup_dungeon(
     // The grid handed over is a CLONE; `ActiveFloor.track.grid` stays
     // authoritative. See `real_floor`'s header for why that split is worth the
     // copy, and `assert_grid_still_authored` for what enforces it.
-    let sim = SimState::new(prepared.grid.clone(), spawn, prepared.seed);
+    let mut sim = SimState::new(prepared.grid.clone(), spawn, prepared.seed);
+    // ── The parts the floor DRAWS become the parts the ball HITS ──
+    //
+    // `pk_core::pinball` has been ported, fixture-gated and ticked every frame
+    // since 08-09 — against `parts: Vec::new()`, because nothing ever filled it.
+    // The floor drew 102 bumpers and boosters the physics had never heard of.
+    //
+    // Only the authored source has a plan to read; a generated floor has no
+    // parts until `decorateMaze` ports, and the empty vec is the honest answer
+    // there rather than a reason to fabricate one.
+    if let Some(f) = prepared.authored.as_ref() {
+        sim.parts = authored_floor::sim_parts(&sim.grid, &f.plan);
+        // Jackpot bookkeeping, the pair `createPinballParts` ends on
+        // (`pinball-parts.ts:973-974`). Set TOGETHER: they are the jackpot's
+        // denominator and numerator, and `pinball-collide.ts:373` reads
+        // `bumperTotal || JACKPOT_BUMPERS` — so a total left at 0 does not
+        // disable the jackpot, it silently retargets it at the constant.
+        sim.bumper_total = sim
+            .parts
+            .iter()
+            .filter(|p| p.kind == pk_core::pinball::PartKind::Bumper)
+            .count() as i32;
+        sim.bumpers_lit = 0;
+        let inert = authored_floor::unhonoured_part_kinds(&f.plan);
+        let inert_n: usize = inert.iter().map(|(_, n)| n).sum();
+        info!(
+            "parts: {} live of {} planned ({} inert until P1's verbs land: {})",
+            sim.parts.len(),
+            f.plan.parts.len(),
+            inert_n,
+            inert
+                .iter()
+                .map(|(k, n)| format!("{k} x{n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let sim = sim;
     // TAKEN, not borrowed: the generated floor moves from the prepared resource
     // into `ActiveFloor` below, and one owner at a time is what stops a stale
     // copy of the previous floor answering the next descend's telemetry.

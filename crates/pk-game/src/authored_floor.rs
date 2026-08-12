@@ -625,6 +625,94 @@ pub struct PinballPart {
     pub chain: bool,
 }
 
+/// The plan's part kinds the SIM can honour today, as [`PartKind`] variants.
+///
+/// `None` is a normal answer and it is not a defect: ten of the seventeen kinds
+/// the exporter emits are the P1 verbs that have not been ported yet — `target`,
+/// `rollover`, `jumppad`, `trapdoor`, `pit`, `firevent`, `electric`, `lamp`,
+/// `ramp`, `glove`. They are DRAWN by `authored_render` and they do nothing when
+/// you touch them, which is the honest state of the port rather than a bug to
+/// paper over.
+///
+/// ⚠️ **The catch-all arm is deliberately separate from the inert list.** Both
+/// answer `None`, so the split buys nothing at runtime — it buys the test:
+/// `every_exported_part_kind_is_accounted_for` walks the real payloads and fails
+/// on a kind that reaches `_`, so an eighteenth kind from the oracle surfaces as
+/// a red test rather than being filed under "not ported yet" forever.
+pub fn sim_part_kind(kind: &str) -> Option<pk_core::pinball::PartKind> {
+    use pk_core::pinball::PartKind as K;
+    match kind {
+        "bumper" => Some(K::Bumper),
+        "spring" => Some(K::Spring),
+        "booster" => Some(K::Booster),
+        "boostcorner" => Some(K::BoostCorner),
+        "boostcurve" => Some(K::BoostCurve),
+        "deflector" => Some(K::Deflector),
+        "oil" => Some(K::Oil),
+        "spinpad" => Some(K::SpinPad),
+        "slingshot" => Some(K::Slingshot),
+        "flipper" => Some(K::Flipper),
+        "mirror" => Some(K::Mirror),
+        "magstrip" => Some(K::MagStrip),
+        // ── Planned, drawn, and INERT until P1's remaining verbs land ──
+        "target" | "rollover" | "jumppad" | "trapdoor" | "pit" | "firevent" | "electric"
+        | "lamp" | "ramp" | "glove" => None,
+        _ => None,
+    }
+}
+
+/// The kinds the exporter emits that the sim cannot honour yet — the inert list
+/// above, and the only place it is written down as data.
+///
+/// Read only by the tests today, and `pub` on purpose: it is the list a reader
+/// checks against when a part "does nothing", and the thing
+/// `every_exported_part_kind_is_accounted_for` measures the `_` arm against.
+#[allow(dead_code)]
+pub const INERT_PART_KINDS: [&str; 10] = [
+    "target", "rollover", "jumppad", "trapdoor", "pit", "firevent", "electric", "lamp", "ramp",
+    "glove",
+];
+
+/// Every part in the plan the sim cannot honour yet, counted by kind.
+///
+/// A `BTreeMap` and not a `HashMap`: this feeds the install log, and a map whose
+/// iteration order flaps would make two runs of the same floor print two
+/// different banners.
+pub fn unhonoured_part_kinds(plan: &LevelPlan) -> Vec<(String, usize)> {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for p in &plan.parts {
+        if sim_part_kind(&p.kind).is_none() {
+            *counts.entry(p.kind.clone()).or_default() += 1;
+        }
+    }
+    counts.into_iter().collect()
+}
+
+/// The plan's parts, as the parts the ball actually hits.
+///
+/// The oracle's own conversion is `createPinballParts`
+/// (`render/pinball-parts.ts:892-955`): `tileCenter(g, i, j)` gives `x`/`z`, and
+/// `dirX`/`dirZ` are `dirI`/`dirJ` **verbatim** — no rounding, no cardinal
+/// snapping. This is that function's sim half, minus the three.js meshes.
+///
+/// ⚠️ `part.i` is the TILE `i`, and it is not decoration: it seeds
+/// `spin_pad_phase(elapsed, i)`, which BOTH the deflection in
+/// `touch_pinball_parts` and the rotor's rotation in `pinball-parts.ts:1260`
+/// read. Hand it an array index instead and every spinpad deflects along an axis
+/// its own art is not pointing down.
+pub fn sim_parts(grid: &Grid, plan: &LevelPlan) -> Vec<pk_core::pinball::PinballPart> {
+    plan.parts
+        .iter()
+        .filter_map(|p| {
+            let kind = sim_part_kind(&p.kind)?;
+            let (x, z) = pk_core::grid::tile_center(grid, p.i, p.j);
+            Some(pk_core::pinball::PinballPart::new(
+                kind, p.i, x, z, p.dir_i, p.dir_j,
+            ))
+        })
+        .collect()
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
 pub struct Room {
@@ -718,6 +806,233 @@ mod tests {
                  has the fallback generator started shipping?"
             );
         }
+    }
+
+    /// Every kind the exporter emits is either honoured by the sim or on the
+    /// inert list BY NAME.
+    ///
+    /// This is the test the `_ => None` arm exists for. Both arms answer `None`,
+    /// so nothing at runtime distinguishes "we know this one does nothing yet"
+    /// from "we have never seen this string" — the difference is here, and it is
+    /// the difference between a documented gap and a silently dropped part.
+    #[test]
+    fn every_exported_part_kind_is_accounted_for() {
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for (level, seed, _) in EMBEDDED {
+            let f = load(*level, *seed).unwrap();
+            for p in &f.plan.parts {
+                seen.insert(p.kind.clone());
+            }
+        }
+        for kind in &seen {
+            let honoured = sim_part_kind(kind).is_some();
+            let inert = INERT_PART_KINDS.contains(&kind.as_str());
+            assert!(
+                honoured || inert,
+                "part kind {kind:?} is in the payload but is neither honoured by \
+                 the sim nor on INERT_PART_KINDS — add it to `sim_part_kind`, or \
+                 name it inert and say which verb it waits on"
+            );
+            assert!(
+                !(honoured && inert),
+                "part kind {kind:?} is both honoured and listed inert"
+            );
+        }
+        // The floors really do exercise both sides, or the loop above is vacuous.
+        assert!(
+            seen.iter().any(|k| sim_part_kind(k).is_some()),
+            "no honoured kind in any payload"
+        );
+        assert!(
+            seen.iter().any(|k| INERT_PART_KINDS.contains(&k.as_str())),
+            "no inert kind in any payload"
+        );
+    }
+
+    /// The parts handed to the sim are the parts the plan authored, at the tile
+    /// centres the oracle put them on.
+    ///
+    /// Counts are the measured ones: 80/102/121 planned, of which the honoured
+    /// subset is what the ball can hit. Both halves are asserted — a mapping that
+    /// silently dropped everything would still satisfy "every part stands on a
+    /// floor tile".
+    #[test]
+    fn the_sim_gets_the_parts_the_floor_drew() {
+        for (level, seed, _) in EMBEDDED {
+            let f = load(*level, *seed).unwrap();
+            let parts = sim_parts(&f.grid, &f.plan);
+            let honoured = f
+                .plan
+                .parts
+                .iter()
+                .filter(|p| sim_part_kind(&p.kind).is_some())
+                .count();
+            assert_eq!(
+                parts.len(),
+                honoured,
+                "L{level} handed the sim {} parts for {honoured} honoured of {} planned",
+                parts.len(),
+                f.plan.parts.len()
+            );
+            assert!(
+                !parts.is_empty(),
+                "L{level} handed the sim no parts at all — the ball would hit nothing"
+            );
+            // Every part sits at its tile's centre, which is what makes the
+            // sim's `dx/dz` agree with the mesh the renderer places.
+            for (p, src) in parts.iter().zip(
+                f.plan
+                    .parts
+                    .iter()
+                    .filter(|p| sim_part_kind(&p.kind).is_some()),
+            ) {
+                let (x, z) = pk_core::grid::tile_center(&f.grid, src.i, src.j);
+                assert_eq!((p.x, p.z), (x, z), "L{level} part at ({},{})", src.i, src.j);
+                assert_eq!(
+                    p.i, src.i,
+                    "part.i must be the TILE i — it seeds the spinpad phase"
+                );
+            }
+        }
+    }
+
+    /// A curved booster reaches the SIM with its unit vector intact.
+    ///
+    /// `a_curved_boosters_direction_is_not_a_cardinal` pins the float through the
+    /// parser; this pins it through the mapping, which is the half that would
+    /// round it. L5 carries two `boostcurve`s.
+    #[test]
+    fn a_curved_boosters_direction_survives_into_the_sim() {
+        let f = load(5, 1).unwrap();
+        let parts = sim_parts(&f.grid, &f.plan);
+        let curved: Vec<_> = parts
+            .iter()
+            .filter(|p| p.dir_x.fract() != 0.0 || p.dir_z.fract() != 0.0)
+            .collect();
+        assert!(
+            !curved.is_empty(),
+            "L5's curved boosters lost their direction between the plan and the sim"
+        );
+        for p in curved {
+            let len = (p.dir_x * p.dir_x + p.dir_z * p.dir_z).sqrt();
+            assert!(
+                (len - 1.0).abs() < 1e-9,
+                "sim part at ({},{}) has direction ({},{}), length {len}",
+                p.x,
+                p.z,
+                p.dir_x,
+                p.dir_z
+            );
+        }
+    }
+
+    /// The jackpot's denominator is the floor's real bumper count.
+    ///
+    /// `pinball-collide.ts:373` reads `bumperTotal || JACKPOT_BUMPERS`, so a
+    /// total left at zero does not disable the jackpot — it retargets it at the
+    /// constant, and the floor's jackpot then needs a number of bumpers the floor
+    /// may not have. Measured: 23/40/41.
+    #[test]
+    fn the_jackpot_counts_this_floors_bumpers() {
+        for (level, seed, _) in EMBEDDED {
+            let f = load(*level, *seed).unwrap();
+            let parts = sim_parts(&f.grid, &f.plan);
+            let bumpers = parts
+                .iter()
+                .filter(|p| p.kind == pk_core::pinball::PartKind::Bumper)
+                .count();
+            let planned = f.plan.parts.iter().filter(|p| p.kind == "bumper").count();
+            assert_eq!(bumpers, planned, "L{level} lost bumpers in the mapping");
+            assert!(bumpers > 0, "L{level} has no bumpers to light");
+        }
+    }
+
+    /// The inert kinds are counted and named, not silently dropped.
+    #[test]
+    fn the_unhonoured_parts_are_reported() {
+        let f = load(3, 1).unwrap();
+        let inert = unhonoured_part_kinds(&f.plan);
+        assert!(
+            !inert.is_empty(),
+            "L3 carries P1 verbs that have not landed"
+        );
+        let counted: usize = inert.iter().map(|(_, n)| n).sum();
+        let honoured = sim_parts(&f.grid, &f.plan).len();
+        assert_eq!(
+            counted + honoured,
+            f.plan.parts.len(),
+            "every planned part is either honoured or reported inert — no part \
+             may fall between the two"
+        );
+        for (kind, _) in &inert {
+            assert!(
+                INERT_PART_KINDS.contains(&kind.as_str()),
+                "{kind} was reported inert but is not on the list"
+            );
+        }
+    }
+
+    /// THE ACCEPTANCE TEST: the ball hits a bumper and the bumper answers.
+    ///
+    /// Every other test here proves the mapping is faithful. This one proves the
+    /// RIDE fires — that `touch_pinball_parts` reaches a part, deflects the
+    /// player and books the hit. Before the wiring it could not: `sim.parts` was
+    /// empty, so the loop returned at its first line on every frame of every
+    /// floor, and all of that was invisible to a green suite.
+    #[test]
+    fn a_bumper_kicks_the_ball_that_touches_it() {
+        let f = load(3, 1).unwrap();
+        let parts = sim_parts(&f.grid, &f.plan);
+        let bumper = parts
+            .iter()
+            .find(|p| p.kind == pk_core::pinball::PartKind::Bumper)
+            .expect("L3 has bumpers");
+        let (bx, bz) = (bumper.x, bumper.z);
+
+        let mut sim = pk_core::state::SimState::new(f.grid.clone(), (bx, bz), 7);
+        sim.parts = parts;
+        sim.bumper_total = 1;
+        // Stand ON the bumper with momentum, which is what a ball arriving does.
+        sim.player.mom_speed = 6.0;
+        sim.player.mom_x = 1.0;
+        sim.player.mom_z = 0.0;
+
+        let hits_before = sim.parts.iter().map(|p| p.hits).sum::<i32>();
+        pk_core::pinball::touch_pinball_parts(&mut sim, true, 6.0, (0.0, 0.0));
+        let hits_after = sim.parts.iter().map(|p| p.hits).sum::<i32>();
+
+        assert!(
+            hits_after > hits_before,
+            "the ball stood on a bumper at ({bx},{bz}) and nothing fired — \
+             the parts are drawn but not simulated"
+        );
+        assert!(
+            sim.player.bounce_combo > 0.0,
+            "a part fired but `on_part_trigger` never ran: combo is still 0"
+        );
+    }
+
+    /// The same touch against an EMPTY parts list does nothing — the state this
+    /// wiring replaced. Without this, the test above could pass for a reason
+    /// that has nothing to do with the parts being installed.
+    #[test]
+    fn an_unwired_sim_is_the_diorama_this_replaced() {
+        let f = load(3, 1).unwrap();
+        let parts = sim_parts(&f.grid, &f.plan);
+        let bumper = parts
+            .iter()
+            .find(|p| p.kind == pk_core::pinball::PartKind::Bumper)
+            .unwrap();
+        let mut sim = pk_core::state::SimState::new(f.grid.clone(), (bumper.x, bumper.z), 7);
+        // parts deliberately LEFT EMPTY — main.rs before this change.
+        sim.player.mom_speed = 6.0;
+        sim.player.mom_x = 1.0;
+        pk_core::pinball::touch_pinball_parts(&mut sim, true, 6.0, (0.0, 0.0));
+        assert_eq!(
+            sim.player.bounce_combo, 0.0,
+            "an empty parts list must be inert — if this fires, the test above \
+             proves nothing about the wiring"
+        );
     }
 
     /// Every torch mounts on a real wall, and stands on a real floor tile.

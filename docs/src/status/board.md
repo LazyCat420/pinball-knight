@@ -5,6 +5,40 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — 4A-1: the parts the dungeon DRAWS are now the parts the ball
+  HITS.** `pk_core::pinball` — 1,027 lines, fixture-gated, ticked every frame
+  since 08-09 — was running against `parts: Vec::new()` on every floor. Nothing
+  in pk-game ever wrote `sim.parts` (`grep -rn "pinball::" crates/pk-game/src/*.rs`
+  returned **zero hits**), while `authored_render` drew all 102 of L3-s1's
+  bumpers and boosters. The floor was a diorama: `touch_pinball_parts` returned
+  at its first line, every frame, and **160 pk-game tests plus five bit-exact
+  fixture suites were green throughout.** Four things worth keeping:
+  - **The oracle's conversion is `createPinballParts` (`render/pinball-parts.ts:892-955`)
+    and it is a transcription, not a design**: `tileCenter(g,i,j)` gives `x`/`z`
+    and `dirX`/`dirZ` are `dirI`/`dirJ` **verbatim**. The repair that suggests
+    itself — round the direction — points a `boostcurve` at a cardinal the ball
+    is not thrown along.
+  - **`part.i` is the TILE `i`, not an index.** It seeds
+    `spin_pad_phase(elapsed, i)`, which the deflection in `touch_pinball_parts`
+    AND the rotor's rotation (`pinball-parts.ts:1260`) both read — so an index
+    there desynchronises every spinpad from its own art, silently.
+  - **Ten of the seventeen exported kinds are INERT** (`target`, `rollover`,
+    `jumppad`, `trapdoor`, `pit`, `firevent`, `electric`, `lamp`, `ramp`,
+    `glove`) — they wait on P1's remaining verbs. They are named in
+    `INERT_PART_KINDS` and counted in the install log rather than dropped, and
+    the `_ => None` arm is kept SEPARATE from that list purely so an eighteenth
+    kind from the oracle fails a test instead of joining them.
+  - **`bumper_total` is the jackpot's denominator and `pinball-collide.ts:373`
+    reads `bumperTotal || JACKPOT_BUMPERS`** — so a total left at 0 does not
+    disable the jackpot, it silently retargets it at the constant.
+
+  Sabotage sweep, **4 injected, 4 caught**: index-for-tile-`i` → the coord test;
+  rounded direction → the unit-vector test; bumpers silently dropped → three
+  tests including the accounting one; an unknown 18th kind → the `_` arm's test,
+  by name. The acceptance test drives a ball onto a bumper and asserts it kicks,
+  **paired with one that asserts an EMPTY parts list stays inert** — without the
+  pair, the first proves nothing about the wiring. 820 workspace tests green.
+
 - **2026-08-11 — The tavern is 1:1: all seven stations do what the old game
   does there.** The dealer (rules + a 100-PNG card-face bake + a three-tab
   screen) and the gambler's cabinet (four games over the 4,123 lines of rules
