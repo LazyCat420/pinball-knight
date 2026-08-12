@@ -79,7 +79,8 @@ missing: `maze/build.ts` 1,898, `render/pinball-parts.ts` 1,611, `state.ts`
 | Gate | Command | Result |
 |---|---|---|
 | workspace tests | `cargo test --workspace` | **505 passed, 1 FAILED** — see §5 I-1 (fixed on this branch) |
-| browser parity | `node scripts/pk-check.mjs` | **ALL GATES PASSED**, console clean, render FPS 31.3 (debug wasm) |
+| browser parity (debug wasm) | `node scripts/pk-check.mjs` | **ALL GATES PASSED**, console clean, render FPS 31.3 |
+| browser parity (**release** wasm) | `trunk build --release` then `pk-check --no-build` | **2 GATES FAILED**, twice — see §5 I-7. FPS 32.1 |
 | oracle drift | `bash scripts/pk-drift.sh` | clean — *over `src/` only*, see §5 I-2 |
 | dungeon A/B | `node scripts/pk-ab-dungeon.mjs --no-build --level 3 --seed 1` | mean **30.2**, p95 77, over32 **33.8%** |
 | intro A/B | `node scripts/pk-ab-intro.mjs --no-build` | five phases, table below |
@@ -196,29 +197,57 @@ reference. The ledger reads 100% or the cutover does not happen.
 The checklist has carried "*perf baseline page in docs: record FPS/frame-time
 from pk-check per commit*" unchecked since P0. Today the entire performance
 story is one line of pk-check output — `render FPS: 31.3` — with **no budget, no
-history, no scene breakdown, and no release build behind it**. Three of today's
-numbers (31.3 fps in pk-check, 32.1 ms in the dungeon banner, 41.2 ms in the
-intro's shatter frame) are all *debug* wasm, which the README says is several
-times slower than the shipped build: they are numbers about the build, not about
-the game.
+history and no scene breakdown**. Today's other two numbers (32.1 ms in the
+dungeon banner, 41.2 ms in the intro's shatter frame) come from the same debug
+build.
 
-Three layers, cheapest first. Each is startable today.
+The obvious objection — *debug is several times slower than the shipped build,
+so these are numbers about the build* — was tested rather than assumed, and it
+is **false**: a release wasm build measures **32.1 fps against debug's 31.3**.
+Whatever costs 31 ms a frame is not the Rust build, and B1 below rules out the
+sim as well. So the suite is not a nice-to-have that follows the port; it is the
+only way to find out where the frame actually goes.
 
-### B1 — `cargo bench`: the sim, headless and deterministic
+Three layers, cheapest first. **B1 is built and its first baseline is below**;
+B2 and B3 are specified and unstarted.
 
-Criterion benches in `pk-core` (no GPU, so CI can own them):
+### B1 — the sim, headless and deterministic — ✅ **BUILT**
 
-| Bench | Why it is the one to measure |
-|---|---|
-| `simulate()` one tick, at rest / at pinball speed | sub-stepping is the cost cliff, and it only appears at speed |
-| `build_track_floor` per pass, per level | the generator is 23 passes and nobody knows which one is expensive |
-| `move_circle` against shaped tiles and arcs | the innermost loop of the whole game |
-| `flow_step` over 87×61 with 72 agents | the horde's steering, before there is a horde to slow down |
-| `js_pow` / `js_hypot` vs `std` | **the price of determinism**, which is currently unknown and is being paid on every target |
+`cargo run --release -p pk-core --example perf_suite` (`--json` for a machine
+row, `--reps N` for more samples). An example rather than `cargo bench`, because
+the bench harness is nightly-only and the workspace has no criterion; one
+dependency is a real cost for a table of medians. Every case runs N reps and
+prints **median, min, max and spread**, because on a shared box a single number
+is not a measurement and the spread is what says whether the run was clean.
 
-Report first, ratchet later: a budget is set from a measured baseline, never from
-a wish. On this box a bench is not a datapoint until its own variance is known —
-three runs, publish the spread, then set the band.
+**First baseline — release, 5 reps, L3 seed 1 (87×61, 3,482 walkable), box at
+load ~5:**
+
+| case | median | spread | what it says |
+|---|---:|---:|---|
+| `simulate_idle` | 9.6 ns | 14% | |
+| `simulate_walk` | 44.9 ns | 11% | |
+| `simulate_pinball` | **299.2 ns** | 7% | the ride costs **6.7× the walk** — that is `move_circle`'s sub-stepping, and it is the reason the case exists |
+| `move_circle` | 32.4 ns | 7% | |
+| `build_floor_L1 / L3 / L5` | 3.31 / 4.20 / **5.28 ms** | 3-4% | nine of twenty-three passes. Whatever the remaining fourteen cost, they are added to this — the floor build is a loading-screen budget, and this is the first number it has ever had |
+| `bfs_distances` | 16.5 µs | 7% | |
+| `flow_step_x1000` | 7.6 µs | 8% | 7.6 ns per steering decision — 72 monsters at 60 Hz is **33 µs/s**, so the horde's AI is free and will not be what slows the game |
+| `js_pow` vs `std_powf` | 36.8 ns vs 8.7 ns | 7% / 2% | **the price of determinism, measured for the first time: 4.2×.** It is worth paying — it is why the exe, wasm and native agree — but it is now a number instead of a shrug |
+| `js_hypot` vs `std_hypot` | 2.7 ns vs 3.9 ns | 6% / 3% | and the other twin is *faster* than std |
+
+**The finding that reorders this whole section: the sim is not where the frame
+goes.** A frame at the measured 32 fps is 31 ms. The sim's most expensive tick —
+the pinball ride, sub-stepping — is 0.0003 ms of it, about **one part in
+100,000**. Every remaining millisecond is render, and no instrument in this
+project can currently see inside it. That is B2's job, and it is now the only
+performance work with any evidence behind it.
+
+The case that could most easily have lied is guarded: `simulate_pinball` asserts
+the knight actually moves more than a walk could before it times anything,
+because `update_pinball` returns at its first line when `mom_speed <= 0` and a
+mis-armed setup would have timed the walking branch under a pinball label.
+
+No budgets are asserted yet. Three green baselines on a quiet box, then band.
 
 ### B2 — the frame-time series, measured in-engine
 
@@ -229,6 +258,14 @@ sampled frame time misses exactly the excursions a budget is about.
 
 Alongside the timings, the counts that explain them: entities, merged meshes,
 lights, materials, and draw calls where Bevy's diagnostics expose them.
+
+**Its first question is already set by B1**: 31 ms a frame, of which the sim is
+0.0003 ms and the build accounts for none of it. So B2's first row must split
+the frame — CPU extract/queue vs GPU — and the first suspect to price is the
+post chain at 1920×1080, because it is the one pass that costs the same whether
+the dungeon has 102 parts on it or none. A scene-count sweep (empty floor vs
+L5's 121 parts) separates "the room is expensive" from "the chain is", and it is
+one afternoon's work with the accumulator in place.
 
 `pk-check` drives it across the scenes — intro (per phase), tavern, dungeon
 L1/L3/L5 authored, dungeon generated — and appends one row per run to
@@ -274,6 +311,7 @@ rather than wiring.
 | **I-3** | **The intro rig's precision is unstated on the fast phases.** `bonk` +5.1 and `shatter` +4.0 across a day with no art touched. At N=1 per side, a 4-point improvement claimed on either phase is indistinguishable from noise. | open — Stage 2-2 |
 | **I-4** | `coverage --todo` printed 40 of 210 files with no note, which reads as a complete work list. | **fixed on this branch**: `--by-dir`, `--all`, and a line naming the withheld files and lines |
 | **I-5** | **`pk-ab-dungeon` never checks that the two sides photograph the same place.** It reads legacy's `probe().player` and prints only `level` and `stairs`. Today they do agree — both frames are centred on start (75, 32), verified by eye — so 30.2 is a real number; nothing keeps it that way, and a start-tile divergence would silently turn every future number into a comparison of two different rooms. | open — assert pose equality and **throw rather than shoot**, the same repair that fixed the intro rig |
+| **I-7** | **`pk-check` has only ever been run against a DEBUG build, and the RELEASE build fails two of its gates.** Reproduced twice on `trunk build --release`: *intro hands off to the tavern hub* and *tavern probe carries a pose (no probe)*. On the same run the click-skip path into the tavern PASSES and every tavern gate after it passes, so the hub does build — the failure is at the natural-handoff **sampling edge**: the loop takes its one reading at the first poll where `intro === null`, and on a faster build that instant can land before `TavernRes` exists. Stated as the likely mechanism, not as a diagnosis; it needs the poll widened and one re-run to settle. Second observation from the same pair of runs: the sim-rate gate reads **66 Hz on debug and 72 Hz on release** for a sim that should be fixed-step. | open — and it is the gate the whole project treats as the definition of "green" |
 | **I-6** | Both rigs report ~17 failed sprite requests on the *oracle* side and warn "a side missing its art is not a side to judge". They are the oracle's own optional facings — `boot/sheets.ts` says *"W is drawn as a flipped E"* and missing facings reuse what loaded — and **neither tree ships `-N` sheets**. The warning is noise that will cost someone an investigation. | open — allowlist the optional facings so a real 404 stands out |
 
 ---
@@ -290,9 +328,16 @@ page's numbers depend on them, and one is new:
   (I-2).
 - **ASSUMPTION-4 (new) — an A/B mean is a comparison of the same scene.** It is
   checked by eye today and by nothing automatically (I-5).
-- **RISK-5 (new) — every performance number in the project is a debug number.**
-  Until B2 records a release row, "31 fps" is a fact about `--dev` and cannot be
-  used to justify any optimisation.
+- ~~**RISK-5 — every performance number in the project is a debug number.**~~
+  **Measured today, and the assumption behind it was wrong.** A release wasm
+  build renders at **32.1 fps against debug's 31.3** — the frame rate is not
+  build-bound at all. With B1 showing the sim's worst tick at 0.0003 ms of a
+  31 ms frame, **the cost is entirely render-side and nothing in this project can
+  see inside it**. The standing risk is now sharper: *no instrument exists for
+  the 31 ms that matters*, which is B2.
+- **RISK-6 (new) — the release build is ungated.** Every green `pk-check` in the
+  project's history is a debug-build green, and the release build fails two of
+  its gates today (I-7). The shipped artefact has never passed the gate.
 
 ## 7. Rollback
 
