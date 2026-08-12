@@ -913,13 +913,44 @@ async function main() {
       // the wall behind the DESCEND board — which reads as "the room changed",
       // not as "the harness steps too coarsely". 140 ms halves the overshoot and
       // the correction below absorbs the rest.
+      // ⚠️ **AND SHORTENING THE LEG WAS A MITIGATION, NOT A FIX.** The comment
+      // above is right about the cause and stops one step short of it: the
+      // probe publishes every FIVE frames, which at the release build's ~32 fps
+      // is **156 ms**, against a **140 ms** leg. The feedback sample is older
+      // than the control step, so the loop is marginal by construction and
+      // whether it converges is a matter of phase luck. Measured on five
+      // release runs of this gate: **four green, one red** — the north leg
+      // overshooting into the wall behind the board, reported as three failed
+      // gates and reading like "the room changed".
+      //
+      // The repair is the same one B2 is built around and the same one the
+      // intro-handoff gate just took: **do not sample, wait for a fresh
+      // sample.** `freshPose` returns a pose published strictly AFTER the
+      // moment it is called, so a reading can never pre-date the leg that
+      // produced it. In the tavern there is no `Sim`, so `publish_stats`
+      // advances `tick` once per PUBLISH — which makes `tick` changing the
+      // exact "a new sample exists" signal this needs.
+      //
+      // Bounded, and it falls back to whatever it has rather than hanging: a
+      // stalled probe must fail the gate it feeds, not the whole run.
+      const freshPose = async (timeoutMs = 800) => {
+        const before = (await pkTav())?.tick;
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const s = await pkTav();
+          if (s && s.tick !== before) return s.tavern;
+          await tavPage.waitForTimeout(16);
+        }
+        return (await pkTav())?.tavern;
+      };
       const walkUntil = async (keys, done, maxSteps = 40, ms = 140) => {
+        let p = await freshPose();
         for (let i = 0; i < maxSteps; i++) {
-          const p = (await pkTav()).tavern;
           if (!p || done(p)) return p;
           await hold(keys, ms);
+          p = await freshPose();
         }
-        return (await pkTav()).tavern;
+        return p;
       };
       const leg = (name, p) =>
         console.log(`  note  leg ${name}: x=${p?.x?.toFixed(2)} z=${p?.z?.toFixed(2)} focus=${p?.focus}`);

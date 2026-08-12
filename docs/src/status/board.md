@@ -5,9 +5,58 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
-- **2026-08-12 — I-7 CLOSED: the RELEASE build passes pk-check, 27 gates, 0
-  failures — the first time in this project's history. All three failures were
-  in the HARNESS, not in the shipped artefact.**
+- **2026-08-12 — ⚠️ CORRECTION to the entry below: "27 gates, 0 failures,
+  reproduced twice" WAS WRONG. It was 27/0 once and 24/3 the second time.**
+  The claim was made by grepping four patterns out of an output file that was
+  **still being written**, seeing four `ok` lines, and calling it a clean
+  repeat. The grep also asked for `ALL GATES|FAILED` and matched NEITHER — that
+  absence was the evidence the run had not finished, and it was read as clean.
+  **Silence was treated as success**, in the same session that had already
+  written the opposite rule into `perf.rs` about `PK_PERF_LOG`.
+  - **The real rate, five release runs: four green, one red.** The three gates
+    I-7 named — `sim ticking`, `intro hands off`, `tavern probe carries a pose`
+    — were green in **5 of 5**, so that fix stands. The red run failed
+    elsewhere: the scripted walk to the DESCEND board.
+  - **The walk is not randomly flaky, it is marginal by construction.** Its own
+    comment already says *"the probe publishes every five frames, so each check
+    reads a pose up to that far in the past"* — and then mitigates by
+    shortening the leg to 140 ms. At the release build's ~32 fps five frames is
+    **156 ms**: *the feedback sample is older than the control step*, so
+    convergence is phase luck. Fixed by making the sample fresh rather than the
+    step small — `freshPose()` waits for `tick` to advance (in the tavern there
+    is no `Sim`, so `publish_stats` advances it once per PUBLISH, which is
+    exactly the "a new sample exists" signal). Same repair as the intro-handoff
+    gate and as B2 itself: **do not sample, wait.**
+  - ⚠️ **THE LEG TRACES REFUTED THE FIRST DIAGNOSIS AND GAVE A BETTER ONE.** The
+    failing run's NORTH leg exited at `z=-1.18` against a `z <= -4.4` target —
+    it never arrived, rather than overshooting: 1.45 units in 5.6 s of held
+    input, drifting WEST while pressing north, i.e. grinding along a wall. The
+    cause is one leg earlier. The WEST leg overshot to `x=-5.43` and pinned the
+    knight against the west wall.
+  - **And the fix's effect is on VARIANCE, not on the mean** — which is what a
+    determinism repair should look like, and is not what was predicted.
+    Overshoot past the `-4.4` target, five runs each on the same release dist:
+
+    | | samples | mean | spread |
+    |---|---|---:|---:|
+    | before | 0.05 · 1.03 · 0.72 · 0.15 · 0.21 | 0.43 | **0.98** |
+    | after | 0.57 · 0.51 · 0.66 · 0.58 · 0.58 | 0.58 | **0.15** |
+
+    The mean rose slightly; the spread collapsed **6.5×**. The failure was
+    always the TAIL — 1.03 stranded the knight, 0.72 passed — and the post-fix
+    maximum is 0.66, under the known-passing 0.72.
+  - ⚠️ **The margin is inferred, not proven.** The exact stranding threshold is
+    somewhere in 0.72..1.03 and nobody has measured it. 5/5 green after against
+    4/5 before is ALSO not significant on its own — at a 20% true rate a clean
+    five would happen a third of the time. The evidence here is the variance
+    collapse and the mechanism, not the run count.
+  - So **I-7 is closed on its three named gates and the release gate's
+    reliability is a separate, now-fixed defect.** Numbers below are the
+    before; the after is measured on the same release `web/dist`.
+
+- **2026-08-12 — I-7: the RELEASE build passes pk-check, 27 gates, 0
+  failures on a clean run — the first time in this project's history. All three
+  of I-7's failures were in the HARNESS, not in the shipped artefact.**
   Every green `pk-check` on record was a debug green, and the release build was
   carried as the project's top open risk. Pointed at it today
   (`trunk build --release` + `pk-check --no-build`) it failed **three** gates,
