@@ -30,6 +30,7 @@
 //! - Hit testing happens in CONTENT space (`origin_y`) so scrolled lists don't
 //!   answer clicks `offset` pixels off (im.ts's debug-console war story).
 
+pub mod cards;
 pub mod font;
 pub mod icons;
 pub mod im;

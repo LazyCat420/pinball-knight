@@ -501,6 +501,46 @@ pub fn draw_icon(f: &mut UiFrame, icon: &crate::icons::Icon, x: f64, y: f64, siz
     draw_icon_inner(f, icon, x, y, size, None)
 }
 
+/// Blit a CARD face at `(x, y)`, `w` UI px wide, at the face's own aspect.
+///
+/// ── WHY THIS IS NOT `draw_icon` ──
+/// `draw_icon` is square by construction: it derives ONE exact side `d` from
+/// `icon.w` and blits `d × d` into a square box. A card is 56×78. Forcing one
+/// through that path would square it — and squaring a card is not a small
+/// error, it is losing the aspect that makes it read as a card at all.
+///
+/// ── WHY THERE IS NO `exact_icon_size` HERE ──
+/// That function finds the largest size at which a native dimension divides
+/// exactly, because a fractional nearest resample deletes whole rows. Cards
+/// dodge the problem instead of solving it: each display width is a SEPARATE
+/// filtered downscale from the 512px master (`crate::cards::WIDTHS`), so the
+/// caller picks a tier with `cards::baked_width` and this blits it 1:1. When
+/// `w * zoom` equals the face's own width — the case the dealer's layout is
+/// built to produce — the blit is a straight copy and nothing resamples.
+pub fn draw_card(f: &mut UiFrame, face: &crate::cards::CardFace, x: f64, y: f64, w: f64) {
+    let z = f.zoom as i64;
+    let want = (px(w) * z).max(0);
+    if want <= 0 || face.w == 0 {
+        return;
+    }
+    // Height from the FACE's own aspect: the pixels that exist are the
+    // authority on their own shape, and rounding here rather than re-deriving
+    // from CARD_H/CARD_W keeps the blit square-pixelled at every tier.
+    let h = (want * i64::from(face.h) + i64::from(face.w) / 2) / i64::from(face.w);
+    f.p.blit_rgba(
+        &face.rgba,
+        face.w,
+        face.h,
+        px(x) * z,
+        (px(y) - f.shift) * z,
+        want,
+        h,
+        f.global_alpha,
+        None,
+        f.device_clip,
+    );
+}
+
 /// The same blit, in ONE colour — the icon's alpha as a stencil.
 ///
 /// For a row whose subject is the ART IN A DIFFERENT MATERIAL. The armorer's

@@ -31,7 +31,7 @@ Sources on the oracle side, all under
 | **Manage Loadout** (`armory`) | 3 plate slots, repair-all, 4 elemental sets | ✅ **DONE** — rules in `pk_core::economy::armory`, art from the icon bake, silhouettes for the sets |
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
-| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **RULES UNBLOCKED** — `pk_core::cards` is ported; still needs `economy::dealer`, a screen, and a card-face bake |
+| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **RULES + ART DONE, NO SCREEN** — `pk_core::cards`, `economy::dealer` and the card-face bake are all in; `screens::dealer` is the remaining work |
 | **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | 🟡 **RULES DONE, NO UI** — `pk_core::gambler` is complete with 250 tests; the cabinet screen is unbuilt |
 
 ## Where the port DEVIATES, and why
@@ -79,9 +79,30 @@ not yet hand the player anything:
   `|_| 0` from the day the forge shipped, which made the stable sort a no-op
   and "rarest" silently mean "socket order". An unknown id ranks −1, below
   common, and is dropped first — the oracle's `indexOf(undefined)`, kept.
-- **The dealer still needs its screen and its shop rules.** `cards.ts` was the
-  blocker; `economy::dealer` and `screens::dealer` are the remaining work.
-- **Card faces are a separate bake.** A card in the UI is `cardFaceAt()`, a
-  different renderer at a different aspect — not an `itemIcon`.
+- **The dealer still needs its SCREEN.** `cards.ts` was the blocker;
+  `economy::dealer` shipped with the shop rules, and `screens::dealer` is now
+  the only remaining piece of that counter.
+- ✅ **CARD FACES ARE BAKED** (2026-08-11) — `legacy/scripts/bake-card-faces.mjs`
+  → `assets/gui/cards/`, 100 PNGs / 2.1MB, read by `pk_gui::cards` and blitted
+  by `im::draw_card` (non-square; `draw_icon` is square-only and cannot draw a
+  card). A card id encodes level and shine, so the full space is 25 × 10 × 2 =
+  500 faces; what ships is 100, and the split was measured rather than reasoned:
+  - **level is not baked** — it moves 0.6% of a 56px face against an 8.2%
+    control for two *different* cards, and levels 1/7/10 are indistinguishable
+    on screen. `cards::level_seal_at` gives the port the seal's position.
+  - **shine is baked** — it moves 11.7%, more than swapping to a different card
+    entirely, and is drawn from the face's own `rand()` stream so it cannot be
+    composited on afterwards.
+  - **both display sizes are baked** (56 and 112, the vendor box's zoom-2
+    ceiling). 716/512 does not survive integer scaling, so there is no single
+    master that downscales exactly; a 2× nearest blit of the 56 tier is
+    unreadable where the 112 bake reads its title and every stat row.
+- ⚠️ **The bake's first palette gate could not fire.** It was copied from the
+  icon bake, and a sabotage run showed it passing on all 76 faces a greyscale
+  palette destroys — `monsterPortrait()` installs the palette itself, and the
+  art window is mostly frame and glow that never touch the palette. The
+  fallback also collapses portraits toward BLACK rather than mid-grey, which no
+  spread-based statistic sees. The shipped gate counts lit pixels on the
+  SUBJECT box and is verified to fail closed. See the script's header.
 - **The run summary has no economy behind it** — gear and purse are em-dashes.
 - **No persistence.** Nothing survives a relaunch.
