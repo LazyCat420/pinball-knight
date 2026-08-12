@@ -308,7 +308,10 @@ fn anvil(f: &mut UiFrame, body: &mut Rect, w: &WeaponRow, act: &mut Option<Forge
         // panel reads as a dashed RULE rather than as a meter — measured on the
         // first screenshot of this counter, where it ran 335px and looked like
         // a typographic line under the stats.
-        let bar = rect(tx + 96.0, r.y + 30.0, 96.0, 6.0);
+        // x + 120, not + 96: "hits for 2.7" is twelve 8px characters, i.e.
+        // exactly 96 wide, so the bar started ON the last glyph. Measured on
+        // the confirm screenshot.
+        let bar = rect(tx + 120.0, r.y + 31.0, 96.0, 6.0);
         crate::im::bar(
             f,
             &bar,
