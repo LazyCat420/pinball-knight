@@ -59,6 +59,9 @@ use pk_gui::screens::alchemist::{
     AlchTab, AlchemistAction, AlchemistView, PouchChip, RecipeRow, ShelfRow,
 };
 use pk_gui::screens::armory::{ArmoryAction, ArmoryView, PlateRow, StyleRow};
+use pk_gui::screens::dealer::{
+    DealerAction, DealerTab, DealerView, OfferCell, SocketCell, StashCell, WeaponGroup,
+};
 use pk_gui::screens::forge::{ForgeAction, ForgeView, WeaponRow};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
@@ -277,10 +280,23 @@ pub struct TavernRes {
     /// The shatter roll's stream. Seeded, so a shatter is replayable and a
     /// screenshot of one can be reproduced — `Math.random()` in the oracle.
     pub forge_rng: pk_core::rng::Mulberry32,
-    /// Cards handed back by a sacrifice or saved from a shatter. Nothing reads
-    /// it yet — `cards.ts` is not ported — but dropping them on the floor
-    /// instead would make the insurance the player PAID for a lie.
+    /// Cards handed back by a sacrifice or saved from a shatter, and bought
+    /// from the dealer. The dealer's counter reads and writes it.
     pub card_stash: Vec<String>,
+    /// The dealer's three offers. Rolled on the first visit and after a reroll;
+    /// the oracle keeps the bar between visits, so this is not per-open state.
+    pub shelf: pk_core::economy::dealer::Shelf,
+    /// Has the shelf ever been rolled? An EMPTY shelf is a real state (you can
+    /// buy all three), so a bool is the only way to tell "sold out" from
+    /// "never stocked" — rolling on `is_empty` would restock it for free.
+    pub shelf_stocked: bool,
+    /// Which of the dealer's three tabs is open, which stash card is picked,
+    /// and which stash page is showing. All THIS VISIT's, like `alch_tab`.
+    pub dealer_tab: DealerTab,
+    pub dealer_picked: Option<usize>,
+    pub dealer_page: usize,
+    /// The shelf's stream. Seeded like the forge's, so a shelf is replayable.
+    pub dealer_rng: pk_core::rng::Mulberry32,
     /// The counter's last `ActionResult`, flashed under its heading.
     pub shop_message: Option<String>,
     pub stats: TavernStats,
@@ -817,6 +833,12 @@ fn setup_tavern(
         weapon: Some(dev_weapon()),
         forge_armed: None,
         forge_rng: pk_core::rng::Mulberry32::new(0x5EED_F02E),
+        shelf: pk_core::economy::dealer::Shelf::default(),
+        shelf_stocked: false,
+        dealer_tab: DealerTab::Shelf,
+        dealer_picked: None,
+        dealer_page: 0,
+        dealer_rng: pk_core::rng::Mulberry32::new(0x0DEA_1E12),
         card_stash: Vec::new(),
         shop_message: None,
         stats,
@@ -1960,6 +1982,86 @@ fn tavern_frame(
             (_, None) => {}
         }
     }
+    // ── The card dealer's action ──
+    if let Some(action) = layer.dealer_action.take() {
+        use pk_core::economy::dealer::{buy_card, reroll_bar, socket_stash_card, unsocket_card};
+        let TavernRes {
+            wallet,
+            shop_message,
+            open_panel,
+            card_stash,
+            shelf,
+            weapon,
+            dealer_tab,
+            dealer_picked,
+            dealer_page,
+            dealer_rng,
+            stats,
+            ..
+        } = &mut *res;
+        match action {
+            DealerAction::Tab(t) => *dealer_tab = t,
+            DealerAction::Buy(i) => {
+                *shop_message = buy_card(shelf, card_stash, i, wallet);
+            }
+            DealerAction::RerollShelf => {
+                let mut rng = *dealer_rng;
+                *shop_message = reroll_bar(shelf, stats.floor, wallet, &mut || rng.next_f64());
+                *dealer_rng = rng;
+            }
+            // A second press on the picked card un-picks it — the oracle's
+            // `u.picked = u.picked === i ? -1 : i`.
+            DealerAction::Pick(i) => {
+                *dealer_picked = if *dealer_picked == Some(i) {
+                    None
+                } else {
+                    Some(i)
+                };
+            }
+            DealerAction::Socket(wi) => {
+                // The screen cannot know whether anything is picked; it just
+                // reports the press. Saying so is this layer's job.
+                match (*dealer_picked, weapon.as_mut()) {
+                    (Some(i), Some(w)) if wi == 0 => {
+                        *shop_message = socket_stash_card(card_stash, w, i);
+                        // ⚠️ THE PICK MUST CLEAR ON SUCCESS AND ONLY THEN.
+                        // `socket_stash_card` REMOVES the card from the stash,
+                        // so every index after it shifts down by one — a stale
+                        // `picked` would now point at a DIFFERENT card. On a
+                        // refusal nothing moved, so the pick survives and the
+                        // player can try another slot.
+                        if shop_message.is_none() {
+                            *dealer_picked = None;
+                        }
+                    }
+                    (Some(_), _) => {}
+                    (None, _) => *shop_message = Some("pick a stash card first".into()),
+                }
+            }
+            DealerAction::Unsocket(wi, si) => {
+                if let (Some(w), 0) = (weapon.as_mut(), wi) {
+                    let mut rng = *dealer_rng;
+                    *shop_message = unsocket_card(w, card_stash, si, &mut || rng.next_f64());
+                    *dealer_rng = rng;
+                    // The stash just GREW, and a pick that pointed into it is
+                    // still valid — but a card was also destroyed or re-rolled,
+                    // so the safe move is to drop the pick rather than leave it
+                    // pointing at something the player did not choose.
+                    *dealer_picked = None;
+                }
+            }
+            DealerAction::Page(p) => *dealer_page = p,
+            DealerAction::Close => {
+                *open_panel = None;
+                *shop_message = None;
+            }
+        }
+        // A pick that outlived its card — the stash shrinks on a socket and on
+        // nothing else, but clamping here means no later reader has to.
+        if dealer_picked.is_some_and(|i| i >= card_stash.len()) {
+            *dealer_picked = None;
+        }
+    }
     match res.open_panel {
         None => {
             layer.close(ScreenId::RunSummary);
@@ -1967,11 +2069,13 @@ fn tavern_frame(
             layer.close(ScreenId::Armory);
             layer.close(ScreenId::Alchemist);
             layer.close(ScreenId::Forge);
+            layer.close(ScreenId::Dealer);
             set_view(&mut views.summary, None);
             set_view(&mut views.panel, None);
             set_view(&mut views.armory, None);
             set_view(&mut views.alchemist, None);
             set_view(&mut views.forge, None);
+            set_view(&mut views.dealer, None);
         }
         Some(Panel::Summary) => {
             set_view(
@@ -2108,6 +2212,73 @@ fn tavern_frame(
                 }),
             );
             layer.open(ScreenId::Alchemist);
+        }
+        // The card dealer. The shelf is rolled ONCE per run here, not per
+        // open: the oracle keeps its bar between visits, and re-rolling on
+        // every walk-up would make `PRICE_REROLL_BAR` free.
+        Some(Panel::Vendor("dealer")) => {
+            use pk_core::cards::{card_base, card_def, card_level, is_shiny_card};
+            use pk_core::economy::dealer::{price_card, PRICE_REROLL_BAR};
+            if !res.shelf_stocked {
+                let floor = res.stats.floor;
+                let mut rng = res.dealer_rng;
+                pk_core::economy::dealer::roll_bar_offers(&mut res.shelf, floor, &mut || {
+                    rng.next_f64()
+                });
+                res.dealer_rng = rng;
+                res.shelf_stocked = true;
+            }
+            let gold = res.wallet.balance();
+            let cell = |id: &str| StashCell {
+                base: card_base(id).to_string(),
+                shiny: is_shiny_card(id),
+                level: card_level(id),
+            };
+            set_view(
+                &mut views.dealer,
+                Some(DealerView {
+                    tab: res.dealer_tab,
+                    gold,
+                    offers: res
+                        .shelf
+                        .offers
+                        .iter()
+                        .map(|id| {
+                            let price = card_def(id).map(|d| price_card(d.rarity())).unwrap_or(0);
+                            OfferCell {
+                                base: card_base(id).to_string(),
+                                shiny: is_shiny_card(id),
+                                level: card_level(id),
+                                price,
+                                affordable: gold >= price,
+                            }
+                        })
+                        .collect(),
+                    reroll_price: PRICE_REROLL_BAR,
+                    reroll_ok: gold >= PRICE_REROLL_BAR,
+                    // ONE group per weapon the player carries. The port has a
+                    // single weapon today (`dev_weapon`), so this is a Vec of
+                    // one — but the screen and the actions are indexed, so a
+                    // second weapon needs no change here.
+                    weapons: res
+                        .weapon
+                        .iter()
+                        .map(|w| WeaponGroup {
+                            name: w.id.label().to_uppercase(),
+                            sockets: (0..w.slot_count())
+                                .map(|i| SocketCell {
+                                    card: w.cards.get(i as usize).map(|id| cell(id)),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    stash: res.card_stash.iter().map(|id| cell(id)).collect(),
+                    picked: res.dealer_picked,
+                    page: res.dealer_page,
+                    message: res.shop_message.clone(),
+                }),
+            );
+            layer.open(ScreenId::Dealer);
         }
         // The weaponsmith. Every price and predicate is resolved here from
         // `pk_core::economy::forge`; the screen paints what it is handed.
@@ -2388,6 +2559,74 @@ fn _rect_used(_r: &LRect) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ⚠️ A REROLL MUST ADVANCE THE STREAM, OR IT SELLS THE SAME SHELF FOREVER.
+    ///
+    /// `Mulberry32` is `Copy`, so the handler takes a copy, rolls, and WRITES
+    /// IT BACK. Clippy correctly flagged the `.clone()` as redundant — but
+    /// dropping the write-back with it would leave the counter dealing three
+    /// identical cards for 15g a press, and nothing in the type system says so.
+    /// This is the guard for that write-back.
+    #[test]
+    fn rerolling_the_shelf_advances_the_seeded_stream() {
+        use pk_core::economy::dealer::{reroll_bar, roll_bar_offers, Shelf};
+        use pk_core::economy::Wallet;
+
+        let mut rng = pk_core::rng::Mulberry32::new(0x0DEA_1E12);
+        let mut shelf = Shelf::default();
+        roll_bar_offers(&mut shelf, 3, &mut || rng.next_f64());
+        let first = shelf.offers.clone();
+
+        // The handler's exact shape: copy out, roll, write back.
+        let mut wallet = Wallet::new(1000);
+        let mut copy = rng;
+        let _ = reroll_bar(&mut shelf, 3, &mut wallet, &mut || copy.next_f64());
+        rng = copy;
+        let second = shelf.offers.clone();
+
+        let mut copy = rng;
+        let _ = reroll_bar(&mut shelf, 3, &mut wallet, &mut || copy.next_f64());
+        let third = shelf.offers.clone();
+
+        assert_ne!(first, second, "the first reroll returned the same shelf");
+        assert_ne!(second, third, "the second reroll returned the same shelf");
+    }
+
+    /// ⚠️ SOCKETING REMOVES THE CARD, SO EVERY LATER INDEX SHIFTS DOWN.
+    ///
+    /// `socket_stash_card` does a `Vec::remove`. A `picked` index that survived
+    /// a successful socket would now name a DIFFERENT card — the next press
+    /// would socket something the player never chose. It must clear on success
+    /// and SURVIVE a refusal, because on a refusal nothing moved and the player
+    /// is still holding what they picked.
+    #[test]
+    fn a_successful_socket_clears_the_pick_and_a_refusal_keeps_it() {
+        use pk_core::economy::dealer::socket_stash_card;
+
+        let mut w = dev_weapon();
+        // Room for one more card, so the first socket succeeds.
+        while w.cards.len() >= w.slot_count() as usize {
+            w.cards.pop();
+        }
+        let mut stash = vec!["goblintooth".to_string(), "bloodpact".to_string()];
+        let before = stash.len();
+
+        let ok = socket_stash_card(&mut stash, &mut w, 0);
+        assert!(ok.is_none(), "expected a silent success, got {ok:?}");
+        assert_eq!(stash.len(), before - 1, "the card must LEAVE the stash");
+        // Index 0 is now what index 1 was — which is exactly why the handler
+        // clears the pick on `shop_message.is_none()`.
+        assert_eq!(stash[0], "bloodpact");
+
+        // Fill every slot, then a socket must REFUSE and leave the stash alone.
+        while (w.cards.len() as i32) < w.slot_count() {
+            w.cards.push("goblintooth".to_string());
+        }
+        let n = stash.len();
+        let refused = socket_stash_card(&mut stash, &mut w, 0);
+        assert!(refused.is_some(), "a full weapon must refuse");
+        assert_eq!(stash.len(), n, "a refusal must not consume the card");
+    }
 
     /// Insurance now saves the RAREST cards, not the first two socketed.
     ///

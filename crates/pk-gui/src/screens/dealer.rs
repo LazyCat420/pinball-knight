@@ -136,6 +136,7 @@ pub enum DealerAction {
     Unsocket(usize, usize),
     /// Turn to stash page `p`.
     Page(usize),
+    Close,
 }
 
 const SHEET_W: f64 = 560.0;
@@ -248,6 +249,14 @@ pub fn paint_dealer(f: &mut UiFrame, v: &DealerView) -> Option<DealerAction> {
         );
     }
 
+    // ── THE FOOTER IS CUT FIRST ──
+    // `body_height` budgets FOOT_H, and a BACK key drawn from whatever the tab
+    // body left over would move with the tab. Reserving the row up front keeps
+    // the way out in the same place on all three plates.
+    let foot_h = FOOT_H + GRID;
+    let foot_row = rect(body.x, body.y + (body.h - FOOT_H).max(0.0), body.w, FOOT_H);
+    body.h = (body.h - foot_h).max(HEAD_H);
+
     // ── TABS ──
     let tabs = cut_top(&mut body, TAB_H);
     let third = ((tabs.w - 12.0) / 3.0).floor();
@@ -298,6 +307,11 @@ pub fn paint_dealer(f: &mut UiFrame, v: &DealerView) -> Option<DealerAction> {
         DealerTab::Shelf => shelf(f, &mut body, v, &mut act),
         DealerTab::Sockets => sockets(f, &mut body, v, &mut act),
         DealerTab::Stash => stash(f, &mut body, v, &mut act),
+    }
+
+    let foot = rect(foot_row.x + foot_row.w - 80.0, foot_row.y, 80.0, foot_row.h);
+    if button(f, &foot, "BACK", ButtonOpts::default()) {
+        act = Some(DealerAction::Close);
     }
     act
 }
@@ -975,6 +989,36 @@ mod tests {
                     "{ch:?} (in {s:?}) is not in the baked charset — it would draw NOTHING"
                 );
             }
+        }
+    }
+
+    /// ⚠️ THE WAY OUT MUST EXIST, ON EVERY TAB.
+    ///
+    /// `body_height` budgets FOOT_H for a BACK key, and the first cut of this
+    /// screen budgeted it and never drew it — the counter had no way out at
+    /// all, and eleven tests passed. It is the last focusable on each plate, so
+    /// this walks up from the end rather than hard-coding an index that would
+    /// drift with the number of stash cards.
+    #[test]
+    fn every_tab_has_a_reachable_back_key() {
+        let mut input = empty_ui_input();
+        input.accept = true;
+        for tab in [DealerTab::Shelf, DealerTab::Sockets, DealerTab::Stash] {
+            let v = view(tab);
+            let hit = (0..40).find(|&i| paint(&v, i, input.clone()).1 == Some(DealerAction::Close));
+            let i = hit.unwrap_or_else(|| panic!("{tab:?} has NO back key at any focus"));
+
+            // …and it is ON the sheet, not merely registered somewhere.
+            let fonts = Fonts::load_embedded();
+            let mut p = Painter::new(600, 338);
+            let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, empty_ui_input(), i, 1);
+            paint_dealer(&mut f, &v);
+            let r = f.focus_rect.expect("the back key has a rect");
+            let x0 = (600.0 - SHEET_W) / 2.0;
+            assert!(
+                r.x >= x0 && r.x + r.w <= x0 + SHEET_W && r.y + r.h <= 338.0,
+                "{tab:?} BACK is off the sheet at {r:?}"
+            );
         }
     }
 

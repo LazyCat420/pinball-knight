@@ -42,6 +42,7 @@ use pk_gui::im::{empty_ui_input, Pointer};
 use pk_gui::root::{paint_stack, UiStats};
 use pk_gui::screens::alchemist::{paint_alchemist, AlchemistAction, AlchemistView};
 use pk_gui::screens::armory::{paint_armory, ArmoryAction, ArmoryView};
+use pk_gui::screens::dealer::{paint_dealer, DealerAction, DealerView};
 use pk_gui::screens::forge::{paint_forge, ForgeAction, ForgeView};
 use pk_gui::screens::intro::{
     paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
@@ -86,6 +87,8 @@ pub enum ScreenId {
     Alchemist,
     /// The weaponsmith's counter — "Forge / Repair": the anvil.
     Forge,
+    /// The card dealer's counter — "Cards": the shelf, the sockets, the stash.
+    Dealer,
 }
 
 /// WHAT the open screens say. Filled by whoever owns the scene, read here.
@@ -104,6 +107,7 @@ pub struct GuiViews {
     pub armory: Option<ArmoryView>,
     pub alchemist: Option<AlchemistView>,
     pub forge: Option<ForgeView>,
+    pub dealer: Option<DealerView>,
 }
 
 /// Assign only if the value actually differs.
@@ -143,6 +147,8 @@ pub struct GuiLayer {
     pub alchemist_action: Option<AlchemistAction>,
     /// …and the weaponsmith's.
     pub forge_action: Option<ForgeAction>,
+    /// …and the card dealer's.
+    pub dealer_action: Option<DealerAction>,
     /// Has the texture got pixels on it that the stack no longer accounts for?
     ///
     /// Set by every paint, taken by the first idle frame. Without it, closing
@@ -236,7 +242,7 @@ impl GuiLayer {
             // Both counters are modal over the walkable room and both were
             // authored in the same box, so they zoom together — two vendor
             // sheets at different scales read as two different games.
-            ScreenId::Armory | ScreenId::Alchemist | ScreenId::Forge => {
+            ScreenId::Armory | ScreenId::Alchemist | ScreenId::Forge | ScreenId::Dealer => {
                 ScreenEntry::new(id, true).with_design(600.0, 338.0, 2)
             }
         };
@@ -322,6 +328,7 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         armory_action: None,
         alchemist_action: None,
         forge_action: None,
+        dealer_action: None,
         dirty: false,
         views_gen: 0,
         last_pointer: None,
@@ -542,6 +549,7 @@ fn paint_gui(
     let mut armory_action = None;
     let mut alchemist_action = None;
     let mut forge_action = None;
+    let mut dealer_action = None;
     // Clamped, as the oracle clamps it: a backgrounded tab hands back a delta
     // of whole seconds, and stepping an animation that far in one frame skips
     // the very thing it exists to show.
@@ -581,6 +589,14 @@ fn paint_gui(
                     alchemist_action = paint_alchemist(f, v, &mut entry.scroll);
                 }
             }
+            ScreenId::Dealer => {
+                if let Some(v) = &views.dealer {
+                    // No scroll cursor: the dealer's three tabs each fit the
+                    // design box outright, which is the whole reason there are
+                    // three of them (screens::dealer, and its height guard).
+                    dealer_action = paint_dealer(f, v);
+                }
+            }
             ScreenId::Forge => {
                 if let Some(v) = &views.forge {
                     forge_action = paint_forge(f, v, &mut entry.scroll);
@@ -616,6 +632,7 @@ fn paint_gui(
     layer.armory_action = armory_action;
     layer.alchemist_action = alchemist_action;
     layer.forge_action = forge_action;
+    layer.dealer_action = dealer_action;
     if result.painted {
         layer.dirty = true;
         upload(&mut images, &layer);
@@ -675,6 +692,7 @@ mod tests {
             armory_action: None,
             alchemist_action: None,
             forge_action: None,
+            dealer_action: None,
             dirty: false,
             views_gen: 0,
             last_pointer: None,

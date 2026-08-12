@@ -31,7 +31,7 @@ Sources on the oracle side, all under
 | **Manage Loadout** (`armory`) | 3 plate slots, repair-all, 4 elemental sets | ✅ **DONE** — rules in `pk_core::economy::armory`, art from the icon bake, silhouettes for the sets |
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
-| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | 🟡 **SCREEN PAINTED, NOT WIRED** — rules, art and `screens::dealer` (3 tabs, 11 tests) are all in; the shell does not open it yet |
+| **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | ✅ **DONE** — `economy::dealer` + the card bake + `screens::dealer` (3 tabs, 12 tests), wired to the station: walk up and it opens |
 | **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | 🟡 **RULES DONE, NO UI** — `pk_core::gambler` is complete with 250 tests; the cabinet screen is unbuilt |
 
 ## Where the port DEVIATES, and why
@@ -87,9 +87,16 @@ not yet hand the player anything:
   `|_| 0` from the day the forge shipped, which made the stable sort a no-op
   and "rarest" silently mean "socket order". An unknown id ranks −1, below
   common, and is dropped first — the oracle's `indexOf(undefined)`, kept.
-- **The dealer still needs its SCREEN.** `cards.ts` was the blocker;
-  `economy::dealer` shipped with the shop rules, and `screens::dealer` is now
-  the only remaining piece of that counter.
+- ✅ **THE DEALER IS COMPLETE** (2026-08-11) — rules, art, screen and wiring.
+  Walking up to the station opens it; buy, reroll, socket, unsocket, pick and
+  page all reach `pk_core::economy::dealer`. Two wiring rules are pinned by
+  tests because neither is visible in the types: the shelf's seeded stream must
+  be **written back** after a reroll (clippy correctly flags the `.clone()` as
+  redundant, and dropping the write-back with it would deal the same three
+  cards forever), and `picked` must **clear on a successful socket only** —
+  `socket_stash_card` removes the card, so every later index shifts down and a
+  surviving pick would name a different card, while a refusal moves nothing and
+  must keep it.
 - ✅ **CARD FACES ARE BAKED** (2026-08-11) — `legacy/scripts/bake-card-faces.mjs`
   → `assets/gui/cards/`, 100 PNGs / 2.1MB, read by `pk_gui::cards` and blitted
   by `im::draw_card` (non-square; `draw_icon` is square-only and cannot draw a
