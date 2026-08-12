@@ -58,5 +58,10 @@ for (const [k, v] of arrays) {
   const body = v.map((x) => (allInt ? String(x) : f64(x))).join(", ");
   out.push(`pub const ${k}: [${ty}; ${v.length}] = [${body}];`);
 }
-out.push("");
+// NO trailing blank line. `console.log` already ends the last line, and the
+// extra `out.push("")` that used to sit here made the exporter's output one
+// byte longer than anything that has been through `cargo fmt` — which is every
+// committed Rust file. The drift test compares byte for byte, so it went red on
+// whitespace at `f3799fe` and stayed red: a generated file that cannot round
+// trip through the formatter is a gate that cries wolf until it is ignored.
 console.log(out.join("\n"));

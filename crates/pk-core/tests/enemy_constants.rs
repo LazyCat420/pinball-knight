@@ -65,14 +65,24 @@ fn the_generated_enemy_table_still_matches_the_oracle() {
              Re-run: cd legacy && node scripts/export-enemy-constants.mjs > \
              ../crates/pk-core/src/enemies.rs\n\
              first difference:\n  committed: {}\n  oracle:    {}",
-            first
-                .as_ref()
-                .map(|(a, _)| a.as_str())
-                .unwrap_or("(length differs)"),
-            first
-                .as_ref()
-                .map(|(_, b)| b.as_str())
-                .unwrap_or("(length differs)"),
+            // When every SHARED line matches, the difference is length or
+            // trailing whitespace — and "(length differs)" printed on both
+            // sides names neither, which is how one byte of trailing newline
+            // read as "the enemy table drifted". Say which, in bytes and lines.
+            first.as_ref().map(|(a, _)| a.clone()).unwrap_or_else(|| {
+                format!(
+                    "(no line differs — {} bytes / {} lines)",
+                    committed.len(),
+                    committed.lines().count()
+                )
+            }),
+            first.as_ref().map(|(_, b)| b.clone()).unwrap_or_else(|| {
+                format!(
+                    "(no line differs — {} bytes / {} lines)",
+                    fresh.len(),
+                    fresh.lines().count()
+                )
+            }),
         );
     }
 }

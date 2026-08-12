@@ -5,6 +5,27 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — the enemy-table drift gate was RED on one byte, and the port
+  plan is re-baselined off the ledger ([v3](port-plan-v3.md)).**
+  `cargo test --workspace` was 505 passed / **1 failed** at `8cb9415`:
+  `export-enemy-constants.mjs` ends with a trailing blank line, `cargo fmt`
+  strips it from the committed `enemies.rs`, and the test compares byte for
+  byte — so a generated file that **cannot round-trip through the formatter**
+  failed its own drift gate from the commit that created it. The message said
+  `committed: (length differs)` / `oracle: (length differs)`, which names
+  neither side; it now prints bytes and lines when no line differs. Sabotage:
+  `REAPER_SPEED_MAX` 6.2 → 6.3 still fails and now names the constant.
+  - **`cargo xtask coverage` grew `--by-dir` and `--all`.** `--todo` printed 40
+    of 210 files with no note, which reads as a complete work list. The
+    per-directory table reconciles exactly to 61,852 — and it exists so the
+    plan pages stop deriving their track tables from `pk-coverage.sh`, the
+    upper-bound heuristic the ledger was built to replace.
+  - **Three instruments carry stated holes** (v3 §5): `pk-drift.sh` covers
+    `src/` only and `public/sprites` already differs by 8 files; `pk-ab-dungeon`
+    never checks that both sides photograph the same place; the intro rig's
+    precision on `bonk`/`shatter` is unstated and both moved ~4-5 points across
+    a day with no art touched.
+
 - **2026-08-12 — P-1: `cargo xtask coverage`, the provenance ledger. The port
   is 22.4% converted, and the number is now defensible.** Every one of the 105
   Rust modules declares `PORTS:` / `PORTS-PARTIAL:` / `PORTS-NOTHING`, the tool

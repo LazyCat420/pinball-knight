@@ -1,5 +1,15 @@
 # The 1:1 plan — what "converted" means, and what is left
 
+> **⚠️ 2026-08-12 — §2's numbers are superseded by
+> [port plan v3](port-plan-v3.md).** They were measured with
+> `scripts/pk-coverage.sh`, the upper-bound heuristic, because this page's own
+> work item P-1 (the ledger) did not exist yet. It does now, so v3 re-derives
+> the remainder from declarations: **61,852 lines / 210 files not started, 24.0%
+> converted, against an 88,312-line target** (not 91,756 — the exclusion list
+> grew when it became code). What stays authoritative here: §1's definition of
+> 1:1, §3's triage of the three handed-in blueprints, §4's drift argument, and
+> §8's risks.
+
 **Version 2 · 2026-08-11 · baseline `main` @ `db31ac2` · method: VCPM
 (`.agents/plan-verification-standard.md` in the sun workspace).**
 Every number on this page was measured from the tree on that commit, with the

@@ -392,11 +392,51 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
         100.0 * done as f64 / target as f64
     );
 
+    if args.iter().any(|a| a == "--by-dir" || a == "--verbose") {
+        // Per-DIRECTORY remainder. The plan pages decompose the work by legacy
+        // directory (`render/`, `entities/`, …) and until now that table was
+        // re-derived by hand from `pk-coverage.sh` — the heuristic this tool
+        // exists to replace. A track table sourced from the upper bound and a
+        // total sourced from the ledger cannot reconcile, and the difference
+        // reads as an arithmetic error rather than as two different instruments.
+        let mut by_dir: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+        for (p, n) in &todo {
+            let dir = match p.find('/') {
+                Some(i) => &p[..i],
+                None => "(root)",
+            };
+            let e = by_dir.entry(dir).or_insert((0, 0));
+            e.0 += n;
+            e.1 += 1;
+        }
+        let mut rows: Vec<_> = by_dir.into_iter().collect();
+        rows.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
+        println!("\n── NOT STARTED by legacy directory ──");
+        for (dir, (n, files)) in &rows {
+            println!("  {n:>6}  {dir:<12} ({files} files)");
+        }
+    }
+
     if args.iter().any(|a| a == "--todo" || a == "--verbose") {
         todo.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        // `--todo` used to print the top 40 of 210 with no note, which reads as
+        // a complete work list. The cap stays (the tail is one-liners) but it
+        // now says what it withheld and how to see the rest.
+        let cap = if args.iter().any(|a| a == "--all") {
+            todo.len()
+        } else {
+            40
+        };
         println!("\n── NOT STARTED, largest first ──");
-        for (p, n) in todo.iter().take(40) {
+        for (p, n) in todo.iter().take(cap) {
             println!("  {n:>6}  {p}");
+        }
+        if todo.len() > cap {
+            let rest: usize = todo.iter().skip(cap).map(|(_, n)| n).sum();
+            println!(
+                "  … and {} more files, {rest} lines (`--all` for every one)",
+                todo.len() - cap
+            );
         }
         if !partial.is_empty() {
             println!("\n── PARTIAL — what is missing ──");
