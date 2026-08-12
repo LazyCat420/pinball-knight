@@ -1,11 +1,45 @@
 # The route to 1:1 — what is left, in what order, and how each piece is known to be done
 
-**2026-08-12 · baseline `main` @ `9344537` · every number below was produced
+**2026-08-12 · baseline `main` @ `cd08d8e` · every number below was produced
 today by a named command on this box.** This page is the standing answer to
 *"what do we still have to do to convert Pinball Knight from
 `braindeadbot-client` to this repo, 1:1?"* — [plan v3](port-plan-v3.md) is the
 same queue with its full working shown; this page is the map above it and the
 one to read first.
+
+---
+
+## 0. Every gate, re-run at this baseline
+
+Re-measured end to end on 2026-08-12 against `cd08d8e`, on a quiet box
+(load 0.48), release `web/dist`. This is the section to distrust first when a
+later page disagrees with reality.
+
+| Gate | Command | Result |
+|---|---|---|
+| the ledger | `cargo xtask coverage` | **24.0% converted** — 61,852 lines / 210 files not started, unchanged since `9344537` (the four commits since are fixes and docs) |
+| workspace tests | `cargo test --workspace` | **877 passed, 0 failed, exit 0** |
+| browser parity (**release** wasm) | `node scripts/pk-check.mjs --no-build` | **2 of 3 runs ALL GATES PASSED; 1 run failed one gate** — see I-8 |
+| oracle drift | `bash scripts/pk-drift.sh ../braindeadbot-client` | clean — *over `src/` only*, I-2 still open |
+| dungeon A/B | `pk-ab-dungeon --no-build --level 3 --seed 1` | mean **30.2**, p95 77, over32 **33.7%** — reproduces 30.2 / 33.8 |
+| intro A/B | `pk-ab-intro --no-build` | run 15.4 · bonk 19.4 · **shatter 56.7** · sweep 25.9 · title 13.3 |
+| tavern A/B | `pk-ab-tavern --no-build` | **1 numeric check FAILED** — highlight clipping **2.83×** (was 2.79×) |
+| sim benchmark (B1) | `cargo run --release -p pk-core --example perf_suite` | reproduces every row within spread; worst tick **315 ns** |
+| **cost head-to-head (B3)** | `node scripts/pk-perf-ab.mjs --no-build --rounds 3` | **NEW — built today.** tavern **5.93×**, dungeon **2.69×** the oracle. §6 |
+
+**Nothing regressed and nothing silently improved.** Every A/B number
+reproduces its record within that rig's stated precision, which is the result
+that makes the rest of this page usable: the instruments still agree with
+themselves across a day.
+
+**The one thing the sheets say that the numbers do not.** The dungeon
+heatmap (`.checks/ab-dungeon-L3-s1-diff.png`) puts the floor structure — walls,
+arcs, the dais, the tile lattice — in near-black on both sides: **the geometry
+overlays.** Every bright region on it is *content*: the entire HUD strip, the
+monsters, the props, the torch flames. So the 30.2 mean is not a framing or a
+generator disagreement; it is §2's table, and §2's table is the deliverable
+list. That also settles by inspection what I-5 says is unasserted — on this
+seed, today, both sides really are photographing the same place.
 
 ---
 
@@ -142,7 +176,7 @@ someone states which frustum it wants.
 |---|---|---|
 | 2-1 | ~~Shatter too slow and too big~~ · ~~2-4 sweep framing~~ — **one defect, §4** | the A/B numbers below, at N=3 |
 | 2-5 | **The intro HUD is drawn in the wrong LAYER, and the shatter is what proves it.** The oracle paints `WORLD 1-1`, `COIN x00` and `ANY KEY — SKIP` *into the 2D overworld canvas* (`intro/index.ts:662-680`): 10 px and 8 px `PIXEL_FONT_LABEL`, white fill with a **3 px `#1c2a38` stroke**, at canvas coords `(16,24)`, `(BW-110,24)`, `(16,BH-14)`, the last at `globalAlpha` 0.75. The port spawns them as Bevy `Text` UI entities (`hud_es`) in `default_font`, unoutlined, positioned in window space. Two consequences, one cosmetic and one behavioural — **and the behavioural one is the reason this is filed as a defect rather than a paint job**: `beginShatter` snapshots that canvas, so in the oracle the HUD text **breaks into shards with the rest of the world**, and in the port it structurally cannot. The letters `COI` are legible among the oracle's shards on `ab-intro-shatter`. ⚠️ The em-dash is real: the oracle's string is `ANY KEY — SKIP` (U+2014), the port's a hyphen — the same class as the U+2212 minus sign already pinned, and **a glyph the atlas lacks draws nothing, silently**. Needs the pk-gui font atlas blitting into the `Overworld` RGBA buffer | the three strings paint into the canvas, outlined, and appear as SHARDS in `ab-intro-shatter` |
-| 2-6 | **The intro knight is the wrong sprite and too large.** On `ab-intro-run` the rest of the frame matches almost exactly — sky gradient, clouds, hills, brick ground, the `?` block all land — and the knight does not: the oracle's is a brown/tan armoured figure with the sword raised, the port's a grey/silver one, hunched and noticeably bigger. Rung/sheet selection, which is the same question the dungeon sheet's last row asks | the two run frames' knights match in rung and in height |
+| 2-6 | **The knight is the wrong sprite in EVERY scene — one cast problem, filed three times.** This session's sheets put the symptom side by side in all three: on `ab-intro-run` the oracle's knight is brown/tan armour with the sword raised and the port's is grey/silver and hunched; on `ab-tavern-sbs` the oracle's is the same brown/tan figure and the port's the same grey one; and §2's dungeon row already reads *"the knight in gold armour, sword up"* against *"a small dark figure"*. **Three scenes, one rung/sheet selection.** That is the shape of the camera defect exactly — symptoms filed per scene, cause shared — and it is the argument for fixing it as sheet selection rather than as three art items. *(Original 2-6 text follows, and the rest of its frame still lands:)* **The intro knight is the wrong sprite and too large.** On `ab-intro-run` the rest of the frame matches almost exactly — sky gradient, clouds, hills, brick ground, the `?` block all land — and the knight does not: the oracle's is a brown/tan armoured figure with the sword raised, the port's a grey/silver one, hunched and noticeably bigger. Rung/sheet selection, which is the same question the dungeon sheet's last row asks | the two run frames' knights match in rung and in height |
 | 2-2 | Characterise the rig on the fast phases: three runs per side, publish the spread. `bonk` moved +5.1 and `shatter` +4.0 across a day with neither side's art touched, so at N=1 a 4-point claim is indistinguishable from noise | a stated ± on `bonk` and `shatter` |
 | 2-3 | Torches, banners and decor on the title maze (the V-4 slice the intro needs) — the oracle's top wall carries lit sconces and doors, ours carries none | `ab-intro-title` mean below 13.3 with the sconces lit |
 
@@ -150,8 +184,9 @@ someone states which frustum it wants.
 
 | # | Item | Acceptance |
 |---|---|---|
-| 3-1 | **Highlight clipping 2.79×** — rust clips 0.349% of pixels out of range against the oracle's 0.091%, on matched room area, allowance 2.5×. Clipping is what "blown out" is and mean luma cannot see it. Suspects in order: emissive keeper sprites, the hearth light's intensity, the cel grade's shoulder | the tavern rig's ten checks all green |
-| 3-2 | Warm spill 6.71% vs the oracle's 23.20% (reported, not gated) | a fix, or the check promoted to gated with a stated allowance |
+| 3-1 | **Highlight clipping 2.83×** (re-measured 2026-08-12; was 2.79×) — rust clips 0.353% of pixels out of range against the oracle's 0.091%, on matched room area, allowance 2.5×. Clipping is what "blown out" is and mean luma cannot see it — the same run passes exposure at Δ0.3% and mid-tones at Δ0.0%. Suspects in order: emissive keeper sprites, the hearth light's intensity, the cel grade's shoulder | the tavern rig's ten checks all green |
+| 3-2 | Warm spill 7.34% vs the oracle's 23.02% (reported, not gated) | a fix, or the check promoted to gated with a stated allowance |
+| 3-3 | **NEW — the tavern is the port's most expensive scene, and it is 5.93× the oracle's.** 16.00 ms against 2.70 ms (§6), in a room with a fraction of the dungeon's geometry, while the port's *dungeon* costs 7.00 ms. Two suspects are already named by this project's own history and cost nothing to test: the immediate-mode GUI upload (a 756×482 clear plus a 1.4 MB texture write per repaint, which once took this room 36 fps → 14, and `pk-check` reports 40% of driven frames repainting), and the hearth light rig that 3-1 is also about. Price them before touching the dungeon | the tavern's rust p50 under 8 ms, i.e. inside its own dungeon's cost, at 3 interleaved rounds |
 
 ### Stage 4 — the maze *(55k of the 61.8k)*
 
@@ -198,7 +233,10 @@ the props — restyling those before they exist is restyling nothing.
 
 ## 6. The benchmark and performance suite
 
-Three layers. **B1 is built and baselined; B2 and B3 are specified.**
+Three layers, and as of **2026-08-12 all three are built**: B1 the sim, B2 the
+port's own frames, B3 the port against the oracle. B3 was the last one
+specified-but-absent, and its first run changed which scene the render work is
+owed to.
 
 **B1 — the sim, headless and deterministic.**
 `cargo run --release -p pk-core --example perf_suite`. Median/min/max/spread
@@ -244,12 +282,55 @@ chain at 1920×1080 — the one pass that costs the same whether the dungeon has
 102 parts on it or none. A scene-count sweep (empty floor vs L5's 121 parts)
 separates *the room is expensive* from *the chain is*.
 
-**B3 — head-to-head against the oracle.** 1:1 includes cost. Same scene, seed
-and viewport, both sides in host Chrome, **interleaved A/B/A/B** — a loaded
-shared box drifts over minutes and a sequential comparison measures the drift.
-The play target is the Windows exe, so the number that decides "does it feel
-right" is the release exe's frame time; that capture path does not exist yet and
-is the one piece of B2 that is new work rather than wiring.
+**B3 — head-to-head against the oracle. ✅ BUILT 2026-08-12**
+(`node scripts/pk-perf-ab.mjs`). Release wasm against the TypeScript oracle,
+host Chrome, RTX 3090 Ti, 1920×1080, three interleaved rounds, vsync off:
+
+| scene | legacy p50 | rust p50 | ratio | round-to-round wander |
+|---|---:|---:|---:|---:|
+| tavern | 2.70 ms | **16.00 ms** | **5.93×** | 4% |
+| dungeon | 2.60 ms | **7.00 ms** | **2.69×** | 23% |
+
+**The finding that reorders the render work: the port's TAVERN is its expensive
+scene, not its dungeon** — 16.0 ms against 7.0 ms, on a room with a fraction of
+the geometry. B2's exe capture (17.04 ms uncapped) was a *tavern* reading and
+was being carried as the game's frame cost. Whatever costs 9 ms more in a
+smaller room is the first thing to price, and it is not the dungeon's 102 parts.
+
+**The design decision, and the control that justifies it.** Both sides get the
+*same* instrument — one rAF delta accumulator installed at document start,
+accumulating every frame and read once — because reading `__pk.perf` for the
+port and something else for legacy would compare two instruments. The port's own
+accumulator is read anyway as a *cross-check on the probe*: over the same frames
+they agree to 0.1 ms (rAF 7.00/8.50 against `__pk.perf` 7.10/8.70).
+
+And `--vsync` is not a convenience flag, it is the rig's positive control:
+
+| | legacy p50 | rust p50 | ratio |
+|---|---:|---:|---:|
+| vsync **off** | 2.70 | 16.00 | **5.93×** |
+| vsync **on** | 31.30 | 31.20 | **1.00×** |
+
+**A head-to-head built the obvious way reports the port at parity with the
+oracle, to two decimal places, for a port that costs 5.9×.** Both vsync rows
+trip the rig's CADENCE-BOUND check, which reads the *spread* (p95 − p50 of 0.30
+and 0.40 ms) because the spread is what identified the plateau in the first
+place. Chrome is therefore launched with `--disable-gpu-vsync
+--disable-frame-rate-limit`, and `connectRealGpu` enforces them **on the reuse
+path too** — a switch honoured only on a cold launch does nothing on a warm one,
+and this harness reuses warm browsers by design.
+
+⚠️ **What B3 does not establish.** A rAF delta is frame cadence, not a CPU/GPU
+split. The comparison is fair in the way that matters — one browser, one
+compositor, both subjects measured by the same relationship to it — and the
+control shows legacy tracks presentation rather than free-running. But *"the
+Rust renderer does 5.9× the work"* is not licensed until timestamp queries exist
+on both sides. The ratio is a cadence claim; the attribution is B2's next job.
+
+Still outstanding from B3's original spec: the **release exe** capture path is
+wired (`--perf-log`) but has not been driven head-to-head, because the oracle
+does not run as an exe. The exe stays the play-feel target; the browser is where
+the two sides can be compared at all.
 
 **The traps this suite must not walk into.** A budget is not a wish — every
 budget derives from a recorded baseline. The box is shared, so anything timed
@@ -270,12 +351,17 @@ A gate with a hole is worse than no gate, because it is believed.
 | I-2 | **`pk-drift.sh` covers `src/` only**, and `public/sprites` already differs — `legacy/` carries `goblin-S`, `reaper-S`, `slime-S`, `spider-S` that `braindeadbot-client` does not. Art is oracle state; the A/B rigs photograph it | open — extend the diff, same legacy-ahead allowlist |
 | I-3 | **The intro rig's precision is unstated on the fast phases** — `bonk` +5.1 and `shatter` +4.0 across a day with no art touched | open — Stage 2-2 |
 | I-5 | **`pk-ab-dungeon` never checks that the two sides photograph the same place.** They do agree today, verified by eye, so 30.2 is a real number; nothing keeps it that way | open — assert pose equality and **throw rather than shoot** |
-| I-6 | Both rigs report ~17 failed sprite requests on the *oracle* side. They are its own optional facings (`boot/sheets.ts`: "W is drawn as a flipped E") and neither tree ships `-N` sheets — noise that will cost someone an investigation | open — allowlist the optional facings |
+| I-6 | Both rigs report ~17 failed sprite requests on the *oracle* side. **Checked against the tree on 2026-08-12 and the characterisation holds**: `legacy/public/sprites` ships 46 files, and every 404 (`zombie-S`, `spider-E`, `brute-E`, `jester-E`, `goblin-N`, …) names a facing *neither* tree ships, reused from the one that loaded. Confirmed noise — but noise that will still cost someone an investigation | open — allowlist the optional facings |
+| I-8 | **`pk-check` still has one single-sample gate, and it failed 1 run in 3 today.** `the prompt comes back when the sheet closes` polls until the panel is gone, then takes **one** reading of `gui.open` — read 0, wanted 1; runs 2 and 3 both read 1. This is the *fourth* instance of the shape `cd08d8e` fixed for the walk and `3bc7220` for the intro handoff: **poll for condition A, then sample condition B once, and B is set on a later frame.** Stated as the likely mechanism, not a diagnosis | **open — new**, and the fix is known: wait for a fresh publish, as `freshPose()` does |
 | ~~I-7~~ | ~~`pk-check` has only ever been run against a DEBUG build~~ — **CLOSED 2026-08-12: the release build passes 27 gates, 0 failures.** It failed THREE when first pointed at it, and **all three were in the harness**: the sim-rate gate measured a fixed-timestep catch-up drain (77 Hz) because the settle its own twin documents was written inline in the other gate; and the two handoff gates were one race, a single sample taken the instant the intro state ended, before the lazily-built `TavernRes` existed. Same `web/dist` before and after; only the script changed | **closed** — and the standing rule it leaves: *a repair written inline is a repair applied to one call site* |
 
-**RISK — the release build is ungated.** Every green `pk-check` in this
-project's history is a debug-build green. The shipped artefact has never passed
-the gate.
+**RISK — the release gate is not yet reliable, though the release build is.**
+`3bc7220` and `cd08d8e` closed I-7: the shipped artefact does pass. What is not
+settled is the *harness* — three consecutive commits have now each found one
+more gate that samples where it should wait, and today's re-run found a fourth
+(I-8). **Until `pk-check` runs green three times consecutively on one unchanged
+`web/dist`, a red run is not evidence about the port.** That is the cheapest
+open item on this page and it blocks the meaning of every future green.
 
 ---
 

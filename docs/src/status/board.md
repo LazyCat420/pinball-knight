@@ -5,6 +5,76 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — B3, THE LAST MISSING INSTRUMENT: THE PORT COSTS 5.93× THE
+  ORACLE IN THE TAVERN AND 2.69× IN THE DUNGEON — AND THE OBVIOUS WAY TO
+  MEASURE THAT REPORTS 1.00×.** `scripts/pk-perf-ab.mjs`. Release wasm against
+  the TypeScript oracle, host Chrome, RTX 3090 Ti, 1920×1080, three interleaved
+  rounds:
+
+  | scene | legacy p50 | rust p50 | ratio | wander |
+  |---|---:|---:|---:|---:|
+  | tavern | 2.70 ms | **16.00** | **5.93×** | 4% |
+  | dungeon | 2.60 ms | **7.00** | **2.69×** | 23% |
+
+  - **The port's TAVERN is its expensive scene, not its dungeon.** 16.0 ms in a
+    room with a fraction of the geometry, against the dungeon's 7.0. B2's
+    17.04 ms exe capture was a *tavern* reading and was being carried as the
+    game's frame cost. Filed as 3-3.
+  - **`--vsync` is the positive control, and it is the argument for the whole
+    design**: same build, minutes apart, legacy 31.30 / rust 31.20 = **1.00×**.
+    A head-to-head built the obvious way reports the port at PARITY, to two
+    decimal places, for a port that costs 5.9×. Both vsync rows tripped the
+    rig's CADENCE-BOUND check, which reads the **spread** (p95 − p50 of 0.30
+    and 0.40 ms) because the spread is what identified the plateau in the first
+    place.
+  - **One instrument, two subjects** — the same rAF accumulator at document
+    start on both sides, accumulating every frame, read once. `__pk.perf` is
+    read too, but as a **cross-check on the probe**, not as the port's entry:
+    over the same frames the two agree to 0.1 ms (7.00/8.50 vs 7.10/8.70).
+  - `connectRealGpu` grew `extraArgs`, enforced **on the reuse path too**
+    (`argsMatch`, mirroring the affinity rule already beside it). A switch
+    honoured only on a cold launch does nothing on a warm one, and this harness
+    reuses warm browsers by design.
+  - ⚠️ **Two defects the rig found in itself on its first two runs.** At
+    `--rounds 1` the wander is 0 *by construction*, so every ratio cleared it —
+    a significance test that cannot fail is the ratio printed twice; one round
+    now withholds the verdict. And the frame floor shipped as a flat 120, which
+    the vsync control failed instantly: a 4 s sample at a 32 ms present interval
+    can only hold ~125 frames, so a healthy run was called "not a measurement"
+    for obeying the display. **A threshold on a count is a threshold on the
+    window length as much as on the subject** — it is a rate now.
+  - ⚠️ **Not established, and said in the header**: a rAF delta is frame
+    cadence, not a CPU/GPU split. "5.9× the work" is not licensed until
+    timestamp queries exist on both sides.
+
+- **2026-08-12 — Every gate re-run at `cd08d8e`; nothing regressed, and the
+  dungeon heatmap says the remaining diff is CONTENT, not framing.**
+  `cargo xtask coverage` **24.0%** (unchanged — the four commits since `9344537`
+  are fixes and docs), `cargo test --workspace` **877 passed / 0 failed**,
+  drift clean, B1 reproduces every row within spread. A/B: dungeon 30.2 / 33.7%
+  over32, intro 15.4 / 19.4 / 56.7 / 25.9 / 13.3, tavern one red check
+  (clipping **2.83×**).
+  - **The floor structure overlays.** On `ab-dungeon-L3-s1-diff.png` the walls,
+    arcs, dais and tile lattice are near-black on both sides and every bright
+    region is content — the HUD strip, the monsters, the props, the torch
+    flames. So 30.2 is the deliverable list in [the route](one-to-one-route.md)
+    §2 and not a generator or camera disagreement, and I-5's "verified by eye"
+    has at least been re-verified on this seed.
+  - **The knight is the wrong sprite in all THREE scenes** — intro, tavern and
+    dungeon sheets all show the oracle's brown/tan armoured figure against the
+    port's grey one. Filed per scene, but it is one rung/sheet selection: the
+    same shape as the camera defect.
+  - ⚠️ **I-8, a fourth single-sample gate.** `pk-check --no-build` on the
+    release dist ran **2 green of 3**; the red run failed *the prompt comes back
+    when the sheet closes* (`open=0`, wanted 1). It polls for the panel to go,
+    then takes ONE reading of a flag set on a later frame — the same shape
+    `cd08d8e` fixed for the walk and `3bc7220` for the intro handoff. **Until
+    pk-check runs green three times consecutively on one unchanged `web/dist`,
+    a red run is not evidence about the port.**
+  - I-6 re-checked rather than assumed: `legacy/public/sprites` ships 46 files
+    and every one of the 17 404s names a facing *neither* tree ships. Confirmed
+    noise.
+
 - **2026-08-12 — ⚠️ CORRECTION to the entry below: "27 gates, 0 failures,
   reproduced twice" WAS WRONG. It was 27/0 once and 24/3 the second time.**
   The claim was made by grepping four patterns out of an output file that was
