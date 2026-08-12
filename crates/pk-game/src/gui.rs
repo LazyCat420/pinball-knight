@@ -61,6 +61,14 @@ use crate::post::sizing::PixelSizing;
 /// it is busy, and a menu must not paint over that.
 const GUI_Z: i32 = 60;
 
+/// The longest frame an animating screen is told about, in seconds.
+///
+/// `gambler/index.ts:288` clamps its own delta to exactly this: a tab that was
+/// in the background hands back whole seconds, and a state machine stepped that
+/// far in one frame skips the animation it exists to play — the ball teleports
+/// into its pocket, the reels are stopped before they are seen to spin.
+const MAX_FRAME_DT: f64 = 0.05;
+
 /// Which screen. The shell's vocabulary, not the toolkit's — `pk-gui` is generic
 /// over the id precisely so the game names its own screens.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -190,6 +198,18 @@ impl GuiLayer {
     /// prompt is open for the whole visit and must never eat WASD.
     pub fn pauses(&self) -> bool {
         self.stack.pauses()
+    }
+
+    /// May this frame be skipped without repainting? — see `GuiLayer::seen`.
+    ///
+    /// Four conditions, and the fourth is the one with a story. A quiet frame
+    /// over an unchanged stack is safe to skip and is nearly every frame the
+    /// game runs, which is why the skip exists at all — losing it cost a
+    /// measured 36→14 fps. But an ANIMATING screen breaks the assumption the
+    /// other three rest on: that no input means no change. For those, the
+    /// picture moves on its own, and skipping the paint freezes it.
+    fn may_skip(&self, input: &UiInput, key: PaintKey) -> bool {
+        is_quiet(input) && key == self.seen && self.dirty && !self.stack.animates()
     }
 
     /// Open a screen, with the design box the legacy sheet was authored in.
@@ -457,6 +477,7 @@ fn paint_gui(
     window: Query<&Window, With<PrimaryWindow>>,
     sizing: Res<PixelSizing>,
     views: Res<GuiViews>,
+    time: Res<Time>,
     mut images: ResMut<Assets<Image>>,
     mut layer: ResMut<GuiLayer>,
 ) {
@@ -497,7 +518,7 @@ fn paint_gui(
         size: (layer.painter.w, layer.painter.h),
         views_gen: layer.views_gen,
     };
-    if is_quiet(&input) && key == layer.seen && layer.dirty {
+    if layer.may_skip(&input, key) {
         // Still a DRIVEN frame — `frames` counts what the schedule asked for,
         // and `painted` counts what reached the texture. The gap between them is
         // the saving, and publishing both is what makes it visible.
@@ -521,7 +542,11 @@ fn paint_gui(
     let mut armory_action = None;
     let mut alchemist_action = None;
     let mut forge_action = None;
-    let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, entry| {
+    // Clamped, as the oracle clamps it: a backgrounded tab hands back a delta
+    // of whole seconds, and stepping an animation that far in one frame skips
+    // the very thing it exists to show.
+    let dt = time.delta_secs_f64().min(MAX_FRAME_DT);
+    let result = paint_stack(painter, fonts, stack, &input, dt, stats, |f, id, entry| {
         match id {
             ScreenId::StationPrompt => {
                 if let Some(v) = &views.prompt {
@@ -636,6 +661,27 @@ impl Plugin for GuiPlugin {
 mod tests {
     use super::*;
 
+    /// A layer with no window behind it, for the tests that drive `open`,
+    /// `close` and the repaint decision without standing up a Bevy world.
+    fn test_layer() -> GuiLayer {
+        GuiLayer {
+            painter: Painter::new(1, 1),
+            fonts: Fonts::load_embedded(),
+            stack: UiStack::new(),
+            stats: UiStats::default(),
+            image: Handle::default(),
+            closed: None,
+            skip_pressed: false,
+            armory_action: None,
+            alchemist_action: None,
+            forge_action: None,
+            dirty: false,
+            views_gen: 0,
+            last_pointer: None,
+            seen: PaintKey::default(),
+        }
+    }
+
     fn keys(pressed: &[KeyCode]) -> ButtonInput<KeyCode> {
         let mut k = ButtonInput::default();
         for p in pressed {
@@ -729,22 +775,7 @@ mod tests {
     fn the_prompt_does_not_pause_and_a_sheet_does() {
         // Driven through `GuiLayer::open` — the entries this asserts about are
         // the ones the game actually pushes, not a second copy of the table.
-        let mut layer = GuiLayer {
-            painter: Painter::new(1, 1),
-            fonts: Fonts::load_embedded(),
-            stack: UiStack::new(),
-            stats: UiStats::default(),
-            image: Handle::default(),
-            closed: None,
-            skip_pressed: false,
-            armory_action: None,
-            alchemist_action: None,
-            forge_action: None,
-            dirty: false,
-            views_gen: 0,
-            last_pointer: None,
-            seen: PaintKey::default(),
-        };
+        let mut layer = test_layer();
         layer.open(ScreenId::StationPrompt);
         assert!(
             !layer.pauses(),
@@ -764,5 +795,78 @@ mod tests {
         // frozen with nothing on screen.
         layer.close(ScreenId::StationPanel);
         assert!(!layer.pauses());
+    }
+
+    /// A quiet frame is skipped — UNLESS something on screen is moving.
+    ///
+    /// The skip is most of the game's idle cost and losing it was worth a
+    /// measured 36→14 fps, so it stays. But it rests on "no input means no
+    /// change", and an animating screen is exactly the case where that is
+    /// false: the reels spin, the ball rolls, nobody touches the keyboard.
+    /// Without the `animates` term the first gambler cabinet would have
+    /// painted one frame and frozen — a bug that looks like a hang, not like
+    /// a missing feature.
+    #[test]
+    fn a_quiet_frame_is_skipped_unless_a_screen_is_animating() {
+        let mut layer = test_layer();
+        layer.dirty = true;
+        layer.open(ScreenId::StationPanel);
+        let quiet = empty_ui_input();
+        let key = PaintKey {
+            open: layer.stack.len(),
+            top: layer.stack.top().map(|t| t.id),
+            focus: 0,
+            size: (layer.painter.w, layer.painter.h),
+            views_gen: 0,
+        };
+        layer.seen = key;
+        assert!(
+            layer.may_skip(&quiet, key),
+            "a still sheet with no input is the frame the skip exists for"
+        );
+
+        // The same frame, once the screen says it moves.
+        layer.stack.screens_mut()[0].animates = true;
+        assert!(
+            !layer.may_skip(&quiet, key),
+            "an animating screen must be repainted on a quiet frame or it freezes"
+        );
+    }
+
+    /// The other three skip conditions still hold on a static stack.
+    ///
+    /// Guards the refactor that pulled this predicate out of `paint_gui`:
+    /// `may_skip` has to mean what the four inline terms meant, so each one is
+    /// shown to still veto a skip on its own.
+    #[test]
+    fn input_a_moved_stack_or_a_cold_texture_each_force_a_repaint() {
+        let mut layer = test_layer();
+        layer.dirty = true;
+        layer.open(ScreenId::StationPanel);
+        let key = PaintKey {
+            open: layer.stack.len(),
+            top: layer.stack.top().map(|t| t.id),
+            focus: 0,
+            size: (layer.painter.w, layer.painter.h),
+            views_gen: 0,
+        };
+        layer.seen = key;
+        assert!(layer.may_skip(&empty_ui_input(), key));
+
+        let mut pressed = empty_ui_input();
+        pressed.accept = true;
+        assert!(
+            !layer.may_skip(&pressed, key),
+            "a press no widget answers still has to reach paint_stack"
+        );
+
+        let moved = PaintKey { focus: 1, ..key };
+        assert!(!layer.may_skip(&empty_ui_input(), moved));
+
+        layer.dirty = false;
+        assert!(
+            !layer.may_skip(&empty_ui_input(), key),
+            "nothing has reached the texture yet, so there is nothing to keep"
+        );
     }
 }

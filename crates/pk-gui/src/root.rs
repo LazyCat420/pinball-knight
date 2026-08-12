@@ -67,11 +67,18 @@ pub struct StackResult<Id> {
 /// Focus bookkeeping (clamp + move, every frame even at delta 0 — a row can go
 /// disabled between frames) and cancel-pops happen here, exactly as in
 /// `drawUiFrame`.
+///
+/// `dt` is seconds since the previous painted frame, supplied by the shell so
+/// this crate never reads a clock. Every screen gets the REAL delta, including
+/// the ones below the top: their input is empty because they must not act, but
+/// an animation under a modal keeps running — one RAF drives the whole stack.
+/// The shell is responsible for clamping a backgrounded tab's enormous delta.
 pub fn paint_stack<Id: Copy + Eq>(
     p: &mut Painter,
     fonts: &Fonts,
     stack: &mut UiStack<Id>,
     input: &UiInput,
+    dt: f64,
     stats: &mut UiStats,
     mut paint: impl FnMut(&mut UiFrame, Id, &mut ScreenEntry<Id>),
 ) -> StackResult<Id> {
@@ -107,6 +114,7 @@ pub fn paint_stack<Id: Copy + Eq>(
             entry.focus,
             zoom,
         );
+        f.dt = dt;
         let id = entry.id;
         paint(&mut f, id, entry);
         debug_assert_eq!(f.clips, 0, "unbalanced begin_scroll/end_scroll");
@@ -163,5 +171,94 @@ mod tests {
         };
         assert_eq!(screen_zoom(Some(&loading), 1600.0, 900.0), 3);
         assert_eq!(screen_zoom(Some(&loading), 1920.0, 1080.0), 3);
+    }
+
+    /// Every screen sees the SAME delta, top or not.
+    ///
+    /// The ones below the top get `empty_ui_input()` because they must not
+    /// act on a press aimed at the modal above them — but time is not input.
+    /// An animation under a modal keeps running, which is what the oracle's
+    /// single RAF does; freezing it would stop a wheel mid-spin because a
+    /// confirm box opened.
+    #[test]
+    fn every_screen_sees_the_real_delta_even_below_the_top() {
+        let mut p = Painter::new(600, 338);
+        let fonts = Fonts::load_embedded();
+        let mut stack = UiStack::new();
+        stack.push(ScreenEntry::new(1u8, true));
+        stack.push(ScreenEntry::new(2u8, true));
+        let mut stats = UiStats::default();
+        let mut seen: Vec<(u8, f64)> = Vec::new();
+        paint_stack(
+            &mut p,
+            &fonts,
+            &mut stack,
+            &empty_ui_input(),
+            1.0 / 60.0,
+            &mut stats,
+            |f, id, _| seen.push((id, f.dt)),
+        );
+        assert_eq!(seen, vec![(1u8, 1.0 / 60.0), (2u8, 1.0 / 60.0)]);
+    }
+
+    /// The whole point, end to end: time in, different pixels out.
+    ///
+    /// Every other test here checks one link — the flag, the parameter, the
+    /// skip. This one drives the real driver over ten frames of a screen that
+    /// paints from an accumulated clock, and asserts the picture actually
+    /// CHANGED. Without it, `dt` could arrive as a correct number that nothing
+    /// draws with, and every unit test above would still pass.
+    #[test]
+    fn a_screen_that_paints_from_dt_draws_a_different_picture_each_frame() {
+        use crate::im::{fill_rect, rect};
+        use crate::painter::Rgba;
+        let mut p = Painter::new(64, 64);
+        let fonts = Fonts::load_embedded();
+        let mut stack = UiStack::new();
+        stack.push(ScreenEntry::new(0u8, true).animating());
+        let mut stats = UiStats::default();
+        let mut clock = 0.0_f64;
+        let mut digests = Vec::new();
+        for _ in 0..10 {
+            paint_stack(
+                &mut p,
+                &fonts,
+                &mut stack,
+                &empty_ui_input(),
+                1.0 / 60.0,
+                &mut stats,
+                |f, _, _| {
+                    // A block that marches right at 300 px/s — five whole
+                    // pixels per 1/60s frame, so the position is a clean
+                    // multiple and accumulated float drift cannot stall it on
+                    // a repeated pixel (which would be a flake in the test,
+                    // not a freeze in the driver).
+                    clock += f.dt;
+                    let x = (clock * 300.0).round();
+                    fill_rect(f, &rect(x, 8.0, 8.0, 8.0), Rgba::hex(0xff_ffff));
+                },
+            );
+            digests.push(p.digest());
+        }
+        assert_eq!(stats.painted, 10, "every frame reached the texture");
+        let unique = digests.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            unique.len(),
+            10,
+            "ten frames of a moving block must be ten different pictures"
+        );
+    }
+
+    /// A still frame is a zero-length one, and that is the DEFAULT.
+    ///
+    /// `begin_ui` leaves `dt` at 0.0 so the thirteen screen tests that build a
+    /// frame directly keep meaning what they meant: no time passes, nothing
+    /// moves. Only the driver fills in a real delta.
+    #[test]
+    fn a_frame_built_without_the_driver_has_no_time_in_it() {
+        let mut p = Painter::new(64, 64);
+        let fonts = Fonts::load_embedded();
+        let f = crate::im::begin_ui(&mut p, &fonts, 64.0, 64.0, empty_ui_input(), 0, 1);
+        assert_eq!(f.dt, 0.0);
     }
 }

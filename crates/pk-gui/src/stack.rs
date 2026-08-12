@@ -27,6 +27,16 @@ pub struct ScreenEntry<Id: Copy + Eq> {
     pub focus: i64,
     /// Scroll offset for the screen's main region, if it has one.
     pub scroll: f64,
+    /// This screen paints something that moves, so it needs frames even when
+    /// no input arrives.
+    ///
+    /// The shell skips `paint_stack` entirely on a quiet frame over an
+    /// unchanged stack — that skip is most of the game's idle cost and is not
+    /// negotiable (it was worth a measured 36→14 fps when it regressed). A
+    /// screen that animates is the one case where "nothing arrived" does not
+    /// mean "nothing changed", so it opts out here rather than by weakening
+    /// the skip for everyone.
+    pub animates: bool,
     pub design: Option<Design>,
 }
 
@@ -37,12 +47,19 @@ impl<Id: Copy + Eq> ScreenEntry<Id> {
             pauses,
             focus: 0,
             scroll: 0.0,
+            animates: false,
             design: None,
         }
     }
 
     pub fn with_design(mut self, w: f64, h: f64, max: u32) -> Self {
         self.design = Some(Design { w, h, max });
+        self
+    }
+
+    /// Mark this screen as animating — see [`ScreenEntry::animates`].
+    pub fn animating(mut self) -> Self {
+        self.animates = true;
         self
     }
 }
@@ -91,6 +108,15 @@ impl<Id: Copy + Eq> UiStack<Id> {
         self.entries.iter().any(|s| s.pauses)
     }
 
+    /// Does any open screen need frames without input?
+    ///
+    /// Any, not just the top: an animation under a modal keeps running, which
+    /// is what the oracle's single RAF does. The shell consults this to decide
+    /// whether a quiet frame may be skipped.
+    pub fn animates(&self) -> bool {
+        self.entries.iter().any(|s| s.animates)
+    }
+
     /// Re-opening what is already on top is a no-op, not a second copy.
     pub fn push(&mut self, s: ScreenEntry<Id>) {
         if self.top().map(|t| t.id == s.id).unwrap_or(false) {
@@ -125,6 +151,44 @@ impl<Id: Copy + Eq> UiStack<Id> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `animates()` asks about ANY open screen, not the top one.
+    ///
+    /// Same shape as `pauses()`, and for the same reason: a spinning wheel
+    /// under a confirm box still has to be painted, so the question the shell
+    /// asks is "does anything on this stack need frames", not "does the screen
+    /// receiving input need them".
+    #[test]
+    fn a_screen_that_animates_makes_the_whole_stack_animate() {
+        let mut s: UiStack<u8> = UiStack::new();
+        assert!(!s.animates(), "an empty stack asks for nothing");
+        s.push(ScreenEntry::new(0, false));
+        assert!(!s.animates(), "a static screen asks for nothing");
+        s.push(ScreenEntry::new(1, true).animating());
+        assert!(s.animates());
+        // Buried under a modal, it still wants frames.
+        s.push(ScreenEntry::new(2, true));
+        assert!(s.animates());
+        s.remove(1);
+        assert!(!s.animates(), "and stops wanting them once it closes");
+    }
+
+    /// Screens are static unless they say otherwise.
+    ///
+    /// The flag has to default false or every existing screen would silently
+    /// defeat the shell's quiet-frame skip, which is most of the idle cost.
+    #[test]
+    fn a_screen_is_static_until_it_asks_not_to_be() {
+        assert!(!ScreenEntry::new(0u8, true).animates);
+        assert!(ScreenEntry::new(0u8, true).animating().animates);
+        // …and it composes with the design box, in either order.
+        assert!(
+            ScreenEntry::new(0u8, true)
+                .with_design(600.0, 420.0, 2)
+                .animating()
+                .animates
+        );
+    }
 
     #[test]
     fn remove_takes_one_screen_and_close_truncates() {

@@ -169,6 +169,13 @@ pub struct UiFrame<'a> {
     /// Legacy tracked webfont readiness; the atlases are embedded, so true.
     pub fonts_ready: bool,
     pub clips: i32,
+    /// Seconds since the previous painted frame, for screens that animate.
+    ///
+    /// A PARAMETER and not a clock: `pk-gui` has no Bevy and must stay
+    /// headless-deterministic, so the shell owns the time and a test advances
+    /// it in exact steps. `begin_ui` leaves it at 0.0 — a still frame really
+    /// is a zero-length one — and `paint_stack` fills in the real delta.
+    pub dt: f64,
 }
 
 /// Start a frame for one screen. `zoom` is the screen's integer magnification,
@@ -202,6 +209,7 @@ pub fn begin_ui<'a>(
         disabled_idx: BTreeSet::new(),
         fonts_ready: true,
         clips: 0,
+        dt: 0.0,
     }
 }
 
