@@ -5,6 +5,50 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — I-7 CLOSED: the RELEASE build passes pk-check, 27 gates, 0
+  failures — the first time in this project's history. All three failures were
+  in the HARNESS, not in the shipped artefact.**
+  Every green `pk-check` on record was a debug green, and the release build was
+  carried as the project's top open risk. Pointed at it today
+  (`trunk build --release` + `pk-check --no-build`) it failed **three** gates,
+  not the two on record:
+
+  | gate | before | after |
+  |---|---|---|
+  | `sim ticking` | **FAIL 77 Hz** | ok 65.6 Hz |
+  | `intro hands off to the tavern hub` | **FAIL** | ok |
+  | `tavern probe carries a pose` | **FAIL (no probe)** | ok (x 0.00) |
+
+  - **`sim ticking (77 Hz)` was the harness measuring a catch-up drain**, and
+    the file already knew: the generated-floor gate carries a comment reading
+    *"the first version of this gate measured a 2 s window immediately after
+    boot and read 76 Hz on a 60 Hz sim, which is the drain, not the rate"* —
+    and **forty lines below it the boot gate was still measuring a 2 s window
+    immediately after boot.** On debug the drain finished under the 75 Hz
+    ceiling; the first release build ever put through the harness read 77 Hz and
+    was recorded as a defect in the RELEASE BUILD. It was the gate.
+    Both call `simRate()` now.
+  - **The other two were ONE race reported as two defects.** The handoff loop
+    took a single sample at the first poll where `intro === null` — but that is
+    the intro STATE ending, and `TavernRes` is built by a lazy `Update` system a
+    frame or two later. Debug polls were slow enough to miss the gap. It now
+    WAITS for the room, bounded, keeping the last sample so a hub that genuinely
+    never builds still fails and names what it saw.
+  - **Controlled, one variable**: the failing and passing runs are the same
+    release `web/dist`, same host Chrome; only `scripts/pk-check.mjs` changed.
+  - ⚠️ **THIRD TIME IN ONE DAY THAT A REPAIR REACHED ONE OF TWO TWINS.** The
+    dungeon camera's frustum fix left the intro pinned; `drive_scene_camera`'s
+    `_ => None` arm was how; and the sim-rate settle was written inline in one
+    gate. **A repair written inline is a repair applied to one call site.** All
+    three are now single shared functions: `PixelSizing::frustum()`,
+    `resolve_perf_log()`, `simRate()`.
+  - **And it isolated the vsync finding properly.** Same target, only the
+    profile varying: debug wasm p50 30.80 / **p95 48.50** (spread 17.7 ms,
+    work-bound) against release wasm p50 31.20 / **p95 32.40** (spread 1.2 ms,
+    cadence-bound) — at 31.7 and 32.0 fps presented. Same rate, same median,
+    opposite mechanisms. This retires the caveat on the earlier exe-vs-debug-wasm
+    row, which varied both.
+
 - **2026-08-12 — THE 31 ms FRAME WAS NEVER A COST. It is 17 ms of work missing
   a vblank by ~1.4 ms and paying for a whole extra one.** B2's first real run
   on the play target, and it retracts the conclusion the entry below it drew.

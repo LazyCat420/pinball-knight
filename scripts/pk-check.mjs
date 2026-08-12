@@ -118,6 +118,42 @@ const gate = (ok, msg) => {
 };
 
 /**
+ * THE SIM'S TICK RATE — settle, then a long window. **One function, two gates.**
+ *
+ * Bevy's fixed timestep runs CATCH-UP steps to drain accumulated lag, so a
+ * window opened immediately after a boot or a floor build measures the DRAIN
+ * and reports it as a frequency. Building an 87×61 floor is exactly that kind
+ * of stall.
+ *
+ * ⚠️ **THIS EXISTS BECAUSE THE LESSON WAS LEARNED ONCE AND APPLIED ONCE.** The
+ * generated-floor gate carried a comment saying, in as many words, *"the first
+ * version of this gate measured a 2 s window immediately after boot and read
+ * 76 Hz on a 60 Hz sim, which is the drain, not the rate"* — and forty lines
+ * below it the boot gate went on measuring a 2 s window immediately after boot.
+ * On a debug build the drain finished early enough to stay under the 75 Hz
+ * ceiling; **the first release build ever put through this harness read
+ * 77 Hz and failed**, and it was recorded as one of the release build's own
+ * defects. It was the harness.
+ *
+ * That is the third time in one day this codebase has fixed a defect in one of
+ * two twins: the dungeon camera's frustum left the intro's pinned, and
+ * `drive_scene_camera`'s `_ => None` arm is the same shape. **A repair written
+ * inline is a repair applied to one call site.** Both gates now call this.
+ *
+ * The settle is 1 s and the window 3 s, measured against a wall clock rather
+ * than assumed from `waitForTimeout` — a loaded box overshoots the timeout and
+ * a rate divided by the REQUESTED duration reads low.
+ */
+async function simRate(page, pk) {
+  await page.waitForTimeout(1000);
+  const t0 = (await pk()).tick;
+  const w0 = Date.now();
+  await page.waitForTimeout(3000);
+  const t1 = (await pk()).tick;
+  return ((t1 - t0) / (Date.now() - w0)) * 1000;
+}
+
+/**
  * THE GENERATED FLOOR, FROM OUTSIDE THE APP.
  *
  * ⚠️ Asks for the generator with `?rust-floor=1`. The default source is the
@@ -364,18 +400,7 @@ async function realFloorGates(page, gate, errors) {
   );
 
   // ── The sim ticks ──
-  //
-  // SETTLE FIRST, then a long window. Bevy's fixed timestep runs CATCH-UP steps
-  // to drain accumulated lag, and building an 87×61 floor in a debug wasm build
-  // is a stall worth draining — the first version of this gate measured a
-  // 2 s window immediately after boot and read 76 Hz on a 60 Hz sim, which is
-  // the drain, not the rate. One second of settle and three of window.
-  await page.waitForTimeout(1000);
-  const t0 = (await pk()).tick;
-  const w0 = Date.now();
-  await page.waitForTimeout(3000);
-  const t1 = (await pk()).tick;
-  const rate = ((t1 - t0) / (Date.now() - w0)) * 1000;
+  const rate = await simRate(page, pk);
   gate(rate > 45 && rate < 75, `sim ticking on the generated floor (${rate.toFixed(1)} Hz)`);
 
   const hold = async (keys, ms) => {
@@ -586,12 +611,10 @@ async function main() {
         if ((await pk())?.x !== undefined) break;
         await page.waitForTimeout(250);
       }
-      // Gate: sim ticks at ~60 Hz.
-      const t0 = (await pk()).tick;
-      await page.waitForTimeout(2000);
-      const t1 = (await pk()).tick;
-      const rate = (t1 - t0) / 2;
-      gate(rate > 45 && rate < 75, `sim ticking (${rate.toFixed(0)} Hz)`);
+      // Gate: sim ticks at ~60 Hz. Same measurement as the generated-floor
+      // gate, and the SAME FUNCTION — see `simRate` for why that matters.
+      const rate = await simRate(page, pk);
+      gate(rate > 45 && rate < 75, `sim ticking (${rate.toFixed(1)} Hz)`);
 
       // Gate: input moves the knight.
       const x0 = (await pk()).x;
@@ -694,8 +717,29 @@ async function main() {
         console.log("screenshot:", tshot);
       }
       // Finished: the intro handed off and the hub is live.
+      //
+      // ⚠️ **TWO EVENTS, NOT ONE — and taking one sample at the first of them
+      // is a race the release build loses.** `intro === null` means the intro
+      // STATE has ended; `TavernRes` is created by a lazy `Update` setup system
+      // (OnEnter outruns Startup — see `intro.rs`), so the room exists a frame
+      // or two later. On a debug build the 250 ms poll was slow enough that
+      // both had happened by the time it looked, and the gate passed by luck.
+      // The first release build ever put through this harness failed BOTH
+      // `intro hands off to the tavern hub` and `tavern probe carries a pose
+      // (no probe)` — one race, reported as two defects in the shipped
+      // artefact.
+      //
+      // So: wait for the room, do not sample for it. Bounded, so a hub that
+      // genuinely never builds still FAILS — and `handoff` keeps the last
+      // sample either way, so the failure names what it actually saw instead
+      // of "no probe".
       if (s.intro === null && seen.length) {
         handoff = s;
+        if (s.tavern !== null) break;
+        for (let j = 0; j < 40 && handoff.tavern === null; j++) {
+          await introPage.waitForTimeout(250);
+          handoff = (await pkIntro()) ?? handoff;
+        }
         break;
       }
     }
