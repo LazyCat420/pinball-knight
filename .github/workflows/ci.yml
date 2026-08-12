@@ -134,10 +134,22 @@ jobs:
     # per run makes "how much is left" a fact of the build rather than a
     # measurement someone has to remember to re-take.
     #
-    # REPORTED, not enforced — for BOTH numbers below. A ratchet on the
-    # heuristic would gate real work on a value that moves without anything
-    # being ported; a ratchet on the ledger has to wait until the exclusion
-    # registry is complete, or it gates against an unreachable ceiling.
+    # The heuristic stays REPORTED, not enforced: a ratchet on it would gate
+    # real work on a value that moves without anything being ported.
+    #
+    # ⚠️ 2026-08-12 — THE LEDGER IS NOW ENFORCED. It used to be reported too,
+    # on the grounds that a ratchet had to wait until the exclusion registry
+    # was complete or it would gate against an unreachable ceiling. Both halves
+    # of that are now true: `EXCLUSIONS` carries five entries with their
+    # decisions, `DEFERRED` carries the post-parity ones, and TIER 2 closed the
+    # denominator hole (15,430 sibling lines the game loads that were in no
+    # bucket at all). So `converted_pct` has a reachable ceiling and may not
+    # fall.
+    #
+    # It is the ONE hard ratchet in this project, and it can be, because it is
+    # the one instrument that reads no GPU, no browser and no shared box —
+    # deterministic, therefore banded at zero. Everything else has to reason
+    # about noise and returns INCONCLUSIVE rather than red on a busy machine.
     #
     # ⚠️ The two disagree, and the ledger is the honest one. Measured
     # 2026-08-12: heuristic 50% uncovered, ledger 22.4% CONVERTED. The gap is
@@ -153,6 +165,17 @@ jobs:
         run: bash scripts/pk-coverage.sh
       - name: the provenance ledger (exact — P-1)
         run: cargo run -q -p xtask -- coverage --todo
+      # THE RATCHET. `check` exits 1 on a regression, 4 if `coverage.rs` itself
+      # was edited without re-recording (an edited ruler is a different ruler),
+      # and 3 if it could not tell. All three are failures here, because for a
+      # deterministic instrument "could not tell" should be impossible.
+      - name: the ledger may not go backwards
+        run: |
+          mkdir -p .checks
+          cargo run -q -p xtask -- coverage --json > .checks/ledger.json
+          node scripts/pk-baseline.mjs check ledger --from .checks/ledger.json
+      - name: baselines lint
+        run: node scripts/pk-baseline.mjs lint
 
   drift:
     name: oracle rot (D-1)

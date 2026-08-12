@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "instrument": "ledger",
+  "producerSha256": "66f2594c843839b4dbd0cbe20b934d0e1982c92478b42cc2706e0337b103d23b",
+  "metrics": {
+    "ledger.tier1.converted_pct": {
+      "unit": "%",
+      "dir": "higher-better",
+      "value": 25,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.tier1.ported_lines": {
+      "unit": "lines",
+      "dir": "higher-better",
+      "value": 22062,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.tier1.not_started_lines": {
+      "unit": "lines",
+      "dir": "lower-better",
+      "value": 61005,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.tier2.converted_pct": {
+      "unit": "%",
+      "dir": "higher-better",
+      "value": 49.6,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.tier2.ported_lines": {
+      "unit": "lines",
+      "dir": "higher-better",
+      "value": 7145,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.tier2.not_started_lines": {
+      "unit": "lines",
+      "dir": "lower-better",
+      "value": 6365,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.remaining_lines": {
+      "unit": "lines",
+      "dir": "lower-better",
+      "value": 73521,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    },
+    "ledger.dangling_citations": {
+      "unit": "count",
+      "dir": "lower-better",
+      "value": 0,
+      "band": {
+        "rel": 0,
+        "abs": 0
+      },
+      "noiseAtRecord": 0,
+      "n": 1,
+      "at": "2026-08-12T23:48:14.810Z",
+      "commit": "47d3cb2",
+      "history": []
+    }
+  },
+  "regressions": [],
+  "deterministic": true
+}

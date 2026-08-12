@@ -472,6 +472,119 @@ fn classify<'a>(
     t
 }
 
+/// Every citation that resolves to no legacy file, in any tier.
+///
+/// Computed once and shared, so the `--json` leg and the human leg cannot
+/// disagree about whether a run was clean.
+fn dangling_in<'a>(
+    led: &'a Ledger,
+    legacy: &BTreeMap<String, usize>,
+    siblings: &BTreeMap<String, usize>,
+) -> Vec<&'a String> {
+    let mut out: Vec<&String> = led
+        .claims
+        .keys()
+        .filter(|p| {
+            !legacy.contains_key(*p)
+                && !siblings.contains_key(*p)
+                && is_excluded(p).is_none()
+                && is_deferred(p).is_none()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The `--json` leg: metrics only, for `scripts/pk-baseline.mjs` to wrap.
+///
+/// Deliberately NOT a whole envelope. xtask has **zero dependencies** and that
+/// is worth keeping, so it does not hash its own source or read git;
+/// `pk-baseline.mjs` adds `producerSha256`, `commit` and `env` around this. The
+/// split is the honest one anyway: this half is the measurement, that half is
+/// the provenance of the measurement.
+///
+/// The ledger is the project's ONE hard ratchet. Every other instrument reads a
+/// GPU, a browser or a shared box and has to reason about noise; this one is
+/// deterministic, so `converted_pct` may never decrease and no tolerance band is
+/// warranted. `dir` says which way is better; the band is zero on purpose.
+fn emit_json(t1: &Tier, t2: &Tier, dangling: &[&String]) {
+    fn metric(id: &str, unit: &str, dir: &str, value: f64, last: bool) {
+        println!(
+            "    {{ \"id\": \"{id}\", \"unit\": \"{unit}\", \"dir\": \"{dir}\", \
+             \"value\": {value}, \"n\": 1, \"noise\": {{ \"kind\": \"none\", \"value\": 0 }}, \
+             \"quality\": \"ok\" }}{}",
+            if last { "" } else { "," }
+        );
+    }
+    let pct = |p: f64| (p * 10.0).round() / 10.0;
+    println!("{{");
+    println!("  \"schema\": 1,");
+    println!("  \"instrument\": \"ledger\",");
+    println!("  \"producer\": \"xtask/src/coverage.rs\",");
+    println!("  \"deterministic\": true,");
+    println!("  \"metrics\": [");
+    metric(
+        "ledger.tier1.converted_pct",
+        "%",
+        "higher-better",
+        pct(t1.pct()),
+        false,
+    );
+    metric(
+        "ledger.tier1.ported_lines",
+        "lines",
+        "higher-better",
+        t1.ported_lines() as f64,
+        false,
+    );
+    metric(
+        "ledger.tier1.not_started_lines",
+        "lines",
+        "lower-better",
+        t1.todo_lines() as f64,
+        false,
+    );
+    metric(
+        "ledger.tier2.converted_pct",
+        "%",
+        "higher-better",
+        pct(t2.pct()),
+        false,
+    );
+    metric(
+        "ledger.tier2.ported_lines",
+        "lines",
+        "higher-better",
+        t2.ported_lines() as f64,
+        false,
+    );
+    metric(
+        "ledger.tier2.not_started_lines",
+        "lines",
+        "lower-better",
+        t2.todo_lines() as f64,
+        false,
+    );
+    metric(
+        "ledger.remaining_lines",
+        "lines",
+        "lower-better",
+        (t1.todo_lines() + t1.partial_lines() + t2.todo_lines() + t2.partial_lines()) as f64,
+        false,
+    );
+    // Must be zero. A metric rather than only an exit code, so a baseline check
+    // reports WHICH invariant broke rather than only that one did.
+    metric(
+        "ledger.dangling_citations",
+        "count",
+        "lower-better",
+        dangling.len() as f64,
+        true,
+    );
+    println!("  ]");
+    println!("}}");
+}
+
 pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     let led = scan_rust(root);
     let legacy = scan_legacy(root);
@@ -479,6 +592,17 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
 
     let t1 = classify(&legacy, &led, is_excluded);
     let t2 = classify(&siblings, &led, is_deferred);
+    let dangling = dangling_in(&led, &legacy, &siblings);
+
+    if args.iter().any(|a| a == "--json") {
+        // stdout is the artifact here, so the human report must not share it.
+        emit_json(&t1, &t2, &dangling);
+        return if dangling.is_empty() {
+            std::process::ExitCode::SUCCESS
+        } else {
+            std::process::ExitCode::FAILURE
+        };
+    }
 
     println!("PROVENANCE LEDGER — declared ports, not substring matches\n");
 
@@ -666,18 +790,8 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     //
     // Now that tier 2 is scanned, a path can be resolved rather than exempted:
     // it must appear in SOME tier, or be excluded, or be deferred. Nothing gets
-    // a pass for its prefix.
-    let mut dangling: Vec<&String> = led
-        .claims
-        .keys()
-        .filter(|p| {
-            !legacy.contains_key(*p)
-                && !siblings.contains_key(*p)
-                && is_excluded(p).is_none()
-                && is_deferred(p).is_none()
-        })
-        .collect();
-    dangling.sort();
+    // a pass for its prefix. Computed by `dangling_in` so this leg and `--json`
+    // cannot disagree about whether the run was clean.
     if !dangling.is_empty() {
         println!("\n⚠️  {} citation(s) name no legacy file:", dangling.len());
         for d in &dangling {
