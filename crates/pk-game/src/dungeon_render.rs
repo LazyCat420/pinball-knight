@@ -71,16 +71,28 @@ use crate::{WALL_H, WALL_LOW};
 /// function of the grid, not of a hash seed.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) enum Bucket {
-    /// Full-height stone box.
-    Full,
+    /// Full-height stone box, split by the WALL SURFACE it carries.
+    ///
+    /// ⚠️ **`surface` IS A `WALL_*` ID, NEVER A `FLOOR_*` ONE.** `Grid.surfaces`
+    /// holds two vocabularies in one byte and walkability is the disambiguator
+    /// (see [`wash_buckets`]) — every tile that reaches this key is solid, so
+    /// the byte is a wall id by construction.
+    ///
+    /// Splitting the key is what lets a merged mesh do what the oracle does per
+    /// INSTANCE: `build.ts:1395` calls `setColorAt` with `surf.hex` on each
+    /// wall, and a merged bucket has no per-instance colour to set. One bucket
+    /// per (shape, surface) gives each its own tinted material instead. Measured
+    /// on the shipped floors this takes the box buckets from 3 to 12 on L1/L3
+    /// and 3 to 9 on L5 — nine extra draw calls at the very worst.
+    Full { surface: u8 },
     /// Full-height box on the legacy moss variant, `(i*7 + j*13) % 4 == 0`.
     /// Carries its own damp-rot face bake as of V-1; it existed for two passes
     /// before that with the plain stone material, because the SELECTION is the
     /// thing that has to match the oracle and a selection with no bucket
     /// cannot be checked.
-    Moss,
+    Moss { surface: u8 },
     /// Knee-high camera-side rim — the Diablo rule (`pk_core::grid::is_low_wall`).
-    Low,
+    Low { surface: u8 },
     /// Slant prism, split by `(shape, low)` exactly as the oracle splits it.
     /// `low` does not change the height YET (see the module header: shaped
     /// tiles still draw full-height, which is what the slice draws today), but
@@ -263,13 +275,21 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
                 continue;
             }
 
+            // The tile is SOLID here (walkable was skipped at the top), so its
+            // surface byte is a `WALL_*` id — see the `Bucket::Full` doc.
+            let surface = grid
+                .surfaces
+                .as_ref()
+                .map_or(pk_core::surfaces::WALL_STONE, |s| {
+                    s[(j * grid.w + i) as usize]
+                });
             let (bucket, hh) = if low {
-                (Bucket::Low, WALL_LOW / 2.0)
+                (Bucket::Low { surface }, WALL_LOW / 2.0)
             } else if (i * 7 + j * 13) % 4 == 0 {
                 // legacy: every ~4th tall wall grows moss — breaks up runs.
-                (Bucket::Moss, WALL_H / 2.0)
+                (Bucket::Moss { surface }, WALL_H / 2.0)
             } else {
-                (Bucket::Full, WALL_H / 2.0)
+                (Bucket::Full { surface }, WALL_H / 2.0)
             };
             buckets.entry(bucket).or_default().push(Placement {
                 pos: Vec3::new(x as f32, hh, z as f32),
@@ -310,8 +330,8 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
 /// meshes the slice used, so merging cannot change the silhouette.
 fn bucket_shape(bucket: Bucket) -> Mesh {
     match bucket {
-        Bucket::Full | Bucket::Moss => Mesh::from(Cuboid::new(1.0, WALL_H, 1.0)),
-        Bucket::Low => Mesh::from(Cuboid::new(1.0, WALL_LOW, 1.0)),
+        Bucket::Full { .. } | Bucket::Moss { .. } => Mesh::from(Cuboid::new(1.0, WALL_H, 1.0)),
+        Bucket::Low { .. } => Mesh::from(Cuboid::new(1.0, WALL_LOW, 1.0)),
         // A wedge along the hypotenuse — a P3-debt approximation of the
         // triangular prism, unchanged by this pass.
         Bucket::Slant { .. } => {
@@ -581,26 +601,21 @@ pub(crate) fn spawn_grid_meshes(
     //
     // Roughness is the oracle's per-material figure, and the two differ:
     // faces 0.92 (`build.ts:1418`), caps 0.95 (`:1363`).
-    let face = |map: &Handle<Image>, normal: &Handle<Image>| StandardMaterial {
+    // `tint` MULTIPLIES the baked pixels; the stone identity is WHITE, not a
+    // colour, exactly as the oracle's `setRGB(1,1,1)` is (`build.ts:1396`).
+    let face = |map: &Handle<Image>, normal: &Handle<Image>, tint: Color| StandardMaterial {
         base_color_texture: Some(map.clone()),
         normal_map_texture: Some(normal.clone()),
+        base_color: tint,
         perceptual_roughness: 0.92,
         metallic: 0.0,
         ..default()
     };
-    let wall_mat = materials.add(face(&tex.wall, &tex.wall_normal));
-    // Moss is its own PAINT, not its own geometry — the bucket has existed
-    // since the batching pass precisely so this day cost one line.
-    let moss_mat = materials.add(face(&tex.wall_moss, &tex.wall_normal));
-    // The knee-high rims have their own face bake: a full design squashed to
-    // 0.35 world units would read as stripes, so the painter draws a different
-    // one (`makeWallTexture(_, low = true)`).
-    let low_mat = materials.add(face(&tex.wall_low, &tex.wall_low_normal));
     // Shaped tiles get their own meshes — square boxes would contradict the
     // collider ("see = hit" is the tile-shape contract; these are P3-debt
     // approximations of it, not violations). The oracle paints them with the
     // PLAIN tall face (`build.ts:1453`).
-    let shaped_mat = materials.add(face(&tex.wall, &tex.wall_normal));
+    let shaped_mat = materials.add(face(&tex.wall, &tex.wall_normal, Color::WHITE));
     let cap_mat = materials.add(StandardMaterial {
         base_color_texture: Some(tex.cap.clone()),
         normal_map_texture: Some(tex.cap_normal.clone()),
@@ -610,10 +625,34 @@ pub(crate) fn spawn_grid_meshes(
     });
 
     for (bucket, mesh) in build_meshes(&plan) {
+        // ── THE WALL WASH (V-2) ──
+        // One material per (shape, surface) bucket, tinted by the surface's own
+        // hex. This is the merged-mesh equivalent of the oracle's per-INSTANCE
+        // `setColorAt(k, surf.hex)`: a merged bucket has no instance to colour,
+        // so the split in the KEY carries what the instance colour carried.
+        //
+        // Moss and the low rims are tinted too. They are the same masonry — a
+        // rubber wall that happens to have grown moss still bounces like rubber
+        // and must still read as rubber, and the knee-high rim is the piece the
+        // ball hits MOST.
         let side_mat = match bucket {
-            Bucket::Full => wall_mat.clone(),
-            Bucket::Moss => moss_mat.clone(),
-            Bucket::Low => low_mat.clone(),
+            Bucket::Full { surface } => {
+                materials.add(face(&tex.wall, &tex.wall_normal, wall_tint(surface)))
+            }
+            // Moss is its own PAINT, not its own geometry — the bucket has
+            // existed since the batching pass precisely so this day cost one
+            // line.
+            Bucket::Moss { surface } => {
+                materials.add(face(&tex.wall_moss, &tex.wall_normal, wall_tint(surface)))
+            }
+            // The knee-high rims have their own face bake: a full design
+            // squashed to 0.35 world units would read as stripes, so the
+            // painter draws a different one (`makeWallTexture(_, low = true)`).
+            Bucket::Low { surface } => materials.add(face(
+                &tex.wall_low,
+                &tex.wall_low_normal,
+                wall_tint(surface),
+            )),
             Bucket::Slant { .. } | Bucket::Round { .. } => shaped_mat.clone(),
         };
         // Two entities per bucket, one material each — the merged-mesh stand-in
@@ -700,6 +739,46 @@ fn floor_wash(surface: u8) -> Option<(Color, f32)> {
         // in the painter too — `paintSurfaces` skips it rather than repainting.
         _ => None,
     }
+}
+
+/// The multiply-tint for a WALL surface — the other half of the wash.
+///
+/// The oracle sets this per instance (`build.ts:1395`):
+/// ```js
+/// mesh.setColorAt(k, surf.id === WALL_STONE
+///   ? tintScratch.setRGB(1, 1, 1)
+///   : tintScratch.setHex(surf.hex, THREE.SRGBColorSpace));
+/// ```
+/// Two things in that line are load-bearing and both are kept here:
+///
+/// 1. **Stone is WHITE, not "no tint".** In three.js the first `setColorAt`
+///    allocates `instanceColor` ZERO-FILLED, so an instance never written
+///    renders BLACK — which is why the oracle writes every instance in a
+///    tinted bucket including the stone ones. This port has no instance colour
+///    at all (merged meshes), so the equivalent hazard is a `base_color` left
+///    at its default; returning an explicit [`Color::WHITE`] makes the identity
+///    a value rather than an omission.
+/// 2. **The hex is sRGB.** `setColorAt` does not colour-space-convert the way
+///    a `material.color` setter does, so the oracle passes `SRGBColorSpace`
+///    explicitly or "the tint renders washed out". `Color::srgb_u8` is that
+///    same declaration.
+///
+/// The tint MULTIPLIES the baked masonry rather than replacing it, so a rubber
+/// wall is the biome's own stone seen through red — the courses, the joints and
+/// the normal map all still read. Replacing the albedo would give four flat
+/// colours and lose the bake, which is the mistake `floor_wash`'s header names
+/// for the floor ("reads as a spilled bucket of blue, not as ice").
+fn wall_tint(surface: u8) -> Color {
+    let hex = pk_core::surfaces::wall_surface(surface).hex;
+    if hex == 0x00ff_ffff {
+        // The identity tint, spelled as itself.
+        return Color::WHITE;
+    }
+    Color::srgb_u8(
+        ((hex >> 16) & 0xff) as u8,
+        ((hex >> 8) & 0xff) as u8,
+        (hex & 0xff) as u8,
+    )
 }
 
 /// Which walkable tiles carry each washed surface.
@@ -875,6 +954,157 @@ mod tests {
     /// id of a washed floor surface and no walkable one does, so a reader that
     /// skips the walkability branch produces buckets where the correct one
     /// produces none.
+    /// ⚠️ THE WALL WASH IS A MULTIPLY, AND STONE IS WHITE.
+    ///
+    /// Two ways to get this wrong, both of which look fine in a byte count:
+    /// a stone wall tinted to anything but white would repaint the whole
+    /// dungeon, and a non-stone tint that came back white would silently
+    /// restore the bug V-2 exists to fix — 618 tiles on L3 that hit differently
+    /// than they look.
+    #[test]
+    fn stone_is_the_identity_tint_and_every_other_surface_is_not() {
+        use pk_core::surfaces::{WALL_BRASS, WALL_ICE, WALL_MUD, WALL_RUBBER, WALL_STONE};
+
+        assert_eq!(
+            wall_tint(WALL_STONE),
+            Color::WHITE,
+            "stone must be the identity tint, or every wall in the game is repainted"
+        );
+        for s in [WALL_RUBBER, WALL_ICE, WALL_MUD, WALL_BRASS] {
+            assert_ne!(
+                wall_tint(s),
+                Color::WHITE,
+                "{} came back as the identity tint — it would be invisible",
+                pk_core::surfaces::wall_surface(s).label
+            );
+        }
+        // …and the tint is the SURFACE TABLE's own hex, not a second palette
+        // invented here. A copy would drift from the physics it describes.
+        let rubber = pk_core::surfaces::wall_surface(WALL_RUBBER);
+        let want = Color::srgb_u8(
+            ((rubber.hex >> 16) & 0xff) as u8,
+            ((rubber.hex >> 8) & 0xff) as u8,
+            (rubber.hex & 0xff) as u8,
+        );
+        assert_eq!(wall_tint(WALL_RUBBER), want);
+
+        // An unknown id falls back to stone rather than panicking or going
+        // black — `wall_surface` promises that and the renderer runs per frame.
+        assert_eq!(wall_tint(200), Color::WHITE);
+    }
+
+    /// ⚠️ A WALL'S SURFACE MUST SPLIT THE BUCKET, OR THE MERGE HIDES IT.
+    ///
+    /// The oracle tints per INSTANCE; a merged mesh has no instance, so the
+    /// only place the difference can live is the key. If two surfaces shared a
+    /// bucket they would share one material and the rarer one would vanish
+    /// into the commoner one's colour.
+    #[test]
+    fn two_wall_surfaces_never_share_a_bucket() {
+        let mut g = Grid::solid(7, 7);
+        for k in 1..6 {
+            pk_core::grid::set_tile(&mut g, k, 3, pk_core::grid::T_FLOOR);
+        }
+        // Two solid neighbours of that corridor, different materials, same
+        // shape and same rim-ness — so ONLY the surface distinguishes them.
+        pk_core::grid::set_surface(&mut g, 2, 2, pk_core::surfaces::WALL_RUBBER);
+        pk_core::grid::set_surface(&mut g, 4, 2, pk_core::surfaces::WALL_MUD);
+
+        let plan = plan_walls(&g);
+        let surfaces: Vec<u8> = plan
+            .buckets
+            .keys()
+            .filter_map(|b| match b {
+                Bucket::Full { surface } | Bucket::Moss { surface } | Bucket::Low { surface } => {
+                    Some(*surface)
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            surfaces.contains(&pk_core::surfaces::WALL_RUBBER),
+            "the rubber wall never got its own bucket: {surfaces:?}"
+        );
+        assert!(
+            surfaces.contains(&pk_core::surfaces::WALL_MUD),
+            "the mud wall never got its own bucket: {surfaces:?}"
+        );
+    }
+
+    /// ⚠️ THE SHIPPED FLOORS REALLY DO CARRY THESE WALLS — the whole reason
+    /// V-2 exists, measured on the data rather than argued.
+    ///
+    /// In the FILES: L3 carries 455 mud / 89 brass / 74 rubber solid tiles and
+    /// L5 carries 375 rubber / 107 brass. Every one of them BOUNCES DIFFERENTLY
+    /// (`pk_core::surfaces` drives `collide`), and until this pass every one was
+    /// painted as stone — a wall that hits differently than it looks.
+    ///
+    /// ⚠️ THE PLANNED COUNT IS SMALLER THAN THE FILE COUNT, AND THAT IS
+    /// CORRECT. A first cut of this test asserted ≥600 on L3 and failed at 213.
+    /// The renderer culls walls with no walkable neighbour (`exposed`) and
+    /// skips shaped tiles, so of L3's 618 non-stone walls only 213 are ones a
+    /// player can ever see or hit — re-derived independently over the JSON, it
+    /// is 213 exactly. Asserting the FILE's number here would have been a
+    /// number invented for the test rather than measured from the renderer.
+    #[test]
+    fn the_shipped_floors_carry_walls_that_are_not_stone() {
+        use pk_core::surfaces::WALL_STONE;
+
+        // Exposed, full-shape, non-stone wall tiles — counted over the shipped
+        // JSON with the renderer's own two filters.
+        for (level, want_min) in [(3, 213), (5, 244)] {
+            let floor = crate::authored_floor::load(level, 1).expect("a shipped floor");
+            let plan = plan_walls(&floor.grid);
+            let painted: usize = plan
+                .buckets
+                .iter()
+                .filter(|(b, _)| {
+                    matches!(
+                        b,
+                        Bucket::Full { surface }
+                            | Bucket::Moss { surface }
+                            | Bucket::Low { surface }
+                        if *surface != WALL_STONE
+                    )
+                })
+                .map(|(_, cells)| cells.len())
+                .sum();
+            assert_eq!(
+                painted, want_min,
+                "L{level} planned {painted} non-stone wall tiles, expected {want_min} — the \
+                 surface byte is missing, the bucket key stopped splitting on it, or the \
+                 cull changed"
+            );
+        }
+    }
+
+    /// A grid with NO surface byte must still plan — every generated floor is
+    /// that grid until `surface-paint.ts` is ported, and the fallback is stone
+    /// rather than a panic in a per-frame path.
+    #[test]
+    fn a_grid_with_no_surfaces_plans_every_wall_as_stone() {
+        let mut g = Grid::solid(5, 5);
+        for k in 1..4 {
+            pk_core::grid::set_tile(&mut g, k, 2, pk_core::grid::T_FLOOR);
+        }
+        g.surfaces = None;
+        let plan = plan_walls(&g);
+        assert!(
+            !plan.buckets.is_empty(),
+            "a surfaceless grid planned nothing"
+        );
+        for b in plan.buckets.keys() {
+            if let Bucket::Full { surface } | Bucket::Moss { surface } | Bucket::Low { surface } = b
+            {
+                assert_eq!(
+                    *surface,
+                    pk_core::surfaces::WALL_STONE,
+                    "a surfaceless grid invented a wall surface"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_wash_never_reads_a_walls_byte() {
         let mut g = Grid::solid(5, 5);
@@ -1060,16 +1290,16 @@ mod tests {
                     pk_core::grid::world_to_tile(&g, f64::from(c.pos.x), f64::from(c.pos.z));
                 assert!(exposed(&g, i, j), "a culled tile reached a bucket");
                 match bucket {
-                    Bucket::Low => {
+                    Bucket::Low { .. } => {
                         assert!(is_low_wall(&g, i, j), "({i},{j}) is not a rim");
                         low += 1;
                     }
-                    Bucket::Moss => {
+                    Bucket::Moss { .. } => {
                         assert!(!is_low_wall(&g, i, j), "({i},{j}) is a rim, not moss");
                         assert_eq!((i * 7 + j * 13) % 4, 0, "({i},{j}) is off the lattice");
                         moss += 1;
                     }
-                    Bucket::Full => {
+                    Bucket::Full { .. } => {
                         assert!(!is_low_wall(&g, i, j), "({i},{j}) is a rim, not stone");
                         assert_ne!((i * 7 + j * 13) % 4, 0, "({i},{j}) belongs to moss");
                         full += 1;
@@ -1256,7 +1486,9 @@ mod tests {
     /// change the picture, and nothing else in the suite would see it.
     #[test]
     fn merging_preserves_every_stamp() {
-        let shape = bucket_shape(Bucket::Full);
+        let shape = bucket_shape(Bucket::Full {
+            surface: pk_core::surfaces::WALL_STONE,
+        });
         let one = Stamp::new(&shape);
         let cells = vec![
             Placement {
