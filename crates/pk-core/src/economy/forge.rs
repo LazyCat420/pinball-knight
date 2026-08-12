@@ -123,7 +123,23 @@ pub enum WeaponId {
     Flamethrower,
 }
 
+/// Melee wears on hit; ranged spends a durability per SHOT — durability IS the
+/// ammo. `cards::card_fits_kind` is what reads this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaponKind {
+    Melee,
+    Ranged,
+}
+
 impl WeaponId {
+    /// `items.ts:137-167` — three weapons are ranged, everything else swings.
+    pub fn kind(self) -> WeaponKind {
+        match self {
+            WeaponId::Gun | WeaponId::Bow | WeaponId::Flamethrower => WeaponKind::Ranged,
+            _ => WeaponKind::Melee,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             WeaponId::Fists => "Fists",

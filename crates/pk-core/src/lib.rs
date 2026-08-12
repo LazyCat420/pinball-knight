@@ -37,6 +37,7 @@
     clippy::too_many_arguments
 )]
 
+pub mod cards;
 pub mod collide;
 pub mod combo;
 pub mod economy;
