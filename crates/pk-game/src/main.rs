@@ -1206,6 +1206,11 @@ fn gather_input(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<Intent>) {
     intent.0 = FrameInput {
         move_x: x,
         move_z: z,
+        // Both Shifts, matching `tavern.rs:1621` — the hub already bound the
+        // sprint key and the dungeon did not, so the same key meant two things
+        // in two scenes. The sim applies the moving/attacking gate; the shell
+        // only reports the key.
+        sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
     };
 }
 

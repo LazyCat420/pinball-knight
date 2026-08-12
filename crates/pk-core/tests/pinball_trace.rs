@@ -55,7 +55,22 @@ fn pinball_trace_replays_bit_exact() {
         let input = FrameInput {
             move_x: ix,
             move_z: iz,
+            sprint: false,
         };
+        // ⚠️ THE FIXTURE'S WALKING BRANCH IS A FLAT `PLAYER_SPEED`.
+        //
+        // `port-fixtures.test.ts:442-450` says so in its own comment ("walking
+        // mirror (same as trace())"): once the ride ends it calls `moveCircle`
+        // at a constant speed, exactly as the collision traces do. The REAL
+        // walk ramps through `curSpeed` (`player.ts:2188-2190`), so replaying
+        // this fixture through `simulate` would compare the ported ramp against
+        // a mirror that has none — it diverged at tick 466, the first walking
+        // tick after the ride stops, by 0.055 tiles.
+        //
+        // Pinned to the fixture's own assumption rather than weakened: what
+        // this fixture gates is the RIDE, and the ride is untouched by the ramp.
+        // The walk profile has its own tests in `movement_trace.rs`.
+        s.cur_speed = pk_core::state::PLAYER_SPEED;
         simulate(&mut s, &input);
         max_speed = max_speed.max(s.player.mom_speed);
         assert!(

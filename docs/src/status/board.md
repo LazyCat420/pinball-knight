@@ -5,6 +5,33 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-12 — 4A-2: the walk is the oracle's walk — accel/friction ramp,
+  the floor underfoot, and SPRINT.** The dungeon moved at a flat
+  `PLAYER_SPEED`, ignoring both the smoothed `curSpeed` ramp
+  (`player.ts:2188-2190`) and the floor's `walkMult` — so sand was not heavy
+  underfoot on the walking path even though `surface_at` landed in 1c-1. Shift
+  did nothing in the dungeon while the tavern had bound it since P6.
+  **The finding that matters is about the fixtures, not the walk:**
+  - **Two "movement" fixtures do not pin movement.** `movement-trace-seed7` and
+    `shaped-trace-seed7` are exported by a loop that calls `moveCircle` DIRECTLY
+    at a constant speed (`port-fixtures.test.ts:142-160`) and never enters
+    `updatePlayer`. They pin COLLISION. The Rust side replayed them through
+    `simulate()`, which was equivalent only while the walk was flat — so the
+    moment the real ramp landed they went red at tick 0 (0.0153 against a wanted
+    0.07). **Fixing the port to satisfy them would have deleted a correct
+    transcription to please a pin that never measured it.** They now replay
+    through `move_circle`, as their own exporter does, and the walk profile got
+    its own tests. `pinball-trace-seed7`'s walking branch is the same mirror
+    ("same as trace()", `:442-450`) and pre-charges `cur_speed` for the same
+    reason — what it gates is the RIDE.
+  - **A sabotage that "survives" may never have been applied.** Deleting the
+    floor-surface term left all tests green, which looked like a coverage hole
+    and was one — the demo floor's spawn tile is plain stone (`walk_mult` 1.0),
+    so the multiplier was a no-op and the test could not see it. The replacement
+    paints the whole floor sand (0.82) and compares against stone. But the FIRST
+    re-run also "passed": `cargo fmt` had reflowed the line so the patch never
+    matched. Every sabotage now asserts its own application before it runs.
+
 - **2026-08-12 — 4A-1: the parts the dungeon DRAWS are now the parts the ball
   HITS.** `pk_core::pinball` — 1,027 lines, fixture-gated, ticked every frame
   since 08-09 — was running against `parts: Vec::new()` on every floor. Nothing
