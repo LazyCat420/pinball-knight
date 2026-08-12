@@ -43,6 +43,7 @@ pub mod cards;
 pub mod collide;
 pub mod combo;
 pub mod economy;
+pub mod enemies;
 pub mod flow_field;
 pub mod gambler;
 pub mod grid;
