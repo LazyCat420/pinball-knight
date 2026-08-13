@@ -157,6 +157,83 @@ nonexistent tier-2 file (red), delete the sibling-spelling normaliser (red),
 let tier 2 swallow the PK tree (red). Positive control on the clean tree: green,
 exit 0. Workspace **882 tests**, 0 failed.
 
+### 2026-08-12 — I-2, I-6 and I-8 repaired, each sabotage-verified
+
+**I-2 — the drift gate watched code, and art is oracle state.** Every A/B sheet
+*photographs* the sprite sheets, so a monster re-published on the
+braindeadbot-client side would move what the oracle looks like while every `.ts`
+stayed byte-identical — and `pk-drift.sh` would report *"clean — the oracle still
+describes the live game"* over a picture that had changed. `public/` is now a
+second leg, scoped by walking what `legacy/` carries (braindeadbot-client's
+`public/` holds `images/`, `textures/`, `mahjong-tiles/` and cursors that were
+never extracted; diffing the roots would print a dozen meaningless DRIFT lines).
+
+The allowlist was **measured, not assumed** — "differs" does not say which tree
+moved, and only one direction is rot: `brute-S.png` is legacy 08-12 at 1,013,307 B
+against bdb 08-06 at 44,548 B, `stiltneck-E.png` legacy 08-12 against bdb 08-03,
+both legacy-ahead. The blind spot is stated in the file: an allowlisted entry is
+invisible in **both** directions, so every line carries a date to re-measure
+against.
+
+**I-6 — ~17 oracle-side 404s were a printed note, and a printed note is skimmed.**
+The mechanism was derived rather than guessed: `boot/sheets.ts:32` declares
+`DIRS = ["S","N","E"]`, loads all three for every imported kind and reuses
+whichever arrived, and W is never requested because it is drawn as a flipped E.
+So a kind that authored only S 404s twice on every boot, forever — the loader
+working. `assets/fixtures/legacy-404-allowlist.json` enumerates the expected
+misses (**enumerated, never a glob**: `*-N.png` would also swallow a kind that is
+supposed to author N and quietly stopped shipping it), and an **unexpected 404 is
+now fatal** — a sheet the game asked for and did not get renders as a black
+monster, and a rig that shoots that has measured the absence rather than the art.
+
+**I-8 — poll for A, then sample B once. The fourth instance, fixed as a helper.**
+`pollTav` waited for the *tavern's* opinion (`panel === false`) and the next line
+took one reading of the *GUI layer's* (`gui.open`). Different systems, different
+frames: measured on the release build, *the prompt comes back when the sheet
+closes* failed **1 run in 3**. The previous three instances were each repaired at
+one call site, which is exactly why there was a fourth — so `untilFresh` is now
+shared, and **all three** poll-then-read pairs in the tavern block go through it
+(`guiUp`, `guiDown`, and `afterWalk`, whose `focus` is derived from position and
+so reports the station the knight was walking *away* from on a stale sample).
+
+It stays falsifiable: on timeout `untilFresh` returns the last state it actually
+saw, so a broken app fails on its real value rather than hanging.
+
+**✅ THE STREAK HOLDS — 3/3 green on one unchanged release `web/dist`**
+(`b25f0bf5b62e`, recorded in `.checks/pk-check-streak.json`). §7's standing risk
+is closed: a red `pk-check` run is now evidence about the port.
+
+**⚠️ I-9, found while closing I-8 and NOT yet fixed: the sim-rate gate is
+load-coupled.** Same build, minutes apart:
+
+| grant | `sim ticking` | verdict |
+|---|---:|---|
+| `pk-run.sh --class webgpu --cpus 2` | **31.1 Hz** | RED |
+| `pk-run.sh --class webgpu --cpus 4` | 68.5 / 65.6 / 68.4 Hz | green ×3 |
+
+31.1 is not a broken sim and not flake — it is almost exactly half of 60, the
+vsync plateau B2 identified. A frame that overruns the ~15.6 ms present interval
+is charged a whole extra one, the app renders at ~32 fps, and **the sim tick
+tracks the frame rather than a fixed 60 Hz clock**. Starve the box and the tick
+rate halves with it.
+
+So `45 < Hz < 75` conflates *"the sim is broken"* with *"this machine could not
+render fast enough to keep the sim fed"* — the exact conflation
+`pk-baseline.mjs` exists to prevent everywhere else, sitting inside `pk-check`
+itself. **Do not widen the band**: that hides a genuine stall just as
+effectively. The repair is the one the comparator already implements — record
+the grant the run held, and report INCONCLUSIVE rather than RED when the box
+could not supply it. Until then, run this gate at `--cpus 4` or better.
+
+**`--repeat N` makes the streak a command.** §7's rule — *"until pk-check runs
+green three times consecutively on one unchanged `web/dist`, a red run is not
+evidence about the port"* — was written down and then had to be remembered, which
+is the same failure as a number living only in prose. The driver digests
+`web/dist` before and after, and a change mid-streak **voids** the result (exit 3)
+rather than passing or failing it. It spawns rather than looping in-process,
+because `failed` is module state and run 2 would otherwise inherit run 1's
+failures — an error in the flattering direction.
+
 ### The remainder, by legacy directory
 
 Nineteen rows, reconciling exactly to 67,370 — the two tiers' NOT STARTED

@@ -613,6 +613,28 @@ async function main() {
       }
       // Gate: sim ticks at ~60 Hz. Same measurement as the generated-floor
       // gate, and the SAME FUNCTION — see `simRate` for why that matters.
+      // ⚠️ I-9 (found 2026-08-12, NOT yet fixed) — THIS GATE IS LOAD-COUPLED.
+      //
+      // Measured on one unchanged release `web/dist`, minutes apart:
+      //   `pk-run.sh --class webgpu --cpus 2`  →  31.1 Hz   RED
+      //   `pk-run.sh --class webgpu --cpus 4`  →  68.5 / 65.6 / 68.4 Hz   green
+      //
+      // 31.1 is not a broken sim, and it is not noise: it is almost exactly half
+      // of 60, which is the vsync plateau B2 identified — a frame that overruns
+      // the ~15.6 ms present interval is charged a whole extra one, so the app
+      // renders at ~32 fps, and the sim tick tracks the FRAME rather than a
+      // fixed 60 Hz clock. Starve the box and the tick rate halves with it.
+      //
+      // So `45 < Hz < 75` conflates "the sim is broken" with "this machine could
+      // not render fast enough to keep the sim fed" — the same conflation
+      // `pk-baseline.mjs` exists to prevent everywhere else, sitting inside
+      // pk-check itself. **Do not widen the band to make it green**; that would
+      // hide a genuine stall just as effectively. The repair is the one the
+      // comparator already implements: record the grant the run held and report
+      // INCONCLUSIVE, not RED, when the box could not supply it.
+      //
+      // Until then: run this gate at `--cpus 4` or better, and read a red here
+      // as "re-run with a real grant" rather than as a defect in the port.
       const rate = await simRate(page, pk);
       gate(rate > 45 && rate < 75, `sim ticking (${rate.toFixed(1)} Hz)`);
 
@@ -796,6 +818,52 @@ async function main() {
       timeout: 60_000,
     });
     const pkTav = () => tavPage.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
+    /* ── I-8: POLL FOR A, THEN SAMPLE B ONCE — THE FOURTH INSTANCE ────────
+     *
+     * `pollTav` waits for the TAVERN's opinion (`panel === false`) and then
+     * the next line took ONE reading of the GUI layer's (`gui.open`). Those
+     * are published by different systems on different frames, so the read can
+     * land before the layer has caught up. Measured 2026-08-12 on the release
+     * build: *the prompt comes back when the sheet closes* failed 1 run in 3,
+     * reading `open=0` where two other runs read 1.
+     *
+     * It is the FOURTH time this exact shape has been repaired here, and the
+     * previous three were each fixed at ONE call site — which is why there was
+     * a fourth. So this is a helper, and every poll-then-read pair in the
+     * tavern block goes through it.
+     *
+     * The rule: never assert on a sample that could pre-date the thing it is
+     * meant to observe. `untilFresh` only ever inspects states published
+     * strictly AFTER it was called (`tick` advances once per publish, and in
+     * the tavern there is no Sim so a tick IS a publish), and it keeps looking
+     * until the predicate holds or the deadline passes.
+     *
+     * It stays FALSIFIABLE: on timeout it returns the last state it actually
+     * saw, so a genuinely broken app fails the gate on its real value rather
+     * than hanging or silently passing. A helper that waited forever, or that
+     * synthesised a passing value, would be the opposite of this repair.
+     */
+    const freshState = async (timeoutMs = 1500) => {
+      const before = (await pkTav())?.tick;
+      const deadline = Date.now() + timeoutMs;
+      let last = null;
+      while (Date.now() < deadline) {
+        last = await pkTav();
+        if (last && last.tick !== before) return last;
+        await tavPage.waitForTimeout(16);
+      }
+      return last ?? (await pkTav());
+    };
+    const untilFresh = async (done, ms = 2500) => {
+      const deadline = Date.now() + ms;
+      let last = null;
+      while (Date.now() < deadline) {
+        last = await freshState(Math.max(200, deadline - Date.now()));
+        if (last && done(last)) return last;
+      }
+      return last;
+    };
+
     let tav = null;
     for (let i = 0; i < 60 && !tav; i++) {
       await tavPage.waitForTimeout(500);
@@ -818,7 +886,12 @@ async function main() {
       // spine and stops against the central table — movement + collision.
       const z0 = tav.z;
       await hold(["w", "d"], 1100);
-      const afterWalk = (await pkTav()).tavern;
+      // I-8, third site. The distance gate would survive a stale pose — 1100 ms
+      // of walking clears a 2-unit threshold either way — but `focus` is derived
+      // from the position, so a sample from before the knight arrived reports
+      // the station it was walking AWAY from. Wait for the arrival to be
+      // published rather than reading whatever was last put out.
+      const afterWalk = (await untilFresh((s) => s?.tavern?.z < z0 - 2))?.tavern ?? (await pkTav()).tavern;
       gate(afterWalk.z < z0 - 2, `tavern input drives movement (Δz=${(afterWalk.z - z0).toFixed(2)})`);
       gate(afterWalk.focus === "table", `station focus fires at the central table (focus=${afterWalk.focus})`);
 
@@ -834,6 +907,7 @@ async function main() {
         }
         return p;
       };
+
       await tavPage.keyboard.press("e");
       const withPanel = await pollTav((p) => p.panel === true);
       gate(withPanel?.panel === true, "E opens the run summary panel");
@@ -844,7 +918,9 @@ async function main() {
       // it painted, and it owns the keyboard. A menu that never ran and a menu
       // that ran and was composited away are the same black screen, so both
       // counters are asserted rather than either one.
-      const guiUp = (await pkTav())?.gui ?? null;
+      // I-8: wait for the LAYER to agree the sheet is up, rather than reading it
+      // once because the TAVERN already said so.
+      const guiUp = (await untilFresh((s) => s?.gui?.open === 1 && s?.gui?.pauses === true))?.gui ?? null;
       gate(!!guiUp, "the GUI layer is live");
       gate(guiUp?.painted > 0, `the GUI painted frames (${guiUp?.painted})`);
       // THE SKIP, AS A NUMBER. Immediate mode rebuilds the widgets every pass;
@@ -889,7 +965,12 @@ async function main() {
       await tavPage.keyboard.press("Escape");
       const noPanel = await pollTav((p) => p.panel === false);
       gate(noPanel?.panel === false, "Escape closes the panel");
-      const guiDown = (await pkTav())?.gui ?? null;
+      // ⚠️ I-8 ITSELF. This pair is the gate that failed 1 run in 3: `pollTav`
+      // returned the moment the TAVERN said `panel === false`, and the GUI
+      // layer re-registers the contextual prompt on a LATER frame. Waiting for
+      // the layer's own state to settle is the whole fix.
+      const guiDown =
+        (await untilFresh((s) => s?.gui?.pauses === false && s?.gui?.open === 1))?.gui ?? null;
       gate(
         guiDown?.pauses === false,
         "closing the sheet hands the keyboard back",
@@ -933,16 +1014,10 @@ async function main() {
       //
       // Bounded, and it falls back to whatever it has rather than hanging: a
       // stalled probe must fail the gate it feeds, not the whole run.
-      const freshPose = async (timeoutMs = 800) => {
-        const before = (await pkTav())?.tick;
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-          const s = await pkTav();
-          if (s && s.tick !== before) return s.tavern;
-          await tavPage.waitForTimeout(16);
-        }
-        return (await pkTav())?.tavern;
-      };
+      // Now one line, because `freshState` above IS this — the walk gate and the
+      // GUI gates were solving the same problem twice, which is how the second
+      // one came to be missing.
+      const freshPose = async (timeoutMs = 800) => (await freshState(timeoutMs))?.tavern;
       const walkUntil = async (keys, done, maxSteps = 40, ms = 140) => {
         let p = await freshPose();
         for (let i = 0; i < maxSteps; i++) {
@@ -1004,14 +1079,110 @@ async function main() {
   }
 }
 
-main()
-  .then(() => {
-    console.log(
-      failed === 0 ? "\npk-check: ALL GATES PASSED" : `\npk-check: ${failed} GATE(S) FAILED`,
-    );
-    process.exit(failed === 0 ? 0 : 1);
-  })
-  .catch((e) => {
-    console.error("pk-check harness error:", e.message);
+/* ── --repeat N: THE STREAK, AS A COMMAND RATHER THAN A DISCIPLINE ──────────
+ *
+ * The standing rule in docs/src/status/one-to-one-route.md §7 is:
+ *
+ *   "Until pk-check runs green three times consecutively on one unchanged
+ *    web/dist, a red run is not evidence about the port."
+ *
+ * That rule was written down and then had to be REMEMBERED, which is the same
+ * failure mode as a number that lives only in prose. `--repeat 3` makes it
+ * something you can run and something CI could own.
+ *
+ * Two things it must do that a shell `for` loop would not:
+ *
+ *  1. PIN THE BUILD. The whole claim is "on one unchanged web/dist". The digest
+ *     is taken before the first run and again after the last, and a change
+ *     between them voids the streak — otherwise a rebuild in another terminal
+ *     turns three runs of two different binaries into one green streak.
+ *  2. SPAWN, not loop in-process. `failed` is module state, the static server
+ *     binds a fixed port and the host browser is reused; re-entering `main()`
+ *     would carry all three between runs, so run 2 would inherit run 1's
+ *     failures and the streak would be meaningless in the flattering direction.
+ */
+async function repeatDriver(n) {
+  const { createHash } = await import("node:crypto");
+  const { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+
+  const distDigest = () => {
+    const root = join(ROOT, "web/dist");
+    const h = createHash("sha256");
+    const walk = (d) => {
+      for (const e of readdirSync(d).sort()) {
+        const p = join(d, e);
+        if (statSync(p).isDirectory()) walk(p);
+        else h.update(e).update(readFileSync(p));
+      }
+    };
+    walk(root);
+    return h.digest("hex");
+  };
+
+  const before = distDigest();
+  console.log(`pk-check --repeat ${n} over web/dist ${before.slice(0, 12)}\n`);
+  const args = process.argv.slice(2).filter((x) => x !== "--repeat" && x !== String(n));
+  // --no-build is forced: a rebuild between runs is the exact thing the digest
+  // exists to detect, so the driver must not cause one itself.
+  if (!args.includes("--no-build")) args.push("--no-build");
+
+  const runs = [];
+  for (let i = 1; i <= n; i++) {
+    console.log(`\n════════ run ${i}/${n} ════════`);
+    const r = spawnSync(process.execPath, [process.argv[1], ...args], { stdio: "inherit" });
+    runs.push({ run: i, status: r.status ?? 2, at: new Date().toISOString() });
+  }
+
+  const after = distDigest();
+  const green = runs.filter((r) => r.status === 0).length;
+  const stable = before === after;
+  const out = {
+    schema: 1,
+    instrument: "pk-check",
+    distSha256Before: before,
+    distSha256After: after,
+    unchanged: stable,
+    wanted: n,
+    green,
+    runs,
+  };
+  mkdirSync(join(ROOT, ".checks"), { recursive: true });
+  writeFileSync(join(ROOT, ".checks/pk-check-streak.json"), JSON.stringify(out, null, 2) + "\n");
+
+  console.log(`\n════════ streak ════════`);
+  console.log(`  ${green}/${n} green on web/dist ${before.slice(0, 12)}`);
+  if (!stable) {
+    // NOT a pass and NOT a fail: the premise of the measurement was broken.
+    console.log(`  VOID — web/dist changed mid-streak (${after.slice(0, 12)}). Not evidence.`);
+    process.exit(3);
+  }
+  if (green === n) {
+    console.log(`  THE STREAK HOLDS. A red run is now evidence about the port.`);
+    process.exit(0);
+  }
+  console.log(`  ${n - green} run(s) failed — the gate is not yet trustworthy (I-8).`);
+  process.exit(1);
+}
+
+const repeatIdx = process.argv.indexOf("--repeat");
+if (repeatIdx !== -1) {
+  const n = Number(process.argv[repeatIdx + 1] ?? 3);
+  if (!Number.isInteger(n) || n < 1) {
+    console.error("--repeat wants an integer >= 1");
     process.exit(2);
-  });
+  }
+  repeatDriver(n);
+} else {
+  main()
+    .then(() => {
+      console.log(
+        failed === 0 ? "\npk-check: ALL GATES PASSED" : `\npk-check: ${failed} GATE(S) FAILED`,
+      );
+      process.exit(failed === 0 ? 0 : 1);
+    })
+    .catch((e) => {
+      console.error("pk-check harness error:", e.message);
+      process.exit(2);
+    });
+}
