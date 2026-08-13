@@ -39,8 +39,11 @@
     clippy::too_many_arguments
 )]
 
+pub mod abilities;
 pub mod bestiary;
+pub mod boss;
 pub mod cards;
+
 pub mod collide;
 pub mod combo;
 pub mod economy;
