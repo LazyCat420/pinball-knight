@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "instrument": "perf-ab",
+  "producerSha256": "c406a6797cdd069ad5974567f0ffdde330e7ee5bca82572a233ca9997c3a568f",
+  "metrics": {
+    "perf.dungeon.legacy.p50_ms": {
+      "unit": "ms",
+      "dir": "lower-better",
+      "value": 2.5,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.5
+      },
+      "noiseAtRecord": 0.04,
+      "n": 3,
+      "at": "2026-08-13T03:36:55.785Z",
+      "commit": "68217b4",
+      "history": []
+    },
+    "perf.dungeon.rust.p50_ms": {
+      "unit": "ms",
+      "dir": "lower-better",
+      "value": 6.6,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.5
+      },
+      "noiseAtRecord": 0.0152,
+      "n": 3,
+      "at": "2026-08-13T03:36:55.785Z",
+      "commit": "68217b4",
+      "history": []
+    },
+    "perf.dungeon.ratio": {
+      "unit": "x",
+      "dir": "lower-better",
+      "value": 2.64,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.04,
+      "n": 3,
+      "at": "2026-08-13T03:36:55.785Z",
+      "commit": "68217b4",
+      "history": []
+    },
+    "perf.tavern.legacy.p50_ms": {
+      "unit": "ms",
+      "dir": "lower-better",
+      "value": 2.5,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.5
+      },
+      "noiseAtRecord": 0.04,
+      "n": 3,
+      "at": "2026-08-13T03:38:47.774Z",
+      "commit": "68217b4",
+      "history": []
+    },
+    "perf.tavern.rust.p50_ms": {
+      "unit": "ms",
+      "dir": "lower-better",
+      "value": 16.5,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.5
+      },
+      "noiseAtRecord": 0.0182,
+      "n": 3,
+      "at": "2026-08-13T03:38:47.774Z",
+      "commit": "68217b4",
+      "history": []
+    },
+    "perf.tavern.ratio": {
+      "unit": "x",
+      "dir": "lower-better",
+      "value": 6.6,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.04,
+      "n": 3,
+      "at": "2026-08-13T03:38:47.774Z",
+      "commit": "68217b4",
+      "history": []
+    }
+  },
+  "regressions": [],
+  "deterministic": false
+}

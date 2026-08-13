@@ -19,3 +19,14 @@ header of `scripts/pk-baseline.mjs` for why it is not typed in by hand.
 | `ledger.remaining_lines` | 73521 lines | exact | 0.0% | 1 | `47d3cb2` |
 | `ledger.dangling_citations` | 0 count | exact | 0.0% | 1 | `47d3cb2` |
 
+## perf-ab
+
+| metric | value | band | noise at record | n | commit |
+|---|---:|---|---:|---:|---|
+| `perf.dungeon.legacy.p50_ms` | 2.5 ms | ±10% +0.5 | 4.0% | 3 | `68217b4` |
+| `perf.dungeon.rust.p50_ms` | 6.6 ms | ±10% +0.5 | 1.5% | 3 | `68217b4` |
+| `perf.dungeon.ratio` | 2.64 x | ±10% +0.3 | 4.0% | 3 | `68217b4` |
+| `perf.tavern.legacy.p50_ms` | 2.5 ms | ±10% +0.5 | 4.0% | 3 | `68217b4` |
+| `perf.tavern.rust.p50_ms` | 16.5 ms | ±10% +0.5 | 1.8% | 3 | `68217b4` |
+| `perf.tavern.ratio` | 6.6 x | ±10% +0.3 | 4.0% | 3 | `68217b4` |
+

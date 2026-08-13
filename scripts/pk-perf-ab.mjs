@@ -97,6 +97,7 @@
  *   node scripts/pk-perf-ab.mjs --no-build            # reuse web/dist
  *   node scripts/pk-perf-ab.mjs --vsync               # DELIBERATELY on (to reproduce the plateau)
  *   node scripts/pk-perf-ab.mjs --json out.json
+ *   node scripts/pk-perf-ab.mjs --envelope .checks/perf-ab.json   # for pk-baseline
  *
  * Exit 0 = both sides measured. Non-zero = a side could not be measured, or a
  * reported number is cadence-bound and therefore not a cost.
@@ -108,6 +109,7 @@ import { execSync } from "node:child_process";
 import { dirname, join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { metric, wrap, writeEnvelope, QUALITY } from "./lib/pk-envelope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -126,6 +128,7 @@ const { values: a } = parseArgs({
     "no-build": { type: "boolean", default: false },
     vsync: { type: "boolean", default: false },
     json: { type: "string" },
+    envelope: { type: "string" }, // the comparator's shape — see the tail of main()
     out: { type: "string", default: join(ROOT, ".checks") },
   },
 });
@@ -551,6 +554,91 @@ async function main() {
   if (a.json) {
     await writeFile(a.json, JSON.stringify(out, null, 2));
     console.log(`\njson  ${a.json}`);
+  }
+
+  // ── THE ENVELOPE ────────────────────────────────────────────────────────
+  //
+  // `--envelope` writes the shape `pk-baseline.mjs` compares, so this rig can
+  // be RATCHETED rather than re-read by a human. Quality is decided HERE and
+  // never by the comparator, because this is the only place that knows a side
+  // rendered 12 frames or that a reading was cadence-bound: `void:*` makes the
+  // verdict INCONCLUSIVE instead of inventing a band over a number that was
+  // never a cost.
+  //
+  // The metric set is deliberately the RATIO plus each side's p50, not the
+  // ratio alone. A ratio that holds while both sides double is a port that got
+  // twice as slow next to an oracle that did too, and the ratio cannot say so.
+  if (a.envelope) {
+    const metrics = [];
+    // ONE definition of "was this side measurable", used for the side's own
+    // metric and inherited by the ratio below. Two copies of this rule would
+    // drift, and the copy that drifts is always the one guarding the number
+    // someone acts on.
+    const sideQuality = (s, side) => {
+      const p50 = s[side]?.p50?.med;
+      const p95 = s[side]?.p95?.med;
+      if ((s[side]?.frames?.med ?? 0) < MIN_FRAMES) return QUALITY.FRAMES;
+      if (p50 != null && p95 != null && p95 - p50 < CADENCE_SPREAD_MS) {
+        return QUALITY.CADENCE_BOUND;
+      }
+      return QUALITY.OK;
+    };
+    for (const [scene, s] of Object.entries(out.scenes)) {
+      for (const side of ["legacy", "rust"]) {
+        const p50 = s[side]?.p50;
+        if (p50?.med == null) continue;
+        const frames = s[side]?.frames?.med ?? 0;
+        const q = sideQuality(s, side);
+        metrics.push(
+          metric({
+            id: `perf.${scene}.${side}.p50_ms`,
+            unit: "ms",
+            dir: "lower-better",
+            // Rounded to the 0.1 ms the rAF deltas are quantised to anyway.
+            // Unrounded, a committed baseline reads `6.600000000000364`, which
+            // invites a reader to believe the instrument resolves femtoseconds.
+            value: Number(p50.med.toFixed(2)),
+            n: p50.n,
+            noise: { kind: "range", value: Number((((p50.hi - p50.lo) / p50.med) || 0).toFixed(4)) },
+            quality: q,
+            notes: [`${frames} frames/round`],
+          }),
+        );
+      }
+      if (s.ratio != null) {
+        // ⚠ QUALITY PROPAGATES THROUGH THE DIVISION. A ratio is only as sound
+        // as the two readings under it: the first version of this block scored
+        // the ratio `ok` while the `dungeon/rust` p50 it is computed FROM was
+        // `void:cadence-bound`, which is a number the rig had just refused to
+        // call a cost, laundered into a gate-able one by dividing it. If
+        // either side is void, so is the quotient.
+        const inherited = ["legacy", "rust"]
+          .map((side) => sideQuality(s, side))
+          .find((q) => q !== QUALITY.OK);
+        metrics.push(
+          metric({
+            id: `perf.${scene}.ratio`,
+            unit: "x",
+            dir: "lower-better",
+            value: Number(s.ratio.toFixed(4)),
+            n: ROUNDS,
+            noise: { kind: "range", value: Number((s.wander ?? 0).toFixed(4)) },
+            quality: inherited ?? (ROUNDS < 2 ? QUALITY.ONE_SAMPLE : QUALITY.OK),
+            notes: ["rust p50 / legacy p50, both under an unthrottled compositor"],
+          }),
+        );
+      }
+    }
+    const env = wrap({
+      instrument: "perf-ab",
+      producer: "scripts/pk-perf-ab.mjs",
+      root: ROOT,
+      metrics,
+      build: { profile: "release", view: `${VIEW_W}x${VIEW_H}`, vsync: a.vsync },
+      env: { rounds: ROUNDS, sampleMs: SAMPLE_MS, warmupMs: WARMUP_MS },
+    });
+    writeEnvelope(a.envelope, env);
+    console.log(`envelope  ${a.envelope}`);
   }
 
   if (failures) {
