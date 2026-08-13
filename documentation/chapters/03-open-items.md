@@ -1,3 +1,9 @@
+---
+part: Problems
+status: in-progress
+updated: 2026-08-10
+---
+
 # Open items
 
 Ranked by what actually costs something. Each states its blast radius so a

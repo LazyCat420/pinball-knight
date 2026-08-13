@@ -1,3 +1,9 @@
+---
+part: The build order
+status: approved
+updated: 2026-08-10
+---
+
 # What is not built yet
 
 *Open items* is what is broken. This is what was never built — the road from

@@ -1,3 +1,9 @@
+---
+part: Orientation
+status: reference
+updated: 2026-08-10
+---
+
 # The sprite forge pipeline
 
 How a picture becomes a creature the dungeon can draw. Read this chapter to

@@ -1,3 +1,9 @@
+---
+part: Problems
+status: reference
+updated: 2026-08-10
+---
+
 # Incidents
 
 Failures worth remembering, written so the *mechanism* survives and not just the

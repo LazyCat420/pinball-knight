@@ -1,3 +1,9 @@
+---
+part: Orientation
+status: reference
+updated: 2026-08-10
+---
+
 # How to use this document
 
 This is the persistent working record for this repository — the sprite forge and the dungeon it feeds. It replaces one-off

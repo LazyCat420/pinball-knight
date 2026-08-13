@@ -1,3 +1,9 @@
+---
+part: Operations
+status: reference
+updated: 2026-08-10
+---
+
 # Runbook
 
 The commands, in the order you actually need them.

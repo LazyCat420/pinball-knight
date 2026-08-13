@@ -1,3 +1,9 @@
+---
+part: Orientation
+status: reference
+updated: 2026-08-10
+---
+
 # Current state
 
 What is verified working, and the evidence that proved it. Nothing here is
