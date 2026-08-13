@@ -1436,15 +1436,11 @@ fn build_props(b: &mut Build) {
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         cull_mode: None,
-        // Bevy's Cuboid puts uv v=0 at the face's BOTTOM edge
-        // (bevy_mesh primitives/dim3/cuboid.rs:30-33), the opposite of its
-        // Rectangle and of THREE's PlaneGeometry that legacy hangs the sign
-        // on — so the legend arrives upside down. Mirror v; a 180° rotation
-        // would fix the flip and introduce a mirror.
-        uv_transform: bevy::math::Affine2 {
-            matrix2: Mat2::from_diagonal(Vec2::new(1.0, -1.0)),
-            translation: Vec2::new(0.0, 1.0),
-        },
+        // u is mirrored, v is not — see `tavern_art::SIGN_UV`, which owns the
+        // matrix and the reasoning, and which
+        // `the_sign_legend_is_not_mirrored` reads to check what this material
+        // actually shows. Until 2026-08-13 this sign read "EZAM RETNE".
+        uv_transform: tavern_art::SIGN_UV,
         ..default()
     });
     // The legend plane carries the AUTHORED aspect (4.2 x 0.8 = 5.25), not

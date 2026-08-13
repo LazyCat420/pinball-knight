@@ -179,6 +179,64 @@ fn rgba_image(w: u32, h: u32, data: Vec<u8>, sampler: ImageSampler) -> Image {
     img
 }
 
+/// The uv transform the ENTER MAZE legend is hung with — **the one definition**,
+/// read by `tavern.rs` when it builds the material and by
+/// `the_sign_legend_is_not_mirrored` when it checks what that material shows.
+///
+/// It lives here rather than inline at the call site because the first version
+/// of that test transcribed the intended matrix into its own body, and a test
+/// holding its own copy of the value cannot see the real one drift: reverting
+/// `tavern.rs` to the mirrored transform left it passing. A guard that reads a
+/// different object from the one it guards is not a guard.
+///
+/// u is mirrored and v is not. The legend hangs on a `boxed()` CUBOID whose
+/// visible face runs u opposite to the `Rectangle`/THREE `PlaneGeometry` the
+/// oracle uses, while its v already agrees. Mirroring v instead shipped
+/// "EZAM RETNE"; mirroring both is a 180° rotation and renders it upside down.
+/// Both wrong states were photographed before this constant existed.
+pub const SIGN_UV: bevy::math::Affine2 = bevy::math::Affine2 {
+    matrix2: Mat2::from_cols(Vec2::new(-1.0, 0.0), Vec2::new(0.0, 1.0)),
+    translation: Vec2::new(1.0, 0.0),
+};
+
+/// Ink mass of the baked sign in eight fixed vertical bands, left to right,
+/// where "ink" is `alpha × luma` — the legend is a cyan GLOW on transparency,
+/// so neither channel alone is the legend.
+///
+/// Fixed bands, never a detected glyph run: a probe that finds "the first
+/// glyph" locates a 500 px run on one handedness and a 97 px run on the other
+/// and is then comparing two different subjects, which is how the first
+/// attempt at this check reported "does not separate" on a real difference.
+///
+/// Takes the material's ACTUAL `uv_transform` and pushes each band through it:
+/// the question is never what the PNG contains, it is what lands on the quad.
+/// Pass `SIGN_UV` to measure what ships.
+pub fn sign_ink_bands(uv: bevy::math::Affine2) -> [f64; 8] {
+    let sample_u = |frac: f32| uv.transform_point2(Vec2::new(frac, 0.5)).x;
+    let rgba = image::load_from_memory(SIGN_ENTER_MAZE_PNG)
+        .expect("baked sign decodes")
+        .to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let mut bands = [0.0f64; 8];
+    for (k, band) in bands.iter_mut().enumerate() {
+        for y in 0..h {
+            for step in 0..(w / 8) {
+                // Centre of this pixel within band k, in [0,1] across the width.
+                let frac = (k as f32 * (w / 8) as f32 + step as f32 + 0.5) / w as f32;
+                let u = sample_u(frac).clamp(0.0, 0.999_999);
+                let px = rgba.get_pixel((u * w as f32) as u32, y);
+                let a = f64::from(px[3]) / 255.0;
+                let l = (0.2126 * f64::from(px[0])
+                    + 0.7152 * f64::from(px[1])
+                    + 0.0722 * f64::from(px[2]))
+                    / 255.0;
+                *band += a * l;
+            }
+        }
+    }
+    bands
+}
+
 /// Canvas gradients interpolate linearly between stops; the colour is
 /// constant black, so only alpha moves.
 fn gradient_alpha(r: f32) -> f32 {
@@ -220,6 +278,79 @@ mod tests {
             (sign.width(), sign.height()),
             (1024, 220),
             "sign-enter-maze.png"
+        );
+    }
+
+    /// ⚠️ THE SIGN READ "EZAM RETNE" ON EVERY BUILD UNTIL 2026-08-13, AND THE
+    /// TAVERN'S TEN-CHECK A/B RIG COULD NOT HAVE CAUGHT IT — EVER.
+    ///
+    /// The legend hangs on a `boxed()` CUBOID whose visible face runs u the
+    /// opposite way to the `Rectangle`/THREE `PlaneGeometry` the oracle uses.
+    /// `tavern.rs` mirrored **v** alone, which fixes the upside-down and leaves
+    /// the word backwards. (Mirroring both is a 180° rotation — that "obvious
+    /// fix" was tried and photographed upside down before this test existed.)
+    ///
+    /// Every check in `pk-ab-tavern` is a luma or chroma histogram — mean, p90,
+    /// p99, clip fraction, posterisation, vignette, hearth ROI — and **a
+    /// horizontal flip leaves every one of them bit-identical**. The defect was
+    /// invisible to the entire instrument by construction, which is why the
+    /// check lives here, against geometry, instead of another summary statistic.
+    ///
+    /// The discriminator was chosen by MEASUREMENT, not by taste. Of six
+    /// candidates tried against the true and mirrored bake, four were blind:
+    /// first-ink column (Δ 0.0000), last-ink column (Δ 0.0000), the mass
+    /// centroid (0.4958 — dead centre, the word is nearly balanced) and mirror
+    /// correlation (0.60, far too weak). What separates cleanly is the WORD
+    /// GAP: "ENTER" is narrower than "MAZE", so the space between the two words
+    /// sits LEFT of centre — band 3 of 8 upright, band 4 mirrored, at roughly
+    /// half the ink of its neighbours (3272.7 against ~6500).
+    ///
+    /// The assertion is on WHERE THE GAP IS, not on a fixed pair of indices: an
+    /// index pair has a handedness of its own and the first draft got it
+    /// backwards, failing against a render I had already photographed as
+    /// correct. Asking which band is the minimum cannot be got backwards.
+    #[test]
+    fn the_sign_legend_is_not_mirrored() {
+        // ⚠ `SIGN_UV` — the constant the RENDERER hangs the sign with, not a
+        // copy of it. The first version of this test wrote its own `|frac|
+        // frac` here and stayed green with `tavern.rs` reverted to the
+        // mirrored matrix; it was checking its own arithmetic. Read the real
+        // object or the check is decorative.
+        let gap_band = |uv| {
+            let bands: [f64; 8] = sign_ink_bands(uv);
+            let (mut lo, mut at) = (f64::MAX, 0usize);
+            for (i, &v) in bands.iter().enumerate() {
+                if v < lo {
+                    lo = v;
+                    at = i;
+                }
+            }
+            (at, bands)
+        };
+
+        let (at, bands) = gap_band(SIGN_UV);
+        assert_eq!(
+            at, 3,
+            "the sign is MIRRORED — the word gap sits in band {at} of 8, and \
+             upright it sits in band 3 (\"ENTER\" is narrower than \"MAZE\", so \
+             the space falls left of centre). The legend renders as \
+             \"EZAM RETNE\". bands = {bands:?}",
+        );
+
+        // THE SABOTAGE, run inline: the same measurement on the transform that
+        // actually shipped — the real historical defect, not a synthetic flip —
+        // MUST land somewhere else. A check that passes for both states is not
+        // a check, and this is cheap enough to prove every run rather than
+        // trusting a comment that it once did.
+        let (mirrored_at, _) = gap_band(bevy::math::Affine2 {
+            matrix2: Mat2::from_diagonal(Vec2::new(1.0, -1.0)),
+            translation: Vec2::new(0.0, 1.0),
+        });
+        assert_eq!(
+            mirrored_at, 4,
+            "the discriminator is BLIND: the v-only transform that shipped \
+             \"EZAM RETNE\" puts the gap in band {mirrored_at}, and if that is \
+             3 this check passes for the defect it exists to catch",
         );
     }
 
