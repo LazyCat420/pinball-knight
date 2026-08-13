@@ -28,7 +28,24 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LEGACY="$HERE/legacy/src/game/pinball-knight"
-BDB="${1:-$HERE/../braindeadbot-client}/src/game/pinball-knight"
+BDB_ROOT="${1:-$HERE/../braindeadbot-client}"
+BDB="$BDB_ROOT/src/game/pinball-knight"
+# ── I-2, 2026-08-12: THE GATE COVERED `src/` ONLY, AND ART IS ORACLE STATE ──
+#
+# Every A/B sheet PHOTOGRAPHS the sprite sheets. A monster re-published on the
+# braindeadbot-client side would change what the oracle looks like while every
+# `.ts` file stayed byte-identical, so the gate would report "clean — the oracle
+# still describes the live game" over a picture that had moved. The code half
+# was watched and the half the rigs actually measure was not.
+#
+# Scope note: `legacy/public` carries ONLY `sprites/` — the extraction took that
+# and nothing else. So this walks what LEGACY has, rather than diffing the two
+# `public/` roots: braindeadbot-client's carries `images/`, `textures/`,
+# `mahjong-tiles/`, cursors and `admin.css`, none of which were ever part of the
+# extraction, and reporting them would print a dozen DRIFT lines that mean
+# nothing and train the reader to skim.
+LEGACY_PUBLIC="$HERE/legacy/public"
+BDB_PUBLIC="$BDB_ROOT/public"
 
 if [ ! -d "$BDB" ]; then
   echo "pk-drift: CANNOT CHECK — no braindeadbot-client PK tree at $BDB"
@@ -63,6 +80,40 @@ ALLOW_LEGACY_ONLY=(
   "port-fixtures.test.ts"
   "port-maze-fixtures.test.ts"
   "port-floor-export.test.ts"
+)
+
+# ── the ART allowlist, measured 2026-08-12, not assumed ────────────────────
+#
+# Each entry was checked for DIRECTION before it was allowed, because "differs"
+# alone does not say which tree moved and only one direction is oracle rot:
+#
+#   sprites/brute-S.{png,json}  legacy 2026-08-12, 1,013,307 B
+#                               bdb    2026-08-06,    44,548 B   → legacy ahead
+#                               (re-baked here; see the alt-takes under
+#                               tools/sprite-forge/sources/brute-2026-08-10)
+#   sprites/stiltneck-E.png     legacy 2026-08-12 / bdb 2026-08-03 → legacy ahead
+#
+# ⚠️ THE BLIND SPOT, STATED: an allowlisted file is invisible to this gate in
+# BOTH directions. If braindeadbot-client later re-publishes `brute-S.png`, this
+# script will not say so. That is the price of an allowlist and the reason each
+# line carries a date — when a date here is older than the change you are
+# chasing, re-measure rather than trusting the entry.
+ALLOW_PUBLIC_DIFF=(
+  "sprites/brute-S.json"
+  "sprites/brute-S.png"
+  "sprites/stiltneck-E.png"
+)
+# Published in pinball-knight first (2026-08-12); braindeadbot-client's PK tree
+# has been frozen since the extraction, so it has no way to have them.
+ALLOW_PUBLIC_LEGACY_ONLY=(
+  "sprites/goblin-S.json"
+  "sprites/goblin-S.png"
+  "sprites/reaper-S.json"
+  "sprites/reaper-S.png"
+  "sprites/slime-S.json"
+  "sprites/slime-S.png"
+  "sprites/spider-S.json"
+  "sprites/spider-S.png"
 )
 
 # "Only in <root>[/sub]: <name>" → "[sub/]<name>", relative to the PK root.
@@ -113,8 +164,55 @@ while IFS= read -r line; do
   esac
 done < <(diff -rq "${EXCLUDES[@]}" "$BDB" "$LEGACY" 2>/dev/null)
 
+# ── the ART leg (I-2) ──────────────────────────────────────────────────────
+#
+# Walks the subtrees LEGACY carries, one at a time, so braindeadbot-client's
+# unrelated `public/` content is out of scope by construction rather than by a
+# growing exclude list.
+if [ ! -d "$LEGACY_PUBLIC" ]; then
+  echo "pk-drift: CANNOT CHECK — no legacy public tree at $LEGACY_PUBLIC"
+  exit 2
+fi
+if [ ! -d "$BDB_PUBLIC" ]; then
+  echo "pk-drift: CANNOT CHECK — no braindeadbot-client public tree at $BDB_PUBLIC"
+  exit 2
+fi
+for sub in "$LEGACY_PUBLIC"/*; do
+  [ -d "$sub" ] || continue
+  name="$(basename "$sub")"
+  if [ ! -d "$BDB_PUBLIC/$name" ]; then
+    echo "DRIFT  only in legacy: public/$name (whole directory)"
+    drift=1
+    continue
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "Files "*" differ")
+        rel="${line#Files $BDB_PUBLIC/}"
+        rel="${rel%% and *}"
+        if allowed "$rel" diff "${ALLOW_PUBLIC_DIFF[@]}"; then continue; fi
+        echo "DRIFT  changed: public/$rel"
+        drift=1
+        ;;
+      "Only in $LEGACY_PUBLIC"*)
+        rel="$(only_in_path "$line" "$LEGACY_PUBLIC")"
+        if allowed "$rel" only "${ALLOW_PUBLIC_LEGACY_ONLY[@]}"; then continue; fi
+        echo "DRIFT  only in legacy: public/$rel"
+        drift=1
+        ;;
+      "Only in $BDB_PUBLIC"*)
+        # This direction is the one that matters most: a sheet the live game has
+        # and the oracle does not means every A/B sheet is shot against art the
+        # player is not looking at.
+        echo "DRIFT  only in braindeadbot-client: public/$(only_in_path "$line" "$BDB_PUBLIC")"
+        drift=1
+        ;;
+    esac
+  done < <(diff -rq "${EXCLUDES[@]}" "$BDB_PUBLIC/$name" "$sub" 2>/dev/null)
+done
+
 if [ "$drift" -eq 0 ]; then
-  echo "pk-drift: clean — the oracle still describes the live game"
+  echo "pk-drift: clean — the oracle still describes the live game (src/ and public/)"
   exit 0
 fi
 cat <<'MSG'

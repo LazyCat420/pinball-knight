@@ -11,12 +11,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { acrossRounds, metric, QUALITY, qualityForExit, BROKER_NO_GRANT } from "./pk-envelope.mjs";
+import {
+  acrossRounds,
+  classify404s,
+  metric,
+  QUALITY,
+  qualityForExit,
+  BROKER_NO_GRANT,
+} from "./pk-envelope.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..", "..");
@@ -222,6 +229,66 @@ test("an edited instrument is exit 4, BEFORE any comparison", () => {
     env,
   );
   assert.equal(ok.status, 0, ok.out);
+});
+
+/* ── I-6: the 404 allowlist ──────────────────────────────────────────────── */
+
+const ALLOW = JSON.parse(
+  readFileSync(join(ROOT, "assets/fixtures/legacy-404-allowlist.json"), "utf8"),
+);
+
+test("an expected sprite miss is allowlisted; a real one is UNEXPECTED", () => {
+  // The loader asks S/N/E for every kind and reuses what arrived, so goblin-N
+  // 404s on every boot forever. knight-S is a sheet the game genuinely wants —
+  // absent, it renders a black monster into the A/B sheet.
+  const { allowed, unexpected } = classify404s(
+    new Set([
+      "404 http://localhost:5174/sprites/goblin-N.png",
+      "404 http://localhost:5174/sprites/goblin-N.json",
+      "404 http://localhost:5174/sprites/knight-S.png",
+    ]),
+    ALLOW,
+  );
+  assert.equal(allowed.length, 2);
+  assert.equal(unexpected.length, 1);
+  assert.match(unexpected[0], /knight-S\.png/);
+});
+
+test("the allowlist matches on PATH, so a port or host rewrite cannot fool it", () => {
+  // The rigs rewrite localhost for the host browser, and both A/B rigs serve
+  // the rust side off a different port each. Matching whole URLs would make an
+  // allowlisted miss look unexpected the moment a port moved.
+  const { allowed, unexpected } = classify404s(
+    new Set([
+      "404 http://127.0.0.1:8793/sprites/goblin-N.png",
+      "404 http://host.docker.internal:3000/sprites/goblin-N.png",
+    ]),
+    ALLOW,
+  );
+  assert.equal(unexpected.length, 0);
+  assert.equal(allowed.length, 2);
+});
+
+test("every allowlisted miss names a facing the tree really does not ship", () => {
+  // GUARDS AGAINST THE ALLOWLIST ROTTING INTO A BLINDFOLD. If a kind starts
+  // shipping a facing that is listed here as an expected miss, the entry must
+  // go — otherwise a sheet that later disappears again is invisible.
+  const dir = join(ROOT, "legacy/public/sprites");
+  for (const p of ALLOW.expectedMisses) {
+    const file = join(dir, p.replace("/sprites/", ""));
+    assert.ok(
+      !existsSync(file),
+      `${p} is allowlisted as an expected miss but the tree SHIPS it — delete the entry`,
+    );
+  }
+});
+
+test("the allowlist is enumerated, never a glob", () => {
+  // A pattern like `*-N.png` would also swallow a kind that is supposed to
+  // author N and quietly stopped shipping it.
+  for (const p of ALLOW.expectedMisses) {
+    assert.doesNotMatch(p, /[*?]/, `${p} is a pattern; enumerate it instead`);
+  }
 });
 
 test("lint rejects a non-deterministic metric banded at zero", () => {

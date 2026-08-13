@@ -78,9 +78,11 @@ import { dirname, join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   acrossRounds,
+  classify404s,
   envBlock,
   loadNow,
   metric,
+  readJson,
   wrap,
   writeEnvelope,
 } from "./lib/pk-envelope.mjs";
@@ -647,10 +649,17 @@ async function main() {
     log("        the only honest reading is the picture.");
   }
 
+  // I-6 — expected misses are counted, unexpected ones are FATAL. See
+  // `classify404s`: the loader asks for S/N/E on every kind and reuses what
+  // arrived, so a kind that authored only S 404s twice on every boot. Printing
+  // seventeen of those as "missing resources" trains the reader to skim the one
+  // that means a monster will render black.
+  const allow = readJson(join(ROOT, "assets/fixtures/legacy-404-allowlist.json"));
+  const { allowed, unexpected } = classify404s(badUrls, allow);
   if (badUrls.size) {
     console.log("");
-    log(`missing resources (${badUrls.size}):`);
-    for (const u of [...badUrls].slice(0, 10)) log(`   ${u}`);
+    log(`sprite requests   ${allowed.length} allowlisted / ${unexpected.length} unexpected`);
+    for (const u of unexpected.slice(0, 10)) log(`   UNEXPECTED  ${u}`);
   }
   if (errors.length) {
     console.log("");
@@ -659,8 +668,10 @@ async function main() {
   }
 
   // Errors are HARD on both sides — a page that threw is not a frame worth
-  // comparing.
-  const hard = errors.length > 0;
+  // comparing. So is an UNEXPECTED 404: a sheet the game asked for and did not
+  // get renders as a black monster, and a rig that shoots that and reports a
+  // diff number has measured the absence rather than the art.
+  const hard = errors.length > 0 || unexpected.length > 0;
 
   if (envelope && a.json) {
     writeEnvelope(a.json, envelope);

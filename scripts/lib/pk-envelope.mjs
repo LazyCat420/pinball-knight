@@ -235,3 +235,46 @@ export function qualityForExit(code) {
   if (code === BROKER_NO_GRANT) return QUALITY.GRANT;
   return code === 0 ? QUALITY.OK : null;
 }
+
+/**
+ * I-6 — split a rig's failed requests into EXPECTED and UNEXPECTED.
+ *
+ * Both A/B rigs report ~17 sprite 404s on the oracle side. They are the loader
+ * working: `boot/sheets.ts:32` asks for S/N/E on every imported kind and reuses
+ * whichever arrived, and W is never requested at all because it is a flipped E.
+ * A kind that authored only S therefore 404s twice on every boot, forever.
+ *
+ * That was left as a printed note, and a printed note is skimmed. The cost is
+ * asymmetric: a 404 that is NOT expected means a sheet the game genuinely wants
+ * is absent, which shows up in an A/B sheet as a black monster — a defect this
+ * project has paid a day for before. So the expected ones are enumerated (in
+ * `assets/fixtures/legacy-404-allowlist.json`, measured from the tree rather
+ * than typed from memory) and everything else is a hard failure.
+ *
+ * Enumerated, NOT pattern-matched: a glob like `*-N.png` would also swallow a
+ * kind that is supposed to author N and quietly stopped shipping it.
+ */
+export function classify404s(badUrls, allowlist) {
+  const expected = new Set(allowlist.expectedMisses);
+  if (allowlist.alsoAllowJson) {
+    // A sheet is a .png plus a .json manifest, requested together. Deriving the
+    // second from the first keeps the two halves of one fact from drifting.
+    for (const p of allowlist.expectedMisses) expected.add(p.replace(/\.png$/, ".json"));
+  }
+  const allowed = [];
+  const unexpected = [];
+  for (const entry of badUrls) {
+    // Entries are `"<status> <url>"`; match on the PATH so a port or a host
+    // rewrite (the rigs rewrite localhost for the host browser) cannot make an
+    // allowlisted miss look unexpected.
+    const url = entry.slice(entry.indexOf(" ") + 1);
+    let path = url;
+    try {
+      path = new URL(url).pathname;
+    } catch {
+      /* not absolute — compare as given */
+    }
+    (expected.has(path) ? allowed : unexpected).push(entry);
+  }
+  return { allowed, unexpected };
+}
