@@ -331,24 +331,30 @@ pub fn install_intro(commands: &mut Commands, ambient: &mut AmbientLight) -> Vec
         .spawn((
             DirectionalLight {
                 color: c(INTRO_FILL),
-                // The same candela→illuminance factor every other directional
-                // in the game uses (`tavern.rs:485`, [`install`]) — a second
-                // conversion here is exactly the drift `units.rs` exists to
-                // prevent.
                 illuminance: INTRO_FILL_INTENSITY * 1.35 * EXPOSURE_RECIP,
-                // The oracle's intro fill casts no shadow: `buildLights`'
-                // shadow-casting sun is a DIFFERENT light, which the intro
-                // re-aims (`index.ts:178-192`) rather than adding to.
                 shadows_enabled: false,
                 ..default()
             },
-            // `fill.position.set(8, 18, 24)`, aimed at the origin the title
-            // maze is centred on.
             Transform::from_xyz(8.0, 18.0, 24.0).looking_at(Vec3::ZERO, Vec3::Y),
         ))
         .id();
 
-    vec![fill]
+    // The shadow-casting sun from buildLights that the intro re-aims at the origin
+    // (`intro/index.ts:183-193`).
+    let sun = commands
+        .spawn((
+            DirectionalLight {
+                color: c(KEY_COLOUR),
+                illuminance: DIR_INTENSITY * 1.35 * EXPOSURE_RECIP,
+                shadows_enabled: true,
+                ..default()
+            },
+            Transform::from_xyz(-DIR_HEIGHT * 0.55, DIR_HEIGHT, -DIR_HEIGHT * 0.55)
+                .looking_at(Vec3::ZERO, Vec3::Y),
+        ))
+        .id();
+
+    vec![fill, sun]
 }
 
 /// Bevy's own default, restored when the dungeon is torn down.
