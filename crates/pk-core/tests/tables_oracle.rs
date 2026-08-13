@@ -243,3 +243,45 @@ fn test_secrets_parity() {
     assert_eq!(REVOLVE_TIME, 0.85);
     assert!((REVOLVE_SWEEP - std::f64::consts::PI * 1.15).abs() < 1e-6);
 }
+
+#[test]
+fn test_prefabs_parity() {
+    use pk_core::maze::prefabs::{theme_for, theme_index_for, LANDMARKS, PREFABS, THEMES};
+
+    assert_eq!(PREFABS.len(), 13);
+    assert_eq!(LANDMARKS.len(), 5);
+    assert_eq!(THEMES.len(), 4);
+
+    // Crypt
+    assert_eq!(THEMES[0].name, "crypt");
+    assert_eq!(THEMES[0].pool, &["slalom", "bullring", "pitstop", "slingway", "boulevard"]);
+    assert_eq!(THEMES[0].landmarks, &["tilttable", "pachinko"]);
+
+    // Warren
+    assert_eq!(THEMES[1].name, "warren");
+    assert_eq!(THEMES[1].pool, &["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"]);
+    assert_eq!(THEMES[1].landmarks, &["nest", "grinder"]);
+
+    // Bloodworks
+    assert_eq!(THEMES[2].name, "bloodworks");
+    assert_eq!(THEMES[2].pool, &["gauntlet", "bullring", "slingway", "switchback", "squeeze"]);
+    assert_eq!(THEMES[2].landmarks, &["grinder", "pachinko"]);
+
+    // Arcane
+    assert_eq!(THEMES[3].name, "arcane");
+    assert_eq!(THEMES[3].pool, &["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"]);
+    assert_eq!(THEMES[3].landmarks, &["observatory", "tilttable"]);
+
+    // Test theme_index_for identity on run_seed 0
+    assert_eq!(theme_index_for(1, 0), 0);
+    assert_eq!(theme_index_for(2, 0), 1);
+    assert_eq!(theme_index_for(3, 0), 2);
+    assert_eq!(theme_index_for(4, 0), 3);
+    assert_eq!(theme_index_for(5, 0), 0);
+
+    assert_eq!(theme_for(1, 0).name, "crypt");
+    assert_eq!(theme_for(2, 0).name, "warren");
+    assert_eq!(theme_for(3, 0).name, "bloodworks");
+    assert_eq!(theme_for(4, 0).name, "arcane");
+}
+

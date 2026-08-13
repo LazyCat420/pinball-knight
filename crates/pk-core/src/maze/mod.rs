@@ -29,11 +29,17 @@
 //!
 //! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`
 
+pub mod arc_contract;
 pub mod archetypes;
+pub mod circuit;
+pub mod conic_fit;
 pub mod digest;
+pub mod doorway_funnels;
 pub mod doorways;
 pub mod floor_spec;
+pub mod flow_orient;
 pub mod modifiers;
+pub mod prefabs;
 pub mod track_carve;
 pub mod track_floor;
 pub mod track_grow;
