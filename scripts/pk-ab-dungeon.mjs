@@ -29,6 +29,19 @@
  * bridge, see docs/src/status/build-out.md), and until then a hard gate here
  * would only teach people to pass `--no-strict`.
  *
+ * ── A SINGLE SHOT IS NOT A MEASUREMENT (2026-08-12) ────────────────────────
+ * This rig shot ONE frame per side and reported `mean 30.2` as though that were
+ * a number with a tolerance. It has none: with no repeat there is no spread, so
+ * nothing downstream can tell a real change from an afternoon's weather, and
+ * `--strict` compensated with a flat `over32Frac > 0.02` — unreachable against
+ * 33.7%, therefore never run, therefore not a gate.
+ *
+ * `--rounds N` re-loads and re-shoots both sides N times; the spread across
+ * rounds IS the precision, and it is published with the number. At `--rounds 1`
+ * the envelope says `void:one-sample` out loud rather than implying a precision
+ * it does not have. `--strict` now defers to `scripts/pk-baseline.mjs`, which
+ * judges against the recorded value and ratchets it down as the port improves.
+ *
  * ── HOW EACH SIDE IS PINNED TO ONE FLOOR ───────────────────────────────────
  * LEGACY: `?seed=<n>` pins `state.runSeed` (core.ts:174-178), and the dev floor
  *         lock — localStorage `pinball-knight-dev-floor-lock`, the funnel every
@@ -49,18 +62,28 @@
  *   node scripts/pk-ab-dungeon.mjs --no-build
  *   node scripts/pk-ab-dungeon.mjs --level 3 --seed 1
  *   node scripts/pk-ab-dungeon.mjs --rust-only        # one side, no comparison
- *   node scripts/pk-ab-dungeon.mjs --strict           # diff stats are fatal
+ *   node scripts/pk-ab-dungeon.mjs --rounds 3         # a number with a spread
+ *   node scripts/pk-ab-dungeon.mjs --rounds 3 --json .checks/ab-dungeon.json
+ *   node scripts/pk-ab-dungeon.mjs --rounds 3 --strict  # judged by pk-baseline
  *   node scripts/pk-ab-dungeon.mjs --rust-floor       # the GENERATOR's floor,
  *                                                    # not the authored one
  */
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { dirname, join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  acrossRounds,
+  envBlock,
+  loadNow,
+  metric,
+  wrap,
+  writeEnvelope,
+} from "./lib/pk-envelope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -91,7 +114,31 @@ const { values: a } = parseArgs({
      * what the header's "not the same floor yet" paragraph is about.
      */
     "rust-floor": { type: "boolean", default: false },
+    /**
+     * ⚠️ `--strict` USED TO BE A THRESHOLD NOTHING COULD SATISFY.
+     *
+     * It was a flat `over32Frac > 0.02` while this rig reads **33.7%** — so it
+     * could never pass, which is the same as having no gate at all, and nothing
+     * ran it. It now defers to `scripts/pk-baseline.mjs`, which judges against
+     * the RECORDED number for this scene and ratchets it down as the port
+     * improves. See that file's header for why a band is derived from measured
+     * noise rather than typed in.
+     */
     strict: { type: "boolean", default: false },
+    /**
+     * Independent rounds. Each one re-loads BOTH sides from scratch and
+     * re-shoots, so the spread across them is this rig's own noise figure.
+     *
+     * ⚠️ THE DEFAULT IS 1 AND THAT IS NOT A MEASUREMENT. At `--rounds 1` there
+     * is no in-run spread, so the envelope is stamped `void:one-sample` and the
+     * comparator returns INCONCLUSIVE rather than a verdict. That is the true
+     * statement about every visual number this project has recorded to date:
+     * `30.2` was shot once. Use `--rounds 3` for anything you intend to record
+     * or sign off.
+     */
+    rounds: { type: "string", default: "1" },
+    /** Write the measurement envelope here, for `pk-baseline.mjs`. */
+    json: { type: "string", default: "" },
     out: { type: "string", default: join(ROOT, ".checks") },
     "legacy-url": { type: "string", default: "" },
     /** Not pk-check's 8791 and not pk-ab-tavern's 8792: all three may run at once. */
@@ -104,6 +151,7 @@ const { values: a } = parseArgs({
   },
 });
 
+const ROUNDS = Math.max(1, Number(a.rounds));
 const VIEW_W = 1920;
 const VIEW_H = 1080;
 const LEVEL = Number(a.level);
@@ -466,11 +514,33 @@ async function main() {
 
   let legacy = null;
   let rust = null;
+  // One entry per round: the spread across these IS this rig's noise figure.
+  // Anything recorded off a single entry is stamped `void:one-sample`.
+  const roundStats = [];
+  const loadBefore = loadNow();
   try {
-    // One page at a time, each closed before the next opens: a backgrounded tab
-    // has its rAF throttled, and a throttled tab hands back a stale frame.
-    if (doLegacy) legacy = await shootLegacy(ctx, errors, badUrls, rewriteForHostBrowser(legacyUrl));
-    if (doRust) rust = await shootRust(ctx, errors, badUrls);
+    for (let r = 0; r < ROUNDS; r++) {
+      if (ROUNDS > 1) log(`\n── round ${r + 1}/${ROUNDS} ──`);
+      // One page at a time, each closed before the next opens: a backgrounded
+      // tab has its rAF throttled, and a throttled tab hands back a stale frame.
+      // Each ROUND reloads both sides from scratch, so a round is an
+      // independent sample rather than a re-read of one frame — a repeated
+      // measurement of the same screenshot has no variance and would report a
+      // noise of zero, which is the failure `--rounds 1` at least states openly.
+      if (doLegacy) legacy = await shootLegacy(ctx, errors, badUrls, rewriteForHostBrowser(legacyUrl));
+      if (doRust) rust = await shootRust(ctx, errors, badUrls);
+      if (legacy && rust) {
+        const la = await decode(legacy.file);
+        const ra = await decode(rust.file);
+        const s = await writeDiff(la, ra, join(OUT, `ab-dungeon-${STAMP}-diff.png`));
+        roundStats.push(s);
+        if (ROUNDS > 1) {
+          log(
+            `   mean ${s.mean.toFixed(1)}  p95 ${s.p95}  over32 ${(s.over32Frac * 100).toFixed(1)}%`,
+          );
+        }
+      }
+    }
   } finally {
     if (ownCtx) await ctx.close().catch(() => {});
     closeHostBrowser();
@@ -479,6 +549,7 @@ async function main() {
 
   /* ── report ── */
   console.log("");
+  let envelope = null;
   let imgs = { legacy: null, rust: null };
   if (legacy) {
     imgs.legacy = await decode(legacy.file);
@@ -505,7 +576,6 @@ async function main() {
     log(`        ${rust.file}`);
   }
 
-  let stats = null;
   if (imgs.legacy && imgs.rust) {
     const sheet = join(OUT, `ab-dungeon-${STAMP}.png`);
     await writeSideBySide(imgs.legacy, imgs.rust, sheet, [
@@ -516,14 +586,61 @@ async function main() {
         : `RUST    L${LEVEL} seed ${SEED}  (generated, P${rust.probe.pass}, no decoration)`,
     ]);
     const heat = join(OUT, `ab-dungeon-${STAMP}-diff.png`);
-    stats = await writeDiff(imgs.legacy, imgs.rust, heat);
     console.log("");
     log(`side-by-side  ${sheet}`);
     log(`heatmap       ${heat}`);
+    const agg = {
+      mean: acrossRounds(roundStats.map((s) => s.mean)),
+      p95: acrossRounds(roundStats.map((s) => s.p95)),
+      over32: acrossRounds(roundStats.map((s) => s.over32Frac)),
+    };
     log(
-      `diff          mean ${stats.mean.toFixed(1)}  p95 ${stats.p95}  ` +
-        `over32 ${(stats.over32Frac * 100).toFixed(1)}%`,
+      `diff          mean ${agg.mean.value.toFixed(1)}  p95 ${agg.p95.value}  ` +
+        `over32 ${(agg.over32.value * 100).toFixed(1)}%   (${ROUNDS} round${ROUNDS > 1 ? "s" : ""})`,
     );
+    if (ROUNDS > 1) {
+      log(
+        `spread        mean [${agg.mean.lo.toFixed(1)}..${agg.mean.hi.toFixed(1)}]  ` +
+          `= ${(agg.mean.noise.value * 100).toFixed(1)}% — THIS is the rig's precision`,
+      );
+    } else {
+      log(`spread        UNMEASURED at --rounds 1. No threshold over this number is supportable.`);
+    }
+    envelope = wrap({
+      instrument: "visual",
+      producer: "scripts/pk-ab-dungeon.mjs",
+      root: ROOT,
+      build: { profile: "release", target: "wasm" },
+      env: envBlock({ loadBefore, view: `${VIEW_W}x${VIEW_H}` }),
+      metrics: [
+        // `lower-better` on all three: these are DIFFERENCES from the oracle, so
+        // the port improving means every one of them falls.
+        metric({
+          id: `dungeon.${STAMP}.mean`,
+          unit: "diff",
+          dir: "lower-better",
+          value: Number(agg.mean.value.toFixed(2)),
+          n: agg.mean.n,
+          noise: agg.mean.noise,
+        }),
+        metric({
+          id: `dungeon.${STAMP}.p95`,
+          unit: "diff",
+          dir: "lower-better",
+          value: agg.p95.value,
+          n: agg.p95.n,
+          noise: agg.p95.noise,
+        }),
+        metric({
+          id: `dungeon.${STAMP}.over32`,
+          unit: "frac",
+          dir: "lower-better",
+          value: Number(agg.over32.value.toFixed(4)),
+          n: agg.over32.n,
+          noise: agg.over32.noise,
+        }),
+      ],
+    });
     console.log("");
     log("  note  LOOK AT THE SHEET. Until the port renders the same floor as the");
     log("        oracle these numbers are measuring two different dungeons, and");
@@ -542,12 +659,38 @@ async function main() {
   }
 
   // Errors are HARD on both sides — a page that threw is not a frame worth
-  // comparing. The diff stats are soft unless --strict, for the reason in the
-  // header: the two sides are not showing the same floor yet.
+  // comparing.
   const hard = errors.length > 0;
-  if (a.strict && stats && stats.over32Frac > 0.02) {
-    log(`STRICT: ${(stats.over32Frac * 100).toFixed(1)}% of pixels differ by more than 32`);
-    process.exit(1);
+
+  if (envelope && a.json) {
+    writeEnvelope(a.json, envelope);
+    log(`envelope      ${a.json}`);
+  }
+
+  // ⚠️ WHAT `--strict` USED TO BE: `over32Frac > 0.02`, a flat floor, while this
+  // rig reads 33.7%. It could not pass, so it was never run, so this rig has
+  // never gated anything. A threshold nothing can satisfy is not a strict mode;
+  // it is an unused branch that reads like a safety net.
+  //
+  // It now defers to the comparator, which judges against the RECORDED number
+  // for this scene and ratchets it down as the port improves. It also inherits
+  // the comparator's third verdict: at `--rounds 1` this run is
+  // `void:one-sample` and comes back INCONCLUSIVE rather than green, which is
+  // the honest answer and not one a flat threshold could ever give.
+  if (a.strict) {
+    if (!envelope) {
+      log("STRICT: nothing to judge — both sides are needed for a diff");
+      process.exit(1);
+    }
+    const tmp = a.json || join(OUT, `ab-dungeon-${STAMP}-envelope.json`);
+    if (!a.json) writeEnvelope(tmp, envelope);
+    console.log("");
+    const r = spawnSync(
+      process.execPath,
+      [join(ROOT, "scripts/pk-baseline.mjs"), "check", "visual", "--from", tmp],
+      { stdio: "inherit" },
+    );
+    process.exit(hard ? 1 : (r.status ?? 1));
   }
   process.exit(hard ? 1 : 0);
 }

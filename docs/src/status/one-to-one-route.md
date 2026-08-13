@@ -119,6 +119,38 @@ tier 2 reads 49.6% and not 55.8%. **The honest number went down.** A third
 citation, `legacy/src/scenes/tavern/camera.ts`, names a file that has never
 existed — the module is `camera.rs`, and the `.ts` name was assumed from it.
 
+### 2026-08-12 — the numbers become records, and `--strict` becomes reachable
+
+`assets/baselines/*.json` are committed; `scripts/pk-baseline.mjs` judges against
+them. Two properties matter more than the plumbing:
+
+**A loaded box reads INCONCLUSIVE, never RED.** `check` resolves in order —
+instrument-changed (exit 4) → the instrument disowned the reading → fewer
+samples than the record → in-run noise above 3× the recorded noise → the broker
+granted less than it was asked → *then* regression / improved / held. Every
+"could not tell" reason is tested before any statement about the value, so a
+busy desktop cannot be reported as a code regression. Broker exit 75 maps to
+`void:grant`: an exact class that could not get its slot **did not run**.
+
+**Bands are derived, never typed:** `clamp(2 × noiseAtRecord, 0.10, 0.50)`. On
+measured wander that is ~10% for the tavern frame cost and ~46% for the dungeon
+ratio — one is gate-able, the other is not yet, and the file says so rather than
+picking a satisfying threshold. Compare what `--strict` used to be on the A/B
+rigs: a flat `over32Frac > 0.02` while the dungeon reads **33.7%**. Unreachable,
+therefore never run, therefore not a gate at all — an unused branch that read
+like a safety net.
+
+**`pk-ab-dungeon` grew `--rounds N`.** It shot ONE frame per side and reported
+`mean 30.2` as though that number had a tolerance; it has none. Each round now
+re-loads and re-shoots both sides, and the spread across rounds is published
+with the value. At `--rounds 1` the envelope says `void:one-sample` out loud —
+which is the true statement about **every visual number this project has
+recorded to date**.
+
+The ledger is the one HARD ratchet (deterministic, banded at zero) and is
+enforced in CI. Eleven GPU-free tests cover the comparator's verdicts, including
+the ratchet, the INCONCLUSIVE path and the instrument pin.
+
 Sabotage sweep on the repaired gate: **4 injected, 4 caught, 0 survived** —
 re-introduce the ellipsis (red, and the % falls back to 24.6), cite a
 nonexistent tier-2 file (red), delete the sibling-spelling normaliser (red),

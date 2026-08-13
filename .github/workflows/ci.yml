@@ -176,6 +176,12 @@ jobs:
           node scripts/pk-baseline.mjs check ledger --from .checks/ledger.json
       - name: baselines lint
         run: node scripts/pk-baseline.mjs lint
+      # The comparator's own verdict logic. It reads no GPU and no browser, so
+      # unlike every other instrument in this project it can be tested here —
+      # and it MUST be, because an untested comparator is the same class of
+      # thing as the gates it was built to replace.
+      - name: the comparator's verdicts
+        run: node --test scripts/lib/pk-envelope.test.mjs
 
   drift:
     name: oracle rot (D-1)

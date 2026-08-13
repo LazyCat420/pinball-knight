@@ -49,7 +49,15 @@ import { fileURLToPath } from "node:url";
 import { readJson, sha256File, loadNow, QUALITY } from "./lib/pk-envelope.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BASELINE_DIR = join(ROOT, "assets", "baselines");
+// `PK_BASELINE_DIR` exists so the ratchet can be TESTED against a scratch dir
+// rather than against the shipped baselines. Without it the only way to
+// exercise "a fall is a regression" is to damage the real record, so the test
+// that mattered most would be the one nobody wrote — and a comparator whose
+// verdict logic is untested is the same class of instrument as the gates this
+// file was built to replace.
+const BASELINE_DIR = process.env.PK_BASELINE_DIR
+  ? resolve(process.env.PK_BASELINE_DIR)
+  : join(ROOT, "assets", "baselines");
 
 /** Exit codes. Distinct on purpose: a caller must be able to tell "worse" from
  *  "could not tell" from "you edited the ruler". */
