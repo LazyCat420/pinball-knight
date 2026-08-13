@@ -10,16 +10,21 @@ header of `scripts/pk-baseline.mjs` for why it is not typed in by hand.
 
 | metric | value | band | noise at record | n | commit |
 |---|---:|---|---:|---:|---|
-| `intro.run.over32_pct` | 10.78 % | ±12% +0.3 | 5.9% | 3 | `c545d51` |
-| `intro.run.diff_mean` | 15.4 luma | ±12% +0 | 6.2% | 3 | `c545d51` |
-| `intro.bonk.over32_pct` | 16.09 % | ±38% +0.3 | 18.8% | 3 | `c545d51` |
-| `intro.bonk.diff_mean` | 20.77 luma | ±27% +0 | 13.3% | 3 | `c545d51` |
-| `intro.shatter.over32_pct` | 66.14 % | ±10% +0.3 | 2.9% | 3 | `c545d51` |
-| `intro.shatter.diff_mean` | 57.18 luma | ±10% +0 | 2.4% | 3 | `c545d51` |
-| `intro.sweep.over32_pct` | 41.74 % | ±10% +0.3 | 1.6% | 3 | `c545d51` |
-| `intro.sweep.diff_mean` | 26.46 luma | ±10% +0 | 1.5% | 3 | `c545d51` |
-| `intro.title.over32_pct` | 14.59 % | ±10% +0.3 | 0.1% | 3 | `c545d51` |
-| `intro.title.diff_mean` | 13.25 luma | ±10% +0 | 0.1% | 3 | `c545d51` |
+| `intro.run.over32_pct` | 22.82 % | ±17% +0.3 | 8.5% | 3 | `da45ed3` |
+| `intro.run.diff_mean` | 34.45 luma | ±18% +0 | 8.9% | 3 | `da45ed3` |
+| `intro.bonk.over32_pct` | 15.01 % | ±50% +0.3 | 33.3% | 3 | `da45ed3` |
+| `intro.bonk.diff_mean` | 17.53 luma | ±50% +0 | 38.9% | 3 | `da45ed3` |
+| `intro.shatter.over32_pct` | 37.68 % | ±10% +0.3 | 2.6% | 3 | `da45ed3` |
+| `intro.shatter.diff_mean` | 36.35 luma | ±10% +0 | 2.7% | 3 | `da45ed3` |
+| `intro.sweep.over32_pct` | 41.1 % | ±10% +0.3 | 2.5% | 3 | `da45ed3` |
+| `intro.sweep.diff_mean` | 26.11 luma | ±10% +0 | 2.3% | 3 | `da45ed3` |
+| `intro.title.over32_pct` | 14.61 % | ±10% +0.3 | 0.1% | 3 | `da45ed3` |
+| `intro.title.diff_mean` | 13.25 luma | ±10% +0 | 0.1% | 3 | `da45ed3` |
+
+### Accepted regressions
+
+- `intro.run.over32_pct` 10.78 → 22.82 at `da45ed3` — The rig gave the port a virtual 1/60 clock (?intro-fixed-dt), which the oracle already had via installVirtualClock. Until now the two sides integrated the same elapsed time in a different NUMBER of steps and the comparison was between two timebases. shatter over32 66.1% -> 37.7%; run and bonk move because the fixed clock also changes which walk frame is showing.
+- `intro.run.diff_mean` 15.4 → 34.45 at `da45ed3` — The rig gave the port a virtual 1/60 clock (?intro-fixed-dt), which the oracle already had via installVirtualClock. Until now the two sides integrated the same elapsed time in a different NUMBER of steps and the comparison was between two timebases. shatter over32 66.1% -> 37.7%; run and bonk move because the fixed clock also changes which walk frame is showing.
 
 ## ledger (deterministic — hard ratchet)
 

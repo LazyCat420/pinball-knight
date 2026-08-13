@@ -240,6 +240,18 @@ pub fn step_intro_ball(g: &Grid, b: &mut IntroBall, dt: f64) -> bool {
 /// Longest step the ball simulation may take. Above this it tunnels walls.
 pub const SIM_DT_CLAMP: f64 = 0.05;
 
+/// The shatter's fixed integration step — the oracle's rAF interval.
+///
+/// `paintShatter` advances its pieces with semi-implicit Euler
+/// (`vy += 1500·dt; y += vy·dt`), and that is STEP-SIZE DEPENDENT: the same
+/// elapsed time split into a different number of steps lands the shards
+/// somewhere else. The oracle is driven by a rAF timestamp and therefore always
+/// steps in 1/60ths; a wasm build rendering at 22-32 ms was giving the same
+/// 0.45 s to ~15 steps of ~0.030 rather than 27 of 0.0167, putting a
+/// representative shard 6.7% further down the screen — an error that moved with
+/// the frame rate, so the phase was not reproducible across machines either.
+pub const SHATTER_STEP: f64 = 1.0 / 60.0;
+
 #[derive(Debug, PartialEq)]
 pub struct IntroDeltas {
     /// Real elapsed seconds. Drives the phase clock and its edge triggers.

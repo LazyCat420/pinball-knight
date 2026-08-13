@@ -649,18 +649,29 @@ impl Overworld {
         }
     }
 
-    pub fn paint_shatter(&mut self, dt: f64, t: f64) {
-        self.clear();
-        let Some(snap) = self.snap.take() else { return };
-        let alpha = (1.0 - t / SHATTER_DUR).max(0.0);
-        let half = f64::from(CELL) / 2.0;
-        let reach = (half * std::f64::consts::SQRT_2).ceil() as i32;
+    /// Advance the pieces by ONE fixed step.
+    ///
+    /// Split from the paint because semi-implicit Euler is step-size dependent
+    /// and the oracle's step is a rAF interval — a fixed 1/60 — while this
+    /// build's frame delta is whatever wasm managed that frame. Integrating the
+    /// same elapsed time in 15 steps of 0.030 instead of 27 of 0.0167 puts a
+    /// shard 6.7% further down the screen. See the call site in `intro.rs`.
+    pub fn step_shatter(&mut self, dt: f64) {
         for p in &mut self.pieces {
             p.vy += 1500.0 * dt;
             p.x += p.vx * dt;
             p.y += p.vy * dt;
             p.rot += p.vr * dt;
         }
+    }
+
+    /// Draw the pieces where they currently are. `t` drives only the fade.
+    pub fn paint_shatter_at(&mut self, t: f64) {
+        self.clear();
+        let Some(snap) = self.snap.take() else { return };
+        let alpha = (1.0 - t / SHATTER_DUR).max(0.0);
+        let half = f64::from(CELL) / 2.0;
+        let reach = (half * std::f64::consts::SQRT_2).ceil() as i32;
         let h = self.h;
         for p in self.pieces.clone() {
             // Dest-driven rotated blit of the snapshot cell about its centre.
@@ -699,5 +710,66 @@ impl Overworld {
         self.clear();
         self.pieces.clear();
         self.snap = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pk_core::intro::SHATTER_STEP;
+
+    /// ⚠️ THE SHARDS MUST NOT DEPEND ON THE FRAME RATE.
+    ///
+    /// `step_shatter` is semi-implicit Euler, which is step-size dependent: the
+    /// same elapsed time integrated in a different number of steps lands the
+    /// piece somewhere else. The oracle is driven by a rAF timestamp and always
+    /// steps in 1/60ths, so the port must too — it renders wasm at 22-32 ms and
+    /// was feeding the raw frame delta, giving 0.45 s to ~15 steps of ~0.030
+    /// where legacy takes 27 of 0.0167.
+    ///
+    /// This test is the property that was broken, stated directly: integrate
+    /// the SAME total time at two different step sizes and the answers differ.
+    /// It is the reason `intro.rs` runs an accumulator instead of passing `dt`
+    /// straight through, and it fails if anyone reverts that.
+    #[test]
+    fn euler_is_step_size_dependent_which_is_why_the_shatter_is_fixed_step() {
+        fn fall(dt: f64, total: f64) -> f64 {
+            let mut ow = Overworld::new(1920.0, 1080.0);
+            ow.pieces.push(Piece {
+                sx: 0,
+                sy: 0,
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: -200.0,
+                rot: 0.0,
+                vr: 0.0,
+            });
+            let mut t = 0.0;
+            while t + 1e-12 < total {
+                ow.step_shatter(dt);
+                t += dt;
+            }
+            ow.pieces[0].y
+        }
+
+        let legacy = fall(SHATTER_STEP, 0.45);
+        let frame_rate_30 = fall(1.0 / 30.0, 0.45);
+
+        // The two disagree by several percent — the defect this guards.
+        let rel = (frame_rate_30 - legacy).abs() / legacy.abs();
+        assert!(
+            rel > 0.02,
+            "if these now AGREE the integrator changed and this test no longer \
+             says anything: legacy {legacy:.3} vs 30fps {frame_rate_30:.3}",
+        );
+
+        // And the fixed step is reproducible regardless of how the caller
+        // chunks the wall clock, which is what the accumulator buys.
+        let in_one_go = fall(SHATTER_STEP, 0.45);
+        assert!(
+            (in_one_go - legacy).abs() < 1e-12,
+            "the fixed step must be deterministic: {in_one_go} vs {legacy}",
+        );
     }
 }

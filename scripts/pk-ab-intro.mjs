@@ -495,9 +495,22 @@ async function shootRust(ctx, errors, badUrls, phase) {
   // No boot flags at all: the intro IS the default entry (main.rs:248-258).
   // `?tavern=1`, `?real-floor=1`, `?autostart=1` and `?no-intro=1` would each
   // skip it, which is why none of them is here.
+  // ⚠ `intro-fixed-dt` IS NOT OPTIONAL — IT IS THE OTHER HALF OF THE FREEZE.
+  //
+  // `installVirtualClock` hands the ORACLE a rAF stamp advancing a strict
+  // 1000/60 per frame, so legacy plays every phase in exact 1/60 steps however
+  // slowly the browser renders. Until 2026-08-13 the port got no counterpart
+  // and ran on real frame deltas of 22-32 ms, so the two sides reached the same
+  // `t` having integrated a different NUMBER of steps — 27 against ~15.
+  //
+  // For a still phase that is invisible. For `shatter`, whose pieces advance by
+  // semi-implicit Euler (step-size dependent), it is most of the measured diff:
+  // the sides start together at t+0.02 (over32 21.8%) and separate by t+0.45
+  // (67%). Comparing them without this was comparing two TIMEBASES.
   const url =
     `http://localhost:${PORT}/index.html?mute=1` +
-    `&intro-freeze=${phase}:${SHOOT_AT[phase]}`;
+    `&intro-freeze=${phase}:${SHOOT_AT[phase]}` +
+    `&intro-fixed-dt=${(1 / 60).toFixed(6)}`;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.bringToFront();
   await assertViewport(page, "rust");

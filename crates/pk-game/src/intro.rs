@@ -32,7 +32,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use pk_core::intro::{
     aim_intro_camera, build_title_grid, fit_zoom, step_intro_ball, IntroBall, IntroCue, IntroPhase,
-    IntroSeq, TitleLayout, SIM_DT_CLAMP, SWEEP_DUR,
+    IntroSeq, TitleLayout, SHATTER_STEP, SIM_DT_CLAMP, SWEEP_DUR,
 };
 use pk_gui::screens::intro::{blink_phase, IntroChromeView};
 
@@ -81,6 +81,51 @@ fn intro_freeze_at() -> Option<(IntroPhase, f64)> {
         _ => return None,
     };
     Some((phase, t.parse().ok()?))
+}
+
+/// HARNESS SEAM: drive the sequence on a VIRTUAL clock of fixed steps.
+///
+/// `?intro-fixed-dt=<seconds>` (or `PK_INTRO_FIXED_DT`) replaces the real frame
+/// delta with a constant, so the intro advances by exactly that much per frame
+/// however slowly the frame was actually produced.
+///
+/// ⚠️ WITHOUT THIS THE A/B COMPARED TWO DIFFERENT TIMEBASES, AND THE SHATTER
+/// PHASE WAS THE ONE PLACE IT SHOWED.
+///
+/// `pk-ab-intro.mjs` freezes the oracle by REPLACING `requestAnimationFrame`
+/// with one that hands the callback a virtual timestamp advancing a strict
+/// `1000/60` per frame (`installVirtualClock`). Legacy's whole clock is
+/// `introDeltas()` over that stamp, so the oracle plays every phase in exact
+/// 1/60 steps no matter what the browser is doing.
+///
+/// The port had no counterpart: `?intro-freeze` only zeroes `dt` once the
+/// target instant is REACHED, and everything before that ran on real frame
+/// deltas of 22-32 ms. So the two sides arrived at the same `t` having
+/// integrated a different number of steps — 27 for the oracle against ~15 for
+/// the port — and `paintShatter`'s semi-implicit Euler is step-size dependent.
+///
+/// This is a property of the RIG, not of either build: no port-side change can
+/// make a real-time integrator agree with a virtual-time one. Give both sides
+/// the same clock and the phase becomes comparable.
+fn intro_fixed_dt() -> Option<f64> {
+    let raw = {
+        #[cfg(target_arch = "wasm32")]
+        {
+            js_sys::eval("location.search")
+                .ok()
+                .and_then(|v| v.as_string())
+                .and_then(|s| {
+                    s.split(['?', '&'])
+                        .find_map(|kv| kv.strip_prefix("intro-fixed-dt=").map(str::to_owned))
+                })
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::env::var("PK_INTRO_FIXED_DT").ok()
+        }
+    }?;
+    let dt: f64 = raw.parse().ok()?;
+    (dt > 0.0 && dt < 1.0).then_some(dt)
 }
 
 /// The shell services `intro_tick` talks OUT to, bundled.
@@ -134,6 +179,8 @@ pub struct IntroRes {
     seq: IntroSeq,
     ball: IntroBall,
     sim_acc: f64,
+    /// Leftover time for the shatter's fixed 1/60 step — see `SHATTER_STEP`.
+    shatter_acc: f64,
     elapsed: f64,
     trail: Vec<(f64, f64)>,
     trail_clock: f64,
@@ -142,6 +189,8 @@ pub struct IntroRes {
     finish_t: f64,
     /// `?intro-freeze=<phase>:<t>` — see [`intro_freeze_at`]. `None` in play.
     freeze: Option<(IntroPhase, f64)>,
+    /// `?intro-fixed-dt=<s>` — see [`intro_fixed_dt`]. `None` in play.
+    fixed_dt: Option<f64>,
     // Entities the tick addresses directly (avoids query-filter tangles).
     canvas_img: Handle<Image>,
     cam_e: Entity,
@@ -361,6 +410,7 @@ fn intro_setup(
         seq: IntroSeq::new(),
         ball,
         sim_acc: 0.0,
+        shatter_acc: 0.0,
         elapsed: 0.0,
         trail: Vec::new(),
         trail_clock: 0.0,
@@ -368,6 +418,7 @@ fn intro_setup(
         finishing: false,
         finish_t: 0.0,
         freeze: intro_freeze_at(),
+        fixed_dt: intro_fixed_dt(),
         canvas_img,
         cam_e,
         ball_e,
@@ -420,7 +471,11 @@ fn intro_tick(
     // clamped and drives the ball — see pk_core::intro's clock notes. Bevy's
     // Time hands us the real frame delta directly (zero on frame one, which
     // is the legacy first-tick stamp behaviour).
-    let pdt = time.delta_secs_f64();
+    // THE VIRTUAL CLOCK, applied before anything reads the delta. When the
+    // harness pins a step, the whole sequence advances by exactly that much per
+    // frame — the port's counterpart to the rAF stamp `installVirtualClock`
+    // hands the oracle. See `intro_fixed_dt`.
+    let pdt = res.fixed_dt.unwrap_or_else(|| time.delta_secs_f64());
     // The freeze seam, read before either clock is spent.
     let held = res
         .freeze
@@ -542,7 +597,36 @@ fn intro_tick(
                 shell.sfx.write(SfxEvent::Bumper);
             }
             aim_camera(&mut res, 0.0, &sizing, &mut tf_q, &mut proj_q);
-            res.ow.paint_shatter(dt, pt);
+            // ⚠️ THE SHARDS INTEGRATE ON A FIXED 1/60 STEP, NOT THE FRAME DELTA.
+            //
+            // `paint_shatter` advances the pieces with semi-implicit Euler
+            // (`vy += 1500·dt; y += vy·dt`), which is STEP-SIZE DEPENDENT: the
+            // same elapsed time split into a different number of steps puts
+            // the shards somewhere else. The oracle's clock is a rAF timestamp,
+            // so it always integrates in 1/60 increments; this build renders
+            // wasm at 22-32 ms and was handing the same 0.45 s to ~15 steps of
+            // ~0.030 instead of legacy's 27 of 0.0167.
+            //
+            // Measured, at t = 0.45 s from a representative shard: legacy falls
+            // 67.5 px, the port 72.0 — 6.7% further, and the error moves with
+            // the frame rate, so the port's shatter was not even the same on
+            // two machines. That is most of the phase's remaining diff, and it
+            // is why over32 read 67% at t+0.45 while t+0.02 read 21.8%: the two
+            // sides START together and DIVERGE, which is the signature of an
+            // integration difference rather than a rate or count one.
+            //
+            // The accumulator is the same shape `sim_ball` already uses for the
+            // ball at 1/120 — the oracle sub-steps its ball too, and for the
+            // same reason.
+            res.shatter_acc += dt;
+            while res.shatter_acc >= SHATTER_STEP {
+                res.shatter_acc -= SHATTER_STEP;
+                res.ow.step_shatter(SHATTER_STEP);
+            }
+            // Repainted every frame even when no step was advanced: `alpha` is
+            // a function of `pt`, so the fade stays continuous while the motion
+            // is quantised — exactly how a rAF-driven canvas behaves.
+            res.ow.paint_shatter_at(pt);
             canvas_dirty = true;
         }
         IntroPhase::Sweep => {

@@ -211,6 +211,7 @@ pub const SIGN_UV: bevy::math::Affine2 = bevy::math::Affine2 {
 /// Takes the material's ACTUAL `uv_transform` and pushes each band through it:
 /// the question is never what the PNG contains, it is what lands on the quad.
 /// Pass `SIGN_UV` to measure what ships.
+#[cfg(test)]
 pub fn sign_ink_bands(uv: bevy::math::Affine2) -> [f64; 8] {
     let sample_u = |frac: f32| uv.transform_point2(Vec2::new(frac, 0.5)).x;
     let rgba = image::load_from_memory(SIGN_ENTER_MAZE_PNG)

@@ -1,133 +1,187 @@
 {
   "schema": 1,
   "instrument": "ab-intro",
-  "producerSha256": "9a56d9c388efcbe1027f14eadd49842cc942573ceb6472c736ceb210dbffc19e",
+  "producerSha256": "32f4cfff85bb00226ef016f392fa5c315239b96a60f447203d250fc1f98b4f56",
   "metrics": {
     "intro.run.over32_pct": {
       "unit": "%",
       "dir": "lower-better",
-      "value": 10.78,
+      "value": 22.82,
       "band": {
-        "rel": 0.118,
+        "rel": 0.1706,
         "abs": 0.3
       },
-      "noiseAtRecord": 0.059,
+      "noiseAtRecord": 0.0853,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 10.78,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.run.diff_mean": {
       "unit": "luma",
       "dir": "lower-better",
-      "value": 15.4,
+      "value": 34.45,
       "band": {
-        "rel": 0.1234,
+        "rel": 0.1778,
         "abs": 0
       },
-      "noiseAtRecord": 0.0617,
+      "noiseAtRecord": 0.0889,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 15.4,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.bonk.over32_pct": {
       "unit": "%",
       "dir": "lower-better",
-      "value": 16.09,
+      "value": 15.01,
       "band": {
-        "rel": 0.3758,
+        "rel": 0.5,
         "abs": 0.3
       },
-      "noiseAtRecord": 0.1879,
+      "noiseAtRecord": 0.3327,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 16.09,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.bonk.diff_mean": {
       "unit": "luma",
       "dir": "lower-better",
-      "value": 20.77,
+      "value": 17.53,
       "band": {
-        "rel": 0.2658,
+        "rel": 0.5,
         "abs": 0
       },
-      "noiseAtRecord": 0.1329,
+      "noiseAtRecord": 0.3891,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 20.77,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.shatter.over32_pct": {
       "unit": "%",
       "dir": "lower-better",
-      "value": 66.14,
+      "value": 37.68,
       "band": {
         "rel": 0.1,
         "abs": 0.3
       },
-      "noiseAtRecord": 0.0293,
+      "noiseAtRecord": 0.0257,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 66.14,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.shatter.diff_mean": {
       "unit": "luma",
       "dir": "lower-better",
-      "value": 57.18,
+      "value": 36.35,
       "band": {
         "rel": 0.1,
         "abs": 0
       },
-      "noiseAtRecord": 0.0241,
+      "noiseAtRecord": 0.0273,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 57.18,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.sweep.over32_pct": {
       "unit": "%",
       "dir": "lower-better",
-      "value": 41.74,
+      "value": 41.1,
       "band": {
         "rel": 0.1,
         "abs": 0.3
       },
-      "noiseAtRecord": 0.0164,
+      "noiseAtRecord": 0.0255,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 41.74,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.sweep.diff_mean": {
       "unit": "luma",
       "dir": "lower-better",
-      "value": 26.46,
+      "value": 26.11,
       "band": {
         "rel": 0.1,
         "abs": 0
       },
-      "noiseAtRecord": 0.0147,
+      "noiseAtRecord": 0.0233,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 26.46,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.title.over32_pct": {
       "unit": "%",
       "dir": "lower-better",
-      "value": 14.59,
+      "value": 14.61,
       "band": {
         "rel": 0.1,
         "abs": 0.3
       },
       "noiseAtRecord": 0.0005,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 14.59,
+          "commit": "c545d51"
+        }
+      ]
     },
     "intro.title.diff_mean": {
       "unit": "luma",
@@ -139,11 +193,34 @@
       },
       "noiseAtRecord": 0.0005,
       "n": 3,
-      "at": "2026-08-13T03:47:19.191Z",
-      "commit": "c545d51",
-      "history": []
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "history": [
+        {
+          "at": "2026-08-13T03:47:19.191Z",
+          "value": 13.25,
+          "commit": "c545d51"
+        }
+      ]
     }
   },
-  "regressions": [],
+  "regressions": [
+    {
+      "id": "intro.run.over32_pct",
+      "from": 10.78,
+      "to": 22.82,
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "reason": "The rig gave the port a virtual 1/60 clock (?intro-fixed-dt), which the oracle already had via installVirtualClock. Until now the two sides integrated the same elapsed time in a different NUMBER of steps and the comparison was between two timebases. shatter over32 66.1% -> 37.7%; run and bonk move because the fixed clock also changes which walk frame is showing."
+    },
+    {
+      "id": "intro.run.diff_mean",
+      "from": 15.4,
+      "to": 34.45,
+      "at": "2026-08-13T04:18:03.155Z",
+      "commit": "da45ed3",
+      "reason": "The rig gave the port a virtual 1/60 clock (?intro-fixed-dt), which the oracle already had via installVirtualClock. Until now the two sides integrated the same elapsed time in a different NUMBER of steps and the comparison was between two timebases. shatter over32 66.1% -> 37.7%; run and bonk move because the fixed clock also changes which walk frame is showing."
+    }
+  ],
   "deterministic": false
 }
