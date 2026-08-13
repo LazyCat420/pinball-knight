@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "instrument": "ab-intro",
+  "producerSha256": "9a56d9c388efcbe1027f14eadd49842cc942573ceb6472c736ceb210dbffc19e",
+  "metrics": {
+    "intro.run.over32_pct": {
+      "unit": "%",
+      "dir": "lower-better",
+      "value": 10.78,
+      "band": {
+        "rel": 0.118,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.059,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.run.diff_mean": {
+      "unit": "luma",
+      "dir": "lower-better",
+      "value": 15.4,
+      "band": {
+        "rel": 0.1234,
+        "abs": 0
+      },
+      "noiseAtRecord": 0.0617,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.bonk.over32_pct": {
+      "unit": "%",
+      "dir": "lower-better",
+      "value": 16.09,
+      "band": {
+        "rel": 0.3758,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.1879,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.bonk.diff_mean": {
+      "unit": "luma",
+      "dir": "lower-better",
+      "value": 20.77,
+      "band": {
+        "rel": 0.2658,
+        "abs": 0
+      },
+      "noiseAtRecord": 0.1329,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.shatter.over32_pct": {
+      "unit": "%",
+      "dir": "lower-better",
+      "value": 66.14,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.0293,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.shatter.diff_mean": {
+      "unit": "luma",
+      "dir": "lower-better",
+      "value": 57.18,
+      "band": {
+        "rel": 0.1,
+        "abs": 0
+      },
+      "noiseAtRecord": 0.0241,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.sweep.over32_pct": {
+      "unit": "%",
+      "dir": "lower-better",
+      "value": 41.74,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.0164,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.sweep.diff_mean": {
+      "unit": "luma",
+      "dir": "lower-better",
+      "value": 26.46,
+      "band": {
+        "rel": 0.1,
+        "abs": 0
+      },
+      "noiseAtRecord": 0.0147,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.title.over32_pct": {
+      "unit": "%",
+      "dir": "lower-better",
+      "value": 14.59,
+      "band": {
+        "rel": 0.1,
+        "abs": 0.3
+      },
+      "noiseAtRecord": 0.0005,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    },
+    "intro.title.diff_mean": {
+      "unit": "luma",
+      "dir": "lower-better",
+      "value": 13.25,
+      "band": {
+        "rel": 0.1,
+        "abs": 0
+      },
+      "noiseAtRecord": 0.0005,
+      "n": 3,
+      "at": "2026-08-13T03:47:19.191Z",
+      "commit": "c545d51",
+      "history": []
+    }
+  },
+  "regressions": [],
+  "deterministic": false
+}

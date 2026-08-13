@@ -6,6 +6,21 @@ Every number this project claims lives here, not in prose. A band is derived
 from the instrument's own measured noise at the moment of record — see the
 header of `scripts/pk-baseline.mjs` for why it is not typed in by hand.
 
+## ab-intro
+
+| metric | value | band | noise at record | n | commit |
+|---|---:|---|---:|---:|---|
+| `intro.run.over32_pct` | 10.78 % | ±12% +0.3 | 5.9% | 3 | `c545d51` |
+| `intro.run.diff_mean` | 15.4 luma | ±12% +0 | 6.2% | 3 | `c545d51` |
+| `intro.bonk.over32_pct` | 16.09 % | ±38% +0.3 | 18.8% | 3 | `c545d51` |
+| `intro.bonk.diff_mean` | 20.77 luma | ±27% +0 | 13.3% | 3 | `c545d51` |
+| `intro.shatter.over32_pct` | 66.14 % | ±10% +0.3 | 2.9% | 3 | `c545d51` |
+| `intro.shatter.diff_mean` | 57.18 luma | ±10% +0 | 2.4% | 3 | `c545d51` |
+| `intro.sweep.over32_pct` | 41.74 % | ±10% +0.3 | 1.6% | 3 | `c545d51` |
+| `intro.sweep.diff_mean` | 26.46 luma | ±10% +0 | 1.5% | 3 | `c545d51` |
+| `intro.title.over32_pct` | 14.59 % | ±10% +0.3 | 0.1% | 3 | `c545d51` |
+| `intro.title.diff_mean` | 13.25 luma | ±10% +0 | 0.1% | 3 | `c545d51` |
+
 ## ledger (deterministic — hard ratchet)
 
 | metric | value | band | noise at record | n | commit |

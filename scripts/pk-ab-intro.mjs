@@ -60,6 +60,7 @@ import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { dirname, join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { metric, wrap, writeEnvelope } from "./lib/pk-envelope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -81,6 +82,17 @@ const { values: a } = parseArgs({
     "legacy-only": { type: "boolean", default: false },
     "rust-only": { type: "boolean", default: false },
     strict: { type: "boolean", default: false },
+    /**
+     * ⚠️ N=1 IS NOT A MEASUREMENT, AND THIS RIG SHOT N=1 UNTIL 2026-08-13
+     * (incident I-3, work item 2-2). Every number it has ever printed about
+     * the fast phases — `bonk` and `shatter`, where the picture changes most
+     * between adjacent frames — was a single sample with no stated precision,
+     * so "over32 fell from 68.3% to X" could not be told apart from the rig
+     * landing on a different frame. Rounds repeat the whole shoot and the
+     * report carries the MEDIAN with its across-round range.
+     */
+    rounds: { type: "string", default: "1" },
+    envelope: { type: "string" },
     phases: { type: "string", default: "run,bonk,shatter,sweep,title" },
     out: { type: "string", default: join(ROOT, ".checks") },
     "legacy-url": { type: "string", default: "" },
@@ -96,6 +108,21 @@ const PORT = Number(a.port);
 const OUT = a.out;
 const doLegacy = !a["rust-only"];
 const doRust = !a["legacy-only"];
+const ROUNDS = Math.max(1, Number(a.rounds));
+
+/**
+ * Median and range across rounds — the same shape `pk-perf-ab` reports and
+ * `acrossRounds()` in the envelope lib computes. Median rather than mean
+ * because one round that froze a frame late should not drag the reading;
+ * range rather than stddev because at n=3 stddev is theatre.
+ */
+function across(values) {
+  const v = [...values].sort((x, y) => x - y);
+  const med = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+  const lo = v[0];
+  const hi = v[v.length - 1];
+  return { med, lo, hi, n: v.length, rel: med === 0 ? 0 : (hi - lo) / Math.abs(med) };
+}
 
 /** The authored order. A requested subset is shot in THIS order, never the
  *  order it was typed in — the sequence only plays forwards. */
@@ -563,21 +590,41 @@ async function main() {
   const badUrls = new Set();
 
   const shot = { legacy: {}, rust: {} };
+  /** Per phase, one entry per round: the stats from that round's pair. */
+  const perRound = Object.fromEntries(PHASES.map((p) => [p, []]));
   let backend = "unknown";
   try {
     // ONE PAGE LOAD PER PHASE PER SIDE, and one page at a time: a backgrounded
     // tab has its rAF throttled, and a throttled tab reaches its freeze point
     // slowly or not at all.
-    for (const phase of PHASES) {
-      if (doLegacy) {
-        const r = await shootLegacy(ctx, errors, badUrls, rewriteForHostBrowser(legacyUrl), phase);
-        shot.legacy[phase] = r.file;
-        backend = r.backend;
+    //
+    // ROUNDS ARE INTERLEAVED PER PHASE (legacy then rust, then the next
+    // round), never all-legacy-then-all-rust: the box drifts over minutes and
+    // a block layout measures that drift as if it were a difference between
+    // the sides.
+    for (let round = 0; round < ROUNDS; round++) {
+      for (const phase of PHASES) {
+        if (doLegacy) {
+          const r = await shootLegacy(ctx, errors, badUrls, rewriteForHostBrowser(legacyUrl), phase);
+          shot.legacy[phase] = r.file; // the LAST round's frame is the one published
+          backend = r.backend;
+        }
+        if (doRust) {
+          const r = await shootRust(ctx, errors, badUrls, phase);
+          shot.rust[phase] = r.file;
+        }
+        // Score this round's pair now, while both files are on disk: the
+        // published sheet is overwritten by the next round.
+        if (doLegacy && doRust && ROUNDS > 1) {
+          const li = await decode(shot.legacy[phase]);
+          const ri = await decode(shot.rust[phase]);
+          const s = await writeDiff(li, ri, join(OUT, `ab-intro-${phase}-diff.png`));
+          s.lumaL = medianLuma(li);
+          s.lumaR = medianLuma(ri);
+          perRound[phase].push(s);
+        }
       }
-      if (doRust) {
-        const r = await shootRust(ctx, errors, badUrls, phase);
-        shot.rust[phase] = r.file;
-      }
+      if (ROUNDS > 1) log(`round ${round + 1}/${ROUNDS} shot`);
     }
   } finally {
     if (ownCtx) await ctx.close().catch(() => {});
@@ -620,6 +667,39 @@ async function main() {
         `${(s.over32Frac * 100).toFixed(1).padStart(6)}%   ${String(s.lumaL).padStart(3)} / ${String(s.lumaR).padStart(3)}`,
     );
   }
+
+  /* ── THE SPREAD (2-2 / I-3) ──────────────────────────────────────────────
+   *
+   * The table above is one round. This is the precision of the fast phases,
+   * without which a before/after on `shatter` is not a measurement: `bonk` and
+   * `shatter` change most between adjacent frames, so the rig's own landing
+   * jitter has to be stated before any fix is credited with moving a number.
+   */
+  const spreads = {};
+  if (ROUNDS > 1) {
+    console.log("");
+    log(`spread over ${ROUNDS} rounds — median [min..max]`);
+    log(`phase     ${"over32".padStart(20)}   ${"diff mean".padStart(18)}`);
+    for (const phase of PHASES) {
+      const rs = perRound[phase];
+      if (rs.length < 2) continue;
+      const o = across(rs.map((s) => s.over32Frac * 100));
+      const m = across(rs.map((s) => s.mean));
+      spreads[phase] = { over32: o, mean: m };
+      log(
+        `${phase.padEnd(9)} ` +
+          `${o.med.toFixed(1)}% [${o.lo.toFixed(1)}..${o.hi.toFixed(1)}]`.padStart(20) +
+          `   ${m.med.toFixed(1)} [${m.lo.toFixed(1)}..${m.hi.toFixed(1)}]`.padStart(21) +
+          `   ±${(o.rel * 100).toFixed(0)}%`,
+      );
+    }
+    log("");
+    log("  note  a change smaller than the bracket above is the RIG moving, not the port.");
+  } else {
+    console.log("");
+    log("  ⚠ N=1 — no precision is stated, so no before/after over these numbers is");
+    log("    a measurement. Re-run with --rounds 3.");
+  }
   console.log("");
   log(`sheets   ${join(OUT, "ab-intro-<phase>.png")}`);
   log(`heatmaps ${join(OUT, "ab-intro-<phase>-diff.png")}`);
@@ -637,6 +717,55 @@ async function main() {
     console.log("");
     log(`console errors (${errors.length}):`);
     for (const e of errors.slice(0, 10)) log(`   ${e.slice(0, 200)}`);
+  }
+
+  // ── THE ENVELOPE ────────────────────────────────────────────────────────
+  // Only at ROUNDS > 1: `metric()` would stamp `void:one-sample` on every
+  // entry anyway, and writing a baseline-shaped file full of void metrics
+  // invites someone to record it.
+  if (a.envelope) {
+    const metrics = [];
+    for (const phase of PHASES) {
+      const sp = spreads[phase];
+      if (!sp) continue;
+      metrics.push(
+        metric({
+          id: `intro.${phase}.over32_pct`,
+          unit: "%",
+          dir: "lower-better",
+          value: Number(sp.over32.med.toFixed(2)),
+          n: sp.over32.n,
+          noise: { kind: "range", value: Number(sp.over32.rel.toFixed(4)) },
+          notes: [`across-round range ${sp.over32.lo.toFixed(1)}..${sp.over32.hi.toFixed(1)}`],
+        }),
+      );
+      metrics.push(
+        metric({
+          id: `intro.${phase}.diff_mean`,
+          unit: "luma",
+          dir: "lower-better",
+          value: Number(sp.mean.med.toFixed(2)),
+          n: sp.mean.n,
+          noise: { kind: "range", value: Number(sp.mean.rel.toFixed(4)) },
+        }),
+      );
+    }
+    if (metrics.length) {
+      writeEnvelope(
+        a.envelope,
+        wrap({
+          instrument: "ab-intro",
+          producer: "scripts/pk-ab-intro.mjs",
+          root: ROOT,
+          metrics,
+          build: { view: `${VIEW_W}x${VIEW_H}` },
+          env: { rounds: ROUNDS, phases: PHASES.join(",") },
+        }),
+      );
+      log(`envelope  ${a.envelope}`);
+    } else {
+      log("  ⚠ no envelope written — needs --rounds 3 and both sides");
+    }
   }
 
   // Errors are HARD on both sides — a page that threw is not a frame worth

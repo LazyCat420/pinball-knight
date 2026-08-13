@@ -181,6 +181,11 @@ const INSTRUMENTS = {
   "perf-scene": { producer: "crates/pk-game/src/perf.rs" },
   visual: { producer: "scripts/lib/pk-shutter.mjs", optionalProducer: true },
   drift: { producer: "scripts/pk-drift.sh" },
+  // The intro A/B, from 2026-08-13 — it only became recordable when it grew
+  // `--rounds` (work item 2-2 / incident I-3). At N=1 every metric it emitted
+  // was `void:one-sample` by the envelope's own rule, which is the correct
+  // description of a rig that shoots one frame of a moving picture.
+  "ab-intro": { producer: "scripts/pk-ab-intro.mjs" },
 };
 
 function baselinePath(instrument) {
