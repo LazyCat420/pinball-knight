@@ -39,6 +39,7 @@
     clippy::too_many_arguments
 )]
 
+pub mod bestiary;
 pub mod cards;
 pub mod collide;
 pub mod combo;
@@ -48,14 +49,20 @@ pub mod flow_field;
 pub mod gambler;
 pub mod grid;
 pub mod intro;
+pub mod items;
 pub mod jsmath;
 pub mod jssort;
 pub mod maze;
 pub mod movement;
 pub mod pinball;
 pub mod rail;
+pub mod reagents;
+pub mod recipes;
 pub mod rng;
+pub mod secrets;
 pub mod state;
 pub mod surfaces;
 pub mod tavern;
 pub mod tile_shape;
+pub mod zombie_types;
+
