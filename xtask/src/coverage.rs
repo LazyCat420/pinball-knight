@@ -890,16 +890,26 @@ mod tests {
             .parent()
             .expect("workspace root");
         let led = scan_rust(root);
-        // `entities/player.ts` and `maze/build.ts` are partly ported and must be
+        for (path, lines) in [("entities/player.ts", 2445)] {
+            let claims = led.claims.get(path);
+            assert!(
+                claims.is_none(),
+                "{path} ({lines} lines) is claimed by {claims:?} — if that port is \
+                 real, delete this row; if it is not, the claim is false"
+            );
+        }
+        // `maze/build.ts` IS partly ported (textures + geometry) and must be
         // declared PARTIAL by every claimant — never whole.
-        for path in ["entities/player.ts", "maze/build.ts"] {
-            let claims = led.claims.get(path).unwrap_or_else(|| panic!("{path} is claimed"));
-            for (module, claim) in claims {
-                assert!(
-                    matches!(claim, Claim::Partial(_)),
-                    "{module} claims {path} WHOLE; it is partially ported"
-                );
-            }
+        let build = led
+            .claims
+            .get("maze/build.ts")
+            .expect("build.ts is claimed");
+        for (module, claim) in build {
+            assert!(
+                matches!(claim, Claim::Partial(_)),
+                "{module} claims maze/build.ts WHOLE; ~700 of its 1,834 lines are \
+                 excluded painters and the architecture pass is unported"
+            );
         }
     }
 
