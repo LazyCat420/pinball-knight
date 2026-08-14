@@ -7,9 +7,14 @@
 //! knockback, speed ceiling, wall breaking), plus triggers emitters on fast
 //! wall bounces and slam impacts.
 //!
-//! PORTS: `entities/marble.ts`
+//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`
 
+pub mod floor_fx;
+pub mod puffs;
 pub mod squash;
+
+pub use floor_fx::*;
+pub use puffs::*;
 pub use squash::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarbleMaterial {
