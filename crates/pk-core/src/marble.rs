@@ -7,15 +7,19 @@
 //! knockback, speed ceiling, wall breaking), plus triggers emitters on fast
 //! wall bounces and slam impacts.
 //!
-//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`
+//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`, `fx/pools/trail-ribbon.ts`, `fx/floor/decals.ts`
 
+pub mod decals;
 pub mod floor_fx;
 pub mod puffs;
 pub mod squash;
+pub mod trail_ribbon;
 
+pub use decals::*;
 pub use floor_fx::*;
 pub use puffs::*;
 pub use squash::*;
+pub use trail_ribbon::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarbleMaterial {
     Diamond,

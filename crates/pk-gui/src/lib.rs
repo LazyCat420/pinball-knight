@@ -1,6 +1,6 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
-//! PORTS: `gui/im.ts`, `gui/input.ts`
+//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`
 
 pub mod cards;
 pub mod font;
@@ -13,9 +13,11 @@ pub mod root;
 pub mod screens;
 pub mod stack;
 pub mod theme;
+pub mod touch;
 
 pub use font::Fonts;
 pub use im::{Rect, UiFrame, UiInput};
 pub use input::*;
 pub use painter::{Painter, Rgba};
 pub use stack::{ScreenEntry, UiStack};
+pub use touch::*;
