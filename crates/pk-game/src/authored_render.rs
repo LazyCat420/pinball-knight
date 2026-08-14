@@ -592,6 +592,7 @@ mod tests {
 /// with the spawn factory in P4, and they arrive as a `Record<EnemyKind, X>`
 /// registry rather than as more constants here.
 #[derive(Resource)]
+#[allow(dead_code)]
 pub struct MonsterArt {
     pub zombie: crate::SheetClips,
     pub brute: Option<crate::SheetClips>,
