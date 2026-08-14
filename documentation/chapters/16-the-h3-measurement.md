@@ -1,3 +1,10 @@
+---
+part: Problems
+status: shipped
+updated: 2026-08-09
+supersedes: 14-the-h3-comparison-plan.md
+---
+
 # The H3 measurement — Phase 0 passed, Phase 1 failed
 
 **Run 2026-08-09.** Chapter 14 wrote the acceptance and kill criteria before

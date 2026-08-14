@@ -1,3 +1,9 @@
+---
+part: Archive
+status: abandoned
+updated: 2026-08-11
+---
+
 # Chapter 18 — TS-to-Rust/WebGPU Conversion Blueprint · **RETRACTED**
 
 **Status: `RETRACTED` (2026-08-11).** This chapter described a workspace that

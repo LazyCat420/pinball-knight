@@ -1,3 +1,9 @@
+---
+part: Archive
+status: reference
+updated: 2026-08-05
+---
+
 # Character Builder — audit, 2026-08-05
 
 An honest accounting of a session that shipped real infrastructure and **did not

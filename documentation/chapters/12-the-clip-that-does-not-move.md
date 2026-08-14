@@ -1,3 +1,9 @@
+---
+part: Problems
+status: reference
+updated: 2026-08-08
+---
+
 # The clip that does not move
 
 **2026-08-08, the session after the first approved clip.** The work order was

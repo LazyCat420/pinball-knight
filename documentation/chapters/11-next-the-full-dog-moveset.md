@@ -1,3 +1,9 @@
+---
+part: Designs and plans
+status: superseded
+updated: 2026-08-08
+---
+
 # Next: the full dog moveset
 
 **Written 2026-08-08 at the end of the session that got the first approved clip.

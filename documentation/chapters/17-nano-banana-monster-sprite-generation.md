@@ -1,3 +1,9 @@
+---
+part: Operations
+status: shipped
+updated: 2026-08-10
+---
+
 # Chapter 17 — Nano Banana Monster Sprite Generation & Sprite-Forge Pipeline
 
 **Status: `SHIPPED` (2026-08-10)** · Produces: 16-bit SNES pixel art monster sprite sheets & published game manifests.

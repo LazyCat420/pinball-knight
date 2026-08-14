@@ -1,3 +1,9 @@
+---
+part: Problems
+status: reference
+updated: 2026-08-08
+---
+
 # Turning a character, and the colours it loses
 
 **Written 2026-08-08.** Two defects found in one session, both on art that had

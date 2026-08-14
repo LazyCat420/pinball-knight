@@ -1,3 +1,9 @@
+---
+part: Operations
+status: reference
+updated: 2026-08-08
+---
+
 # The sprite pipeline playbook
 
 > **Picking up work?** The current job and its order are in
