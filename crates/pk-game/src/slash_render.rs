@@ -1,6 +1,6 @@
 //! Visual melee slash arc trail renderer.
 //!
-//! PORTS: `render/pinball-parts.ts`
+//! PORTS: `fx/system.ts`, `fx/pools/slash-pool.ts`, `render/pinball-parts.ts`
 
 use bevy::prelude::*;
 
