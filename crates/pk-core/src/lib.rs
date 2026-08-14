@@ -41,6 +41,7 @@
 
 pub mod abilities;
 pub mod bestiary;
+pub mod boot;
 pub mod boss;
 pub mod camera;
 pub mod cards;
