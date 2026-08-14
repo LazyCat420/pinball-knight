@@ -1,3 +1,9 @@
+---
+part: Problems
+status: reference
+updated: 2026-08-09
+---
+
 # Dead ends — what did not work, and the number that proved it
 
 **Read this before proposing a fix to the sprite pipeline.** Every row was

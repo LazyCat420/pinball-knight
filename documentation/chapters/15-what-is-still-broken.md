@@ -1,3 +1,10 @@
+---
+part: Problems
+status: in-progress
+updated: 2026-08-09
+supersedes: 11-next-the-full-dog-moveset.md
+---
+
 # What is still broken — the next session's work order
 
 **Written 2026-08-09 at the end of the sweep session.** Start here. Chapter 11

@@ -1,3 +1,9 @@
+---
+part: Problems
+status: reference
+updated: 2026-08-08
+---
+
 # Can the forge make a character yet?
 
 **No — and the reason is not one thing.** Audited 2026-08-08 against

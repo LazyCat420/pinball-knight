@@ -1,3 +1,9 @@
+---
+part: Designs and plans
+status: superseded
+updated: 2026-08-09
+---
+
 # The H3 comparison plan
 
 **Written 2026-08-09, to be run in a later session.** A plan, not a result —
