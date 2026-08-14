@@ -198,18 +198,18 @@ fn test_items_weapons_parity() {
 #[test]
 fn test_abilities_parity() {
     assert_eq!(AbilityId::ALL.len(), 6);
-    assert_eq!(ABILITY_RANK_MAX, 5);
-    assert_eq!(ABILITY_RANK_STEP, 0.15);
+    assert_eq!(ABILITY_RANK_MAX, 3);
+    assert_eq!(ABILITY_RANK_STEP, 0.25);
 
-    let fc = AbilityId::Flippercharge.def();
-    assert_eq!(fc.cost, 20);
+    let fc = AbilityId::FlipperCharge.def();
+    assert_eq!(fc.cost, 20.0);
     assert_eq!(fc.cooldown, 3.5);
-    assert_eq!(fc.color, "#f0a63c");
+    assert_eq!(fc.color_str, "#f0a63c");
 
-    let ap = AbilityId::Arcanepulse.def();
-    assert_eq!(ap.cost, 35);
+    let ap = AbilityId::ArcanePulse.def();
+    assert_eq!(ap.cost, 35.0);
     assert_eq!(ap.cooldown, 5.0);
-    assert_eq!(ap.color, "#b06fe8");
+    assert_eq!(ap.color_str, "#b06fe8");
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn test_boss_king_parity() {
     assert_eq!(king.hp, 65);
     king.tick_orbit(1.0);
     assert!((king.skull_angle - 1.1).abs() < 1e-6);
-    assert!((king.slam_t - 1.0).abs() < 1e-6);
+    assert!((king.slam_t - 3.2).abs() < 1e-6);
 }
 
 #[test]

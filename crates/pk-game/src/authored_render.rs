@@ -786,8 +786,9 @@ pub fn spawn_live_horde(
     meshes: &mut Assets<Mesh>,
     art: &MonsterArt,
     floor: &AuthoredFloor,
-) -> Vec<Entity> {
+) -> (Vec<Entity>, Vec<pk_core::zombie_ai::LiveEnemy>) {
     let mut spawned = Vec::new();
+    let mut sim_enemies = Vec::new();
     let rot = billboard(0.0);
     let quad_h = 1.15f32;
 
@@ -795,6 +796,7 @@ pub fn spawn_live_horde(
         let (cx, cz) = tile_center(&floor.grid, s.i, s.j);
         let kind_index = n % 9;
         let enemy = pk_core::zombie_ai::LiveEnemy::new_by_index((n + 1) as u32, kind_index, cx, cz);
+        sim_enemies.push(enemy.clone());
 
         let clips = match kind_index {
             1 => art.brute.as_ref().unwrap_or(&art.zombie),
@@ -823,7 +825,7 @@ pub fn spawn_live_horde(
             .id();
         spawned.push(ent);
     }
-    spawned
+    (spawned, sim_enemies)
 }
 
 /// Every spawn tile's zombie, as ONE mesh.

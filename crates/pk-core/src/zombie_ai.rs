@@ -391,6 +391,16 @@ pub fn apply_enemy_separation(enemies: &mut [LiveEnemy], dt: f64) {
     }
 }
 
+/// Advances all live enemies one fixed step towards the player.
+pub fn step_enemies(enemies: &mut [LiveEnemy], grid: &Grid, player_pos: (f64, f64), dt: f64) {
+    let (pi, pj) = world_to_tile(grid, player_pos.0, player_pos.1);
+    let flow_distances = crate::flow_field::bfs_distances(grid, pi, pj);
+    for e in enemies.iter_mut() {
+        e.update(dt, player_pos.0, player_pos.1, &flow_distances, grid);
+    }
+    apply_enemy_separation(enemies, dt);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -813,6 +813,22 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
             note_pocket_bounce(s);
             s.gold_run += ARC_LANE_GOLD;
         } else if vn < 0.0 {
+            // Secret wall smash-through check
+            let probe_dist = crate::state::PLAYER_R + 0.15;
+            let (tx, tz) = crate::grid::world_to_tile(
+                &s.grid,
+                s.player.x - nx * probe_dist,
+                s.player.z - nz * probe_dist,
+            );
+            if crate::grid::at(&s.grid, tx, tz) == crate::grid::T_CRACKED
+                && crate::secrets::smash_secret_at(&mut s.grid, tx, tz)
+            {
+                s.gold_run += 10;
+                s.player.bounce_combo += 1.0;
+                s.player.bounce_combo_t = s.player.bounce_combo_t.max(1.0);
+                return true;
+            }
+
             s.player.mom_x -= 2.0 * vn * nx;
             s.player.mom_z -= 2.0 * vn * nz;
             // BOOSTER RUBBER — the kicker band throws it, on top of the bounce.

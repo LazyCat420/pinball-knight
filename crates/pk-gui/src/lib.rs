@@ -32,6 +32,8 @@
 //!
 //! PORTS: `gui/im.ts`
 
+pub mod card_glyphs;
+pub mod card_styles;
 pub mod cards;
 pub mod font;
 pub mod icons;

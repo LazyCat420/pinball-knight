@@ -3,9 +3,9 @@
 //! Simulated on the fixed timestep (60 Hz): fly along ground direction at
 //! `PROJECTILE_Y`, die against walls, connect against targets via combat damage.
 //!
-//! //! PORTS: `entities/projectiles.ts`
+//! PORTS: `entities/projectiles.ts`
 
-use crate::grid::{world_to_grid, Grid, T_WALL};
+use crate::grid::{is_walkable, world_to_tile, Grid};
 
 pub const PROJECTILE_Y: f64 = 0.42;
 pub const MUZZLE_OFFSET: f64 = 0.35;
@@ -170,13 +170,8 @@ pub fn step_projectiles(projectiles: &mut Vec<Projectile>, grid: &Grid, dt: f64)
         p.z += p.vz * dt;
 
         // Wall collision check
-        let (ti, tj) = world_to_grid(grid, p.x, p.z);
-        if ti < 0 || ti >= grid.cols as i32 || tj < 0 || tj >= grid.rows as i32 {
-            p.dead = true;
-            continue;
-        }
-        let tile = grid.t[(tj as usize) * grid.cols + (ti as usize)];
-        if tile == T_WALL {
+        let (ti, tj) = world_to_tile(grid, p.x, p.z);
+        if !is_walkable(grid, ti, tj) {
             p.dead = true;
         }
     }
@@ -187,7 +182,7 @@ pub fn step_projectiles(projectiles: &mut Vec<Projectile>, grid: &Grid, dt: f64)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grid::Grid;
+    use crate::grid::{set_tile, Grid, T_FLOOR};
 
     #[test]
     fn player_shot_travels_and_expires() {
@@ -202,7 +197,12 @@ mod tests {
             25,
             0.5,
         )];
-        let grid = Grid::new(20, 20, 1); // all floor
+        let mut grid = Grid::solid(20, 20);
+        for i in 1..19 {
+            for j in 1..19 {
+                set_tile(&mut grid, i, j, T_FLOOR);
+            }
+        }
 
         step_projectiles(&mut projs, &grid, 0.1);
         assert_eq!(projs.len(), 1);
@@ -226,8 +226,7 @@ mod tests {
             30,
             2.0,
         )];
-        let mut grid = Grid::new(10, 10, 1);
-        grid.t[1 * 10 + 0] = T_WALL; // wall at x=0, y=1
+        let grid = Grid::solid(10, 10);
 
         step_projectiles(&mut projs, &grid, 0.2);
         assert_eq!(projs.len(), 0);

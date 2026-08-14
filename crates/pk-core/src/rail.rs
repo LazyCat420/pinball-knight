@@ -28,6 +28,12 @@ pub fn fresh_rail() -> RailState {
     }
 }
 
+impl Default for RailState {
+    fn default() -> Self {
+        fresh_rail()
+    }
+}
+
 /// The ceiling while railing — the only way past `PINBALL_MAX_SPEED`.
 pub fn rail_cap() -> f64 {
     PINBALL_MAX_SPEED * RAIL_OVERSPEED

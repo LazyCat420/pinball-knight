@@ -112,6 +112,59 @@ pub fn prune_sealed_bands(g: &mut Grid, secrets: &mut Vec<TilePos>) -> usize {
     dropped
 }
 
+pub const WALL_BREAK_DEPTH: i32 = 4;
+
+/// Calculates how many consecutive wall tiles a high-speed smash penetrates to reach corridor.
+pub fn wall_run_depth(g: &Grid, i: i32, j: i32, ddx: f64, ddz: f64) -> i32 {
+    if i <= 0 || j <= 0 || i >= g.w - 1 || j >= g.h - 1 {
+        return 0;
+    }
+    if at(g, i, j) != T_WALL {
+        return 0;
+    }
+    let si = ddx.signum() as i32;
+    let sj = ddz.signum() as i32;
+    for d in 1..=WALL_BREAK_DEPTH {
+        let ni = i + si * d;
+        let nj = j + sj * d;
+        if ni <= 0 || nj <= 0 || ni >= g.w - 1 || nj >= g.h - 1 {
+            return 0;
+        }
+        if at(g, ni, nj) == T_WALL {
+            continue;
+        }
+        return if is_walkable(g, ni, nj) { d } else { 0 };
+    }
+    0
+}
+
+/// Smashes a cracked secret wall band, turning its tiles into open floor.
+pub fn smash_secret_at(g: &mut Grid, i: i32, j: i32) -> bool {
+    if at(g, i, j) != T_CRACKED {
+        return false;
+    }
+    let base_i = if i > 0 && at(g, i - 1, j) == T_CRACKED { i - 1 } else { i };
+    let base_j = if j > 0 && at(g, base_i, j - 1) == T_CRACKED { j - 1 } else { j };
+
+    for &(di, dj) in &[(0, 0), (1, 0), (0, 1), (1, 1)] {
+        if at(g, base_i + di, base_j + dj) == T_CRACKED {
+            set_tile(g, base_i + di, base_j + dj, T_FLOOR);
+            crate::grid::set_surface(g, base_i + di, base_j + dj, 0);
+        }
+    }
+    true
+}
+
+/// Smashes an ordinary wall tile into open floor.
+pub fn smash_wall_at(g: &mut Grid, i: i32, j: i32) -> bool {
+    if at(g, i, j) != T_WALL {
+        return false;
+    }
+    set_tile(g, i, j, T_FLOOR);
+    crate::grid::set_surface(g, i, j, 0);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,4 +176,16 @@ mod tests {
         assert_eq!(stamped.len(), 0);
     }
 
+    #[test]
+    fn smash_secret_opens_floor() {
+        let mut g = Grid::solid(10, 10);
+        set_tile(&mut g, 3, 3, T_CRACKED);
+        set_tile(&mut g, 4, 3, T_CRACKED);
+        set_tile(&mut g, 3, 4, T_CRACKED);
+        set_tile(&mut g, 4, 4, T_CRACKED);
+
+        assert!(smash_secret_at(&mut g, 3, 3));
+        assert_eq!(at(&g, 3, 3), T_FLOOR);
+        assert_eq!(at(&g, 4, 4), T_FLOOR);
+    }
 }

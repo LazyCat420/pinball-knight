@@ -146,6 +146,8 @@ pub struct SheetClips {
     pub run: Vec<[f32; 4]>,
     /// The ball roll / tumble clip.
     pub roll: Vec<[f32; 4]>,
+    /// Attack swing animation clip.
+    pub attack: Vec<[f32; 4]>,
     pub aspect: f32, // cell w / h
 }
 
@@ -160,6 +162,9 @@ pub struct KnightArt {
 
 #[derive(Component)]
 pub struct KnightSprite;
+
+#[derive(Component)]
+pub struct KnightBall;
 
 /// The authored floor's top-left readout. Its own component so a browser gate
 /// can be told which SOURCE is on screen without scraping pixels.
@@ -788,6 +793,7 @@ fn decode_sheet(
     let walk = uv_cells("walk");
     let run = uv_cells("run");
     let roll = uv_cells("roll");
+    let attack = uv_cells("attack");
     let first = idle
         .first()
         .or_else(|| walk.first())
@@ -815,6 +821,7 @@ fn decode_sheet(
             } else {
                 roll
             },
+            attack: if attack.is_empty() { walk.clone() } else { attack },
             walk,
             aspect,
         },
@@ -1079,6 +1086,17 @@ fn setup_dungeon(
             .filter(|p| p.kind == pk_core::pinball::PartKind::Bumper)
             .count() as i32;
         sim.bumpers_lit = 0;
+        // Populate sim.enemies with authored live monsters
+        for (n, s) in f.plan.spawns.iter().enumerate() {
+            let (cx, cz) = pk_core::grid::tile_center(&f.grid, s.i, s.j);
+            let kind_index = n % 9;
+            sim.enemies.push(pk_core::zombie_ai::LiveEnemy::new_by_index(
+                (n + 1) as u32,
+                kind_index,
+                cx,
+                cz,
+            ));
+        }
         let inert = authored_floor::unhonoured_part_kinds(&f.plan);
         let inert_n: usize = inert.iter().map(|(_, n)| n).sum();
         info!(
@@ -1093,7 +1111,7 @@ fn setup_dungeon(
                 .join(", ")
         );
     }
-    let sim = sim;
+    let mut sim = sim;
     // TAKEN, not borrowed: the generated floor moves from the prepared resource
     // into `ActiveFloor` below, and one owner at a time is what stops a stale
     // copy of the previous floor answering the next descend's telemetry.
@@ -1149,11 +1167,12 @@ fn setup_dungeon(
         }
         commands.insert_resource(anchors);
         // The floor's active live monsters with flow-field AI and directional rigs.
-        for e in
-            authored_render::spawn_live_horde(&mut commands, &mut meshes, &monster_art, f)
-        {
+        let (monster_entities, sim_enemies) =
+            authored_render::spawn_live_horde(&mut commands, &mut meshes, &monster_art, f);
+        for e in monster_entities {
             commands.entity(e).insert(DungeonScene);
         }
+        sim.enemies = sim_enemies;
         commands.spawn((
             DungeonScene,
             AuthoredFloorBanner,
@@ -1185,6 +1204,25 @@ fn setup_dungeon(
         MeshMaterial3d(art.s.material.clone()),
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
     ));
+
+    // ── Knight Ball 3D Chrome Sphere ──
+    let ball_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.92, 0.95, 1.0),
+        metallic: 0.98,
+        perceptual_roughness: 0.04,
+        reflectance: 0.98,
+        emissive: LinearRgba::new(0.05, 0.08, 0.18, 1.0),
+        ..default()
+    });
+    commands.spawn((
+        DungeonScene,
+        KnightBall,
+        Mesh3d(meshes.add(Sphere::new(pk_core::state::PLAYER_R as f32).mesh().uv(24, 16))),
+        MeshMaterial3d(ball_mat),
+        Transform::from_xyz(spawn.0 as f32, pk_core::state::PLAYER_R as f32, spawn.1 as f32),
+        Visibility::Hidden,
+    ));
+
     commands.insert_resource(Sim(sim));
     // The prepared floor is CONSUMED: it exists to cross one state boundary, and
     // a stale one left behind would be the next descend's floor.
@@ -1340,14 +1378,22 @@ fn gather_input(
         x += 1.0;
         z -= 1.0;
     }
+    let attack_pressed = keys.pressed(KeyCode::KeyK)
+        || keys.pressed(KeyCode::KeyF)
+        || mouse.pressed(MouseButton::Left);
+    let attack_just = keys.just_pressed(KeyCode::KeyK)
+        || keys.just_pressed(KeyCode::KeyF)
+        || mouse.just_pressed(MouseButton::Left);
+
     intent.0 = FrameInput {
         move_x: x,
         move_z: z,
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
         dodge: keys.pressed(KeyCode::Space)
             || keys.pressed(KeyCode::KeyJ)
-            || mouse.pressed(MouseButton::Right)
-            || mouse.pressed(MouseButton::Left),
+            || mouse.pressed(MouseButton::Right),
+        attack: attack_pressed,
+        attack_just_pressed: attack_just,
     };
 }
 
@@ -1391,16 +1437,54 @@ fn sync_knight(
     rp: Res<RenderPos>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
-    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
+    mut knight_q: Query<
+        (
+            &mut Transform,
+            &mut MeshMaterial3d<StandardMaterial>,
+            &mut Visibility,
+        ),
+        (With<KnightSprite>, Without<KnightBall>),
+    >,
+    mut ball_q: Query<
+        (&mut Transform, &mut Visibility),
+        (With<KnightBall>, Without<KnightSprite>),
+    >,
+    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>, Without<KnightBall>)>,
     mut ghost_timer: Local<f32>,
 ) {
-    let Ok((mut tf, mut mat)) = q.single_mut() else {
+    let Ok((mut tf, mut mat, mut knight_vis)) = knight_q.single_mut() else {
         return;
     };
     let a = time.overstep_fraction() as f64;
     let x = rp.prev.0 + (rp.curr.0 - rp.prev.0) * a;
     let z = rp.prev.1 + (rp.curr.1 - rp.prev.1) * a;
+
+    let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
+
+    if let Ok((mut ball_tf, mut ball_vis)) = ball_q.single_mut() {
+        if is_ball {
+            *knight_vis = Visibility::Hidden;
+            *ball_vis = Visibility::Inherited;
+            ball_tf.translation.x = x as f32;
+            ball_tf.translation.y = pk_core::state::PLAYER_R as f32;
+            ball_tf.translation.z = z as f32;
+
+            // Continuous 3D Roll around angular velocity perpendicular
+            let vx = sim.0.player.mom_x + if sim.0.player.is_rolling() { sim.0.player.roll_dir_x * 8.0 } else { 0.0 };
+            let vz = sim.0.player.mom_z + if sim.0.player.is_rolling() { sim.0.player.roll_dir_z * 8.0 } else { 0.0 };
+            let v_speed = (vx * vx + vz * vz).sqrt();
+            if v_speed > 0.05 {
+                let r = pk_core::state::PLAYER_R as f32;
+                let roll_angle = (v_speed * pk_core::state::DT) as f32 / r;
+                let roll_axis = Vec3::new(-vz as f32, 0.0, vx as f32).normalize();
+                ball_tf.rotation = Quat::from_axis_angle(roll_axis, roll_angle) * ball_tf.rotation;
+            }
+        } else {
+            *knight_vis = Visibility::Inherited;
+            *ball_vis = Visibility::Hidden;
+        }
+    }
+
     tf.translation.x = x as f32;
     tf.translation.z = z as f32;
 
@@ -1409,17 +1493,8 @@ fn sync_knight(
     tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx;
     tf.scale.y = sqy;
 
-    let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
-
-    // Billboard: face camera plane; tilt forward in 3D when rolling
     if let Ok(cam_tf) = cam.single() {
-        if is_ball {
-            let speed_ratio = ((sim.0.player.mom_speed + if sim.0.player.is_rolling() { 5.0 } else { 0.0 }) / 12.0).min(1.0) as f32;
-            let pitch = 0.35 * speed_ratio;
-            tf.rotation = cam_tf.rotation * Quat::from_rotation_x(-pitch);
-        } else {
-            tf.rotation = cam_tf.rotation;
-        }
+        tf.rotation = cam_tf.rotation;
     }
 
     let clips = match sim.0.player.facing {
@@ -1429,15 +1504,9 @@ fn sync_knight(
     };
     mat.0 = clips.material.clone();
 
-    let (cells, fps) = if is_ball {
-        let speed_fps = (14.0 + (sim.0.player.mom_speed * 1.5) as f64).min(32.0) as u64;
-        if !clips.roll.is_empty() {
-            (&clips.roll, speed_fps)
-        } else if !clips.run.is_empty() {
-            (&clips.run, speed_fps)
-        } else {
-            (&clips.walk, speed_fps)
-        }
+    let is_attacking = sim.0.player.attack_t >= 0.0 && !clips.attack.is_empty();
+    let (cells, fps) = if is_attacking {
+        (&clips.attack, 16)
     } else if sim.0.player.moving {
         (&clips.walk, 8)
     } else {
@@ -1446,7 +1515,13 @@ fn sync_knight(
     if cells.is_empty() {
         return;
     }
-    let frame = (sim.0.tick * fps / 60) as usize % cells.len();
+    let frame = if is_attacking {
+        let total = cells.len();
+        let tau = (sim.0.player.attack_t / 0.35).clamp(0.0, 0.99);
+        (tau * total as f64) as usize % total
+    } else {
+        (sim.0.tick * fps / 60) as usize % cells.len()
+    };
     let [u, v, uw, vh] = cells[frame];
     if let Some(m) = materials.get_mut(&clips.material) {
         m.uv_transform = Affine2 {
@@ -1461,76 +1536,75 @@ fn sync_knight(
         if *ghost_timer >= 0.055 {
             *ghost_timer = 0.0;
             let aura_color = if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
-                Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
+                Color::srgba(1.0, 0.85, 0.2, 0.45) // Gold overcharge aura
             } else {
                 Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
             };
-            let quad_h = 1.15f32;
-            let quad_w = quad_h * art.s.aspect;
-            commands.spawn((
-                DungeonScene,
-                GhostAfterimage {
-                    lifetime: 0.22,
-                    max_lifetime: 0.22,
-                },
-                Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: aura_color,
-                    emissive: LinearRgba::from(aura_color) * 1.8,
-                    unlit: true,
-                    alpha_mode: AlphaMode::Blend,
-                    ..default()
-                })),
-                Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
-            ));
+            if is_ball {
+                commands.spawn((
+                    DungeonScene,
+                    GhostAfterimage {
+                        lifetime: 0.18,
+                        max_lifetime: 0.18,
+                    },
+                    Mesh3d(meshes.add(Sphere::new(pk_core::state::PLAYER_R as f32).mesh().uv(16, 12))),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: aura_color,
+                        emissive: LinearRgba::from(aura_color) * 2.0,
+                        unlit: true,
+                        alpha_mode: AlphaMode::Blend,
+                        ..default()
+                    })),
+                    Transform::from_xyz(x as f32, pk_core::state::PLAYER_R as f32, z as f32),
+                ));
+            } else {
+                let quad_h = 1.15f32;
+                let quad_w = quad_h * art.s.aspect;
+                commands.spawn((
+                    DungeonScene,
+                    GhostAfterimage {
+                        lifetime: 0.22,
+                        max_lifetime: 0.22,
+                    },
+                    Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: aura_color,
+                        emissive: LinearRgba::from(aura_color) * 1.8,
+                        unlit: true,
+                        alpha_mode: AlphaMode::Blend,
+                        ..default()
+                    })),
+                    Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
+                ));
+            }
         }
     }
 }
 
 fn step_live_monsters(
-    time: Res<Time>,
     sim: Res<Sim>,
     mut monster_q: Query<(
         &mut Transform,
         &mut authored_render::LiveMonster,
+        &mut Visibility,
         &MeshMaterial3d<StandardMaterial>,
     )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     monster_art: Res<authored_render::MonsterArt>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<authored_render::LiveMonster>)>,
 ) {
-    let dt = (time.delta_secs_f64()).min(0.05);
-    if dt <= 0.0 {
-        return;
-    }
-    let px = sim.0.player.x;
-    let pz = sim.0.player.z;
-    let (pi, pj) = pk_core::grid::world_to_tile(&sim.0.grid, px, pz);
-    let flow_dist = pk_core::flow_field::bfs_distances(&sim.0.grid, pi, pj);
-
-    let mut live_enemies: Vec<pk_core::zombie_ai::LiveEnemy> = monster_q
-        .iter()
-        .map(|(_, m, _)| m.enemy.clone())
-        .collect();
-
-    for enemy in live_enemies.iter_mut() {
-        let dx = px - enemy.x;
-        let dz = pz - enemy.z;
-        let dist = (dx * dx + dz * dz).sqrt();
-        if dist <= 14.0 {
-            enemy.update(dt, px, pz, &flow_dist, &sim.0.grid);
-        }
-    }
-
-    pk_core::zombie_ai::apply_enemy_separation(&mut live_enemies, dt);
-
     let Ok(cam_tf) = cam.single() else {
         return;
     };
 
-    for (i, (mut tf, mut m, mat_handle)) in monster_q.iter_mut().enumerate() {
-        if i < live_enemies.len() {
-            m.enemy = live_enemies[i].clone();
+    for (mut tf, mut m, mut vis, mat_handle) in monster_q.iter_mut() {
+        if let Some(sim_enemy) = sim.0.enemies.iter().find(|e| e.id == m.enemy.id) {
+            m.enemy = sim_enemy.clone();
+            if m.enemy.mode == pk_core::zombie_ai::EnemyMode::Dead {
+                *vis = Visibility::Hidden;
+                continue;
+            }
+            *vis = Visibility::Inherited;
             tf.translation.x = m.enemy.x as f32;
             tf.translation.z = m.enemy.z as f32;
             tf.rotation = cam_tf.rotation;
@@ -1560,7 +1634,7 @@ fn step_live_monsters(
 
             if !cells.is_empty() {
                 let fps = if is_moving { 8 } else { 4 };
-                let frame = ((sim.0.tick + i as u64 * 7) * fps / 60) as usize % cells.len();
+                let frame = ((sim.0.tick + m.enemy.id as u64 * 7) * fps / 60) as usize % cells.len();
                 let [u, v, uw, vh] = cells[frame];
                 if let Some(mat) = materials.get_mut(&mat_handle.0) {
                     mat.uv_transform = Affine2 {

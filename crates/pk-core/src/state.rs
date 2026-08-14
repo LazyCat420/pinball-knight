@@ -50,8 +50,9 @@ pub const MOVE_FRICTION: f64 = 42.0;
 
 /// Which authored sprite direction the player reads as. W is never authored —
 /// the engine mirrors E (a fact carried from the sheet vocabulary).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Facing {
+    #[default]
     S,
     N,
     E,
@@ -81,7 +82,7 @@ pub const PLUNGER_SPEED: f64 = 18.0;
 pub const PLUNGER_AIM_MAX: f64 = 0.44; // ~25 deg
 pub const PLUNGER_AIM_RATE: f64 = 1.2;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Player {
     pub x: f64,
     pub z: f64,
@@ -117,6 +118,22 @@ pub struct Player {
     pub squash_amp: f64,
     pub squash_nx: f64,
     pub squash_nz: f64,
+    // ── Combat & Health ──
+    pub hp: i32,
+    pub max_hp: i32,
+    pub attack_t: f64,
+    pub charge_t: f64,
+    pub attack_buffer_t: f64,
+    pub move_timing: Option<crate::melee::MoveTiming>,
+    pub combo_step: u32,
+    pub combo_window_t: f64,
+    pub combo_landed: bool,
+    pub did_hit: bool,
+    pub cooldown: f64,
+    pub rage_t: f64,
+    pub stone_t: f64,
+    pub shield_t: f64,
+    pub flash_t: f64,
 }
 
 pub const ROLL_DURATION: f64 = 0.42;
@@ -175,6 +192,9 @@ pub struct FrameInput {
     pub sprint: bool,
     /// Space pressed — dodge roll trigger (`InputHandle.dodgePressed()`).
     pub dodge: bool,
+    /// LMB / K pressed — attack
+    pub attack: bool,
+    pub attack_just_pressed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +230,8 @@ pub struct SimState {
     /// player.ts). On the state and not a static for the reason every other
     /// module-level timer here is: a replay has to be able to restore it.
     pub sprint_grace_t: f64,
+    // ── Live Enemies ──
+    pub enemies: Vec<crate::zombie_ai::LiveEnemy>,
     // ── Plunger Chute Launch ──
     pub plunger_armed: bool,
     pub plunger_charging: bool,
@@ -278,6 +300,21 @@ impl SimState {
                 squash_amp: 0.0,
                 squash_nx: 0.0,
                 squash_nz: 0.0,
+                hp: 6,
+                max_hp: 6,
+                attack_t: -1.0,
+                charge_t: -1.0,
+                attack_buffer_t: 0.0,
+                move_timing: None,
+                combo_step: 0,
+                combo_window_t: 0.0,
+                combo_landed: false,
+                did_hit: false,
+                cooldown: 0.0,
+                rage_t: 0.0,
+                stone_t: 0.0,
+                shield_t: 0.0,
+                flash_t: 0.0,
             },
             rng: Mulberry32::new(seed),
             tick: 0,
@@ -298,6 +335,7 @@ impl SimState {
             rail_gold_t: 0.0,
             cur_speed: 0.0,
             sprint_grace_t: 0.0,
+            enemies: Vec::new(),
             plunger_armed: true,
             plunger_charging: false,
             plunger_power: 0.0,
@@ -358,171 +396,303 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     }
 
     // The momentum ride owns the player while it lasts.
-    if crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z)) {
+    let in_momentum = crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z));
+    if in_momentum {
         s.player.moving = s.player.mom_speed > 0.0;
-        return;
-    }
-
-    let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
-
-    // ── Dodge Roll (Space while moving) ──
-    if input.dodge && s.player.roll_t < 0.0 && s.cur_speed >= ROLL_MIN_SPEED {
-        let (rx, rz) = if len > 1e-4 {
-            (input.move_x / len, input.move_z / len)
-        } else {
-            match s.player.facing {
-                Facing::S => (0.0, 1.0),
-                Facing::N => (0.0, -1.0),
-                Facing::E => (1.0, 0.0),
-                Facing::W => (-1.0, 0.0),
-            }
-        };
-        s.player.roll_dir_x = rx;
-        s.player.roll_dir_z = rz;
-        s.player.roll_t = 0.0;
-        s.player.iframes = s.player.iframes.max(ROLL_IFRAMES);
-    }
-
-    // Advance active dodge roll
-    if s.player.roll_t >= 0.0 {
-        s.player.roll_t += DT;
-        if s.player.roll_t <= ROLL_DURATION {
-            let tau = s.player.roll_t / ROLL_DURATION;
-            let roll_speed = ROLL_V0 * (1.0 - tau);
-            let res = move_circle(
-                &s.grid,
-                s.player.x,
-                s.player.z,
-                PLAYER_R,
-                s.player.roll_dir_x * roll_speed * DT,
-                s.player.roll_dir_z * roll_speed * DT,
-            );
-            s.player.x = res.x;
-            s.player.z = res.z;
-            if let Some((nx, nz)) = res.hit_n {
-                s.player.note_squash(nx, nz, roll_speed);
-            }
-            if s.player.roll_t < ROLL_IFRAMES {
-                s.player.iframes = s.player.iframes.max(ROLL_IFRAMES - s.player.roll_t);
-            }
-        }
-        if s.player.roll_t >= ROLL_DURATION + ROLL_RECOVERY {
-            s.player.roll_t = -1.0;
-        }
-        let cur = s.cur_speed;
-        crate::pinball::touch_pinball_parts(s, true, cur, (s.player.roll_dir_x, s.player.roll_dir_z));
-        return;
-    }
-
-    // sqrt, not hypot: sqrt is IEEE-correctly-rounded on every platform, so
-    // the TS fixture exporter (Math.sqrt) matches bit-exactly. hypot
-    // implementations differ by ulps between runtimes.
-    let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
-    s.player.moving = len > 1e-6;
-
-    // ── Sprint spool — `player.ts:2126-2136` ──
-    //
-    // The gate is (Shift AND moving AND not attacking). `attacking` is always
-    // false here: the swing is `player.ts`'s, unported. When combat lands, that
-    // term joins this condition — it does not get folded into `input.sprint`,
-    // because the shell must not have to know what roots the player.
-    //
-    // The three-way branch is not two: a charge that is neither filling nor
-    // decaying is HOLDING, and collapsing the grace arm into the decay arm is
-    // what made the ramp read as broken in the oracle's own playtest.
-    let want_sprint = input.sprint && s.player.moving;
-    if want_sprint {
-        s.player.sprint_charge = 1.0_f64.min(s.player.sprint_charge + DT / SPRINT_RAMP_TIME);
-        s.sprint_grace_t = SPRINT_GRACE;
-    } else if s.sprint_grace_t > 0.0 {
-        s.sprint_grace_t = 0.0_f64.max(s.sprint_grace_t - DT);
     } else {
-        s.player.sprint_charge = 0.0_f64.max(s.player.sprint_charge - DT / SPRINT_DECAY_TIME);
-    }
+        let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
 
-    // ── Overcharge — `player.ts:2144-2149` ──
-    //
-    // Sprinting at a FULL spool overflows into the overcharge meter; any
-    // overcharge ARMS pinball and a full meter is the BALL. It bleeds only when
-    // genuinely stopped (no full spool AND no momentum), so a walk-frame between
-    // bounces does not dump it. `update_pinball` feeds it while bouncing, which
-    // is why this runs on the walking path only.
-    if want_sprint && s.player.sprint_charge >= 0.999 {
-        s.player.overcharge =
-            1.0_f64.min(s.player.overcharge + DT / crate::pinball::OVERCHARGE_TIME);
-    } else if s.player.mom_speed <= 0.0 {
-        s.player.overcharge = 0.0_f64.max(s.player.overcharge - DT / OVERCHARGE_DECAY);
-    }
-
-    // Target speed — `player.ts:2152-2185`, minus every multiplier whose
-    // subsystem is unported. NOT silently omitted: skills (`skillAgg`), boots,
-    // haste, turbo, webbed and the mag-strip drag each multiply this line in the
-    // oracle, and each lands with its own subsystem.
-    let mut target_speed = PLAYER_SPEED
-        * ((if want_sprint { SPRINT_BASE_MULT } else { 1.0 })
-            + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * s.player.sprint_charge);
-    // The FLOOR scales the ordinary walk too, so sand reads as heavy underfoot
-    // before any momentum is built (`player.ts:2178-2185`). Applied to the
-    // TARGET and not to the rates, so the floor changes how fast you end up
-    // going rather than how twitchy the controls feel.
-    {
-        let (i, j) = crate::grid::world_to_tile(&s.grid, s.player.x, s.player.z);
-        target_speed *=
-            crate::surfaces::floor_surface(crate::grid::surface_at(&s.grid, i, j)).walk_mult;
-    }
-    if !s.player.moving {
-        target_speed = 0.0;
-    }
-
-    // The smoothed speed, ramped toward the target — `player.ts:2188-2190`.
-    // This is the value that MOVES the knight and that the parts read, and the
-    // asymmetry is the point: accel and friction are different rates, so a
-    // release glides and a press bites.
-    let rate = if target_speed > s.cur_speed {
-        MOVE_ACCEL
-    } else {
-        MOVE_FRICTION
-    } * DT;
-    if s.cur_speed < target_speed {
-        s.cur_speed = target_speed.min(s.cur_speed + rate);
-    } else {
-        s.cur_speed = target_speed.max(s.cur_speed - rate);
-    }
-    let speed = s.cur_speed;
-
-    if s.player.moving {
-        let (mx, mz) = (input.move_x / len, input.move_z / len);
-        let MoveResult { x, z, .. } = move_circle(
-            &s.grid,
-            s.player.x,
-            s.player.z,
-            PLAYER_R,
-            mx * speed * DT,
-            mz * speed * DT,
-        );
-        s.player.x = x;
-        s.player.z = z;
-        // Facing follows the dominant input axis; ties keep the E/W row (the
-        // sheet vocabulary's richest direction).
-        s.player.facing = if mx.abs() >= mz.abs() {
-            if mx >= 0.0 {
-                Facing::E
+        // ── Dodge Roll (Space while moving) ──
+        if input.dodge && s.player.roll_t < 0.0 && s.cur_speed >= ROLL_MIN_SPEED {
+            let (rx, rz) = if len > 1e-4 {
+                (input.move_x / len, input.move_z / len)
             } else {
-                Facing::W
+                match s.player.facing {
+                    Facing::S => (0.0, 1.0),
+                    Facing::N => (0.0, -1.0),
+                    Facing::E => (1.0, 0.0),
+                    Facing::W => (-1.0, 0.0),
+                }
+            };
+            s.player.roll_dir_x = rx;
+            s.player.roll_dir_z = rz;
+            s.player.roll_t = 0.0;
+            s.player.iframes = s.player.iframes.max(ROLL_IFRAMES);
+        }
+
+        // Advance active dodge roll
+        if s.player.roll_t >= 0.0 {
+            s.player.roll_t += DT;
+            if s.player.roll_t <= ROLL_DURATION {
+                let tau = s.player.roll_t / ROLL_DURATION;
+                let roll_speed = ROLL_V0 * (1.0 - tau);
+                let res = move_circle(
+                    &s.grid,
+                    s.player.x,
+                    s.player.z,
+                    PLAYER_R,
+                    s.player.roll_dir_x * roll_speed * DT,
+                    s.player.roll_dir_z * roll_speed * DT,
+                );
+                s.player.x = res.x;
+                s.player.z = res.z;
+                if let Some((nx, nz)) = res.hit_n {
+                    s.player.note_squash(nx, nz, roll_speed);
+                }
+                if s.player.roll_t < ROLL_IFRAMES {
+                    s.player.iframes = s.player.iframes.max(ROLL_IFRAMES - s.player.roll_t);
+                }
             }
-        } else if mz >= 0.0 {
-            Facing::S
+            if s.player.roll_t >= ROLL_DURATION + ROLL_RECOVERY {
+                s.player.roll_t = -1.0;
+            }
+            let cur = s.cur_speed;
+            crate::pinball::touch_pinball_parts(s, true, cur, (s.player.roll_dir_x, s.player.roll_dir_z));
         } else {
-            Facing::N
-        };
+            // Standard Walking path
+            s.player.moving = len > 1e-6;
+
+            let want_sprint = input.sprint && s.player.moving;
+            if want_sprint {
+                s.player.sprint_charge = 1.0_f64.min(s.player.sprint_charge + DT / SPRINT_RAMP_TIME);
+                s.sprint_grace_t = SPRINT_GRACE;
+            } else if s.sprint_grace_t > 0.0 {
+                s.sprint_grace_t = 0.0_f64.max(s.sprint_grace_t - DT);
+            } else {
+                s.player.sprint_charge = 0.0_f64.max(s.player.sprint_charge - DT / SPRINT_DECAY_TIME);
+            }
+
+            if want_sprint && s.player.sprint_charge >= 0.999 {
+                s.player.overcharge =
+                    1.0_f64.min(s.player.overcharge + DT / crate::pinball::OVERCHARGE_TIME);
+            } else if s.player.mom_speed <= 0.0 {
+                s.player.overcharge = 0.0_f64.max(s.player.overcharge - DT / OVERCHARGE_DECAY);
+            }
+
+            let mut target_speed = PLAYER_SPEED
+                * ((if want_sprint { SPRINT_BASE_MULT } else { 1.0 })
+                    + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * s.player.sprint_charge);
+            {
+                let (i, j) = crate::grid::world_to_tile(&s.grid, s.player.x, s.player.z);
+                target_speed *=
+                    crate::surfaces::floor_surface(crate::grid::surface_at(&s.grid, i, j)).walk_mult;
+            }
+            if !s.player.moving {
+                target_speed = 0.0;
+            }
+
+            let rate = if target_speed > s.cur_speed {
+                MOVE_ACCEL
+            } else {
+                MOVE_FRICTION
+            } * DT;
+            if s.cur_speed < target_speed {
+                s.cur_speed = target_speed.min(s.cur_speed + rate);
+            } else {
+                s.cur_speed = target_speed.max(s.cur_speed - rate);
+            }
+            let speed = s.cur_speed;
+
+            if s.player.moving {
+                let (mx, mz) = (input.move_x / len, input.move_z / len);
+                let MoveResult { x, z, .. } = move_circle(
+                    &s.grid,
+                    s.player.x,
+                    s.player.z,
+                    PLAYER_R,
+                    mx * speed * DT,
+                    mz * speed * DT,
+                );
+                s.player.x = x;
+                s.player.z = z;
+                s.player.facing = if mx.abs() >= mz.abs() {
+                    if mx >= 0.0 {
+                        Facing::E
+                    } else {
+                        Facing::W
+                    }
+                } else if mz >= 0.0 {
+                    Facing::S
+                } else {
+                    Facing::N
+                };
+            }
+
+            let cur = s.cur_speed;
+            crate::pinball::touch_pinball_parts(s, false, cur, (input.move_x, input.move_z));
+        }
     }
 
-    // Parts fire from a cold walk too — stepping on a spring/booster STARTS a
-    // momentum ride (the machine works without spooling first). `cur_speed` is
-    // the instantaneous walk speed; the legacy smoothed curSpeed lands with
-    // the full player port (it only changes the oil slick's launch strength).
-    let cur = s.cur_speed;
-    crate::pinball::touch_pinball_parts(s, false, cur, (input.move_x, input.move_z));
+    // ── Melee Combat & Combo Timeline ──
+    if !s.plunger_armed && !s.player.is_ball() && !s.player.is_rolling() {
+        crate::melee::update_melee(
+            &mut s.player,
+            &s.grid,
+            DT,
+            input.attack,
+            input.attack_just_pressed,
+            1.0,
+        );
+        if let Some(move_timing) = crate::melee::step_melee_timeline(&mut s.player, DT, 1.0) {
+            let (fx, fz) = crate::melee::facing_vec(s.player.facing);
+            let range = 1.35 * move_timing.range_mul;
+            let arc_cos = 0.5 - (0.5 - (-1.0)) * (move_timing.arc_mul - 1.0).clamp(0.0, 1.0);
+            let base_dmg = 12.0 * move_timing.damage_mul;
+            let (dmg, _) = crate::combat::calculate_player_damage(
+                base_dmg,
+                0,
+                1.0,
+                s.player.mom_speed,
+                0.15,
+                1.5,
+                s.rng.next_f64() < 0.15,
+            );
+
+            let mut hit_any = false;
+            for enemy in s.enemies.iter_mut() {
+                if enemy.mode == crate::zombie_ai::EnemyMode::Dead {
+                    continue;
+                }
+                let dx = enemy.x - s.player.x;
+                let dz = enemy.z - s.player.z;
+                let dist = (dx * dx + dz * dz).sqrt();
+                if dist > range {
+                    continue;
+                }
+                if dist > PLAYER_R + enemy.radius {
+                    let dot = (dx / dist) * fx + (dz / dist) * fz;
+                    if dot < arc_cos {
+                        continue;
+                    }
+                }
+                hit_any = true;
+                let hit_res = crate::combat::resolve_enemy_hit(
+                    enemy.hp,
+                    enemy.max_hp,
+                    dmg,
+                    dx,
+                    dz,
+                    crate::combat::KNOCKBACK_ZOMBIE * move_timing.knockback_mul,
+                    s.player.bounce_combo,
+                    s.player.mom_speed,
+                );
+                enemy.hp = (enemy.hp - hit_res.damage_dealt).max(0.0);
+                if hit_res.is_kill {
+                    enemy.mode = crate::zombie_ai::EnemyMode::Dead;
+                    s.gold_run += hit_res.gold_awarded;
+                    if s.player.bounce_combo > 0.0 {
+                        s.player.bounce_combo_t = s.player.bounce_combo_t.max(0.5);
+                    }
+                } else if hit_res.stagger_applied > 0.0 {
+                    enemy.mode = crate::zombie_ai::EnemyMode::Stagger;
+                    enemy.stagger_t = hit_res.stagger_applied;
+                }
+                if hit_res.knockback_x.abs() > 1e-4 || hit_res.knockback_z.abs() > 1e-4 {
+                    enemy.vx += hit_res.knockback_x * 8.0;
+                    enemy.vz += hit_res.knockback_z * 8.0;
+                    let mv = move_circle(
+                        &s.grid,
+                        enemy.x,
+                        enemy.z,
+                        enemy.radius,
+                        hit_res.knockback_x,
+                        hit_res.knockback_z,
+                    );
+                    enemy.x = mv.x;
+                    enemy.z = mv.z;
+                }
+            }
+            if hit_any {
+                s.player.combo_landed = true;
+            }
+        }
+    }
+
+    // ── Pinball Ball Ramming Enemies ──
+    if (s.player.is_ball() || s.player.is_rolling()) && (s.player.mom_speed > 3.0 || s.player.is_rolling()) {
+        let (fx, fz) = (s.player.mom_x, s.player.mom_z);
+        let ram_dmg = 16.0 * (s.player.mom_speed / 8.0).max(1.0);
+        for enemy in s.enemies.iter_mut() {
+            if enemy.mode == crate::zombie_ai::EnemyMode::Dead {
+                continue;
+            }
+            let dx = enemy.x - s.player.x;
+            let dz = enemy.z - s.player.z;
+            let dist_sq = dx * dx + dz * dz;
+            let contact_r = PLAYER_R + enemy.radius + 0.15;
+            if dist_sq <= contact_r * contact_r {
+                let hit_res = crate::combat::resolve_enemy_hit(
+                    enemy.hp,
+                    enemy.max_hp,
+                    ram_dmg,
+                    fx,
+                    fz,
+                    crate::combat::KNOCKBACK_ZOMBIE * 2.2,
+                    s.player.bounce_combo,
+                    s.player.mom_speed,
+                );
+                enemy.hp = (enemy.hp - hit_res.damage_dealt).max(0.0);
+                if hit_res.is_kill {
+                    enemy.mode = crate::zombie_ai::EnemyMode::Dead;
+                    s.gold_run += hit_res.gold_awarded;
+                } else {
+                    enemy.mode = crate::zombie_ai::EnemyMode::Stagger;
+                    enemy.stagger_t = 0.35;
+                }
+                enemy.vx += hit_res.knockback_x * 8.0;
+                enemy.vz += hit_res.knockback_z * 8.0;
+                let mv = move_circle(
+                    &s.grid,
+                    enemy.x,
+                    enemy.z,
+                    enemy.radius,
+                    hit_res.knockback_x,
+                    hit_res.knockback_z,
+                );
+                enemy.x = mv.x;
+                enemy.z = mv.z;
+            }
+        }
+    }
+
+    // ── Live Enemy AI Simulation ──
+    let ppos = (s.player.x, s.player.z);
+    crate::zombie_ai::step_enemies(&mut s.enemies, &s.grid, ppos, DT);
+
+    // ── Enemy Attack Collision vs Player ──
+    if s.player.iframes <= 0.0 && !s.player.is_ball() && !s.player.is_rolling() {
+        for enemy in s.enemies.iter() {
+            if enemy.mode == crate::zombie_ai::EnemyMode::Attack {
+                let dx = s.player.x - enemy.x;
+                let dz = s.player.z - enemy.z;
+                let dist = (dx * dx + dz * dz).sqrt();
+                if dist <= PLAYER_R + enemy.radius + 0.15 {
+                    let (next_hp, iframes, hit) = crate::combat::resolve_player_damage(
+                        s.player.hp,
+                        s.player.iframes,
+                        enemy.damage,
+                        0,
+                    );
+                    s.player.hp = next_hp;
+                    s.player.iframes = iframes;
+                    if hit {
+                        let dir_len = dist.max(1e-4);
+                        let mv = move_circle(
+                            &s.grid,
+                            s.player.x,
+                            s.player.z,
+                            PLAYER_R,
+                            (dx / dir_len) * crate::combat::KNOCKBACK_PLAYER * 0.4,
+                            (dz / dir_len) * crate::combat::KNOCKBACK_PLAYER * 0.4,
+                        );
+                        s.player.x = mv.x;
+                        s.player.z = mv.z;
+                    }
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// A deterministic demo floor for the vertical slice: bordered room, carved
@@ -625,6 +795,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..600 {
             simulate(&mut s, &input);
@@ -643,6 +814,7 @@ mod tests {
             move_z: 0.0,
             sprint: true,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..600 {
             simulate(&mut f, &sprinting);
@@ -677,6 +849,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: true,
+            ..Default::default()
         };
         simulate(&mut s, &dodge_input);
         assert!(s.player.is_rolling());
@@ -708,6 +881,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         simulate(&mut s, &aim_left);
         assert!(s.plunger_aim < 0.0, "horizontal input steers the aim line");
@@ -718,6 +892,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: true,
+            ..Default::default()
         };
         for _ in 0..30 {
             simulate(&mut s, &pull);
