@@ -31,11 +31,14 @@
 
 pub mod arc_contract;
 pub mod archetypes;
+pub mod artery_banks;
 pub mod circuit;
 pub mod conic_fit;
+pub mod decorate;
 pub mod digest;
 pub mod doorway_funnels;
 pub mod doorways;
+pub mod floor_rules;
 pub mod floor_spec;
 pub mod flow_orient;
 pub mod modifiers;

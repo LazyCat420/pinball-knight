@@ -890,7 +890,7 @@ mod tests {
             .parent()
             .expect("workspace root");
         let led = scan_rust(root);
-        for (path, lines) in [("maze/decorate.ts", 3169), ("entities/player.ts", 2445)] {
+        for (path, lines) in [("entities/player.ts", 2445)] {
             let claims = led.claims.get(path);
             assert!(
                 claims.is_none(),

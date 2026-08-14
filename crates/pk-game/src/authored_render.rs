@@ -594,6 +594,14 @@ mod tests {
 #[derive(Resource)]
 pub struct MonsterArt {
     pub zombie: crate::SheetClips,
+    pub brute: Option<crate::SheetClips>,
+    pub frog: Option<crate::SheetClips>,
+    pub goblin: Option<crate::SheetClips>,
+    pub jester: Option<crate::SheetClips>,
+    pub reaper: Option<crate::SheetClips>,
+    pub slime: Option<crate::SheetClips>,
+    pub spider: Option<crate::SheetClips>,
+    pub stiltneck: Option<crate::SheetClips>,
 }
 
 /// ⚠️ **THESE MONSTERS STAND. THEY DO NOT LIVE.**

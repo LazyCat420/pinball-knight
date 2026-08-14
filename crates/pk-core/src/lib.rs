@@ -43,8 +43,8 @@ pub mod abilities;
 pub mod bestiary;
 pub mod boss;
 pub mod cards;
-
 pub mod collide;
+pub mod combat;
 pub mod combo;
 pub mod economy;
 pub mod enemies;
@@ -52,16 +52,19 @@ pub mod enemy_rules;
 pub mod flow_field;
 pub mod gambler;
 pub mod grid;
+pub mod hazards;
 pub mod intro;
 pub mod items;
 pub mod jsmath;
 pub mod jssort;
+pub mod marble;
 pub mod maze;
 pub mod movement;
 pub mod pinball;
 pub mod rail;
 pub mod reagents;
 pub mod recipes;
+pub mod ricochet;
 pub mod rng;
 pub mod secrets;
 pub mod stagger;
@@ -69,6 +72,7 @@ pub mod state;
 pub mod surfaces;
 pub mod tavern;
 pub mod tile_shape;
+pub mod zombie_ai;
 pub mod zombie_types;
 
 

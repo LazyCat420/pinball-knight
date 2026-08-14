@@ -84,6 +84,22 @@ pub(crate) const VIEW_H: f32 = 11.25;
 /// with the per-rung bake.
 const ZOMBIE_E_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/zombie-E.png");
 const ZOMBIE_E_JSON: &str = include_str!("../../../legacy/public/sprites/zombie-E.json");
+const BRUTE_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/brute-S.png");
+const BRUTE_S_JSON: &str = include_str!("../../../legacy/public/sprites/brute-S.json");
+const FROG_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/frog-S.png");
+const FROG_S_JSON: &str = include_str!("../../../legacy/public/sprites/frog-S.json");
+const GOBLIN_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/goblin-S.png");
+const GOBLIN_S_JSON: &str = include_str!("../../../legacy/public/sprites/goblin-S.json");
+const JESTER_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/jester-S.png");
+const JESTER_S_JSON: &str = include_str!("../../../legacy/public/sprites/jester-S.json");
+const REAPER_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/reaper-S.png");
+const REAPER_S_JSON: &str = include_str!("../../../legacy/public/sprites/reaper-S.json");
+const SLIME_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/slime-S.png");
+const SLIME_S_JSON: &str = include_str!("../../../legacy/public/sprites/slime-S.json");
+const SPIDER_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/spider-S.png");
+const SPIDER_S_JSON: &str = include_str!("../../../legacy/public/sprites/spider-S.json");
+const STILTNECK_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/stiltneck-S.png");
+const STILTNECK_S_JSON: &str = include_str!("../../../legacy/public/sprites/stiltneck-S.json");
 const SHEET_S_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/pinball_knight-S.png");
 const SHEET_S_JSON: &str = include_str!("../../../legacy/public/sprites/pinball_knight-S.json");
 const SHEET_E_PNG: &[u8] = include_bytes!("../../../legacy/public/sprites/pinball_knight-E.png");
@@ -914,7 +930,26 @@ fn setup_common(
         &mut materials,
         false,
     );
-    commands.insert_resource(authored_render::MonsterArt { zombie });
+    let (brute, _) = decode_sheet(BRUTE_S_PNG, BRUTE_S_JSON, &mut images, &mut materials, false);
+    let (frog, _) = decode_sheet(FROG_S_PNG, FROG_S_JSON, &mut images, &mut materials, false);
+    let (goblin, _) = decode_sheet(GOBLIN_S_PNG, GOBLIN_S_JSON, &mut images, &mut materials, false);
+    let (jester, _) = decode_sheet(JESTER_S_PNG, JESTER_S_JSON, &mut images, &mut materials, false);
+    let (reaper, _) = decode_sheet(REAPER_S_PNG, REAPER_S_JSON, &mut images, &mut materials, false);
+    let (slime, _) = decode_sheet(SLIME_S_PNG, SLIME_S_JSON, &mut images, &mut materials, false);
+    let (spider, _) = decode_sheet(SPIDER_S_PNG, SPIDER_S_JSON, &mut images, &mut materials, false);
+    let (stiltneck, _) = decode_sheet(STILTNECK_S_PNG, STILTNECK_S_JSON, &mut images, &mut materials, false);
+
+    commands.insert_resource(authored_render::MonsterArt {
+        zombie,
+        brute: Some(brute),
+        frog: Some(frog),
+        goblin: Some(goblin),
+        jester: Some(jester),
+        reaper: Some(reaper),
+        slime: Some(slime),
+        spider: Some(spider),
+        stiltneck: Some(stiltneck),
+    });
 
     // ── Camera: orthographic, tilt 38°, yaw 45°, 11.25 world-units tall ──
     commands.spawn((
