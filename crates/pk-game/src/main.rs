@@ -1421,7 +1421,8 @@ fn step_ghost_afterimages(
         if ghost.lifetime <= 0.0 {
             commands.entity(entity).despawn();
         } else {
-            let alpha = (ghost.lifetime / ghost.max_lifetime) * 0.45;
+            let progress = (ghost.lifetime / ghost.max_lifetime).clamp(0.0, 1.0);
+            let alpha = progress * progress * 0.40;
             if let Some(mat) = materials.get_mut(&mat_handle.0) {
                 mat.base_color.set_alpha(alpha);
             }
@@ -1459,7 +1460,8 @@ fn sync_knight(
     let x = rp.prev.0 + (rp.curr.0 - rp.prev.0) * a;
     let z = rp.prev.1 + (rp.curr.1 - rp.prev.1) * a;
 
-    let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
+    let is_ball = sim.0.player.is_ball();
+    let is_rolling = sim.0.player.is_rolling();
 
     if let Ok((mut ball_tf, mut ball_vis)) = ball_q.single_mut() {
         if is_ball {
@@ -1470,8 +1472,8 @@ fn sync_knight(
             ball_tf.translation.z = z as f32;
 
             // Continuous 3D Roll around angular velocity perpendicular
-            let vx = sim.0.player.mom_x + if sim.0.player.is_rolling() { sim.0.player.roll_dir_x * 8.0 } else { 0.0 };
-            let vz = sim.0.player.mom_z + if sim.0.player.is_rolling() { sim.0.player.roll_dir_z * 8.0 } else { 0.0 };
+            let vx = sim.0.player.mom_x * sim.0.player.mom_speed;
+            let vz = sim.0.player.mom_z * sim.0.player.mom_speed;
             let v_speed = (vx * vx + vz * vz).sqrt();
             if v_speed > 0.05 {
                 let r = pk_core::state::PLAYER_R as f32;
@@ -1505,10 +1507,17 @@ fn sync_knight(
     mat.0 = clips.material.clone();
 
     let is_attacking = sim.0.player.attack_t >= 0.0 && !clips.attack.is_empty();
+    let is_rolling_active = is_rolling && !clips.roll.is_empty();
     let (cells, fps) = if is_attacking {
         (&clips.attack, 16)
+    } else if is_rolling_active {
+        (&clips.roll, 18)
     } else if sim.0.player.moving {
-        (&clips.walk, 8)
+        if sim.0.player.sprint_charge > 0.4 && !clips.run.is_empty() {
+            (&clips.run, 12)
+        } else {
+            (&clips.walk, 8)
+        }
     } else {
         (&clips.idle, 4)
     };
@@ -1518,6 +1527,10 @@ fn sync_knight(
     let frame = if is_attacking {
         let total = cells.len();
         let tau = (sim.0.player.attack_t / 0.35).clamp(0.0, 0.99);
+        (tau * total as f64) as usize % total
+    } else if is_rolling_active {
+        let total = cells.len();
+        let tau = (sim.0.player.roll_t / pk_core::state::ROLL_DURATION).clamp(0.0, 0.99);
         (tau * total as f64) as usize % total
     } else {
         (sim.0.tick * fps / 60) as usize % cells.len()
@@ -1531,14 +1544,14 @@ fn sync_knight(
     }
 
     // ── Speed Aura Ghost Trails ──
-    if is_ball || sim.0.player.sprint_charge > 0.4 {
+    if is_ball || is_rolling || sim.0.player.sprint_charge > 0.4 {
         *ghost_timer += time.delta_secs();
         if *ghost_timer >= 0.055 {
             *ghost_timer = 0.0;
             let aura_color = if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
-                Color::srgba(1.0, 0.85, 0.2, 0.45) // Gold overcharge aura
+                Color::srgba(1.0, 0.85, 0.2, 0.40) // Gold overcharge aura
             } else {
-                Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
+                Color::srgba(0.2, 0.75, 1.0, 0.30) // Arcane blue speed aura
             };
             if is_ball {
                 commands.spawn((
@@ -1550,7 +1563,7 @@ fn sync_knight(
                     Mesh3d(meshes.add(Sphere::new(pk_core::state::PLAYER_R as f32).mesh().uv(16, 12))),
                     MeshMaterial3d(materials.add(StandardMaterial {
                         base_color: aura_color,
-                        emissive: LinearRgba::from(aura_color) * 2.0,
+                        emissive: LinearRgba::from(aura_color) * 1.6,
                         unlit: true,
                         alpha_mode: AlphaMode::Blend,
                         ..default()
@@ -1563,13 +1576,13 @@ fn sync_knight(
                 commands.spawn((
                     DungeonScene,
                     GhostAfterimage {
-                        lifetime: 0.22,
-                        max_lifetime: 0.22,
+                        lifetime: 0.18,
+                        max_lifetime: 0.18,
                     },
                     Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
                     MeshMaterial3d(materials.add(StandardMaterial {
                         base_color: aura_color,
-                        emissive: LinearRgba::from(aura_color) * 1.8,
+                        emissive: LinearRgba::from(aura_color) * 1.4,
                         unlit: true,
                         alpha_mode: AlphaMode::Blend,
                         ..default()

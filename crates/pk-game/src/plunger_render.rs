@@ -23,14 +23,15 @@ pub fn update_plunger_rig(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rig_q: Query<(Entity, &mut Transform), (With<PlungerRig>, Without<PlungerStriker>)>,
     mut striker_q: Query<&mut Transform, With<PlungerStriker>>,
-    aim_q: Query<(Entity, &PlungerAimPoint)>,
+    mut aim_q: Query<(&PlungerAimPoint, &mut Transform), (Without<PlungerRig>, Without<PlungerStriker>)>,
+    aim_entities_q: Query<Entity, With<PlungerAimPoint>>,
 ) {
     if !sim.0.plunger_armed {
         // Despawn rig when disarmed
         for (entity, _) in rig_q.iter() {
             commands.entity(entity).despawn();
         }
-        for (entity, _) in aim_q.iter() {
+        for entity in aim_entities_q.iter() {
             commands.entity(entity).despawn();
         }
         return;
@@ -123,14 +124,12 @@ pub fn update_plunger_rig(
             ));
         }
     } else {
-        // Update aim points positions
-        for (entity, aim) in aim_q.iter() {
+        // Update aim points positions directly
+        for (aim, mut aim_tf) in aim_q.iter_mut() {
             let dist = (aim.step as f64) * 0.5;
-            commands.entity(entity).insert(Transform::from_xyz(
-                (p.x + pdx * dist) as f32,
-                0.12,
-                (p.z + pdz * dist) as f32,
-            ));
+            aim_tf.translation.x = (p.x + pdx * dist) as f32;
+            aim_tf.translation.y = 0.12;
+            aim_tf.translation.z = (p.z + pdz * dist) as f32;
         }
     }
 }
