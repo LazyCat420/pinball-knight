@@ -4,8 +4,7 @@
 //!
 //! PORTS: `bestiary.ts`
 
-use crate::reagents::{drops_for_kind, ReagentDef, ReagentId};
-use crate::zombie_types::{ZombieType, type_hp};
+use crate::reagents::{drops_for_kind, ReagentDef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonsterInfo {

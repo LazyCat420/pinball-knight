@@ -8,9 +8,8 @@
 //!
 //! PORTS: `reagents.ts`
 
-use std::collections::BTreeMap;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+
 pub enum ReagentTier {
     Common,
     Uncommon,

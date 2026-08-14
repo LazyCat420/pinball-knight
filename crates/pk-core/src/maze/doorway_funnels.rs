@@ -254,7 +254,7 @@ pub fn commit_jaw(g: &mut Grid, plan: &mut JawPlan) -> usize {
         g.arc_idx = Some(vec![-1i16; (g.w * g.h) as usize]);
     }
 
-    let mut note = |ti: i32, tj: i32, before: &mut Vec<TileSnapshot>| {
+    let note = |ti: i32, tj: i32, before: &mut Vec<TileSnapshot>| {
         let k = idx(g, ti, tj);
         if before.iter().any(|b| b.k == k) {
             return;

@@ -5,7 +5,7 @@
 use pk_core::abilities::{AbilityId, ABILITY_RANK_MAX, ABILITY_RANK_STEP};
 use pk_core::bestiary::{info_for_kind, MONSTER_INFOS};
 use pk_core::boss::{
-    BossKingState, KING_BODY_R, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED,
+    BossKingState, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED,
     KING_SCALE, KING_WAKE_TILES, REAPER_SCALE, SKULL_COUNT, SKULL_ORBIT_R,
     SKULL_ORBIT_SPEED, SLAM_DAMAGE, SLAM_INTERVAL, SLAM_RADIUS, SLAM_TELEGRAPH,
 };
@@ -16,12 +16,11 @@ use pk_core::items::{
 };
 use pk_core::reagents::{drops_for_kind, roll_reagent_drops, ReagentId, ReagentTier};
 use pk_core::recipes::{can_craft, Pouch, RecipeId};
-use pk_core::secrets::{
-    prune_sealed_bands, stamp_secret_bands, TilePos, REVOLVE_SWEEP, REVOLVE_TIME,
-};
+use pk_core::secrets::{REVOLVE_SWEEP, REVOLVE_TIME};
 use pk_core::zombie_types::{
     mix32, pick_zombie_type, type_drop_mult, type_hp, ZombieException, ZombieType,
 };
+
 
 #[test]
 fn test_reagents_parity() {
@@ -351,7 +350,11 @@ fn test_combo_curve_parity() {
     assert_eq!(momentum_t(0.0), 0.0);
     assert_eq!(momentum_t(22.0), 1.0);
 
+    assert_eq!(combo_speed_ceil(0.0), 8.0);
+    assert!(combo_speed_ceil(80.0) > 21.0);
+
     assert_eq!(momentum_scaled(2.0, 4.2), 1.0);
+
     assert_eq!(momentum_scaled(2.0, 22.0), 2.0);
 
     // Kill gold
