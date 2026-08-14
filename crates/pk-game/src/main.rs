@@ -265,8 +265,23 @@ fn main() {
     } else {
         AppState::Intro
     };
+
+    let scene_name = match start {
+        AppState::Intro => "Intro (Title Sequence — press Space/Enter or Click to continue to Tavern)",
+        AppState::Tavern => "Tavern Hub (WASD to move, Shift to sprint, Talk to Keepers)",
+        AppState::FloorLoading => "Dungeon Floor (WASD to move, Shift to sprint, Space/Click to interact/attack)",
+        _ => "Game",
+    };
+    println!("════════════════════════════════════════════════════════════════════");
+    println!(" [Pinball Knight] Bevy Engine running on Vulkan/WebGPU");
+    println!(" [Pinball Knight] Initial Scene: {}", scene_name);
+    println!(" [Pinball Knight] Controls: WASD/Arrows (Move), Shift (Sprint), Space/Click (Action)");
+    println!(" [Pinball Knight] Exit: Alt+F4 or close window (Ctrl+C in terminal)");
+    println!("════════════════════════════════════════════════════════════════════");
+
     let mut app = App::new();
     app.insert_resource(plan);
+
     // ⚠️ `--no-vsync` IS A MEASUREMENT FLAG, NOT A PERFORMANCE SETTING.
     //
     // Bevy's default present mode is `Fifo` — vsync ON — and this project has
