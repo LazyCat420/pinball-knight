@@ -2,8 +2,6 @@
 //!
 //! PORTS: `maze/relay-chambers.ts`
 
-use std::f64::consts::PI;
-
 pub const DEFAULT_RELAY_STANDOFF: f64 = 0.85;
 
 #[derive(Debug, Clone, PartialEq)]
