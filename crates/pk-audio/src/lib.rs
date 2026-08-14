@@ -45,8 +45,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ambience;
 pub mod patches;
 pub mod synth;
+
+pub use ambience::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod soft;
