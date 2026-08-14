@@ -17,3 +17,7 @@
 
 # stray tool caches at repo root
 /node_modules
+
+# Local git worktrees & builds
+/.worktrees
+/build-windows
