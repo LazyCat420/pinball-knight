@@ -1,11 +1,6 @@
-//! Projectiles — bullets, arrows, flame puffs, and monster spells.
+//! Projectile data structures and stats definitions.
 //!
-//! Simulated on the fixed timestep (60 Hz): fly along ground direction at
-//! `PROJECTILE_Y`, die against walls, connect against targets via combat damage.
-//!
-//! //! PORTS: `entities/projectiles.ts`
-
-use crate::grid::{world_to_grid, Grid, T_WALL};
+//! PORTS: `entities/projectiles.ts`, `constants/enemies.ts`
 
 pub const PROJECTILE_Y: f64 = 0.42;
 pub const MUZZLE_OFFSET: f64 = 0.35;
@@ -143,93 +138,5 @@ impl Projectile {
             dead: false,
             radius: HIT_R,
         }
-    }
-}
-
-/// Advance a projectile collection by `dt` against world grid bounds.
-pub fn step_projectiles(projectiles: &mut Vec<Projectile>, grid: &Grid, dt: f64) {
-    for p in projectiles.iter_mut() {
-        if p.dead {
-            continue;
-        }
-        p.life -= dt;
-        if p.life <= 0.0 {
-            p.dead = true;
-            continue;
-        }
-
-        // Apply curve acceleration if active
-        if p.curve_rate != 0.0 {
-            let speed = (p.vx * p.vx + p.vz * p.vz).sqrt();
-            let angle = p.vz.atan2(p.vx) + p.curve_rate * dt;
-            p.vx = angle.cos() * speed;
-            p.vz = angle.sin() * speed;
-        }
-
-        p.x += p.vx * dt;
-        p.z += p.vz * dt;
-
-        // Wall collision check
-        let (ti, tj) = world_to_grid(grid, p.x, p.z);
-        if ti < 0 || ti >= grid.cols as i32 || tj < 0 || tj >= grid.rows as i32 {
-            p.dead = true;
-            continue;
-        }
-        let tile = grid.t[(tj as usize) * grid.cols + (ti as usize)];
-        if tile == T_WALL {
-            p.dead = true;
-        }
-    }
-
-    projectiles.retain(|p| !p.dead);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::grid::Grid;
-
-    #[test]
-    fn player_shot_travels_and_expires() {
-        let mut projs = vec![Projectile::new_player_shot(
-            1,
-            ProjectileKind::Bullet,
-            5.0,
-            5.0,
-            1.0,
-            0.0,
-            10.0,
-            25,
-            0.5,
-        )];
-        let grid = Grid::new(20, 20, 1); // all floor
-
-        step_projectiles(&mut projs, &grid, 0.1);
-        assert_eq!(projs.len(), 1);
-        assert!(projs[0].x > 5.0);
-
-        // Step past life
-        step_projectiles(&mut projs, &grid, 0.5);
-        assert_eq!(projs.len(), 0);
-    }
-
-    #[test]
-    fn projectile_dies_against_wall() {
-        let mut projs = vec![Projectile::new_player_shot(
-            2,
-            ProjectileKind::Arrow,
-            1.5,
-            1.5,
-            -1.0,
-            0.0,
-            10.0,
-            30,
-            2.0,
-        )];
-        let mut grid = Grid::new(10, 10, 1);
-        grid.t[1 * 10 + 0] = T_WALL; // wall at x=0, y=1
-
-        step_projectiles(&mut projs, &grid, 0.2);
-        assert_eq!(projs.len(), 0);
     }
 }

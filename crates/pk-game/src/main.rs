@@ -1515,31 +1515,22 @@ fn step_live_monsters(
     let (pi, pj) = pk_core::grid::world_to_tile(&sim.0.grid, px, pz);
     let flow_dist = pk_core::flow_field::bfs_distances(&sim.0.grid, pi, pj);
 
-    let mut live_enemies: Vec<pk_core::zombie_ai::LiveEnemy> = monster_q
+    let mut live_monsters: Vec<pk_core::monsters::LiveMonster> = monster_q
         .iter()
-        .map(|(_, m, _)| m.enemy.clone())
+        .map(|(_, m, _)| m.monster.clone())
         .collect();
 
-    for enemy in live_enemies.iter_mut() {
-        let dx = px - enemy.x;
-        let dz = pz - enemy.z;
-        let dist = (dx * dx + dz * dz).sqrt();
-        if dist <= 14.0 {
-            enemy.update(dt, px, pz, &flow_dist, &sim.0.grid);
-        }
-    }
-
-    pk_core::zombie_ai::apply_enemy_separation(&mut live_enemies, dt);
+    pk_core::monsters::update_monsters_horde(&mut live_monsters, &sim.0.grid, px, pz, &flow_dist, dt);
 
     let Ok(cam_tf) = cam.single() else {
         return;
     };
 
     for (i, (mut tf, mut m, mat_handle)) in monster_q.iter_mut().enumerate() {
-        if i < live_enemies.len() {
-            m.enemy = live_enemies[i].clone();
-            tf.translation.x = m.enemy.x as f32;
-            tf.translation.z = m.enemy.z as f32;
+        if i < live_monsters.len() {
+            m.monster = live_monsters[i].clone();
+            tf.translation.x = m.monster.x as f32;
+            tf.translation.z = m.monster.z as f32;
             tf.rotation = cam_tf.rotation;
 
             let clips = match m.kind_index {
@@ -1554,7 +1545,7 @@ fn step_live_monsters(
                 _ => &monster_art.zombie,
             };
 
-            let is_moving = m.enemy.vx.abs() > 0.05 || m.enemy.vz.abs() > 0.05;
+            let is_moving = m.monster.vx.abs() > 0.05 || m.monster.vz.abs() > 0.05;
             let cells = if is_moving {
                 if !clips.walk.is_empty() {
                     &clips.walk

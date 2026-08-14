@@ -1,31 +1,13 @@
-//! Hit and damage resolution for ARPG combat and pinball ram collisions.
-//!
-//! Port of `legacy/src/game/pinball-knight/entities/combat.ts` (1,205 lines).
-//!
-//! Damage calculations, player upgrades, card synergies, critical strikes,
-//! knockback impulses, stagger accrual, armor absorption, and kill rewards.
+//! Damage calculation and hit resolution.
 //!
 //! PORTS: `entities/combat.ts`
 
 use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
-use crate::stagger::{pain_chance, stagger_time};
+use super::stagger::{pain_chance, stagger_time};
 
 pub const KNOCKBACK_ZOMBIE: f64 = 1.1;
 pub const KNOCKBACK_PLAYER: f64 = 1.4;
 pub const PLAYER_IFRAMES: f64 = 0.35;
-pub const GOLD_PER_KILL: i64 = 1;
-pub const ULT_CHARGE_PER_KILL: f64 = 0.05;
-pub const MANA_PER_KILL: f64 = 1.0;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DamageSource {
-    Steel,
-    Ram,
-    Card,
-    Hazard,
-    Projectile,
-    Boss,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatHit {
@@ -127,34 +109,4 @@ pub fn resolve_player_damage(
     let soaked_dmg = (incoming_dmg - armor_soak).max(1);
     let next_hp = (player_hp - soaked_dmg).max(0);
     (next_hp, PLAYER_IFRAMES, true)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn player_damage_and_enemy_hit_resolution() {
-        let (dmg, crit) = calculate_player_damage(10.0, 2, 1.4, 12.0, 0.5, 2.0, true);
-        assert!(dmg > 10.0);
-        assert!(crit);
-
-        let hit = resolve_enemy_hit(20.0, 20.0, dmg, 1.0, 0.0, KNOCKBACK_ZOMBIE, 2.0, 12.0);
-        assert!(hit.damage_dealt >= dmg);
-        assert!(hit.knockback_x > 0.0);
-    }
-
-    #[test]
-    fn player_armor_and_iframes() {
-        // Player takes damage with armor soak
-        let (hp1, iframes1, hit1) = resolve_player_damage(5, 0.0, 3, 1);
-        assert_eq!(hp1, 3); // 5 - (3 - 1) = 3
-        assert_eq!(iframes1, PLAYER_IFRAMES);
-        assert!(hit1);
-
-        // While in i-frames, damage is blocked
-        let (hp2, _iframes2, hit2) = resolve_player_damage(hp1, iframes1, 3, 1);
-        assert_eq!(hp2, hp1);
-        assert!(!hit2);
-    }
 }

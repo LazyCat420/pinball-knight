@@ -776,7 +776,7 @@ pub struct StandingMonster;
 
 #[derive(Component)]
 pub struct LiveMonster {
-    pub enemy: pk_core::zombie_ai::LiveEnemy,
+    pub monster: pk_core::monsters::LiveMonster,
     pub kind_index: usize,
 }
 
@@ -794,7 +794,18 @@ pub fn spawn_live_horde(
     for (n, s) in floor.plan.spawns.iter().enumerate() {
         let (cx, cz) = tile_center(&floor.grid, s.i, s.j);
         let kind_index = n % 9;
-        let enemy = pk_core::zombie_ai::LiveEnemy::new_by_index((n + 1) as u32, kind_index, cx, cz);
+        let kind = match kind_index {
+            1 => pk_core::monsters::EnemyKind::Brute,
+            2 => pk_core::monsters::EnemyKind::Croaker,
+            3 => pk_core::monsters::EnemyKind::Goblin,
+            4 => pk_core::monsters::EnemyKind::Jester,
+            5 => pk_core::monsters::EnemyKind::Reaper,
+            6 => pk_core::monsters::EnemyKind::Slime,
+            7 => pk_core::monsters::EnemyKind::Spider,
+            8 => pk_core::monsters::EnemyKind::Stiltneck,
+            _ => pk_core::monsters::EnemyKind::Zombie,
+        };
+        let monster = pk_core::monsters::LiveMonster::new((n + 1) as u32, kind, cx, cz);
 
         let clips = match kind_index {
             1 => art.brute.as_ref().unwrap_or(&art.zombie),
@@ -814,7 +825,7 @@ pub fn spawn_live_horde(
         let ent = commands
             .spawn((
                 AuthoredDecor,
-                LiveMonster { enemy, kind_index },
+                LiveMonster { monster, kind_index },
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(clips.material.clone()),
                 Transform::from_translation(Vec3::new(cx as f32, quad_h * 0.5, cz as f32))
