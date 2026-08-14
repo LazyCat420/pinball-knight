@@ -591,6 +591,7 @@ fn the_first_path_step_is_a_step_the_body_can_actually_take() {
     // ~2.1 tiles of travel at walking speed, so a body that has not crossed a
     // one-tile boundary by then is being stopped by something.
     let mut sim = SimState::new(track.grid.clone(), info.start_world, 1);
+    sim.plunger_armed = false;
     let input = FrameInput {
         move_x: f64::from(di),
         move_z: f64::from(dj),
@@ -633,6 +634,7 @@ fn the_sims_grid_never_drifts_from_the_floors() {
     let (track, info) = pinned_floor();
     let authored = digest_grid_state(&track.grid);
     let mut sim = SimState::new(track.grid.clone(), info.start_world, 1);
+    sim.plunger_armed = false;
     assert_eq!(
         digest_grid_state(&sim.grid),
         authored,
@@ -693,6 +695,7 @@ fn the_wall_probe_stops_the_body_without_freezing_it() {
     );
 
     let mut sim = SimState::new(track.grid.clone(), info.start_world, 1);
+    sim.plunger_armed = false;
     let input = FrameInput {
         move_x: f64::from(p.input[0]),
         move_z: f64::from(p.input[1]),

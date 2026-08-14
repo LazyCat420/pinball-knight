@@ -59,6 +59,28 @@ pub enum Facing {
     W,
 }
 
+impl Facing {
+    pub fn from_dir(dx: f64, dz: f64) -> Self {
+        if dx.abs() >= dz.abs() {
+            if dx >= 0.0 {
+                Facing::E
+            } else {
+                Facing::W
+            }
+        } else if dz >= 0.0 {
+            Facing::S
+        } else {
+            Facing::N
+        }
+    }
+}
+
+pub const PLUNGER_CHARGE_TIME: f64 = 0.8;
+pub const PLUNGER_MIN_SPEED: f64 = 8.0;
+pub const PLUNGER_SPEED: f64 = 18.0;
+pub const PLUNGER_AIM_MAX: f64 = 0.44; // ~25 deg
+pub const PLUNGER_AIM_RATE: f64 = 1.2;
+
 #[derive(Debug, Clone)]
 pub struct Player {
     pub x: f64,
@@ -188,17 +210,47 @@ pub struct SimState {
     /// player.ts). On the state and not a static for the reason every other
     /// module-level timer here is: a replay has to be able to restore it.
     pub sprint_grace_t: f64,
+    // ── Plunger Chute Launch ──
+    pub plunger_armed: bool,
+    pub plunger_charging: bool,
+    pub plunger_power: f64,
+    pub plunger_aim: f64,
+    pub plunger_base_x: f64,
+    pub plunger_base_z: f64,
+    pub plunger_dir_x: f64,
+    pub plunger_dir_z: f64,
 }
 
 impl SimState {
+    pub fn plunger_dir(&self) -> (f64, f64) {
+        let cos_a = self.plunger_aim.cos();
+        let sin_a = self.plunger_aim.sin();
+        let dx = self.plunger_base_x * cos_a - self.plunger_base_z * sin_a;
+        let dz = self.plunger_base_x * sin_a + self.plunger_base_z * cos_a;
+        (dx, dz)
+    }
+
     pub fn new(grid: Grid, spawn: (f64, f64), seed: u32) -> Self {
         let arc_corners = crate::collide::compute_arc_corners(&grid);
+        // Find opening corridor direction from spawn
+        let (si, sj) = crate::grid::world_to_tile(&grid, spawn.0, spawn.1);
+        let mut bx = 0.0;
+        let mut bz = 1.0;
+        for &(di, dj) in &[(0, 1), (0, -1), (1, 0), (-1, 0)] {
+            if crate::grid::is_walkable(&grid, si + di, sj + dj) {
+                bx = f64::from(di);
+                bz = f64::from(dj);
+                break;
+            }
+        }
+        let facing = Facing::from_dir(bx, bz);
+
         Self {
             grid,
             player: Player {
                 x: spawn.0,
                 z: spawn.1,
-                facing: Facing::S,
+                facing,
                 moving: false,
                 mom_x: 0.0,
                 mom_z: 0.0,
@@ -246,6 +298,14 @@ impl SimState {
             rail_gold_t: 0.0,
             cur_speed: 0.0,
             sprint_grace_t: 0.0,
+            plunger_armed: true,
+            plunger_charging: false,
+            plunger_power: 0.0,
+            plunger_aim: 0.0,
+            plunger_base_x: bx,
+            plunger_base_z: bz,
+            plunger_dir_x: bx,
+            plunger_dir_z: bz,
         }
     }
 }
@@ -264,6 +324,38 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     // Part cooldowns/timers tick first (the legacy parts renderer's job,
     // owned by the sim here — game state must not depend on being drawn).
     crate::pinball::tick_parts(s, DT);
+
+    // ── Plunger Chute Launch ──
+    if s.plunger_armed {
+        s.player.iframes = s.player.iframes.max(0.1);
+
+        // Aim left / right with horizontal input
+        if input.move_x.abs() > 0.05 {
+            s.plunger_aim = (s.plunger_aim + input.move_x * PLUNGER_AIM_RATE * DT)
+                .clamp(-PLUNGER_AIM_MAX, PLUNGER_AIM_MAX);
+        }
+        let (pdx, pdz) = s.plunger_dir();
+        s.plunger_dir_x = pdx;
+        s.plunger_dir_z = pdz;
+        s.player.facing = Facing::from_dir(pdx, pdz);
+
+        if input.dodge {
+            s.plunger_charging = true;
+            s.plunger_power = 1.0_f64.min(s.plunger_power + DT / PLUNGER_CHARGE_TIME);
+            return;
+        } else if s.plunger_charging && s.plunger_power > 0.0 {
+            // RELEASED → FIRE into play!
+            let launch_speed = PLUNGER_MIN_SPEED + (PLUNGER_SPEED - PLUNGER_MIN_SPEED) * s.plunger_power;
+            s.player.mom_x = pdx;
+            s.player.mom_z = pdz;
+            s.player.mom_speed = launch_speed;
+            s.plunger_armed = false;
+            s.plunger_charging = false;
+            s.plunger_power = 0.0;
+            return;
+        }
+        return;
+    }
 
     // The momentum ride owns the player while it lasts.
     if crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z)) {
@@ -526,6 +618,7 @@ mod tests {
     fn player_cannot_leave_the_bordered_floor() {
         let (grid, spawn) = demo_floor(7);
         let mut s = SimState::new(grid, spawn, 7);
+        s.plunger_armed = false;
         // Hold hard east for ten simulated seconds.
         let input = FrameInput {
             move_x: 1.0,
@@ -544,6 +637,7 @@ mod tests {
         // so a border that holds at PLAYER_SPEED is not evidence it holds here.
         let (grid2, spawn2) = demo_floor(7);
         let mut f = SimState::new(grid2, spawn2, 7);
+        f.plunger_armed = false;
         let sprinting = FrameInput {
             move_x: 1.0,
             move_z: 0.0,
@@ -574,6 +668,7 @@ mod tests {
     fn dodge_roll_lifecycle_and_squash() {
         let (grid, spawn) = demo_floor(7);
         let mut s = SimState::new(grid, spawn, 7);
+        s.plunger_armed = false;
         s.cur_speed = 3.5; // above ROLL_MIN_SPEED (2.5)
 
         // Trigger dodge roll
@@ -599,5 +694,42 @@ mod tests {
         let (sqx, sqy) = s.player.squash_scale();
         assert!(sqx < 1.0, "squash compresses along normal");
         assert!(sqy > 1.0, "squash expands perpendicular");
+    }
+
+    #[test]
+    fn plunger_chute_charge_and_launch() {
+        let (grid, spawn) = demo_floor(7);
+        let mut s = SimState::new(grid, spawn, 7);
+        assert!(s.plunger_armed, "floor must open parked in plunger chute");
+
+        // Aim line steering
+        let aim_left = FrameInput {
+            move_x: -1.0,
+            move_z: 0.0,
+            sprint: false,
+            dodge: false,
+        };
+        simulate(&mut s, &aim_left);
+        assert!(s.plunger_aim < 0.0, "horizontal input steers the aim line");
+
+        // Pull plunger back (hold dodge)
+        let pull = FrameInput {
+            move_x: 0.0,
+            move_z: 0.0,
+            sprint: false,
+            dodge: true,
+        };
+        for _ in 0..30 {
+            simulate(&mut s, &pull);
+        }
+        assert!(s.plunger_charging);
+        assert!(s.plunger_power > 0.4);
+
+        // Release plunger → Fire!
+        let release = FrameInput::default();
+        simulate(&mut s, &release);
+        assert!(!s.plunger_armed, "plunger disarms on fire");
+        assert!(!s.plunger_charging);
+        assert!(s.player.mom_speed > PLUNGER_MIN_SPEED, "ball launched at high speed");
     }
 }

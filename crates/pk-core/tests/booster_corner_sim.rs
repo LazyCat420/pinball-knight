@@ -43,6 +43,7 @@ struct RideReport {
 
 /// Run the REAL ride until the momentum bleeds out or `frames` elapse.
 fn ride(mut s: SimState, frames: i32) -> RideReport {
+    s.plunger_armed = false;
     let origin = (s.player.x, s.player.z);
     let mut fires = 0;
     let mut max_d: f64 = 0.0;

@@ -40,6 +40,7 @@ mod intro;
 mod maze_art;
 mod overworld;
 mod perf;
+mod plunger_render;
 mod post;
 mod real_floor;
 mod sfx;
@@ -366,7 +367,15 @@ fn main() {
     )
     .add_systems(
         Update,
-        (gather_input, sync_knight, step_live_monsters, step_ghost_afterimages, follow_camera)
+        (
+            gather_input,
+            sync_knight,
+            plunger_render::update_plunger_rig,
+            authored_render::step_booster_chevrons,
+            step_live_monsters,
+            step_ghost_afterimages,
+            follow_camera,
+        )
             .chain()
             .run_if(in_state(AppState::Dungeon))
             .run_if(resource_exists::<Sim>),
@@ -1306,7 +1315,11 @@ pub(crate) fn camera_offset() -> Vec3 {
     camera_offset_angles(CAM_TILT, CAM_YAW)
 }
 
-fn gather_input(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<Intent>) {
+fn gather_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut intent: ResMut<Intent>,
+) {
     let mut x = 0.0;
     let mut z = 0.0;
     // Screen-relative on the 45° yaw: up on the stick is up on screen, which
@@ -1331,7 +1344,10 @@ fn gather_input(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<Intent>) {
         move_x: x,
         move_z: z,
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        dodge: keys.just_pressed(KeyCode::Space),
+        dodge: keys.pressed(KeyCode::Space)
+            || keys.pressed(KeyCode::KeyJ)
+            || mouse.pressed(MouseButton::Right)
+            || mouse.pressed(MouseButton::Left),
     };
 }
 

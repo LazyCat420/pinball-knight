@@ -335,37 +335,49 @@ fn spawn_part(
             );
         }
         "booster" | "boostcorner" | "boostcurve" => {
-            // Runway plate
+            // Dark steel runway base plate
             entities.push(
                 commands
                     .spawn((
                         AuthoredDecor,
-                        Mesh3d(meshes.add(Cuboid::new(0.62, 0.04, 0.62))),
+                        Mesh3d(meshes.add(Cuboid::new(0.72, 0.02, 0.72))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.12, 0.15, 0.22),
-                            metallic: 0.8,
-                            perceptual_roughness: 0.4,
+                            base_color: Color::srgb(0.08, 0.10, 0.14),
+                            metallic: 0.9,
+                            perceptual_roughness: 0.3,
                             ..default()
                         })),
-                        xf.with_translation(Vec3::new(x as f32, 0.02, z as f32)),
+                        xf.with_translation(Vec3::new(x as f32, 0.01, z as f32)),
                     ))
                     .id(),
             );
-            // Glowing cyan chevron arrow strip
-            entities.push(
-                commands
-                    .spawn((
-                        AuthoredDecor,
-                        Mesh3d(meshes.add(Cuboid::new(0.44, 0.06, 0.44))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x00e5ff),
-                            emissive: LinearRgba::from(c(0x00e5ff)) * 2.5,
-                            ..default()
-                        })),
-                        xf.with_translation(Vec3::new(x as f32, 0.04, z as f32)),
-                    ))
-                    .id(),
-            );
+            // 3 Forward-Pointing Chevron Arrows (> > >)
+            let chevron_color = c(0x00e5ff);
+            let chevron_emissive = LinearRgba::from(chevron_color);
+            let arrow_mesh = meshes.add(Cuboid::new(0.36, 0.04, 0.09));
+            for k in 0..3 {
+                let offset = -0.18 + (k as f32) * 0.18;
+                let chevron_tf = xf * Transform::from_xyz(0.0, 0.03, offset);
+                entities.push(
+                    commands
+                        .spawn((
+                            AuthoredDecor,
+                            ChevronArrow {
+                                index: k as u8,
+                                base_emissive: chevron_emissive,
+                            },
+                            Mesh3d(arrow_mesh.clone()),
+                            MeshMaterial3d(materials.add(StandardMaterial {
+                                base_color: chevron_color,
+                                emissive: chevron_emissive * 1.5,
+                                unlit: true,
+                                ..default()
+                            })),
+                            chevron_tf,
+                        ))
+                        .id(),
+                );
+            }
         }
         "slingshot" => {
             entities.push(
@@ -898,3 +910,25 @@ pub fn spawn_standing_horde(
             .id(),
     )
 }
+
+#[derive(Component)]
+pub struct ChevronArrow {
+    pub index: u8,
+    pub base_emissive: LinearRgba,
+}
+
+pub fn step_booster_chevrons(
+    time: Res<Time>,
+    q: Query<(&ChevronArrow, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let t = time.elapsed_secs();
+    for (chevron, mat_handle) in q.iter() {
+        let phase = ((t * 9.0 - (chevron.index as f32) * 1.5).sin() * 0.5 + 0.5).powf(2.0);
+        let intensity = 1.0 + phase * 3.5;
+        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+            mat.emissive = chevron.base_emissive * intensity;
+        }
+    }
+}
+

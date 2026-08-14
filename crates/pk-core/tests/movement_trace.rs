@@ -116,6 +116,7 @@ fn shaped_trace_seed7_replays_bit_exact() {
 fn the_walk_ramps_toward_its_target_rather_than_snapping() {
     let (grid, spawn) = demo_floor(7);
     let mut s = SimState::new(grid, spawn, 7);
+    s.plunger_armed = false;
     let east = FrameInput {
         move_x: 1.0,
         move_z: 0.0,
@@ -176,6 +177,7 @@ fn the_walk_ramps_toward_its_target_rather_than_snapping() {
 fn sprint_spools_only_while_moving() {
     let (grid, spawn) = demo_floor(7);
     let mut s = SimState::new(grid, spawn, 7);
+    s.plunger_armed = false;
 
     // Shift held, no stick: nothing spools.
     let still = FrameInput {
@@ -213,6 +215,7 @@ fn sprint_spools_only_while_moving() {
     let sprint_speed = s.cur_speed;
     let (grid2, spawn2) = demo_floor(7);
     let mut w = SimState::new(grid2, spawn2, 7);
+    w.plunger_armed = false;
     let walk = FrameInput {
         move_x: 1.0,
         move_z: 0.0,
@@ -237,6 +240,7 @@ fn sprint_spools_only_while_moving() {
 fn a_brief_stumble_does_not_erase_the_spool() {
     let (grid, spawn) = demo_floor(7);
     let mut s = SimState::new(grid, spawn, 7);
+    s.plunger_armed = false;
     let run = FrameInput {
         move_x: 1.0,
         move_z: 0.0,
@@ -288,6 +292,7 @@ fn sand_slows_the_walk_and_stone_does_not() {
             }
         }
         let mut s = SimState::new(grid, spawn, 7);
+        s.plunger_armed = false;
         let east = FrameInput {
             move_x: 1.0,
             move_z: 0.0,

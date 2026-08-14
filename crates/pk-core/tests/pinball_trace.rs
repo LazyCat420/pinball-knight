@@ -45,6 +45,7 @@ fn pinball_trace_replays_bit_exact() {
 
     let (grid, spawn) = demo_floor(fx.seed);
     let mut s = SimState::new(grid, spawn, fx.seed);
+    s.plunger_armed = false;
     s.player.mom_x = fx.launch.mom_x;
     s.player.mom_z = fx.launch.mom_z;
     s.player.mom_speed = fx.launch.mom_speed;
