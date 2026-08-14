@@ -16,7 +16,10 @@
 //! reads through `MarbleHooks::default()`, whose values are the legacy
 //! no-material fallbacks. When marble.ts ports, the hooks get a real source.
 //!
-//! PORTS: `entities/pinball-collide.ts`, `constants/pinball.ts`
+//! PORTS: `entities/pinball-collide.ts`, `constants/pinball.ts`, `shots.ts`
+
+pub mod shots;
+pub use shots::*;
 
 use crate::collide::move_circle;
 use crate::combo::{
