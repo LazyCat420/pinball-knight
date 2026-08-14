@@ -597,6 +597,7 @@ fn the_first_path_step_is_a_step_the_body_can_actually_take() {
         move_z: f64::from(dj),
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     let want = (info.start_tile.i + di, info.start_tile.j + dj);
     let mut arrived = None;
@@ -648,6 +649,7 @@ fn the_sims_grid_never_drifts_from_the_floors() {
         move_z: 1.0,
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     for _ in 0..600 {
         simulate(&mut sim, &grind);
@@ -665,6 +667,7 @@ fn the_sims_grid_never_drifts_from_the_floors() {
             move_z: f64::from(p.input[1]),
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..p.ticks {
             simulate(&mut sim, &input);
@@ -701,6 +704,7 @@ fn the_wall_probe_stops_the_body_without_freezing_it() {
         move_z: f64::from(p.input[1]),
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     for _ in 0..p.ticks {
         simulate(&mut sim, &input);

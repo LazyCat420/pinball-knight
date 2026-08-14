@@ -117,6 +117,9 @@ pub struct Player {
     pub squash_amp: f64,
     pub squash_nx: f64,
     pub squash_nz: f64,
+    // ── Combat & Inventory ──
+    pub slash: crate::player::MeleeSlash,
+    pub inventory: crate::player::PlayerInventory,
 }
 
 pub const ROLL_DURATION: f64 = 0.42;
@@ -131,6 +134,10 @@ pub const SQUASH_DEPTH: f64 = 0.30;
 pub const SQUASH_MIN_SPEED: f64 = 5.0;
 
 impl Player {
+    pub fn is_attacking(&self) -> bool {
+        self.slash.active
+    }
+
     pub fn is_ball(&self) -> bool {
         self.mom_speed > 4.2 * 1.15
             || self.overcharge >= 1.0
@@ -179,8 +186,12 @@ pub struct FrameInput {
     /// key and the sim applies the gate, so a held Shift while standing still
     /// spools nothing.
     pub sprint: bool,
-    /// Space pressed — dodge roll trigger (`InputHandle.dodgePressed()`).
+    /// Space / dodge key pressed.
     pub dodge: bool,
+    /// Melee attack key pressed.
+    pub attack: bool,
+    /// Weapon swap key pressed (Tab / 1 / 2).
+    pub swap_weapon: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -241,15 +252,23 @@ impl SimState {
         // Find opening corridor direction from spawn
         let (si, sj) = crate::grid::world_to_tile(&grid, spawn.0, spawn.1);
         let mut bx = 0.0;
-        let mut bz = 1.0;
-        for &(di, dj) in &[(0, 1), (0, -1), (1, 0), (-1, 0)] {
-            if crate::grid::is_walkable(&grid, si + di, sj + dj) {
-                bx = f64::from(di);
-                bz = f64::from(dj);
-                break;
+        let mut bz = -1.0;
+        let mut facing = Facing::N;
+        if !crate::grid::is_walkable(&grid, si, sj.saturating_sub(1)) {
+            if crate::grid::is_walkable(&grid, si, sj + 1) {
+                bx = 0.0;
+                bz = 1.0;
+                facing = Facing::S;
+            } else if crate::grid::is_walkable(&grid, si + 1, sj) {
+                bx = 1.0;
+                bz = 0.0;
+                facing = Facing::E;
+            } else if crate::grid::is_walkable(&grid, si.saturating_sub(1), sj) {
+                bx = -1.0;
+                bz = 0.0;
+                facing = Facing::W;
             }
         }
-        let facing = Facing::from_dir(bx, bz);
 
         Self {
             grid,
@@ -284,6 +303,8 @@ impl SimState {
                 squash_amp: 0.0,
                 squash_nx: 0.0,
                 squash_nz: 0.0,
+                slash: crate::player::MeleeSlash::default(),
+                inventory: crate::player::PlayerInventory::default(),
             },
             rng: Mulberry32::new(seed),
             tick: 0,
@@ -325,6 +346,39 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     // Tick squash spring recovery
     if s.player.squash_t > 0.0 {
         s.player.squash_t = 0.0_f64.max(s.player.squash_t - DT);
+    }
+
+    // Tick slash / attack recovery
+    if s.player.slash.active {
+        s.player.slash.timer -= DT;
+        if s.player.slash.timer <= 0.0 {
+            s.player.slash.active = false;
+            s.player.slash.timer = 0.0;
+        }
+    }
+
+    // Weapon swap input
+    if input.swap_weapon {
+        s.player.inventory.swap_active_slot();
+    }
+
+    // Melee attack trigger
+    if input.attack && !s.player.slash.active && !s.player.is_ball() && !s.player.is_rolling() {
+        let active_weapon = s.player.inventory.active_weapon();
+        let def = active_weapon.def();
+        s.player.slash.active = true;
+        s.player.slash.timer = 0.22 * def.heft;
+        s.player.slash.reach = def.range;
+        s.player.slash.base_damage = def.damage as f64;
+        let (fx, fz) = match s.player.facing {
+            Facing::S => (0.0, 1.0),
+            Facing::N => (0.0, -1.0),
+            Facing::E => (1.0, 0.0),
+            Facing::W => (-1.0, 0.0),
+        };
+        s.player.slash.dir_x = fx;
+        s.player.slash.dir_z = fz;
+        s.player.inventory.decrement_active_durability();
     }
 
     // Part cooldowns/timers tick first (the legacy parts renderer's job,
@@ -631,6 +685,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..600 {
             simulate(&mut s, &input);
@@ -649,6 +704,7 @@ mod tests {
             move_z: 0.0,
             sprint: true,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..600 {
             simulate(&mut f, &sprinting);
@@ -683,6 +739,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: true,
+            ..Default::default()
         };
         simulate(&mut s, &dodge_input);
         assert!(s.player.is_rolling());
@@ -714,6 +771,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         simulate(&mut s, &aim_left);
         assert!(s.plunger_aim < 0.0, "horizontal input steers the aim line");
@@ -724,6 +782,7 @@ mod tests {
             move_z: 0.0,
             sprint: false,
             dodge: true,
+            ..Default::default()
         };
         for _ in 0..30 {
             simulate(&mut s, &pull);

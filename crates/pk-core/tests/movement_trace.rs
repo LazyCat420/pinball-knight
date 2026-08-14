@@ -122,6 +122,7 @@ fn the_walk_ramps_toward_its_target_rather_than_snapping() {
         move_z: 0.0,
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
 
     // Tick 1: from a standstill the smoothed speed has had exactly one step of
@@ -185,6 +186,7 @@ fn sprint_spools_only_while_moving() {
         move_z: 0.0,
         sprint: true,
         dodge: false,
+        ..Default::default()
     };
     for _ in 0..60 {
         simulate(&mut s, &still);
@@ -200,6 +202,7 @@ fn sprint_spools_only_while_moving() {
         move_z: 0.0,
         sprint: true,
         dodge: false,
+        ..Default::default()
     };
     let ticks = (SPRINT_RAMP_TIME / DT).ceil() as usize;
     for _ in 0..ticks {
@@ -221,6 +224,7 @@ fn sprint_spools_only_while_moving() {
         move_z: 0.0,
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     for _ in 0..ticks {
         simulate(&mut w, &walk);
@@ -246,6 +250,7 @@ fn a_brief_stumble_does_not_erase_the_spool() {
         move_z: 0.0,
         sprint: true,
         dodge: false,
+        ..Default::default()
     };
     for _ in 0..60 {
         simulate(&mut s, &run);
@@ -298,6 +303,7 @@ fn sand_slows_the_walk_and_stone_does_not() {
             move_z: 0.0,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         for _ in 0..120 {
             simulate(&mut s, &east);

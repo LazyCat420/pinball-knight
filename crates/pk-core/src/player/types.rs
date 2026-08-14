@@ -104,6 +104,7 @@ pub struct PlayerCoreState {
     pub slash: MeleeSlash,
     pub dash: DashState,
     pub plunger: PlungerState,
+    pub inventory: super::inventory::PlayerInventory,
 }
 
 impl Default for PlayerCoreState {
@@ -124,6 +125,7 @@ impl Default for PlayerCoreState {
             slash: MeleeSlash::default(),
             dash: DashState::default(),
             plunger: PlungerState::default(),
+            inventory: super::inventory::PlayerInventory::default(),
         }
     }
 }

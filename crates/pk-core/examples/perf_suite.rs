@@ -178,12 +178,14 @@ fn main() {
         move_z: 0.0,
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     let walking = FrameInput {
         move_x: 1.0,
         move_z: 0.0,
         sprint: false,
         dodge: false,
+        ..Default::default()
     };
     {
         let mut s = SimState::new(grid.clone(), spawn, 1);

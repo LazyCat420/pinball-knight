@@ -46,6 +46,7 @@ mod plunger_render;
 mod post;
 mod real_floor;
 mod sfx;
+mod slash_render;
 mod tavern;
 mod tavern_art;
 mod units;
@@ -151,6 +152,8 @@ pub struct SheetClips {
     pub run: Vec<[f32; 4]>,
     /// The ball roll / tumble clip.
     pub roll: Vec<[f32; 4]>,
+    /// The melee attack slash clip.
+    pub attack: Vec<[f32; 4]>,
     pub aspect: f32, // cell w / h
 }
 
@@ -382,6 +385,7 @@ fn main() {
             step_ghost_afterimages,
             ball_anim::step_ball_sparks,
             combat_feedback::step_damage_numbers,
+            slash_render::step_slash_trails,
             update_dungeon_hud,
             follow_camera,
         )
@@ -797,6 +801,7 @@ fn decode_sheet(
     let walk = uv_cells("walk");
     let run = uv_cells("run");
     let roll = uv_cells("roll");
+    let attack = uv_cells("attack");
     let first = idle
         .first()
         .or_else(|| walk.first())
@@ -824,6 +829,7 @@ fn decode_sheet(
             } else {
                 roll
             },
+            attack: if attack.is_empty() { walk.clone() } else { attack },
             walk,
             aspect,
         },
@@ -1356,10 +1362,11 @@ fn gather_input(
         move_x: x,
         move_z: z,
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        dodge: keys.pressed(KeyCode::Space)
-            || keys.pressed(KeyCode::KeyJ)
-            || mouse.pressed(MouseButton::Right)
-            || mouse.pressed(MouseButton::Left),
+        dodge: keys.pressed(KeyCode::Space) || keys.pressed(KeyCode::KeyK),
+        attack: mouse.pressed(MouseButton::Left) || keys.pressed(KeyCode::KeyJ),
+        swap_weapon: keys.just_pressed(KeyCode::Tab)
+            || keys.just_pressed(KeyCode::Digit1)
+            || keys.just_pressed(KeyCode::Digit2),
     };
 }
 
@@ -1406,6 +1413,7 @@ fn sync_knight(
     mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
     mut ghost_timer: Local<f32>,
+    mut last_slash_active: Local<bool>,
 ) {
     let Ok((mut tf, mut mat)) = q.single_mut() else {
         return;
@@ -1422,6 +1430,27 @@ fn sync_knight(
     tf.scale.y = sqy;
 
     let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
+    let is_attacking = sim.0.player.is_attacking();
+
+    // Spawn slash trail on attack swing start
+    if is_attacking && !*last_slash_active {
+        let (fx, fz) = match sim.0.player.facing {
+            Facing::S => (0.0, 1.0),
+            Facing::N => (0.0, -1.0),
+            Facing::E => (1.0, 0.0),
+            Facing::W => (-1.0, 0.0),
+        };
+        let slash_color = Color::srgb_u8(240, 245, 255);
+        slash_render::spawn_slash_arc_trail(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            tf.translation,
+            Vec2::new(fx as f32, fz as f32),
+            slash_color,
+        );
+    }
+    *last_slash_active = is_attacking;
 
     // Billboard: face camera plane; tilt forward in 3D when rolling
     if let Ok(cam_tf) = cam.single() {
@@ -1441,7 +1470,9 @@ fn sync_knight(
     };
     mat.0 = clips.material.clone();
 
-    let (cells, fps) = if is_ball {
+    let (cells, fps) = if is_attacking {
+        (&clips.attack, 16)
+    } else if is_ball {
         let speed_fps = (14.0 + (sim.0.player.mom_speed * 1.5) as f64).min(32.0) as u64;
         if !clips.roll.is_empty() {
             (&clips.roll, speed_fps)
@@ -1646,6 +1677,18 @@ fn update_dungeon_hud(
         height: h,
     });
 
+    let active_w = p.inventory.active_weapon();
+    let def = active_w.def();
+    let hud_weapon = Some(HudWeaponInfo {
+        id: active_w.id.as_str().to_string(),
+        label: def.label.to_uppercase(),
+        durability: if active_w.id != pk_core::items::WeaponId::Fists {
+            Some(active_w.durability)
+        } else {
+            None
+        },
+    });
+
     let hud_view = HudView {
         hp: 6,
         max_hp: 6,
@@ -1660,11 +1703,7 @@ fn update_dungeon_hud(
         fps_timer: 0.0,
         combo,
         plunger_power,
-        weapon: Some(HudWeaponInfo {
-            id: "sword".to_string(),
-            label: "SWORD".to_string(),
-            durability: None,
-        }),
+        weapon: hud_weapon,
         skills: [
             Some(HudSkillSlot {
                 id: "flipper_charge".to_string(),

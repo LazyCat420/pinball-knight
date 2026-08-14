@@ -58,6 +58,7 @@ fn pinball_trace_replays_bit_exact() {
             move_z: iz,
             sprint: false,
             dodge: false,
+            ..Default::default()
         };
         // ⚠️ THE FIXTURE'S WALKING BRANCH IS A FLAT `PLAYER_SPEED`.
         //

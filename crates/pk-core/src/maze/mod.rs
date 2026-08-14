@@ -41,6 +41,7 @@ pub mod doorways;
 pub mod floor_rules;
 pub mod floor_spec;
 pub mod flow_orient;
+pub mod interactive;
 pub mod modifiers;
 pub mod prefabs;
 pub mod track_carve;
