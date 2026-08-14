@@ -95,6 +95,181 @@ impl LiveEnemy {
         }
     }
 
+    pub fn new_frog(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "frog".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.35,
+            hp: 45.0,
+            max_hp: 45.0,
+            speed: 2.2,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.6,
+            windup_duration: 0.25,
+            cooldown_duration: 0.8,
+            damage: 14,
+        }
+    }
+
+    pub fn new_goblin(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "goblin".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.28,
+            hp: 35.0,
+            max_hp: 35.0,
+            speed: 2.6,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.55,
+            windup_duration: 0.2,
+            cooldown_duration: 0.6,
+            damage: 10,
+        }
+    }
+
+    pub fn new_jester(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "jester".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.32,
+            hp: 60.0,
+            max_hp: 60.0,
+            speed: 2.1,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.7,
+            windup_duration: 0.3,
+            cooldown_duration: 0.9,
+            damage: 16,
+        }
+    }
+
+    pub fn new_reaper(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "reaper".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.45,
+            hp: 120.0,
+            max_hp: 120.0,
+            speed: 1.8,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 1.1,
+            windup_duration: 0.45,
+            cooldown_duration: 1.2,
+            damage: 28,
+        }
+    }
+
+    pub fn new_slime(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "slime".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.38,
+            hp: 50.0,
+            max_hp: 50.0,
+            speed: 1.2,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.6,
+            windup_duration: 0.35,
+            cooldown_duration: 0.7,
+            damage: 12,
+        }
+    }
+
+    pub fn new_spider(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "spider".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.32,
+            hp: 40.0,
+            max_hp: 40.0,
+            speed: 2.4,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.6,
+            windup_duration: 0.22,
+            cooldown_duration: 0.65,
+            damage: 13,
+        }
+    }
+
+    pub fn new_stiltneck(id: u32, x: f64, z: f64) -> Self {
+        Self {
+            id,
+            kind_str: "stiltneck".to_string(),
+            x,
+            z,
+            vx: 0.0,
+            vz: 0.0,
+            radius: 0.4,
+            hp: 75.0,
+            max_hp: 75.0,
+            speed: 1.4,
+            mode: EnemyMode::Chase,
+            windup_t: 0.0,
+            attack_cd: 0.0,
+            stagger_t: 0.0,
+            contact_range: 0.8,
+            windup_duration: 0.4,
+            cooldown_duration: 1.1,
+            damage: 20,
+        }
+    }
+
+    pub fn new_by_index(id: u32, index: usize, x: f64, z: f64) -> Self {
+        match index % 9 {
+            0 => Self::new_zombie(id, x, z),
+            1 => Self::new_brute(id, x, z),
+            2 => Self::new_frog(id, x, z),
+            3 => Self::new_goblin(id, x, z),
+            4 => Self::new_jester(id, x, z),
+            5 => Self::new_reaper(id, x, z),
+            6 => Self::new_slime(id, x, z),
+            7 => Self::new_spider(id, x, z),
+            _ => Self::new_stiltneck(id, x, z),
+        }
+    }
+
     pub fn update(
         &mut self,
         dt: f64,

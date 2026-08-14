@@ -277,59 +277,200 @@ fn spawn_part(
     p: &PinballPart,
 ) -> Vec<Entity> {
     let (x, z) = tile_center(g, p.i, p.j);
-    // (mesh, colour, y-centre) per kind.
-    let (mesh, colour, y): (Mesh, u32, f32) = match p.kind.as_str() {
-        "bumper" => (Cylinder::new(0.3, 0.34).into(), 0xe8556d, 0.17),
-        // The kicker family. `slingshot` is the oracle's name — NOT "sling",
-        // which is what the first draft of this match guessed and which
-        // `every_exported_part_kind_has_its_own_placeholder` caught by counting
-        // the kinds the exports actually carry.
-        "slingshot" => (Cuboid::new(0.62, 0.26, 0.22).into(), 0xe8556d, 0.13),
-        // The punch pair: a glove and a flipper bat, both of which SWING, so
-        // both are long and low and take their facing from `dir` below.
-        "glove" => (Cuboid::new(0.3, 0.3, 0.44).into(), 0xff8a65, 0.16),
-        "flipper" => (Cuboid::new(0.66, 0.14, 0.2).into(), 0xf3e6c8, 0.08),
-        "booster" | "boostcorner" | "boostcurve" => {
-            (Cuboid::new(0.5, 0.1, 0.5).into(), 0x4fc3f7, 0.05)
-        }
-        "spinpad" => (Cylinder::new(0.26, 0.08).into(), 0x9d7bea, 0.04),
-        "magstrip" => (Cuboid::new(0.5, 0.06, 0.5).into(), 0x7f8fa6, 0.03),
-        "deflector" => (Cuboid::new(0.5, 0.34, 0.14).into(), 0xf0a63c, 0.17),
-        "target" => (Cuboid::new(0.34, 0.36, 0.12).into(), 0xffd54f, 0.18),
-        "rollover" => (Cylinder::new(0.2, 0.05).into(), 0xffd54f, 0.025),
-        "lamp" => (Sphere::new(0.13).into(), 0xfff2a8, 0.13),
-        "ramp" | "jumppad" => (Cuboid::new(0.5, 0.16, 0.5).into(), 0x74c67a, 0.08),
-        "trapdoor" => (Cylinder::new(0.28, 0.04).into(), 0x6d5b4a, 0.02),
-        // The hazards read as holes and vents: sunk into the floor, not on it.
-        "pit" => (Cylinder::new(0.34, 0.04).into(), 0x14161c, 0.02),
-        "electric" => (Cylinder::new(0.3, 0.04).into(), 0x6fd0e8, 0.02),
-        "firevent" => (Cylinder::new(0.3, 0.04).into(), 0xff7043, 0.02),
-        "magnet" => (Cylinder::new(0.28, 0.06).into(), 0xb388ff, 0.03),
-        // An unknown kind draws as a magenta post rather than nothing at all:
-        // a part the exporter learns to emit before this match learns to draw
-        // it must be VISIBLE, or the floor silently loses content.
-        _ => (Cuboid::new(0.22, 0.4, 0.22).into(), 0xff00ff, 0.2),
-    };
-    let mut xf = Transform::from_xyz(x as f32, y, z as f32);
-    // Face the part along its own axis. `dir` is a unit vector and may be
-    // non-cardinal (a `boostcurve` carries (0.447, -0.894)) — `atan2` handles
-    // both, and rounding to a cardinal would point the throw somewhere the ball
-    // does not go.
+    let mut entities = Vec::new();
+    let mut xf = Transform::from_xyz(x as f32, 0.0, z as f32);
     if p.dir_i != 0.0 || p.dir_j != 0.0 {
         xf.rotation = Quat::from_rotation_y((p.dir_i as f32).atan2(p.dir_j as f32));
     }
-    vec![commands
-        .spawn((
-            AuthoredDecor,
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: c(colour),
-                perceptual_roughness: 0.6,
-                ..default()
-            })),
-            xf,
-        ))
-        .id()]
+
+    match p.kind.as_str() {
+        "bumper" => {
+            // Metallic chrome base ring
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cylinder::new(0.38, 0.08))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.75, 0.78, 0.82),
+                            metallic: 0.9,
+                            perceptual_roughness: 0.2,
+                            ..default()
+                        })),
+                        Transform::from_xyz(x as f32, 0.04, z as f32),
+                    ))
+                    .id(),
+            );
+            // Glowing neon mushroom cap
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cylinder::new(0.32, 0.22))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0xff3366),
+                            emissive: LinearRgba::from(c(0xff1744)) * 1.5,
+                            metallic: 0.4,
+                            perceptual_roughness: 0.3,
+                            ..default()
+                        })),
+                        Transform::from_xyz(x as f32, 0.18, z as f32),
+                    ))
+                    .id(),
+            );
+            // Top jewel cap
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Sphere::new(0.12))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: Color::srgb(1.0, 0.9, 0.4),
+                            emissive: LinearRgba::from(Color::srgb(1.0, 0.8, 0.0)) * 2.0,
+                            ..default()
+                        })),
+                        Transform::from_xyz(x as f32, 0.30, z as f32),
+                    ))
+                    .id(),
+            );
+        }
+        "booster" | "boostcorner" | "boostcurve" => {
+            // Runway plate
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cuboid::new(0.62, 0.04, 0.62))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.12, 0.15, 0.22),
+                            metallic: 0.8,
+                            perceptual_roughness: 0.4,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, 0.02, z as f32)),
+                    ))
+                    .id(),
+            );
+            // Glowing cyan chevron arrow strip
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cuboid::new(0.44, 0.06, 0.44))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0x00e5ff),
+                            emissive: LinearRgba::from(c(0x00e5ff)) * 2.5,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, 0.04, z as f32)),
+                    ))
+                    .id(),
+            );
+        }
+        "slingshot" => {
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cuboid::new(0.64, 0.28, 0.24))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0xe8556d),
+                            emissive: LinearRgba::from(c(0xe8556d)) * 0.8,
+                            metallic: 0.6,
+                            perceptual_roughness: 0.3,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, 0.14, z as f32)),
+                    ))
+                    .id(),
+            );
+        }
+        "spinpad" => {
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cylinder::new(0.32, 0.06))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0x9d7bea),
+                            emissive: LinearRgba::from(c(0x9d7bea)) * 1.8,
+                            metallic: 0.7,
+                            perceptual_roughness: 0.3,
+                            ..default()
+                        })),
+                        Transform::from_xyz(x as f32, 0.03, z as f32),
+                    ))
+                    .id(),
+            );
+        }
+        "deflector" => {
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cuboid::new(0.55, 0.36, 0.16))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0xf0a63c),
+                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.5,
+                            metallic: 0.5,
+                            perceptual_roughness: 0.4,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, 0.18, z as f32)),
+                    ))
+                    .id(),
+            );
+        }
+        "target" => {
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Cuboid::new(0.36, 0.38, 0.14))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0xffd54f),
+                            emissive: LinearRgba::from(c(0xffd54f)) * 1.2,
+                            metallic: 0.8,
+                            perceptual_roughness: 0.2,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, 0.19, z as f32)),
+                    ))
+                    .id(),
+            );
+        }
+        _ => {
+            let (mesh, colour, y): (Mesh, u32, f32) = match p.kind.as_str() {
+                "glove" => (Cuboid::new(0.3, 0.3, 0.44).into(), 0xff8a65, 0.16),
+                "flipper" => (Cuboid::new(0.66, 0.14, 0.2).into(), 0xf3e6c8, 0.08),
+                "magstrip" => (Cuboid::new(0.5, 0.06, 0.5).into(), 0x7f8fa6, 0.03),
+                "rollover" => (Cylinder::new(0.2, 0.05).into(), 0xffd54f, 0.025),
+                "lamp" => (Sphere::new(0.13).into(), 0xfff2a8, 0.13),
+                "ramp" | "jumppad" => (Cuboid::new(0.5, 0.16, 0.5).into(), 0x74c67a, 0.08),
+                "trapdoor" => (Cylinder::new(0.28, 0.04).into(), 0x6d5b4a, 0.02),
+                "pit" => (Cylinder::new(0.34, 0.04).into(), 0x14161c, 0.02),
+                "electric" => (Cylinder::new(0.3, 0.04).into(), 0x6fd0e8, 0.02),
+                "firevent" => (Cylinder::new(0.3, 0.04).into(), 0xff7043, 0.02),
+                "magnet" => (Cylinder::new(0.28, 0.06).into(), 0xb388ff, 0.03),
+                _ => (Cuboid::new(0.22, 0.4, 0.22).into(), 0xff00ff, 0.2),
+            };
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(mesh)),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(colour),
+                            perceptual_roughness: 0.6,
+                            ..default()
+                        })),
+                        xf.with_translation(Vec3::new(x as f32, y, z as f32)),
+                    ))
+                    .id(),
+            );
+        }
+    }
+    entities
 }
 
 fn spawn_prop(
@@ -618,7 +759,60 @@ pub struct MonsterArt {
 /// not. What it must never do is read as P4 — hence the name of this component
 /// and this paragraph.
 #[derive(Component)]
+#[allow(dead_code)]
 pub struct StandingMonster;
+
+#[derive(Component)]
+pub struct LiveMonster {
+    pub enemy: pk_core::zombie_ai::LiveEnemy,
+    pub kind_index: usize,
+}
+
+/// Spawns live dynamic monsters across all authored spawn points with flow-field AI.
+pub fn spawn_live_horde(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    art: &MonsterArt,
+    floor: &AuthoredFloor,
+) -> Vec<Entity> {
+    let mut spawned = Vec::new();
+    let rot = billboard(0.0);
+    let quad_h = 1.15f32;
+
+    for (n, s) in floor.plan.spawns.iter().enumerate() {
+        let (cx, cz) = tile_center(&floor.grid, s.i, s.j);
+        let kind_index = n % 9;
+        let enemy = pk_core::zombie_ai::LiveEnemy::new_by_index((n + 1) as u32, kind_index, cx, cz);
+
+        let clips = match kind_index {
+            1 => art.brute.as_ref().unwrap_or(&art.zombie),
+            2 => art.frog.as_ref().unwrap_or(&art.zombie),
+            3 => art.goblin.as_ref().unwrap_or(&art.zombie),
+            4 => art.jester.as_ref().unwrap_or(&art.zombie),
+            5 => art.reaper.as_ref().unwrap_or(&art.zombie),
+            6 => art.slime.as_ref().unwrap_or(&art.zombie),
+            7 => art.spider.as_ref().unwrap_or(&art.zombie),
+            8 => art.stiltneck.as_ref().unwrap_or(&art.zombie),
+            _ => &art.zombie,
+        };
+
+        let quad_w = quad_h * clips.aspect;
+        let mesh = Mesh::from(bevy::math::primitives::Rectangle::new(quad_w, quad_h));
+
+        let ent = commands
+            .spawn((
+                AuthoredDecor,
+                LiveMonster { enemy, kind_index },
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(clips.material.clone()),
+                Transform::from_translation(Vec3::new(cx as f32, quad_h * 0.5, cz as f32))
+                    .with_rotation(rot),
+            ))
+            .id();
+        spawned.push(ent);
+    }
+    spawned
+}
 
 /// Every spawn tile's zombie, as ONE mesh.
 ///
@@ -632,6 +826,7 @@ pub struct StandingMonster;
 /// per-instance UV offset, and both are P4's problem to solve properly with the
 /// animator; a hand-rolled version here would be a second animation system to
 /// delete later.
+#[allow(dead_code)]
 pub fn spawn_standing_horde(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,

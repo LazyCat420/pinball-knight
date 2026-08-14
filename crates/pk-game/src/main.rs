@@ -143,6 +143,8 @@ pub struct SheetClips {
     pub walk: Vec<[f32; 4]>,
     /// The sprint clip — the intro's ball frames (`E:ball ?? E:run`).
     pub run: Vec<[f32; 4]>,
+    /// The ball roll / tumble clip.
+    pub roll: Vec<[f32; 4]>,
     pub aspect: f32, // cell w / h
 }
 
@@ -364,7 +366,7 @@ fn main() {
     )
     .add_systems(
         Update,
-        (gather_input, sync_knight, follow_camera)
+        (gather_input, sync_knight, step_live_monsters, follow_camera)
             .chain()
             .run_if(in_state(AppState::Dungeon))
             .run_if(resource_exists::<Sim>),
@@ -776,6 +778,7 @@ fn decode_sheet(
     let idle = uv_cells("idle");
     let walk = uv_cells("walk");
     let run = uv_cells("run");
+    let roll = uv_cells("roll");
     let first = idle
         .first()
         .or_else(|| walk.first())
@@ -793,7 +796,16 @@ fn decode_sheet(
         SheetClips {
             material,
             idle,
-            run: if run.is_empty() { walk.clone() } else { run },
+            run: if run.is_empty() { walk.clone() } else { run.clone() },
+            roll: if roll.is_empty() {
+                if !run.is_empty() {
+                    run
+                } else {
+                    walk.clone()
+                }
+            } else {
+                roll
+            },
             walk,
             aspect,
         },
@@ -1127,10 +1139,9 @@ fn setup_dungeon(
             commands.entity(e).insert(DungeonScene);
         }
         commands.insert_resource(anchors);
-        // The floor's zombies, WHERE the oracle put them — standing, not
-        // living. See `StandingMonster`.
-        if let Some(e) =
-            authored_render::spawn_standing_horde(&mut commands, &mut meshes, &monster_art, f)
+        // The floor's active live monsters with flow-field AI and directional rigs.
+        for e in
+            authored_render::spawn_live_horde(&mut commands, &mut meshes, &monster_art, f)
         {
             commands.entity(e).insert(DungeonScene);
         }
@@ -1365,16 +1376,27 @@ fn sync_knight(
     };
     mat.0 = clips.material.clone();
 
-    // 8 fps walk, 4 fps idle — slice timing; real clip timing ports in M2.
-    let cells = if sim.0.player.moving {
-        &clips.walk
+    let is_ball = sim.0.player.mom_speed > 4.2 * 1.15
+        || sim.0.player.sprint_charge > 0.65
+        || sim.0.player.spring_t > 0.0
+        || sim.0.player.turbo_t > 0.0;
+
+    let (cells, fps) = if is_ball {
+        if !clips.roll.is_empty() {
+            (&clips.roll, 16)
+        } else if !clips.run.is_empty() {
+            (&clips.run, 14)
+        } else {
+            (&clips.walk, 12)
+        }
+    } else if sim.0.player.moving {
+        (&clips.walk, 8)
     } else {
-        &clips.idle
+        (&clips.idle, 4)
     };
     if cells.is_empty() {
         return;
     }
-    let fps = if sim.0.player.moving { 8 } else { 4 };
     let frame = (sim.0.tick * fps / 60) as usize % cells.len();
     let [u, v, uw, vh] = cells[frame];
     if let Some(m) = materials.get_mut(&clips.material) {
@@ -1382,6 +1404,92 @@ fn sync_knight(
             matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
             translation: Vec2::new(u, v),
         };
+    }
+}
+
+fn step_live_monsters(
+    time: Res<Time>,
+    sim: Res<Sim>,
+    mut monster_q: Query<(
+        &mut Transform,
+        &mut authored_render::LiveMonster,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    monster_art: Res<authored_render::MonsterArt>,
+    cam: Query<&Transform, (With<DungeonCamera>, Without<authored_render::LiveMonster>)>,
+) {
+    let dt = (time.delta_secs_f64()).min(0.05);
+    if dt <= 0.0 {
+        return;
+    }
+    let px = sim.0.player.x;
+    let pz = sim.0.player.z;
+    let (pi, pj) = pk_core::grid::world_to_tile(&sim.0.grid, px, pz);
+    let flow_dist = pk_core::flow_field::bfs_distances(&sim.0.grid, pi, pj);
+
+    let mut live_enemies: Vec<pk_core::zombie_ai::LiveEnemy> = monster_q
+        .iter()
+        .map(|(_, m, _)| m.enemy.clone())
+        .collect();
+
+    for enemy in live_enemies.iter_mut() {
+        let dx = px - enemy.x;
+        let dz = pz - enemy.z;
+        let dist = (dx * dx + dz * dz).sqrt();
+        if dist <= 14.0 {
+            enemy.update(dt, px, pz, &flow_dist, &sim.0.grid);
+        }
+    }
+
+    pk_core::zombie_ai::apply_enemy_separation(&mut live_enemies, dt);
+
+    let Ok(cam_tf) = cam.single() else {
+        return;
+    };
+
+    for (i, (mut tf, mut m, mat_handle)) in monster_q.iter_mut().enumerate() {
+        if i < live_enemies.len() {
+            m.enemy = live_enemies[i].clone();
+            tf.translation.x = m.enemy.x as f32;
+            tf.translation.z = m.enemy.z as f32;
+            tf.rotation = cam_tf.rotation;
+
+            let clips = match m.kind_index {
+                1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
+                2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
+                3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
+                4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
+                5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
+                6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
+                7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
+                8 => monster_art.stiltneck.as_ref().unwrap_or(&monster_art.zombie),
+                _ => &monster_art.zombie,
+            };
+
+            let is_moving = m.enemy.vx.abs() > 0.05 || m.enemy.vz.abs() > 0.05;
+            let cells = if is_moving {
+                if !clips.walk.is_empty() {
+                    &clips.walk
+                } else {
+                    &clips.idle
+                }
+            } else {
+                &clips.idle
+            };
+
+            if !cells.is_empty() {
+                let fps = if is_moving { 8 } else { 4 };
+                let frame = ((sim.0.tick + i as u64 * 7) * fps / 60) as usize % cells.len();
+                let [u, v, uw, vh] = cells[frame];
+                if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                    mat.uv_transform = Affine2 {
+                        matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
+                        translation: Vec2::new(u, v),
+                    };
+                }
+            }
+        }
     }
 }
 
@@ -1398,3 +1506,4 @@ fn follow_camera(
     tf.translation = target + camera_offset();
     tf.look_at(target, Vec3::Y);
 }
+
