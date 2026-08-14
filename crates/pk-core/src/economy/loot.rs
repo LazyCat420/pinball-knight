@@ -2,7 +2,7 @@
 //!
 //! PORTS: `economy/loot.ts`
 
-use crate::items::{WeaponDef, WeaponId};
+use crate::items::WeaponId;
 use crate::reagents::ReagentId;
 use crate::rng::Mulberry32;
 
