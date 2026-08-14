@@ -366,7 +366,7 @@ fn main() {
     )
     .add_systems(
         Update,
-        (gather_input, sync_knight, step_live_monsters, follow_camera)
+        (gather_input, sync_knight, step_live_monsters, step_ghost_afterimages, follow_camera)
             .chain()
             .run_if(in_state(AppState::Dungeon))
             .run_if(resource_exists::<Sim>),
@@ -1330,11 +1330,8 @@ fn gather_input(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<Intent>) {
     intent.0 = FrameInput {
         move_x: x,
         move_z: z,
-        // Both Shifts, matching `tavern.rs:1621` — the hub already bound the
-        // sprint key and the dungeon did not, so the same key meant two things
-        // in two scenes. The sim applies the moving/attacking gate; the shell
-        // only reports the key.
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        dodge: keys.just_pressed(KeyCode::Space),
     };
 }
 
@@ -1344,14 +1341,43 @@ fn step_sim(mut sim: ResMut<Sim>, intent: Res<Intent>, mut rp: ResMut<RenderPos>
     rp.curr = (sim.0.player.x, sim.0.player.z);
 }
 
+#[derive(Component)]
+pub struct GhostAfterimage {
+    pub lifetime: f32,
+    pub max_lifetime: f32,
+}
+
+fn step_ghost_afterimages(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut q: Query<(Entity, &mut GhostAfterimage, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut ghost, mat_handle) in q.iter_mut() {
+        ghost.lifetime -= dt;
+        if ghost.lifetime <= 0.0 {
+            commands.entity(entity).despawn();
+        } else {
+            let alpha = (ghost.lifetime / ghost.max_lifetime) * 0.45;
+            if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                mat.base_color.set_alpha(alpha);
+            }
+        }
+    }
+}
+
 fn sync_knight(
+    mut commands: Commands,
     time: Res<Time<Fixed>>,
     sim: Res<Sim>,
     art: Res<KnightArt>,
     rp: Res<RenderPos>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
+    mut ghost_timer: Local<f32>,
 ) {
     let Ok((mut tf, mut mat)) = q.single_mut() else {
         return;
@@ -1362,12 +1388,23 @@ fn sync_knight(
     tf.translation.x = x as f32;
     tf.translation.z = z as f32;
 
-    // Billboard: face the camera plane; mirror for the never-authored W.
-    if let Ok(cam_tf) = cam.single() {
-        tf.rotation = cam_tf.rotation;
-    }
+    let (sqx, sqy) = sim.0.player.squash_scale();
     let mirror = sim.0.player.facing == Facing::W;
-    tf.scale.x = if mirror { -1.0 } else { 1.0 };
+    tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx;
+    tf.scale.y = sqy;
+
+    let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
+
+    // Billboard: face camera plane; tilt forward in 3D when rolling
+    if let Ok(cam_tf) = cam.single() {
+        if is_ball {
+            let speed_ratio = ((sim.0.player.mom_speed + if sim.0.player.is_rolling() { 5.0 } else { 0.0 }) / 12.0).min(1.0) as f32;
+            let pitch = 0.35 * speed_ratio;
+            tf.rotation = cam_tf.rotation * Quat::from_rotation_x(-pitch);
+        } else {
+            tf.rotation = cam_tf.rotation;
+        }
+    }
 
     let clips = match sim.0.player.facing {
         Facing::S => &art.s,
@@ -1376,18 +1413,14 @@ fn sync_knight(
     };
     mat.0 = clips.material.clone();
 
-    let is_ball = sim.0.player.mom_speed > 4.2 * 1.15
-        || sim.0.player.sprint_charge > 0.65
-        || sim.0.player.spring_t > 0.0
-        || sim.0.player.turbo_t > 0.0;
-
     let (cells, fps) = if is_ball {
+        let speed_fps = (14.0 + (sim.0.player.mom_speed * 1.5) as f64).min(32.0) as u64;
         if !clips.roll.is_empty() {
-            (&clips.roll, 16)
+            (&clips.roll, speed_fps)
         } else if !clips.run.is_empty() {
-            (&clips.run, 14)
+            (&clips.run, speed_fps)
         } else {
-            (&clips.walk, 12)
+            (&clips.walk, speed_fps)
         }
     } else if sim.0.player.moving {
         (&clips.walk, 8)
@@ -1404,6 +1437,37 @@ fn sync_knight(
             matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
             translation: Vec2::new(u, v),
         };
+    }
+
+    // ── Speed Aura Ghost Trails ──
+    if is_ball || sim.0.player.sprint_charge > 0.4 {
+        *ghost_timer += time.delta_secs();
+        if *ghost_timer >= 0.055 {
+            *ghost_timer = 0.0;
+            let aura_color = if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
+                Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
+            } else {
+                Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
+            };
+            let quad_h = 1.15f32;
+            let quad_w = quad_h * art.s.aspect;
+            commands.spawn((
+                DungeonScene,
+                GhostAfterimage {
+                    lifetime: 0.22,
+                    max_lifetime: 0.22,
+                },
+                Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: aura_color,
+                    emissive: LinearRgba::from(aura_color) * 1.8,
+                    unlit: true,
+                    alpha_mode: AlphaMode::Blend,
+                    ..default()
+                })),
+                Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
+            ));
+        }
     }
 }
 

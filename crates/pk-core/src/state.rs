@@ -87,6 +87,58 @@ pub struct Player {
     pub throw_dir_z: f64,
     pub throw_speed: f64,
     pub rail: crate::rail::RailState,
+    // ── Dodge Roll & Squash State ──
+    pub roll_t: f64,
+    pub roll_dir_x: f64,
+    pub roll_dir_z: f64,
+    pub squash_t: f64,
+    pub squash_amp: f64,
+    pub squash_nx: f64,
+    pub squash_nz: f64,
+}
+
+pub const ROLL_DURATION: f64 = 0.42;
+pub const ROLL_IFRAMES: f64 = 0.22;
+pub const ROLL_RECOVERY: f64 = 0.10;
+pub const ROLL_MIN_SPEED: f64 = 2.5;
+pub const ROLL_DISTANCE: f64 = 1.6;
+pub const ROLL_V0: f64 = (2.0 * ROLL_DISTANCE) / ROLL_DURATION;
+
+pub const SQUASH_RECOVER: f64 = 0.18;
+pub const SQUASH_DEPTH: f64 = 0.30;
+pub const SQUASH_MIN_SPEED: f64 = 5.0;
+
+impl Player {
+    pub fn is_ball(&self) -> bool {
+        self.mom_speed > 4.2 * 1.15
+            || self.overcharge >= 1.0
+            || self.spring_t > 0.0
+            || self.turbo_t > 0.0
+    }
+
+    pub fn is_rolling(&self) -> bool {
+        self.roll_t >= 0.0
+    }
+
+    pub fn note_squash(&mut self, nx: f64, nz: f64, speed: f64) {
+        if speed < SQUASH_MIN_SPEED {
+            return;
+        }
+        let amp = (speed / (SQUASH_MIN_SPEED * 2.0)).min(1.0);
+        self.squash_amp = amp;
+        self.squash_t = SQUASH_RECOVER;
+        self.squash_nx = nx;
+        self.squash_nz = nz;
+    }
+
+    pub fn squash_scale(&self) -> (f32, f32) {
+        if self.squash_t <= 0.0 {
+            return (1.0, 1.0);
+        }
+        let t = (self.squash_t / SQUASH_RECOVER).clamp(0.0, 1.0);
+        let d = (SQUASH_DEPTH * self.squash_amp * (t * std::f64::consts::FRAC_PI_2).sin()) as f32;
+        (1.0 - d * 0.7, 1.0 + d * 0.5)
+    }
 }
 
 /// Per-tick input intent, already normalized by the shell.
@@ -99,6 +151,8 @@ pub struct FrameInput {
     /// key and the sim applies the gate, so a held Shift while standing still
     /// spools nothing.
     pub sprint: bool,
+    /// Space pressed — dodge roll trigger (`InputHandle.dodgePressed()`).
+    pub dodge: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +219,13 @@ impl SimState {
                 throw_dir_z: 0.0,
                 throw_speed: 0.0,
                 rail: crate::rail::fresh_rail(),
+                roll_t: -1.0,
+                roll_dir_x: 0.0,
+                roll_dir_z: 0.0,
+                squash_t: 0.0,
+                squash_amp: 0.0,
+                squash_nx: 0.0,
+                squash_nz: 0.0,
             },
             rng: Mulberry32::new(seed),
             tick: 0,
@@ -195,6 +256,11 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     s.tick += 1;
     s.elapsed += DT;
 
+    // Tick squash spring recovery
+    if s.player.squash_t > 0.0 {
+        s.player.squash_t = 0.0_f64.max(s.player.squash_t - DT);
+    }
+
     // Part cooldowns/timers tick first (the legacy parts renderer's job,
     // owned by the sim here — game state must not depend on being drawn).
     crate::pinball::tick_parts(s, DT);
@@ -202,6 +268,57 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     // The momentum ride owns the player while it lasts.
     if crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z)) {
         s.player.moving = s.player.mom_speed > 0.0;
+        return;
+    }
+
+    let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
+
+    // ── Dodge Roll (Space while moving) ──
+    if input.dodge && s.player.roll_t < 0.0 && s.cur_speed >= ROLL_MIN_SPEED {
+        let (rx, rz) = if len > 1e-4 {
+            (input.move_x / len, input.move_z / len)
+        } else {
+            match s.player.facing {
+                Facing::S => (0.0, 1.0),
+                Facing::N => (0.0, -1.0),
+                Facing::E => (1.0, 0.0),
+                Facing::W => (-1.0, 0.0),
+            }
+        };
+        s.player.roll_dir_x = rx;
+        s.player.roll_dir_z = rz;
+        s.player.roll_t = 0.0;
+        s.player.iframes = s.player.iframes.max(ROLL_IFRAMES);
+    }
+
+    // Advance active dodge roll
+    if s.player.roll_t >= 0.0 {
+        s.player.roll_t += DT;
+        if s.player.roll_t <= ROLL_DURATION {
+            let tau = s.player.roll_t / ROLL_DURATION;
+            let roll_speed = ROLL_V0 * (1.0 - tau);
+            let res = move_circle(
+                &s.grid,
+                s.player.x,
+                s.player.z,
+                PLAYER_R,
+                s.player.roll_dir_x * roll_speed * DT,
+                s.player.roll_dir_z * roll_speed * DT,
+            );
+            s.player.x = res.x;
+            s.player.z = res.z;
+            if let Some((nx, nz)) = res.hit_n {
+                s.player.note_squash(nx, nz, roll_speed);
+            }
+            if s.player.roll_t < ROLL_IFRAMES {
+                s.player.iframes = s.player.iframes.max(ROLL_IFRAMES - s.player.roll_t);
+            }
+        }
+        if s.player.roll_t >= ROLL_DURATION + ROLL_RECOVERY {
+            s.player.roll_t = -1.0;
+        }
+        let cur = s.cur_speed;
+        crate::pinball::touch_pinball_parts(s, true, cur, (s.player.roll_dir_x, s.player.roll_dir_z));
         return;
     }
 
@@ -414,6 +531,7 @@ mod tests {
             move_x: 1.0,
             move_z: 0.0,
             sprint: false,
+            dodge: false,
         };
         for _ in 0..600 {
             simulate(&mut s, &input);
@@ -430,6 +548,7 @@ mod tests {
             move_x: 1.0,
             move_z: 0.0,
             sprint: true,
+            dodge: false,
         };
         for _ in 0..600 {
             simulate(&mut f, &sprinting);
@@ -449,5 +568,36 @@ mod tests {
             &s.grid, s.player.x, s.player.z, PLAYER_R
         ));
         assert_eq!(s.player.facing, Facing::E);
+    }
+
+    #[test]
+    fn dodge_roll_lifecycle_and_squash() {
+        let (grid, spawn) = demo_floor(7);
+        let mut s = SimState::new(grid, spawn, 7);
+        s.cur_speed = 3.5; // above ROLL_MIN_SPEED (2.5)
+
+        // Trigger dodge roll
+        let dodge_input = FrameInput {
+            move_x: 1.0,
+            move_z: 0.0,
+            sprint: false,
+            dodge: true,
+        };
+        simulate(&mut s, &dodge_input);
+        assert!(s.player.is_rolling());
+        assert!(s.player.iframes > 0.0);
+
+        // Step roll body
+        let idle_input = FrameInput::default();
+        for _ in 0..15 {
+            simulate(&mut s, &idle_input);
+        }
+        assert!(s.player.is_rolling());
+
+        // Test squash deformation
+        s.player.note_squash(1.0, 0.0, 8.0);
+        let (sqx, sqy) = s.player.squash_scale();
+        assert!(sqx < 1.0, "squash compresses along normal");
+        assert!(sqy > 1.0, "squash expands perpendicular");
     }
 }
