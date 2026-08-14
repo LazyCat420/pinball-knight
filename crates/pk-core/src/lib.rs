@@ -49,6 +49,7 @@ pub mod combo;
 pub mod economy;
 pub mod enemies;
 pub mod enemy_rules;
+pub mod entities;
 pub mod flow_field;
 pub mod gambler;
 pub mod grid;
