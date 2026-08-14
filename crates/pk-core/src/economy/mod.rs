@@ -20,8 +20,15 @@
 
 pub mod alchemist;
 pub mod armory;
+pub mod coins;
 pub mod dealer;
 pub mod forge;
+pub mod loot;
+pub mod pickups;
+
+pub use coins::*;
+pub use loot::*;
+pub use pickups::*;
 
 /// A purchase's answer — the oracle's `ActionResult`, which is a message to
 /// flash or `null` for "nothing happened".

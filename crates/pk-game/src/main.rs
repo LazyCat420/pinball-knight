@@ -31,6 +31,7 @@
 mod authored_floor;
 mod authored_render;
 mod ball_anim;
+mod coins_render;
 mod combat_feedback;
 mod dungeon_light;
 mod dungeon_render;
@@ -346,6 +347,7 @@ fn main() {
     .insert_resource(Time::<Fixed>::from_hz(60.0))
     .init_resource::<Intent>()
     .init_resource::<combat_feedback::HitstopManager>()
+    .init_resource::<coins_render::DungeonCoinPool>()
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
@@ -386,6 +388,7 @@ fn main() {
             ball_anim::step_ball_sparks,
             combat_feedback::step_damage_numbers,
             slash_render::step_slash_trails,
+            coins_render::step_dungeon_coins,
             update_dungeon_hud,
             follow_camera,
         )

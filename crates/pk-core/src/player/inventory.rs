@@ -36,6 +36,7 @@ impl WeaponInstance {
 pub struct PlayerInventory {
     pub slots: [Option<WeaponInstance>; 2],
     pub active_slot: usize,
+    pub card_stash: Vec<String>,
 }
 
 impl Default for PlayerInventory {
@@ -43,6 +44,7 @@ impl Default for PlayerInventory {
         Self {
             slots: [Some(WeaponInstance::new(WeaponId::Sword)), None],
             active_slot: 0,
+            card_stash: Vec::new(),
         }
     }
 }
@@ -86,6 +88,34 @@ impl PlayerInventory {
         let old = self.slots[self.active_slot].take();
         self.slots[self.active_slot] = Some(new_weapon);
         old
+    }
+
+    /// Attempts to socket a card into the active weapon (or inactive weapon if active is full).
+    /// If both weapons are full, saves the card into `card_stash`.
+    pub fn socket_or_stash_card(&mut self, card_id: &str) -> bool {
+        // Try active slot first, then off-hand
+        let order = [self.active_slot, (self.active_slot + 1) % 2];
+        for slot in order {
+            if let Some(w) = &mut self.slots[slot] {
+                for sock in &mut w.sockets {
+                    if sock.is_none() {
+                        *sock = Some(card_id.to_string());
+                        return true;
+                    }
+                }
+            }
+        }
+        // Stash for Tavern
+        self.card_stash.push(card_id.to_string());
+        false
+    }
+
+    /// Computes effective active weapon damage including card bonuses.
+    pub fn active_damage(&self) -> i32 {
+        let active = self.active_weapon();
+        let base = active.def().damage;
+        let card_bonus = active.sockets.iter().filter(|s| s.is_some()).count() as i32;
+        base + card_bonus
     }
 
     /// Decrements durability on the active weapon after a swing.
