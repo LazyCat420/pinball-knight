@@ -1,0 +1,52 @@
+//! Assembly placer — footprint clearance checking and spatial stamping onto the maze grid.
+//!
+//! PORTS: `maze/assembly-place.ts`
+
+use super::assembly::Assembly;
+use super::flow_loops::FlowPart;
+use crate::grid::{set_tile, Grid, T_FLOOR};
+
+/// Checks if an assembly footprint fits cleanly on the grid without clipping outer borders.
+pub fn can_place_assembly(g: &Grid, a: &Assembly, ox: i32, oy: i32) -> bool {
+    if ox < 1 || oy < 1 || ox + a.w >= g.w - 1 || oy + a.h >= g.h - 1 {
+        return false;
+    }
+
+    for &(fi, fj) in &a.floor {
+        let x = ox + fi;
+        let y = oy + fj;
+        if x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1 {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Carves the floor footprint for an assembly and returns placed FlowParts.
+pub fn stamp_assembly(g: &mut Grid, a: &Assembly, ox: i32, oy: i32) -> Vec<FlowPart> {
+    // 1. Carve walkable floor footprint
+    for &(fi, fj) in &a.floor {
+        set_tile(g, ox + fi, oy + fj, T_FLOOR);
+    }
+
+    // 2. Instantiate and position all constituent parts
+    let mut placed = Vec::with_capacity(a.parts.len());
+    for p in &a.parts {
+        let px = ox + p.ci;
+        let py = oy + p.cj;
+        let dir_vec = if let Some(d) = p.dir {
+            (d.di as f64, d.dj as f64)
+        } else {
+            (0.0, 0.0)
+        };
+
+        placed.push(FlowPart {
+            kind: p.kind.clone(),
+            pos: (px, py),
+            dir: dir_vec,
+        });
+    }
+
+    placed
+}
