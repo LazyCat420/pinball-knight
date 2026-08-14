@@ -60,6 +60,9 @@ use floor_loading::{FloorLoadingPlugin, PreparedFloor};
 use overworld::CpuSheet;
 use pk_assets::published::SheetManifest;
 use pk_core::state::{simulate, Facing, FrameInput, SimState};
+use pk_gui::screens::hud::{
+    HudBeltSlot, HudMinimapView, HudSkillSlot, HudView, HudWeaponInfo, MinimapTile,
+};
 // The loading probe is read by `publish_stats`, which only exists on the web.
 use authored_floor::AuthoredFloor;
 #[cfg(target_arch = "wasm32")]
@@ -374,6 +377,7 @@ fn main() {
             authored_render::step_booster_chevrons,
             step_live_monsters,
             step_ghost_afterimages,
+            update_dungeon_hud,
             follow_camera,
         )
             .chain()
@@ -1222,7 +1226,10 @@ fn teardown_dungeon(
     mut commands: Commands,
     q: Query<Entity, With<DungeonScene>>,
     mut ambient: ResMut<AmbientLight>,
+    mut gui: gui::Gui,
 ) {
+    gui.views.hud = None;
+    gui.layer.close(gui::ScreenId::Hud);
     // The ambient is a global RESOURCE, not a scene entity — see
     // `dungeon_light::reset_ambient`.
     dungeon_light::reset_ambient(&mut ambient);
@@ -1585,5 +1592,122 @@ fn follow_camera(
     let target = Vec3::new(x, 0.0, z);
     tf.translation = target + camera_offset();
     tf.look_at(target, Vec3::Y);
+}
+
+fn update_dungeon_hud(
+    sim: Option<Res<Sim>>,
+    real: Option<Res<ActiveFloor>>,
+    authored: Option<Res<AuthoredFloor>>,
+    mut gui: gui::Gui,
+) {
+    let Some(sim) = sim else {
+        gui.views.hud = None;
+        return;
+    };
+
+    if !gui.layer.stack.is_open(gui::ScreenId::Hud) {
+        gui.layer.open(gui::ScreenId::Hud);
+    }
+
+    let p = &sim.0.player;
+    let combo = p.bounce_combo.round() as u32;
+    let plunger_power = if sim.0.plunger_charging || sim.0.plunger_armed {
+        Some(sim.0.plunger_power)
+    } else {
+        None
+    };
+
+    let level = if let Some(a) = authored.as_ref() {
+        a.level as u32
+    } else if let Some(r) = real.as_ref() {
+        r.spec.level as u32
+    } else {
+        1
+    };
+
+    let g = &sim.0.grid;
+    let w = g.w.max(0) as usize;
+    let h = g.h.max(0) as usize;
+    let mut tiles = Vec::with_capacity(w * h);
+    for &t in &g.t {
+        let mt = match t {
+            pk_core::grid::T_WALL => MinimapTile::Wall,
+            pk_core::grid::T_FLOOR => MinimapTile::Floor,
+            pk_core::grid::T_STAIRS => MinimapTile::Stairs,
+            pk_core::grid::T_CRACKED => MinimapTile::Cracked,
+            _ => MinimapTile::Void,
+        };
+        tiles.push(mt);
+    }
+    let px = p.x.floor() as i32;
+    let py = p.z.floor() as i32;
+    let minimap = Some(HudMinimapView {
+        player_tile_x: px,
+        player_tile_y: py,
+        stairs_tile: None,
+        tiles,
+        width: w,
+        height: h,
+    });
+
+    let hud_view = HudView {
+        hp: 6,
+        max_hp: 6,
+        mana: 100,
+        max_mana: 100,
+        level,
+        kills: sim.0.jackpots as u32,
+        ult_charge: p.sprint_charge.clamp(0.0, 1.0),
+        rampage_ready: p.sprint_charge >= 0.99,
+        rampage_active: false,
+        fps_streak: 0,
+        fps_timer: 0.0,
+        combo,
+        plunger_power,
+        weapon: Some(HudWeaponInfo {
+            id: "sword".to_string(),
+            label: "SWORD".to_string(),
+            durability: None,
+        }),
+        skills: [
+            Some(HudSkillSlot {
+                id: "flipper_charge".to_string(),
+                name: "FLIPPER".to_string(),
+                cost: 25,
+                rank: 1,
+                cooldown_max: 5.0,
+                cooldown_left: 0.0,
+                can_cast: true,
+                affordable: true,
+            }),
+            Some(HudSkillSlot {
+                id: "time_crawl".to_string(),
+                name: "TIME".to_string(),
+                cost: 40,
+                rank: 2,
+                cooldown_max: 12.0,
+                cooldown_left: 0.0,
+                can_cast: true,
+                affordable: true,
+            }),
+        ],
+        belt: [
+            Some(HudBeltSlot {
+                id: "potion_hp".to_string(),
+                count: 3,
+            }),
+            Some(HudBeltSlot {
+                id: "bomb".to_string(),
+                count: 1,
+            }),
+            None,
+            None,
+        ],
+        boss: None,
+        minimap,
+        pain_flash: if p.iframes > 0.0 { 1.0 } else { 0.0 },
+    };
+
+    gui::set_view(&mut gui.views.hud, Some(hud_view));
 }
 

@@ -4,7 +4,6 @@
 //! animating the striker pullback with charging power, and showing the aiming trajectory.
 
 use bevy::prelude::*;
-use pk_core::state::SimState;
 
 #[derive(Component)]
 pub struct PlungerRig;

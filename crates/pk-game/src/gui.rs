@@ -47,6 +47,10 @@ use pk_gui::screens::armory::{paint_armory, ArmoryAction, ArmoryView};
 use pk_gui::screens::dealer::{paint_dealer, DealerAction, DealerView};
 use pk_gui::screens::forge::{paint_forge, ForgeAction, ForgeView};
 use pk_gui::screens::gambler::{paint_gambler, GamblerAction, GamblerView};
+use pk_gui::screens::hud::{
+    paint_hud, HudView, DESIGN_H as HUD_DESIGN_H, DESIGN_MAX_ZOOM as HUD_MAX_ZOOM,
+    DESIGN_W as HUD_DESIGN_W,
+};
 use pk_gui::screens::intro::{
     paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
     DESIGN_W as INTRO_DESIGN_W,
@@ -77,6 +81,8 @@ const MAX_FRAME_DT: f64 = 0.05;
 /// over the id precisely so the game names its own screens.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ScreenId {
+    /// The in-game arcade HUD overlay (health/mana globes, face, minimap, skills, belt, boss bar).
+    Hud,
     /// The contextual `[E] ALCHEMIST` line. Never pauses; it is a label.
     StationPrompt,
     RunSummary,
@@ -105,6 +111,7 @@ pub enum ScreenId {
 /// to have dropped its data before its screens close.
 #[derive(Resource, Default)]
 pub struct GuiViews {
+    pub hud: Option<HudView>,
     pub prompt: Option<StationView>,
     pub summary: Option<SummaryView>,
     pub panel: Option<PanelView>,
@@ -229,6 +236,12 @@ impl GuiLayer {
     /// Open a screen, with the design box the legacy sheet was authored in.
     pub fn open(&mut self, id: ScreenId) {
         let entry = match id {
+            // The in-game HUD overlay: non-modal, does NOT pause the sim.
+            ScreenId::Hud => {
+                ScreenEntry::new(id, false)
+                    .with_design(HUD_DESIGN_W, HUD_DESIGN_H, HUD_MAX_ZOOM)
+                    .animating()
+            }
             // A label pinned to the scene: no design box, so it paints at 1x on
             // whatever the lattice is, exactly like the legacy scene overlay.
             ScreenId::StationPrompt => ScreenEntry::new(id, false),
@@ -568,6 +581,11 @@ fn paint_gui(
     let dt = time.delta_secs_f64().min(MAX_FRAME_DT);
     let result = paint_stack(painter, fonts, stack, &input, dt, stats, |f, id, entry| {
         match id {
+            ScreenId::Hud => {
+                if let Some(v) = &views.hud {
+                    paint_hud(f, v, time.elapsed_secs_f64());
+                }
+            }
             ScreenId::StationPrompt => {
                 if let Some(v) = &views.prompt {
                     paint_station_prompt(f, v);
