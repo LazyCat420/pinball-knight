@@ -3,7 +3,7 @@
 
 use pk_core::economy::coins::{
     coin_count_for, split_coin_value, update_coins_physics, CoinEntity,
-    COIN_LIVE_CAP, COIN_MAGNET_RANGE, COIN_MAX_PER_DROP,
+    COIN_MAX_PER_DROP,
 };
 
 #[test]
