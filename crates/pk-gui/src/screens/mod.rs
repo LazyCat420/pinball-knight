@@ -3,8 +3,12 @@
 pub mod alchemist;
 pub mod armory;
 pub mod dealer;
+pub mod debug;
+pub mod floor_loading;
 pub mod forge;
 pub mod gambler;
 pub mod hud;
 pub mod intro;
+pub mod menu;
+pub mod settings;
 pub mod tavern;
