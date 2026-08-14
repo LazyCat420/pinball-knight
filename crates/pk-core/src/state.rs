@@ -146,20 +146,26 @@ impl Player {
         if speed < SQUASH_MIN_SPEED {
             return;
         }
-        let amp = (speed / (SQUASH_MIN_SPEED * 2.0)).min(1.0);
-        self.squash_amp = amp;
+        let (hx, hy) = crate::marble::squash::world_dir_to_screen(nx, nz);
+        self.squash_nx = hx;
+        self.squash_nz = hy;
+        self.squash_amp = (speed / (SQUASH_MIN_SPEED * 2.0)).min(1.0);
         self.squash_t = SQUASH_RECOVER;
-        self.squash_nx = nx;
-        self.squash_nz = nz;
     }
 
     pub fn squash_scale(&self) -> (f32, f32) {
-        if self.squash_t <= 0.0 {
+        if self.squash_t <= 0.0 || self.squash_amp <= 0.0 {
             return (1.0, 1.0);
         }
         let t = (self.squash_t / SQUASH_RECOVER).clamp(0.0, 1.0);
         let d = (SQUASH_DEPTH * self.squash_amp * (t * std::f64::consts::FRAC_PI_2).sin()) as f32;
-        (1.0 - d * 0.7, 1.0 + d * 0.5)
+        let flat = (1.0 - d).max(0.2);
+        let bulge = 1.0 / flat;
+        if self.squash_nx.abs() >= self.squash_nz.abs() {
+            (flat, bulge)
+        } else {
+            (bulge, flat)
+        }
     }
 }
 

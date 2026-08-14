@@ -30,6 +30,8 @@
 
 mod authored_floor;
 mod authored_render;
+mod ball_anim;
+mod combat_feedback;
 mod dungeon_light;
 mod dungeon_render;
 mod floor_loading;
@@ -340,6 +342,7 @@ fn main() {
     .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.07)))
     .insert_resource(Time::<Fixed>::from_hz(60.0))
     .init_resource::<Intent>()
+    .init_resource::<combat_feedback::HitstopManager>()
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
@@ -377,6 +380,8 @@ fn main() {
             authored_render::step_booster_chevrons,
             step_live_monsters,
             step_ghost_afterimages,
+            ball_anim::step_ball_sparks,
+            combat_feedback::step_damage_numbers,
             update_dungeon_hud,
             follow_camera,
         )

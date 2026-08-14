@@ -9,8 +9,8 @@
 //!
 //! PORTS: `entities/marble.ts`
 
-
-/// The six distinct marble materials in Pinball Knight.
+pub mod squash;
+pub use squash::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarbleMaterial {
     Diamond,
