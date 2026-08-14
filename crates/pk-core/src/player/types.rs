@@ -1,6 +1,6 @@
 //! Player state, verbs, and movement physics data structures.
 //!
-//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`
+//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`, `constants/player.ts`
 
 pub const PLAYER_RADIUS: f64 = 0.28;
 pub const PLAYER_WALK_SPEED: f64 = 4.2;
