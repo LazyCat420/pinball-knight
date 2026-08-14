@@ -7,6 +7,7 @@ pub mod debug;
 pub mod floor_loading;
 pub mod forge;
 pub mod gambler;
+pub mod game_over;
 pub mod hud;
 pub mod intro;
 pub mod menu;
