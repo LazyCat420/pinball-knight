@@ -20,7 +20,7 @@
 //! burn through the budget while nothing is audible, and the gate and the
 //! scheduling share one timeline.
 //!
-//! PORTS: `sfx/pinball.ts`, `sfx/combat.ts`, `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `legacy/src/scenes/tavern/audio.ts`
+//! PORTS: `sfx/pinball.ts`, `sfx/combat.ts`, `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `sfx/weapons.ts`, `sfx/monsters.ts`, `legacy/src/scenes/tavern/audio.ts`
 
 use std::sync::{Mutex, MutexGuard};
 
@@ -161,6 +161,25 @@ impl<B: AudioBackend> Engine<B> {
                 self.bumper(p);
             }
             Patch::LevelStart { at_offset } => self.level_start(&mut st, at_offset),
+            // Combat & Weapons
+            Patch::Swing => self.swing(&mut st),
+            Patch::HeavySwing => self.heavy_swing(&mut st),
+            Patch::Hit => self.hit(&mut st),
+            Patch::Hurt => self.hurt(),
+            Patch::Gun => self.gun(&mut st),
+            Patch::Bow => self.bow(&mut st),
+            Patch::Flame => self.flame(&mut st),
+            Patch::Freeze => self.freeze(&mut st),
+            // Monsters & NPCs
+            Patch::Groan => self.groan(),
+            Patch::ZombieDie => self.zombie_die(&mut st),
+            Patch::Goblin => self.goblin(),
+            Patch::Cackle => self.cackle(),
+            Patch::Ribbit => self.ribbit(),
+            Patch::CartBell { near } => self.cart_bell(near),
+            // World & Pickups
+            Patch::Pickup => self.pickup(),
+            Patch::Trapdoor => self.trapdoor(&mut st),
         }
     }
 
@@ -429,6 +448,106 @@ impl<B: AudioBackend> Engine<B> {
             0.06,
             o + 0.22,
         );
+    }
+
+    // ── Combat & Weapons (legacy/src/game/pinball-knight/sfx/{combat,weapons}.ts) ──
+
+    fn swing(&self, st: &mut State<B>) {
+        burst(&self.be, &self.master, &mut st.rng, 0.09, 0.12, FilterType::Bandpass, 1600.0, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 330.0, Some(140.0), 0.08, 0.05, 0.0);
+    }
+
+    fn heavy_swing(&self, st: &mut State<B>) {
+        burst(&self.be, &self.master, &mut st.rng, 0.16, 0.16, FilterType::Bandpass, 1100.0, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 260.0, Some(90.0), 0.14, 0.08, 0.0);
+    }
+
+    fn hit(&self, st: &mut State<B>) {
+        burst(&self.be, &self.master, &mut st.rng, 0.10, 0.20, FilterType::Lowpass, 900.0, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 190.0, Some(70.0), 0.11, 0.14, 0.0);
+    }
+
+    fn hurt(&self) {
+        beep(&self.be, &self.master, Waveform::Square, 220.0, Some(110.0), 0.09, 0.16, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 165.0, Some(82.0), 0.12, 0.14, 0.07);
+    }
+
+    fn gun(&self, st: &mut State<B>) {
+        burst(&self.be, &self.master, &mut st.rng, 0.05, 0.30, FilterType::Highpass, 2200.0, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.12, 0.18, FilterType::Lowpass, 600.0, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 220.0, Some(60.0), 0.09, 0.12, 0.0);
+    }
+
+    fn bow(&self, st: &mut State<B>) {
+        beep(&self.be, &self.master, Waveform::Triangle, 480.0, Some(180.0), 0.12, 0.14, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.14, 0.08, FilterType::Bandpass, 3000.0, 0.02);
+    }
+
+    fn flame(&self, st: &mut State<B>) {
+        burst(&self.be, &self.master, &mut st.rng, 0.12, 0.07, FilterType::Lowpass, 900.0, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.09, 0.04, FilterType::Bandpass, 1700.0, 0.01);
+    }
+
+    fn freeze(&self, st: &mut State<B>) {
+        beep(&self.be, &self.master, Waveform::Triangle, 1760.0, Some(440.0), 0.50, 0.14, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.40, 0.06, FilterType::Highpass, 3000.0, 0.05);
+    }
+
+    // ── Monsters & NPCs (legacy/src/game/pinball-knight/sfx/monsters.ts) ─────────
+
+    fn groan(&self) {
+        beep(&self.be, &self.master, Waveform::Triangle, 82.0, Some(55.0), 0.40, 0.11, 0.0);
+        beep(&self.be, &self.master, Waveform::Triangle, 110.0, Some(66.0), 0.30, 0.06, 0.08);
+    }
+
+    fn zombie_die(&self, st: &mut State<B>) {
+        beep(&self.be, &self.master, Waveform::Sawtooth, 160.0, Some(36.0), 0.35, 0.14, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.25, 0.10, FilterType::Lowpass, 500.0, 0.05);
+    }
+
+    fn goblin(&self) {
+        beep(&self.be, &self.master, Waveform::Sine, 180.0, Some(420.0), 0.10, 0.20, 0.0);
+        beep(&self.be, &self.master, Waveform::Sine, 420.0, Some(240.0), 0.14, 0.14, 0.08);
+    }
+
+    fn cackle(&self) {
+        let freqs = [880.0, 740.0, 620.0, 520.0, 440.0];
+        for (k, f) in freqs.iter().enumerate() {
+            beep(
+                &self.be,
+                &self.master,
+                Waveform::Square,
+                *f,
+                Some(*f * 0.92),
+                0.09,
+                0.12,
+                k as f64 * 0.07,
+            );
+        }
+    }
+
+    fn ribbit(&self) {
+        beep(&self.be, &self.master, Waveform::Sawtooth, 110.0, Some(160.0), 0.14, 0.16, 0.0);
+        beep(&self.be, &self.master, Waveform::Sawtooth, 90.0, Some(140.0), 0.18, 0.14, 0.14);
+    }
+
+    fn cart_bell(&self, near: f64) {
+        let vol = 0.03 + 0.11 * near.clamp(0.0, 1.0);
+        beep(&self.be, &self.master, Waveform::Triangle, 1568.0, Some(1480.0), 0.16, vol, 0.0);
+        beep(&self.be, &self.master, Waveform::Triangle, 2093.0, Some(1976.0), 0.22, vol * 0.7, 0.11);
+    }
+
+    // ── World & Pickups (legacy/src/game/pinball-knight/sfx/world.ts) ───────────
+
+    fn pickup(&self) {
+        beep(&self.be, &self.master, Waveform::Square, 523.0, Some(784.0), 0.09, 0.10, 0.0);
+        beep(&self.be, &self.master, Waveform::Square, 784.0, None, 0.08, 0.08, 0.07);
+    }
+
+    fn trapdoor(&self, st: &mut State<B>) {
+        beep(&self.be, &self.master, Waveform::Sawtooth, 140.0, Some(70.0), 0.18, 0.14, 0.0);
+        burst(&self.be, &self.master, &mut st.rng, 0.35, 0.16, FilterType::Lowpass, 500.0, 0.12);
+        beep(&self.be, &self.master, Waveform::Sine, 500.0, Some(90.0), 0.40, 0.12, 0.15);
     }
 
     // ── The tavern bed (legacy/src/scenes/tavern/audio.ts) ──────────────────

@@ -169,6 +169,27 @@ pub enum Patch {
     LevelStart {
         at_offset: f64,
     },
+    // Combat & Weapons
+    Swing,
+    HeavySwing,
+    Hit,
+    Hurt,
+    Gun,
+    Bow,
+    Flame,
+    Freeze,
+    // Monsters & NPCs
+    Groan,
+    ZombieDie,
+    Goblin,
+    Cackle,
+    Ribbit,
+    CartBell {
+        near: f64,
+    },
+    // World & Pickups
+    Pickup,
+    Trapdoor,
 }
 
 impl Patch {
@@ -183,6 +204,10 @@ impl Patch {
     /// `LevelStart` scheduled immediately.
     pub const fn level_start() -> Patch {
         Patch::LevelStart { at_offset: 0.0 }
+    }
+    /// `CartBell` with default near (1.0).
+    pub const fn cart_bell(near: f64) -> Patch {
+        Patch::CartBell { near }
     }
 }
 
