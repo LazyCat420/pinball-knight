@@ -285,3 +285,99 @@ fn test_prefabs_parity() {
     assert_eq!(theme_for(4, 0).name, "arcane");
 }
 
+#[test]
+fn test_stagger_and_enemy_rules_parity() {
+    use pk_core::enemy_rules::{momentum_gate_for, movement_by_kind};
+    use pk_core::movement::MovementKind;
+    use pk_core::stagger::{accrue_pain, pain_base, pain_chance, stagger_time, EnemyKind, EntropyHolder};
+    use pk_core::zombie_types::ZombieType;
+
+    assert_eq!(EnemyKind::ALL.len(), 28);
+    assert_eq!(EnemyKind::Zombie.pain_base(), 0.78);
+    assert_eq!(EnemyKind::Reaper.pain_base(), 0.0);
+    assert_eq!(EnemyKind::Stiltneck.pain_base(), 0.9);
+
+    // Boss has 0 pain base
+    assert_eq!(pain_base(EnemyKind::Zombie, true, None), 0.0);
+
+    // Hulk sub-type pain mult
+    let hulk_pain = pain_base(EnemyKind::Zombie, false, Some(ZombieType::Hulk));
+    assert!((hulk_pain - 0.78 * 0.25).abs() < 1e-6);
+
+
+    // Pain chance at 0 speed vs 22 speed
+    assert!((pain_chance(0.8, 0.0) - 0.8 * 0.15).abs() < 1e-6);
+    assert!((pain_chance(0.8, 22.0) - 0.8).abs() < 1e-6);
+
+    // Stagger time
+    assert!((stagger_time(0.0) - 0.25).abs() < 1e-6);
+    assert!((stagger_time(22.0) - 0.60).abs() < 1e-6);
+
+
+    // Entropy accumulator
+    let mut holder = EntropyHolder::default();
+    assert!(!accrue_pain(&mut holder, 0.4));
+    assert_eq!(holder.pain_entropy, 40.0);
+    assert!(!accrue_pain(&mut holder, 0.4));
+    assert_eq!(holder.pain_entropy, 80.0);
+    assert!(accrue_pain(&mut holder, 0.4));
+    assert!((holder.pain_entropy - 20.0).abs() < 1e-6);
+
+    // Movement by kind
+    assert_eq!(movement_by_kind(EnemyKind::Zombie), MovementKind::Chase);
+    assert_eq!(movement_by_kind(EnemyKind::Bat), MovementKind::Orbiter);
+    assert_eq!(movement_by_kind(EnemyKind::Spitter), MovementKind::Kite);
+    assert_eq!(movement_by_kind(EnemyKind::Ghost), MovementKind::Phase);
+    assert_eq!(movement_by_kind(EnemyKind::Pin), MovementKind::Inert);
+
+    // Momentum gates
+    let goblin_gate = momentum_gate_for(EnemyKind::Goblin).expect("goblin gate");
+    assert!(goblin_gate.gates_damage);
+    assert_eq!(goblin_gate.soft, 0.5);
+
+    let golem_gate = momentum_gate_for(EnemyKind::Golem).expect("golem gate");
+    assert!(golem_gate.gates_damage);
+    assert_eq!(golem_gate.soft, 0.25);
+}
+
+#[test]
+fn test_combo_curve_parity() {
+    use pk_core::combo::{
+        combo_damage_mult, combo_kill_gold, combo_speed_ceil, combo_zone, frenzy_intensity,
+        momentum_gate, momentum_scaled, momentum_t, ComboZone,
+    };
+
+    assert_eq!(momentum_t(4.2), 0.0);
+    assert_eq!(momentum_t(0.0), 0.0);
+    assert_eq!(momentum_t(22.0), 1.0);
+
+    assert_eq!(momentum_scaled(2.0, 4.2), 1.0);
+    assert_eq!(momentum_scaled(2.0, 22.0), 2.0);
+
+    // Kill gold
+    assert_eq!(combo_kill_gold(0.0), 2);
+    assert_eq!(combo_kill_gold(1.0), 2);
+    assert_eq!(combo_kill_gold(2.0), 5);
+    assert_eq!(combo_kill_gold(4.0), 8);
+    assert_eq!(combo_kill_gold(8.0), 11);
+    assert_eq!(combo_kill_gold(16.0), 14);
+
+    // Damage mult
+    assert_eq!(combo_damage_mult(0.0), 1.0);
+    assert_eq!(combo_damage_mult(8.0), 1.0);
+    assert!(combo_damage_mult(60.0) > 1.3);
+
+    // Tempo zones
+    assert_eq!(combo_zone(0.0), ComboZone::Launch);
+    assert_eq!(combo_zone(8.0), ComboZone::Cruise);
+    assert_eq!(combo_zone(30.0), ComboZone::Frenzy);
+
+    // Frenzy intensity
+    assert_eq!(frenzy_intensity(20.0), 0.0);
+    assert_eq!(frenzy_intensity(60.0), 1.0);
+
+    // Momentum gate
+    assert!((momentum_gate(22.0, 4.2, 0.5) - 1.0).abs() < 1e-6);
+}
+
+

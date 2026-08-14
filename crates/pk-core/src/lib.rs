@@ -48,6 +48,7 @@ pub mod collide;
 pub mod combo;
 pub mod economy;
 pub mod enemies;
+pub mod enemy_rules;
 pub mod flow_field;
 pub mod gambler;
 pub mod grid;
@@ -63,9 +64,11 @@ pub mod reagents;
 pub mod recipes;
 pub mod rng;
 pub mod secrets;
+pub mod stagger;
 pub mod state;
 pub mod surfaces;
 pub mod tavern;
 pub mod tile_shape;
 pub mod zombie_types;
+
 

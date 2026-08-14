@@ -30,12 +30,39 @@ use crate::pinball::{
     COMBO_REST_LAMBDA, COMBO_WINDOW_ALPHA, COMBO_WINDOW_MAX, COMBO_WINDOW_MIN, COMBO_ZONE_CRUISE,
     COMBO_ZONE_FRENZY, PINBALL_CORNER_ADD, PINBALL_CORNER_RESTITUTION, PINBALL_MAX_SPEED,
 };
+use crate::state::PLAYER_SPEED;
+
+pub const MOMENTUM_T_FLOOR: f64 = PLAYER_SPEED;
+pub const MOMENTUM_T_K: f64 = 0.22;
+pub const STYLE_KILL_BASE_GOLD: i32 = 2;
+pub const COMBO_GOLD_TIER: i32 = 3;
+pub const COMBO_DMG_MAX: f64 = 1.35;
+pub const COMBO_DMG_K: f64 = 0.15;
+pub const COMBO_DMG_NSAT: f64 = 60.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ComboZone {
     Launch,
     Cruise,
     Frenzy,
+}
+
+/// Part 0 — THE MOMENTUM RAMP. How fast are you, on a 0..1 dial?
+pub fn momentum_t(speed: f64) -> f64 {
+    let span = PINBALL_MAX_SPEED - MOMENTUM_T_FLOOR;
+    let r = speed - MOMENTUM_T_FLOOR;
+    if r <= 0.0 || span <= 0.0 {
+        return 0.0;
+    }
+    1.0f64.min((r * (1.0 + MOMENTUM_T_K)) / (r + MOMENTUM_T_K * span))
+}
+
+/// Apply a momentum-scaled multiplier: full `mult` at terminal speed, 1x at walk.
+pub fn momentum_scaled(mult: f64, speed: f64) -> f64 {
+    if mult == 1.0 {
+        return 1.0;
+    }
+    1.0 + (mult - 1.0) * momentum_t(speed)
 }
 
 /// Part 1 — logarithmic ceiling on the speed a WALL/CORNER bounce can EARN.
@@ -67,6 +94,22 @@ pub fn combo_friction_mul(n: f64) -> f64 {
     1.0 + COMBO_FRICTION_K * n.max(0.0).sqrt()
 }
 
+/// Part 6 — tiered jackpot gold, +COMBO_GOLD_TIER per DOUBLING of the combo.
+pub fn combo_kill_gold(n: f64) -> i32 {
+    STYLE_KILL_BASE_GOLD + COMBO_GOLD_TIER * (n.max(1.0).log2().floor() as i32)
+}
+
+/// Part 7 — the chain's DAMAGE multiplier.
+pub fn combo_damage_mult(n: f64) -> f64 {
+    let over = (n - COMBO_ZONE_CRUISE).max(0.0);
+    if over <= 0.0 {
+        return 1.0;
+    }
+    let num = js_log(1.0 + COMBO_DMG_K * over);
+    let den = js_log(1.0 + COMBO_DMG_K * COMBO_DMG_NSAT);
+    1.0 + (COMBO_DMG_MAX - 1.0) * (num / den).min(1.0)
+}
+
 /// Part 2 — which tempo act the current combo count sits in.
 pub fn combo_zone(n: f64) -> ComboZone {
     if n >= COMBO_ZONE_FRENZY {
@@ -76,4 +119,33 @@ pub fn combo_zone(n: f64) -> ComboZone {
     } else {
         ComboZone::Launch
     }
+}
+
+/// Frenzy intensity in [0,1] for presentation FX.
+pub fn frenzy_intensity(n: f64) -> f64 {
+    if n < COMBO_ZONE_FRENZY {
+        0.0
+    } else {
+        1.0f64.min((n - COMBO_ZONE_FRENZY) / COMBO_ZONE_FRENZY)
+    }
+}
+
+/// Part 8 — THE ENEMY GATE, as a curve.
+pub fn momentum_gate(speed: f64, gate_speed: f64, soft: f64) -> f64 {
+    let t = momentum_t(speed);
+    let tg = momentum_t(gate_speed);
+    let s = soft.clamp(0.0, 1.0);
+    if tg <= 0.0 {
+        return s + (1.0 - s) * t;
+    }
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t <= tg {
+        return (s * t) / tg;
+    }
+    if tg >= 1.0 {
+        return s;
+    }
+    s + (1.0 - s) * ((t - tg) / (1.0 - tg))
 }
