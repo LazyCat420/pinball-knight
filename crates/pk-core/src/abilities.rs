@@ -1,6 +1,6 @@
 //! ACTIVE SKILLS — the abilities the Diablo HUD hangs off.
 //!
-//! PORTS: `abilities.ts`
+//! PORTS: `abilities.ts`, `skills.ts`, `constants/skills.ts`
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbilityId {
