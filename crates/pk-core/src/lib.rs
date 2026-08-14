@@ -42,6 +42,7 @@
 pub mod abilities;
 pub mod bestiary;
 pub mod boss;
+pub mod camera;
 pub mod cards;
 pub mod collide;
 pub mod combat;
