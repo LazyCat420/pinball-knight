@@ -1,6 +1,6 @@
 //! Enemy types, stats table, and live monster runtime data.
 //!
-//! PORTS: `constants/enemies.ts`, `bestiary.ts`, `entities/enemy-rules.ts`
+//! PORTS: `constants/enemies.ts`, `bestiary.ts`, `entities/enemy-rules.ts`, `spawn/factory.ts`
 
 use crate::enemies::*;
 

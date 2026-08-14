@@ -69,8 +69,7 @@
 //!   is the minimap's room outline, which therefore draws none in the oracle
 //!   either. The field is parsed and kept so the day a fallback floor is
 //!   exported it does not silently vanish.
-//!
-//! PORTS:
+//! PORTS: `spawn/floor-authoring.ts`, `spawn/floor-populate.ts`, `maze/track-floor.ts`
 
 use bevy::prelude::Resource;
 use pk_core::grid::{world_to_tile, Grid};
