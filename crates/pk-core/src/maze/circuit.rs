@@ -103,12 +103,12 @@ pub fn find_rings(
     let mut rings: Vec<Vec<TilePos>> = Vec::new();
     let mut seen_pair: HashSet<String> = HashSet::new();
 
-    let mut close = |low: usize,
-                     high: usize,
-                     from_low: Vec<TilePos>,
-                     from_high: Vec<TilePos>,
-                     rings: &mut Vec<Vec<TilePos>>,
-                     seen_pair: &mut HashSet<String>| {
+    let close = |low: usize,
+                 high: usize,
+                 from_low: Vec<TilePos>,
+                 from_high: Vec<TilePos>,
+                 rings: &mut Vec<Vec<TilePos>>,
+                 seen_pair: &mut HashSet<String>| {
         let pair_key = format!("{}:{}", low, high);
         if !seen_pair.insert(pair_key) {
             return;

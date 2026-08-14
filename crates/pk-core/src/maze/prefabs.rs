@@ -3,7 +3,7 @@
 //! PORTS: `maze/prefabs.ts`
 
 use std::collections::HashSet;
-use crate::grid::{at, set_tile, Grid, T_FLOOR, T_WALL};
+use crate::grid::{set_tile, Grid, T_FLOOR};
 
 
 
