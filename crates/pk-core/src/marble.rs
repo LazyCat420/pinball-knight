@@ -7,9 +7,10 @@
 //! knockback, speed ceiling, wall breaking), plus triggers emitters on fast
 //! wall bounces and slam impacts.
 //!
-//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`, `fx/pools/trail-ribbon.ts`, `fx/floor/decals.ts`, `fx/elements/water.ts`, `fx/pools/laser-mark-field.ts`
+//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`, `fx/pools/trail-ribbon.ts`, `fx/floor/decals.ts`, `fx/elements/water.ts`, `fx/pools/laser-mark-field.ts`, `fx/elements/fire.ts`
 
 pub mod decals;
+pub mod fire_fx;
 pub mod floor_fx;
 pub mod laser_mark_field;
 pub mod puffs;
@@ -18,6 +19,7 @@ pub mod trail_ribbon;
 pub mod water_fx;
 
 pub use decals::*;
+pub use fire_fx::*;
 pub use floor_fx::*;
 pub use laser_mark_field::*;
 pub use puffs::*;
