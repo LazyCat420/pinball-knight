@@ -1,5 +1,7 @@
 [alias]
 xtask = "run -p xtask --"
+win = "run --release --target x86_64-pc-windows-gnullvm -p pk-game --"
+play = "run --release --target x86_64-pc-windows-gnullvm -p pk-game --"
 
 [build]
 # The box is shared (see docs: WSL2 dev-loop reality) — 12 physical cores, 24
