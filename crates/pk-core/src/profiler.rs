@@ -1,7 +1,10 @@
-//! PORTS: `engine/profiler.ts`, `dev/draw-census.ts`
+//! PORTS: `engine/profiler.ts`, `dev/draw-census.ts`, `engine/gpu-adapter.ts`
 
 pub mod draw_census;
+pub mod gpu_adapter;
+
 pub use draw_census::*;
+pub use gpu_adapter::*;
 
 use std::collections::HashMap;
 
