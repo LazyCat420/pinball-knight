@@ -1,6 +1,6 @@
 {
-  "bakedAt": "2026-08-10T01:57:50.154Z",
-  "legacyRev": "94a8c3b06eb8f466a071206d1fbabbc872e72df8-dirty",
+  "bakedAt": "2026-08-15T04:45:28.594Z",
+  "legacyRev": "fa3a64d248402d4fafc5eca90c7f39bedc3db63c",
   "spriteConfig": {
     "px": 168,
     "pixelGrid": 84,
@@ -36,7 +36,7 @@
     "sign-enter-maze.png": {
       "w": 1024,
       "h": 220,
-      "bytes": 110822
+      "bytes": 114314
     }
   }
 }
