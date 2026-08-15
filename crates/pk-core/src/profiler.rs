@@ -1,6 +1,7 @@
-//! Engine Runtime Profiler — Stage timers for simulation, collision, AI and rendering.
-//!
-//! PORTS: `engine/profiler.ts`
+//! PORTS: `engine/profiler.ts`, `dev/draw-census.ts`
+
+pub mod draw_census;
+pub use draw_census::*;
 
 use std::collections::HashMap;
 

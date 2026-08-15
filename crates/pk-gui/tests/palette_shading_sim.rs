@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/render/palette-shading.ts
 
 use pk_gui::render::palette_shading::{
-    family_of, shade_by, shade_table, FAMILIES, PALETTE_N, SHADE_DOWN, SHADE_UP,
+    family_index_of, shade_by, shade_table, FAMILIES, PALETTE_N, SHADE_DOWN, SHADE_UP,
 };
 
 #[test]
@@ -12,7 +12,7 @@ fn every_palette_entry_belongs_to_exactly_one_family() {
         for &entry in *fam {
             assert!(!seen[entry], "Entry {} in multiple families", entry);
             seen[entry] = true;
-            assert_eq!(family_of(entry), Some(f_idx));
+            assert_eq!(family_index_of(entry), Some(f_idx));
         }
     }
     assert!(seen.iter().all(|&s| s), "Not all 32 entries covered");
@@ -22,8 +22,8 @@ fn every_palette_entry_belongs_to_exactly_one_family() {
 fn shade_down_preserves_family_or_falls_through_to_ink_void() {
     for i in 0..PALETTE_N {
         let next = SHADE_DOWN[i] as usize;
-        let orig_f = family_of(i);
-        let next_f = family_of(next);
+        let orig_f = family_index_of(i);
+        let next_f = family_index_of(next);
 
         // Either same family or fallthrough to ink (1) / void (0)
         assert!(
@@ -41,8 +41,8 @@ fn shade_down_preserves_family_or_falls_through_to_ink_void() {
 fn shade_up_reverses_shade_down_within_family() {
     for i in 0..PALETTE_N {
         let brighter = SHADE_UP[i] as usize;
-        let orig_f = family_of(i);
-        let brighter_f = family_of(brighter);
+        let orig_f = family_index_of(i);
+        let brighter_f = family_index_of(brighter);
         assert_eq!(orig_f, brighter_f);
     }
 }

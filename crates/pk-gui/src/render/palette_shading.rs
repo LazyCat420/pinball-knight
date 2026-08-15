@@ -16,7 +16,7 @@ pub const FAMILIES: [&[usize]; 8] = [
 pub const PALETTE_N: usize = 32;
 
 /// Returns the family index (0..7) for a given palette entry.
-pub fn family_of(idx: usize) -> Option<usize> {
+pub fn family_index_of(idx: usize) -> Option<usize> {
     for (f, fam) in FAMILIES.iter().enumerate() {
         if fam.contains(&idx) {
             return Some(f);
