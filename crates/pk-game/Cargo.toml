@@ -6,6 +6,14 @@ license.workspace = true
 repository.workspace = true
 description = "Pinball Knight — the Bevy app (render, input, GUI, fx, boot)"
 
+[lib]
+name = "pk_game"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pk-game"
+path = "src/main.rs"
+
 [dependencies]
 pk-core = { path = "../pk-core" }
 pk-assets = { path = "../pk-assets" }

@@ -348,6 +348,7 @@ fn main() {
     .init_resource::<Intent>()
     .init_resource::<combat_feedback::HitstopManager>()
     .init_resource::<coins_render::DungeonCoinPool>()
+    .init_resource::<ball_anim::MarbleSpinTracker>()
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
@@ -1443,6 +1444,7 @@ fn sync_knight(
     rp: Res<RenderPos>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut spin_tracker: ResMut<ball_anim::MarbleSpinTracker>,
     mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
     mut ghost_timer: Local<f32>,
@@ -1460,11 +1462,21 @@ fn sync_knight(
 
     let (sqx, sqy) = sim.0.player.squash_scale();
     let mirror = sim.0.player.facing == Facing::W;
-    tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx;
-    tf.scale.y = sqy;
 
-    let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
+    let is_rolling = sim.0.player.is_rolling();
+    let is_ball = sim.0.player.is_ball() || is_rolling;
     let is_attacking = sim.0.player.is_attacking();
+
+    // Compute dodge roll progression tau and tuck scale
+    let (roll_tau, roll_tuck) = if is_rolling && sim.0.player.roll_t >= 0.0 {
+        let tau = (sim.0.player.roll_t / pk_core::state::ROLL_DURATION).clamp(0.0, 1.0) as f32;
+        (Some(tau), ball_anim::compute_dodge_roll_tuck(tau))
+    } else {
+        (None, 1.0)
+    };
+
+    tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx * roll_tuck;
+    tf.scale.y = sqy * roll_tuck;
 
     // Spawn ball impact sparks on wall/bumper collision squash
     if sim.0.player.squash_t > 0.0 && !*last_squash_active {
@@ -1506,12 +1518,24 @@ fn sync_knight(
     }
     *last_slash_active = is_attacking;
 
-    // Billboard: face camera plane; tilt forward in 3D when rolling
+    // Billboard / Roll Rotation
     if let Ok(cam_tf) = cam.single() {
-        if is_ball {
-            let speed_ratio = ((sim.0.player.mom_speed + if sim.0.player.is_rolling() { 5.0 } else { 0.0 }) / 12.0).min(1.0) as f32;
-            let pitch = 0.35 * speed_ratio;
-            tf.rotation = cam_tf.rotation * Quat::from_rotation_x(-pitch);
+        if let Some(tau) = roll_tau {
+            tf.rotation = ball_anim::compute_dodge_roll_rotation(
+                cam_tf.rotation,
+                sim.0.player.roll_dir_x as f32,
+                sim.0.player.roll_dir_z as f32,
+                tau,
+            );
+        } else if sim.0.player.is_ball() {
+            spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
+            tf.rotation = ball_anim::compute_marble_pinball_rotation(
+                cam_tf.rotation,
+                sim.0.player.mom_x as f32,
+                sim.0.player.mom_z as f32,
+                sim.0.player.mom_speed as f32,
+                spin_tracker.spin_angle,
+            );
         } else {
             tf.rotation = cam_tf.rotation;
         }
@@ -1524,26 +1548,62 @@ fn sync_knight(
     };
     mat.0 = clips.material.clone();
 
-    let (cells, fps) = if is_attacking {
-        (&clips.attack, 16)
-    } else if is_ball {
-        let speed_fps = (14.0 + (sim.0.player.mom_speed * 1.5) as f64).min(32.0) as u64;
-        if !clips.roll.is_empty() {
-            (&clips.roll, speed_fps)
-        } else if !clips.run.is_empty() {
-            (&clips.run, speed_fps)
-        } else {
-            (&clips.walk, speed_fps)
-        }
-    } else if sim.0.player.moving {
-        (&clips.walk, 8)
+    let roll_cells = if !clips.roll.is_empty() {
+        &clips.roll
+    } else if !clips.run.is_empty() {
+        &clips.run
     } else {
-        (&clips.idle, 4)
+        &clips.walk
     };
+
+    let (cells, frame) = if is_attacking {
+        let cells = &clips.attack;
+        let f = if !cells.is_empty() {
+            (sim.0.tick * 16 / 60) as usize % cells.len()
+        } else {
+            0
+        };
+        (cells, f)
+    } else if let Some(tau) = roll_tau {
+        let f = if !roll_cells.is_empty() {
+            ((tau * roll_cells.len() as f32).floor() as usize).min(roll_cells.len() - 1)
+        } else {
+            0
+        };
+        (roll_cells, f)
+    } else if sim.0.player.is_ball() {
+        let f = if !roll_cells.is_empty() {
+            (spin_tracker.spin_angle * (roll_cells.len() as f32 / std::f32::consts::TAU)).floor() as usize % roll_cells.len()
+        } else {
+            0
+        };
+        (roll_cells, f)
+    } else if sim.0.player.moving {
+        let cells = if sim.0.player.sprint_charge > 0.4 && !clips.run.is_empty() {
+            &clips.run
+        } else {
+            &clips.walk
+        };
+        let fps = if sim.0.player.sprint_charge > 0.4 { 12 } else { 8 };
+        let f = if !cells.is_empty() {
+            (sim.0.tick * fps / 60) as usize % cells.len()
+        } else {
+            0
+        };
+        (cells, f)
+    } else {
+        let cells = &clips.idle;
+        let f = if !cells.is_empty() {
+            (sim.0.tick * 4 / 60) as usize % cells.len()
+        } else {
+            0
+        };
+        (cells, f)
+    };
+
     if cells.is_empty() {
         return;
     }
-    let frame = (sim.0.tick * fps / 60) as usize % cells.len();
     let [u, v, uw, vh] = cells[frame];
     if let Some(m) = materials.get_mut(&clips.material) {
         m.uv_transform = Affine2 {

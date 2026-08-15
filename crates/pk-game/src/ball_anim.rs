@@ -13,11 +13,59 @@ pub struct BallSparkParticle {
     pub velocity: Vec3,
 }
 
-/// Computes the 3D camera plane pitch tilt for the rolling ball.
-pub fn compute_ball_pitch_rotation(cam_rot: Quat, mom_speed: f64, is_rolling: bool) -> Quat {
-    let speed_ratio = (((mom_speed + if is_rolling { 5.0 } else { 0.0 }) / 14.0).min(1.0)) as f32;
+#[derive(Resource, Default)]
+pub struct MarbleSpinTracker {
+    pub spin_angle: f32,
+}
+
+impl MarbleSpinTracker {
+    pub fn update(&mut self, speed: f32, dt: f32) {
+        if speed > 0.1 {
+            // omega = v / r (r = 0.3 tiles)
+            let delta_theta = (speed * dt) / 0.3;
+            self.spin_angle = (self.spin_angle + delta_theta) % std::f32::consts::TAU;
+        }
+    }
+}
+
+/// Computes the dodge roll squash tuck factor (0.72 - 0.84).
+pub fn compute_dodge_roll_tuck(tau: f32) -> f32 {
+    let t = tau.clamp(0.0, 1.0);
+    0.72 + 0.12 * (t * std::f32::consts::PI).sin()
+}
+
+/// Computes the 3D rotation for a dodge roll completing a 360 degree spin along the roll direction.
+pub fn compute_dodge_roll_rotation(cam_rot: Quat, dir_x: f32, dir_z: f32, tau: f32) -> Quat {
+    let t = tau.clamp(0.0, 1.0);
+    let spin_angle = -t * std::f32::consts::TAU;
+    let roll_axis = Vec3::new(dir_z, 0.0, -dir_x).normalize_or_zero();
+    let roll_rot = if roll_axis.length_squared() > 0.01 {
+        Quat::from_axis_angle(roll_axis, spin_angle)
+    } else {
+        Quat::from_rotation_x(spin_angle)
+    };
+    cam_rot * roll_rot
+}
+
+/// Computes the 3D rotation for a continuous pinball marble roll along its velocity vector.
+pub fn compute_marble_pinball_rotation(
+    cam_rot: Quat,
+    dir_x: f32,
+    dir_z: f32,
+    speed: f32,
+    spin_angle: f32,
+) -> Quat {
+    let speed_ratio = (speed / 14.0).clamp(0.0, 1.0);
     let pitch = 0.38 * speed_ratio;
-    cam_rot * Quat::from_rotation_x(-pitch)
+    let tilt_rot = Quat::from_rotation_x(-pitch);
+
+    let roll_axis = Vec3::new(dir_z, 0.0, -dir_x).normalize_or_zero();
+    let spin_rot = if roll_axis.length_squared() > 0.01 {
+        Quat::from_axis_angle(roll_axis, -spin_angle)
+    } else {
+        Quat::IDENTITY
+    };
+    cam_rot * tilt_rot * spin_rot
 }
 
 /// Spawns particle sparks at the contact point when the ball strikes a wall or bumper.
