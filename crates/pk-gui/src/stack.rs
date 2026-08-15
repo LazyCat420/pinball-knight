@@ -66,7 +66,7 @@ impl<Id: Copy + Eq> ScreenEntry<Id> {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct UiStack<Id: Copy + Eq> {
     entries: Vec<ScreenEntry<Id>>,
 }
