@@ -1626,6 +1626,22 @@ fn sync_knight(
             };
             let quad_h = 1.15f32;
             let quad_w = quad_h * art.s.aspect;
+            let base_tex = materials
+                .get(&clips.material)
+                .and_then(|m| m.base_color_texture.clone());
+            let ghost_mat = materials.add(StandardMaterial {
+                base_color: aura_color,
+                base_color_texture: base_tex,
+                uv_transform: Affine2 {
+                    matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
+                    translation: Vec2::new(u, v),
+                },
+                emissive: LinearRgba::from(aura_color) * 1.5,
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                cull_mode: None,
+                ..default()
+            });
             commands.spawn((
                 DungeonScene,
                 GhostAfterimage {
@@ -1633,13 +1649,7 @@ fn sync_knight(
                     max_lifetime: 0.22,
                 },
                 Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: aura_color,
-                    emissive: LinearRgba::from(aura_color) * 1.8,
-                    unlit: true,
-                    alpha_mode: AlphaMode::Blend,
-                    ..default()
-                })),
+                MeshMaterial3d(ghost_mat),
                 Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
             ));
         }
