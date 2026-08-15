@@ -1,6 +1,6 @@
 //! Screen UI views: shop, armory, forge, gambler, alchemist, dealer, etc.
 //!
-//! PORTS: `gui/screens/shop.ts`
+//! PORTS: `gui/screens/shop.ts`, `legacy/src/scenes/tavern/boot-notice.ts`
 
 pub mod alchemist;
 pub mod armory;
@@ -17,4 +17,5 @@ pub mod menu;
 pub mod settings;
 pub mod shop;
 pub mod tavern;
+pub mod tavern_notice;
 pub mod toasts;
