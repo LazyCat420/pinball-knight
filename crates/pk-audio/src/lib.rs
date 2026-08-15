@@ -41,15 +41,17 @@
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
 //!
-//! PORTS-NOTHING — the AudioBackend trait + bus; the WebAudio shape it mirrors is ported in patches.rs/synth.rs
+//! PORTS: `sfx/bus.ts`
 
 #![forbid(unsafe_code)]
 
 pub mod ambience;
+pub mod bus;
 pub mod patches;
 pub mod synth;
 
 pub use ambience::*;
+pub use bus::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod soft;
