@@ -27,7 +27,7 @@
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
 //!
-//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`
+//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`
 
 pub mod arc_contract;
 pub mod arc_sweeps;
@@ -54,6 +54,7 @@ pub mod lamp_puzzle;
 pub mod lamp_runtime;
 pub mod modifiers;
 pub mod open_space;
+pub mod open_space_census;
 pub mod piece_rules;
 pub mod prefabs;
 pub mod relay_chambers;
@@ -61,6 +62,7 @@ pub mod relay_chambers;
 pub use assembly_check::*;
 pub use floor_density::*;
 pub use lamp_runtime::*;
+pub use open_space_census::*;
 pub use relay_chambers::*;
 pub mod surface_paint;
 pub mod track_carve;
