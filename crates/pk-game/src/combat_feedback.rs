@@ -13,9 +13,11 @@ pub struct DamageNumberText {
 
 #[derive(Resource, Default)]
 pub struct HitstopManager {
+    #[allow(dead_code)]
     pub timer: f32,
 }
 
+#[allow(dead_code)]
 impl HitstopManager {
     pub fn trigger(&mut self, frames: u32) {
         self.timer = (frames as f32) * (1.0 / 60.0);
@@ -33,6 +35,7 @@ impl HitstopManager {
 }
 
 /// Spawns a floating damage number above an enemy's head in 3D world space.
+#[allow(dead_code)]
 pub fn spawn_floating_damage(
     commands: &mut Commands,
     origin: Vec3,

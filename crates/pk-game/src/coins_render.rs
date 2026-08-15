@@ -7,6 +7,7 @@ use pk_core::economy::coins::{
     coin_count_for, split_coin_value, update_coins_physics, CoinEntity,
 };
 
+#[allow(dead_code)]
 #[derive(Component)]
 pub struct VisualCoin {
     pub coin: CoinEntity,
@@ -16,10 +17,12 @@ pub struct VisualCoin {
 #[derive(Resource, Default)]
 pub struct DungeonCoinPool {
     pub coins: Vec<CoinEntity>,
+    #[allow(dead_code)]
     pub next_id: u64,
 }
 
 /// Spawns a burst of scattered gold coins from a slain monster or opened chest.
+#[allow(dead_code)]
 pub fn spawn_coin_burst(
     pool: &mut DungeonCoinPool,
     origin_x: f64,

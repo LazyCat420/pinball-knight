@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 
+#[allow(dead_code)]
 pub const BALL_MIN_SPEED: f64 = 4.8;
 
 #[derive(Component)]
