@@ -3,9 +3,8 @@
 //! function with a hand-ordered call sequence) is the architecture decision
 //! and does not change.
 //!
-//! PORTS-PARTIAL: `state.ts`, `sim/simulate.ts` — the sim SEED: grid, player,
-//! the walk profile, sprint and the pinball ride. No entities, combat, run
-//! flow, cards, abilities or items; `simulate`'s call order grows as they land.
+//! PORTS: `sim/simulate.ts`
+//! PORTS-PARTIAL: `state.ts` — the sim SEED: grid, player, the walk profile, sprint and the pinball ride.
 
 use crate::collide::{move_circle, MoveResult};
 use crate::grid::{set_tile, Grid, T_FLOOR};
