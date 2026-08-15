@@ -1,7 +1,10 @@
-//! PORTS: `engine/input.ts`, `input/keymap.ts`
+//! PORTS: `engine/input.ts`, `input/keymap.ts`, `engine/virtual-pad.ts`
 
 pub mod keymap;
+pub mod virtual_pad;
+
 pub use keymap::*;
+pub use virtual_pad::*;
 
 use std::collections::{HashSet, VecDeque};
 
