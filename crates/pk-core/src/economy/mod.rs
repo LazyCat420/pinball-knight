@@ -1,7 +1,7 @@
 //! THE ECONOMY — the tavern's rules, as pure data and pure functions.
 //!
 //! PORTS: `economy/tavern-shop.ts`, `items.ts` (gear), `armor-styles.ts`,
-//! `legacy/src/utils/gold-wallet.ts`, `economy/shop.ts`.
+//! `legacy/src/utils/gold-wallet.ts`, `economy/shop.ts`, `economy/ground-items.ts`.
 //!
 //! Track T in `docs/src/status/one-to-one.md` — 1,845 lines and, until this
 //! module, **0% ported**, while `pk_core::gambler` next door was complete with
@@ -23,11 +23,13 @@ pub mod armory;
 pub mod coins;
 pub mod dealer;
 pub mod forge;
+pub mod ground_items;
 pub mod loot;
 pub mod pickups;
 pub mod shop;
 
 pub use coins::*;
+pub use ground_items::*;
 pub use loot::*;
 pub use pickups::*;
 pub use shop::*;

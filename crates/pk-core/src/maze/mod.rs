@@ -27,7 +27,7 @@
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
 //!
-//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`
+//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`, `maze/floor-seed.ts`
 
 pub mod fog;
 pub mod spacing_grid;
@@ -52,6 +52,7 @@ pub mod doorways;
 pub mod floor_density;
 pub mod floor_metrics;
 pub mod floor_rules;
+pub mod floor_seed;
 pub mod floor_spec;
 pub mod flow_loops;
 pub mod flow_orient;
@@ -68,6 +69,7 @@ pub mod sweep_axis;
 
 pub use assembly_check::*;
 pub use floor_density::*;
+pub use floor_seed::*;
 pub use lamp_runtime::*;
 pub use open_space_census::*;
 pub use relay_chambers::*;
