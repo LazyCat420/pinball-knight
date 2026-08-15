@@ -191,12 +191,20 @@ pub struct FrameInput {
     pub attack: bool,
     /// Weapon swap key pressed (Tab / 1 / 2).
     pub swap_weapon: bool,
+    /// Skill slot 1 (Q / Flipper Charge).
+    pub ability_1: bool,
+    /// Skill slot 2 (E / Time Crawl).
+    pub ability_2: bool,
+    /// Ultimate skill (R / Overcharge Rampage).
+    pub ability_ult: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct SimState {
     pub grid: Grid,
     pub player: Player,
+    pub monsters: Vec<crate::monsters::types::LiveMonster>,
+    pub abilities: crate::abilities::PlayerAbilities,
     pub rng: Mulberry32,
     pub tick: u64,
     /// Wall-clock seconds simulated — `state.elapsed` (spinpad phase reads it).
@@ -305,6 +313,8 @@ impl SimState {
                 slash: crate::player::MeleeSlash::default(),
                 inventory: crate::player::PlayerInventory::default(),
             },
+            monsters: Vec::new(),
+            abilities: crate::abilities::PlayerAbilities::default(),
             rng: Mulberry32::new(seed),
             tick: 0,
             elapsed: 0.0,
@@ -347,6 +357,37 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
         s.player.squash_t = 0.0_f64.max(s.player.squash_t - DT);
     }
 
+    // Tick abilities
+    s.abilities.tick(DT);
+
+    // Ability triggers
+    if input.ability_1 && s.abilities.slot_1.trigger() {
+        let (fx, fz) = match s.player.facing {
+            Facing::S => (0.0, 1.0),
+            Facing::N => (0.0, -1.0),
+            Facing::E => (1.0, 0.0),
+            Facing::W => (-1.0, 0.0),
+        };
+        s.player.mom_x = fx;
+        s.player.mom_z = fz;
+        s.player.mom_speed = 14.0;
+    }
+    if input.ability_2 && s.abilities.slot_2.trigger() {
+        s.abilities.time_crawl_t = 3.5;
+    }
+    if input.ability_ult && s.player.overcharge >= 0.99 {
+        let (fx, fz) = match s.player.facing {
+            Facing::S => (0.0, 1.0),
+            Facing::N => (0.0, -1.0),
+            Facing::E => (1.0, 0.0),
+            Facing::W => (-1.0, 0.0),
+        };
+        s.player.mom_x = fx;
+        s.player.mom_z = fz;
+        s.player.mom_speed = 16.0;
+        s.player.overcharge = 0.0;
+    }
+
     // Tick slash / attack recovery
     if s.player.slash.active {
         s.player.slash.timer -= DT;
@@ -378,6 +419,83 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
         s.player.slash.dir_x = fx;
         s.player.slash.dir_z = fz;
         s.player.inventory.decrement_active_durability();
+    }
+
+    // Combat resolution: player slash hitting monsters
+    if s.player.slash.active {
+        let px = s.player.x;
+        let pz = s.player.z;
+        let reach = s.player.slash.reach;
+        let dmg = s.player.slash.base_damage;
+        let sx = s.player.slash.dir_x;
+        let sz = s.player.slash.dir_z;
+
+        for m in &mut s.monsters {
+            if m.mode == crate::monsters::types::EnemyMode::Dead {
+                continue;
+            }
+            let dx = m.x - px;
+            let dz = m.z - pz;
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist <= reach + m.radius {
+                let dot = (dx * sx + dz * sz) / dist.max(0.001);
+                if dot > 0.25 {
+                    m.hp -= dmg;
+                    m.stagger_t = 0.35;
+                    m.kbx = dx / dist.max(0.001) * 3.5;
+                    m.kbz = dz / dist.max(0.001) * 3.5;
+                    if m.hp <= 0.0 {
+                        m.mode = crate::monsters::types::EnemyMode::Dead;
+                        s.gold_run += (m.damage as i64) * 2;
+                        s.jackpots += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Monster AI & collision against player
+    let dt_monster = if s.abilities.time_crawl_t > 0.0 { DT * 0.25 } else { DT };
+    let px = s.player.x;
+    let pz = s.player.z;
+
+    for m in &mut s.monsters {
+        if m.mode == crate::monsters::types::EnemyMode::Dead {
+            continue;
+        }
+        if m.stagger_t > 0.0 {
+            m.stagger_t -= dt_monster;
+            let kx = m.kbx * dt_monster;
+            let kz = m.kbz * dt_monster;
+            let res = crate::collide::move_circle(&s.grid, m.x, m.z, m.radius, kx, kz);
+            m.x = res.x;
+            m.z = res.z;
+            m.kbx *= 0.85;
+            m.kbz *= 0.85;
+            continue;
+        }
+
+        let dx = px - m.x;
+        let dz = pz - m.z;
+        let dist = (dx * dx + dz * dz).sqrt();
+
+        if dist > 0.05 && dist < 14.0 {
+            let speed = m.speed * dt_monster;
+            let mx = (dx / dist) * speed;
+            let mz = (dz / dist) * speed;
+            let res = crate::collide::move_circle(&s.grid, m.x, m.z, m.radius, mx, mz);
+            m.x = res.x;
+            m.z = res.z;
+
+            // Contact with player
+            if dist <= (m.radius + PLAYER_R) && s.player.iframes <= 0.0 && !s.player.is_ball() && !s.player.is_rolling() {
+                s.player.iframes = 0.65;
+                s.player.squash_t = 0.18;
+                s.player.squash_amp = 0.35;
+                s.player.squash_nx = dx / dist;
+                s.player.squash_nz = dz / dist;
+            }
+        }
     }
 
     // Part cooldowns/timers tick first (the legacy parts renderer's job,

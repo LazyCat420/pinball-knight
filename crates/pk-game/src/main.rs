@@ -1097,12 +1097,39 @@ fn setup_dungeon(
             .filter(|p| p.kind == pk_core::pinball::PartKind::Bumper)
             .count() as i32;
         sim.bumpers_lit = 0;
+        // Populate live monster entities in the core simulation
+        for (idx, spawn_tile) in f.plan.spawns.iter().enumerate() {
+            let kind = match idx % 4 {
+                0 => pk_core::monsters::types::EnemyKind::Zombie,
+                1 => pk_core::monsters::types::EnemyKind::Brute,
+                2 => pk_core::monsters::types::EnemyKind::Jester,
+                _ => pk_core::monsters::types::EnemyKind::Goblin,
+            };
+            let (sx, sz) = (spawn_tile.i as f64 + 0.5, spawn_tile.j as f64 + 0.5);
+            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
+                idx as u32 + 1,
+                kind,
+                sx,
+                sz,
+            ));
+        }
+        if let Some(frog) = f.plan.frog {
+            let (sx, sz) = (frog.i as f64 + 0.5, frog.j as f64 + 0.5);
+            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
+                999,
+                pk_core::monsters::types::EnemyKind::Croaker,
+                sx,
+                sz,
+            ));
+        }
+
         let inert = authored_floor::unhonoured_part_kinds(&f.plan);
         let inert_n: usize = inert.iter().map(|(_, n)| n).sum();
         info!(
-            "parts: {} live of {} planned ({} inert until P1's verbs land: {})",
+            "parts: {} live of {} planned, monsters: {} live ({} inert until P1's verbs land: {})",
             sim.parts.len(),
             f.plan.parts.len(),
+            sim.monsters.len(),
             inert_n,
             inert
                 .iter()
@@ -1370,6 +1397,9 @@ fn gather_input(
         swap_weapon: keys.just_pressed(KeyCode::Tab)
             || keys.just_pressed(KeyCode::Digit1)
             || keys.just_pressed(KeyCode::Digit2),
+        ability_1: keys.just_pressed(KeyCode::KeyQ),
+        ability_2: keys.just_pressed(KeyCode::KeyE),
+        ability_ult: keys.just_pressed(KeyCode::KeyR),
     };
 }
 

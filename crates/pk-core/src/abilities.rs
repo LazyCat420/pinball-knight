@@ -149,6 +149,43 @@ impl AbilitySlotState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerAbilities {
+    pub slot_1: AbilitySlotState,
+    pub slot_2: AbilitySlotState,
+    pub ult_ready: bool,
+    pub time_crawl_t: f64,
+}
+
+impl Default for PlayerAbilities {
+    fn default() -> Self {
+        Self {
+            slot_1: AbilitySlotState {
+                id: Some(AbilityId::Flippercharge),
+                cooldown_t: 0.0,
+                rank: 1,
+            },
+            slot_2: AbilitySlotState {
+                id: Some(AbilityId::Timecrawl),
+                cooldown_t: 0.0,
+                rank: 1,
+            },
+            ult_ready: false,
+            time_crawl_t: 0.0,
+        }
+    }
+}
+
+impl PlayerAbilities {
+    pub fn tick(&mut self, dt: f64) {
+        self.slot_1.tick(dt);
+        self.slot_2.tick(dt);
+        if self.time_crawl_t > 0.0 {
+            self.time_crawl_t = (self.time_crawl_t - dt).max(0.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
