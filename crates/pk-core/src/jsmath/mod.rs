@@ -62,14 +62,17 @@
 //! not. There is no "the trig family behaves like X" rule to be had here;
 //! there is only the sweep.
 //!
-//! PORTS-NOTHING — dispatch to the target-correct implementations below
+//! PORTS: `legacy/src/utils/math.ts`
 
 mod fdlibm;
 mod fdlibm_explog;
 mod pow_arm;
 mod pow_data;
+pub mod scalar;
+
 pub use fdlibm::{js_cos, js_sin};
 pub use fdlibm_explog::{js_exp, js_log};
+pub use scalar::*;
 /// Exposed for the oracle's negative control only — production code calls
 /// [`js_pow`], which adds the ±0.5 routing the runtime does.
 pub use pow_arm::arm_pow;
