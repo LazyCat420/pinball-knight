@@ -2,6 +2,8 @@
 //!
 //! Renders the launch chute hardware behind the knight while parked on a new floor,
 //! animating the striker pullback with charging power, and showing the aiming trajectory.
+//!
+//! PORTS-NOTHING — Bevy shell rendering glue for dungeon plunger
 
 use bevy::prelude::*;
 

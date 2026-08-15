@@ -12,6 +12,9 @@
 //! The timer RESETS rather than accumulating (`moteT = 0.14`, not `+= 0.14`),
 //! so a long frame emits one batch and never a burst of catch-up. Ported as
 //! written.
+//!
+//! PORTS-NOTHING — helper emitter module, full core.ts port lives in tavern/core.rs
+
 use bevy::prelude::*;
 
 use pk_core::tavern::layout::{ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};

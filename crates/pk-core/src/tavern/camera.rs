@@ -2,6 +2,8 @@
 //! `legacy/src/scenes/tavern/core.ts` (CAM_LEAN / CAM_LERP and the per-frame
 //! ease). Zoom fitting (`fitZoom`) reads the render target and stays in the
 //! shell; this is only the aim point.
+//!
+//! PORTS-NOTHING — helper module, full core.ts port lives in tavern/core.rs
 
 use super::layout::{ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};
 
