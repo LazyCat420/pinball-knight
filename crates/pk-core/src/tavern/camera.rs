@@ -2,13 +2,6 @@
 //! `legacy/src/scenes/tavern/core.ts` (CAM_LEAN / CAM_LERP and the per-frame
 //! ease). Zoom fitting (`fitZoom`) reads the render target and stays in the
 //! shell; this is only the aim point.
-//!
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/core.ts` — only the camera aim
-//! math (CAM_LEAN / CAM_LERP / the per-frame ease). `openTavernScene`'s
-//! lifecycle — container + renderer boot, the frame loop, `fitZoom`,
-//! `closeTavern`'s disposal — is 800+ of its 906 lines and is unported as
-//! `core.ts` (the Bevy shell in `pk-game/src/tavern.rs` does that job, but it
-//! is a different structure, not a transcription).
 
 use super::layout::{ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};
 
