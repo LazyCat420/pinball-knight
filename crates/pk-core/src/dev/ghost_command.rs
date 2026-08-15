@@ -2,7 +2,7 @@
 //!
 //! PORTS: `dev/ghost-command.ts`
 
-pub const GHOST_MAZE_NAME: &str = "Ghost Maze";
+use super::ghost_maze::GHOST_MAZE_NAME;
 
 /// Formats the current ghost maze workbench state for display.
 pub fn describe_ghost_maze(level: Option<u32>, seed: Option<u64>) -> String {
