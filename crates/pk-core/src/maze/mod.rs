@@ -27,10 +27,13 @@
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
 //!
-//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`
+//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`
 
 pub mod fog;
+pub mod spacing_grid;
+
 pub use fog::*;
+pub use spacing_grid::*;
 
 pub mod arc_contract;
 pub mod arc_sweeps;
