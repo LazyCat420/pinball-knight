@@ -8,10 +8,10 @@ description = "Pinball Knight simulation core: deterministic, Bevy-free, GPU-fre
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 libm = { workspace = true }
 enum-map = { workspace = true }
 strum = { workspace = true }
 slotmap = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
