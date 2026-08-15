@@ -1,5 +1,7 @@
-//! PORTS-NOTHING — module tree
+//! Screen UI views: shop, armory, forge, gambler, alchemist, dealer, etc.
 //!
+//! PORTS: `gui/screens/shop.ts`
+
 pub mod alchemist;
 pub mod armory;
 pub mod character_select;
@@ -13,5 +15,6 @@ pub mod hud;
 pub mod intro;
 pub mod menu;
 pub mod settings;
+pub mod shop;
 pub mod tavern;
 pub mod toasts;
