@@ -1,6 +1,6 @@
-//! Scene rendering helpers: arc-lanes, arc-kickers, light crossing model, aim indicator, aim indicator geometry, palette shading, monster portraits, palette sources, paint types, tell clips, knight look, canvas backing, and knight portrait layout.
+//! Scene rendering helpers: arc-lanes, arc-kickers, light crossing model, aim indicator, aim indicator geometry, palette shading, monster portraits, palette sources, paint types, tell clips, knight look, canvas backing, knight portrait layout, and lazy reaper sheet cache.
 //!
-//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`, `engine/render/canvas-backing.ts`, `render/knight-portrait.ts`, `render/aim-indicator-math.ts`
+//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`, `engine/render/canvas-backing.ts`, `render/knight-portrait.ts`, `render/aim-indicator-math.ts`, `render/reaper-sheet.ts`
 
 pub mod aim_indicator;
 pub mod aim_indicator_math;
@@ -14,6 +14,7 @@ pub mod monster_portrait;
 pub mod paint_types;
 pub mod palette_shading;
 pub mod palette_source;
+pub mod reaper_sheet;
 pub mod tell_clips;
 
 pub use aim_indicator::*;
@@ -28,4 +29,5 @@ pub use monster_portrait::*;
 pub use paint_types::*;
 pub use palette_shading::*;
 pub use palette_source::*;
+pub use reaper_sheet::*;
 pub use tell_clips::*;
