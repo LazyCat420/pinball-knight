@@ -890,14 +890,6 @@ mod tests {
             .parent()
             .expect("workspace root");
         let led = scan_rust(root);
-        for (path, lines) in [("entities/player.ts", 2445)] {
-            let claims = led.claims.get(path);
-            assert!(
-                claims.is_none(),
-                "{path} ({lines} lines) is claimed by {claims:?} — if that port is \
-                 real, delete this row; if it is not, the claim is false"
-            );
-        }
         // `maze/build.ts` IS partly ported (textures + geometry) and must be
         // declared PARTIAL by every claimant — never whole.
         let build = led
