@@ -51,6 +51,7 @@ pub mod combo;
 pub mod config;
 pub mod constants;
 pub mod debug;
+pub mod dev;
 pub mod economy;
 pub mod enemies;
 pub mod enemy_rules;
