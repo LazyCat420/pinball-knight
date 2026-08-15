@@ -1,8 +1,10 @@
-//! PORTS: `engine/input.ts`, `input/keymap.ts`, `engine/virtual-pad.ts`
+//! PORTS: `engine/input.ts`, `input/keymap.ts`, `engine/virtual-pad.ts`, `legacy/src/utils/input-manager.ts`
 
+pub mod input_manager;
 pub mod keymap;
 pub mod virtual_pad;
 
+pub use input_manager::*;
 pub use keymap::*;
 pub use virtual_pad::*;
 
@@ -74,7 +76,6 @@ impl GameplayInputState {
     fn recompute_move_dir(&mut self) {
         let mut dx: f64 = 0.0;
         let mut dz: f64 = 0.0;
-
         if self.held_actions.contains(&InputAction::MoveLeft) {
             dx -= 1.0;
         }
