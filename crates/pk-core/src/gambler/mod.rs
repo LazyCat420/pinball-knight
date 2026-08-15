@@ -12,14 +12,17 @@
 //! `BlackjackApi` seams), so the stake caps and the per-visit round limit
 //! cannot be bypassed.
 //!
-//! PORTS-NOTHING — module tree
+//! PORTS: `legacy/src/scenes/tavern/gambler/offscreen.ts`
 
 pub mod blackjack;
 pub mod blackjack_table;
 pub mod darts;
 pub mod darts_throw;
 pub mod drive;
+pub mod offscreen;
 pub mod roulette;
 pub mod roulette_physics;
 pub mod slots;
 pub mod table;
+
+pub use offscreen::*;
