@@ -156,6 +156,10 @@ impl PlanStats {
     }
 }
 
+pub const PILASTER_EVERY: i32 = 5;
+pub const BANNER_EVERY: i32 = 7;
+pub const CLUTTER_EVERY: i32 = 6;
+
 /// Every wall in a grid, sorted into the buckets that will each become one
 /// mesh. Render-free and Bevy-`App`-free: this is the part worth testing.
 pub(crate) struct WallPlan {
@@ -164,6 +168,14 @@ pub(crate) struct WallPlan {
     /// brass material), kept separate because they come from `grid.arcs`
     /// rather than from tiles and so are not subject to the tile cull.
     pub arcs: Vec<Placement>,
+    /// Engaged stone columns on tall south-facing wall faces.
+    pub pilasters: Vec<Placement>,
+    /// Heraldic swallowtail cloth banners on tall south-facing wall faces.
+    pub banners: Vec<Placement>,
+    /// Corner and dead-end wooden crates.
+    pub crates: Vec<Placement>,
+    /// Corner and dead-end iron-banded barrels.
+    pub barrels: Vec<Placement>,
     /// Measurement only — see the `#[cfg(test)] impl PlanStats` above.
     #[cfg_attr(not(test), allow(dead_code))]
     pub stats: PlanStats,
@@ -175,30 +187,25 @@ pub(crate) struct WallPlan {
 const FACE_GROUPS: usize = 2;
 
 impl WallPlan {
-    /// Entities this plan spawns: [`FACE_GROUPS`] per non-empty bucket, one for
-    /// the arcs if any, plus the floor plane. Equals the draw count, since each
-    /// is one mesh with one material.
-    ///
-    /// This was `buckets.len() + …` while every bucket drew in one flat colour.
-    /// The baked textures split sides from caps, which doubles the bucket term
-    /// — an upper bound, since a bucket with no cap faces spawns one entity.
-    pub fn batched_entities(&self) -> usize {
+    /// Entities from wall geometry and arc guides alone.
+    pub fn wall_batched_entities(&self) -> usize {
         self.buckets.len() * FACE_GROUPS + usize::from(!self.arcs.is_empty()) + 1
+    }
+
+    /// Total entities this plan spawns: [`FACE_GROUPS`] per non-empty bucket, one for
+    /// the arcs if any, set-dressing decor, plus the floor plane.
+    pub fn batched_entities(&self) -> usize {
+        self.wall_batched_entities()
+            + usize::from(!self.pilasters.is_empty())
+            + usize::from(!self.banners.is_empty())
+            + usize::from(!self.crates.is_empty())
+            + usize::from(!self.barrels.is_empty())
     }
 }
 
 /// legacy: "a wall buried inside a solid block can never be seen". A wall tile
 /// with at least one walkable 8-neighbour is built; one without is skipped
 /// outright.
-///
-/// Why removing a tile cannot punch a visible hole, which is the part that
-/// looks unsafe: the camera is orthographic at 38° tilt / 45° yaw, and a fully
-/// enclosed tile is a 1×1 pit `WALL_H` deep in an otherwise flat wall top. The
-/// sightline enters over the near rim at `WALL_H` and drops
-/// `√2 · tan 38° = 1.104` crossing the cell — against `WALL_H = 1.1`. It
-/// grazes the far bottom corner and sees nothing. `WALL_H` is not an arbitrary
-/// 1.1; it is that angle's self-occluding depth, which is exactly what makes
-/// this cull free rather than merely cheap.
 fn exposed(g: &Grid, i: i32, j: i32) -> bool {
     for dj in -1..=1 {
         for di in -1..=1 {
@@ -213,6 +220,10 @@ fn exposed(g: &Grid, i: i32, j: i32) -> bool {
 /// Sort a grid's walls into buckets. Pure — no `Assets`, no `World`.
 pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
     let mut buckets: BTreeMap<Bucket, Vec<Placement>> = BTreeMap::new();
+    let mut pilasters = Vec::new();
+    let mut banners = Vec::new();
+    let mut crates = Vec::new();
+    let mut barrels = Vec::new();
     let mut stats = PlanStats {
         tiles: (grid.w as usize) * (grid.h as usize),
         ..PlanStats::default()
@@ -239,6 +250,21 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
 
             let (x, z) = tile_center(grid, i, j);
             let low = is_low_wall(grid, i, j);
+
+            // Architectural Set-Dressing: pilasters and banners on tall south faces
+            if !low && is_walkable(grid, i, j + 1) {
+                if (i * 31 + j * 17).rem_euclid(PILASTER_EVERY) == 0 {
+                    pilasters.push(Placement {
+                        pos: Vec3::new(x as f32, (WALL_H + 0.04) / 2.0, (z + 0.5 + 0.04) as f32),
+                        yaw: 0.0,
+                    });
+                } else if (i * 13 + j * 41).rem_euclid(BANNER_EVERY) == 0 {
+                    banners.push(Placement {
+                        pos: Vec3::new(x as f32, (WALL_H * 0.52) as f32, (z + 0.5 + 0.015) as f32),
+                        yaw: 0.0,
+                    });
+                }
+            }
 
             if is_slant(shape) {
                 // A wedge along the hypotenuse, offset onto the solid side.
@@ -302,6 +328,37 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
         }
     }
 
+    // Corner / Dead-End Clutter (Crates and Barrels)
+    for j in 0..grid.h {
+        for i in 0..grid.w {
+            if !is_walkable(grid, i, j) {
+                continue;
+            }
+            let w_e = !is_walkable(grid, i + 1, j);
+            let w_w = !is_walkable(grid, i - 1, j);
+            let w_n = !is_walkable(grid, i, j - 1);
+            let w_s = !is_walkable(grid, i, j + 1);
+            let wall_count = (w_e as i32) + (w_w as i32) + (w_n as i32) + (w_s as i32);
+            if wall_count >= 2 && (i * 53 + j * 29).rem_euclid(CLUTTER_EVERY) == 0 {
+                let (x, z) = tile_center(grid, i, j);
+                let ox = if w_e { 0.3 } else if w_w { -0.3 } else { 0.0 };
+                let oz = if w_s { 0.3 } else if w_n { -0.3 } else { 0.0 };
+                let rot = (((i * 71 + j * 37) % 100) as f32 / 100.0 - 0.5) * 0.6;
+                if (i + j) % 2 == 0 {
+                    crates.push(Placement {
+                        pos: Vec3::new((x + ox) as f32, 0.15, (z + oz) as f32),
+                        yaw: rot,
+                    });
+                } else {
+                    barrels.push(Placement {
+                        pos: Vec3::new((x + ox) as f32, 0.18, (z + oz) as f32),
+                        yaw: rot,
+                    });
+                }
+            }
+        }
+    }
+
     // Multi-tile arc guides: segment boxes swept along each feature's circle
     // (the collider resolves against the true arc; this is its visual echo).
     // Not culled — they are per-FEATURE, and legacy's exposure test never saw
@@ -326,6 +383,10 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
     WallPlan {
         buckets,
         arcs,
+        pilasters,
+        banners,
+        crates,
+        barrels,
         stats,
     }
 }
@@ -713,9 +774,6 @@ pub(crate) fn spawn_grid_meshes(
 
     let arc_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
-        // Lit like the rest of the floor. Left `unlit` it would be the only
-        // surface in the dungeon that ignores a torch, and a guide that does not
-        // catch the light reads as a decal rather than a rail.
         perceptual_roughness: 0.5,
         metallic: 0.4,
         ..default()
@@ -726,6 +784,78 @@ pub(crate) fn spawn_grid_meshes(
                 .spawn((
                     Mesh3d(meshes.add(merge(&arc_shape(), &plan.arcs))),
                     MeshMaterial3d(arc_mat),
+                    Transform::IDENTITY,
+                ))
+                .id(),
+        );
+    }
+
+    // ── Architectural Set-Dressing (Pilasters, Banners, Crates, Barrels) ──
+    if !plan.pilasters.is_empty() {
+        let shaft_mesh = Mesh::from(Cuboid::new(0.16, WALL_H + 0.04, 0.12));
+        let m1 = merge(&shaft_mesh, &plan.pilasters);
+        out.push(
+            commands
+                .spawn((
+                    Mesh3d(meshes.add(m1)),
+                    MeshMaterial3d(cap_mat.clone()),
+                    Transform::IDENTITY,
+                ))
+                .id(),
+        );
+    }
+
+    if !plan.banners.is_empty() {
+        let banner_geo = Mesh::from(Cuboid::new(0.46, 0.78, 0.02));
+        let banner_mat = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.82, 0.18, 0.22),
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            ..default()
+        });
+        out.push(
+            commands
+                .spawn((
+                    Mesh3d(meshes.add(merge(&banner_geo, &plan.banners))),
+                    MeshMaterial3d(banner_mat),
+                    Transform::IDENTITY,
+                ))
+                .id(),
+        );
+    }
+
+    if !plan.crates.is_empty() {
+        let crate_geo = Mesh::from(Cuboid::new(0.3, 0.3, 0.3));
+        let crate_mat = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.48, 0.32, 0.18),
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            ..default()
+        });
+        out.push(
+            commands
+                .spawn((
+                    Mesh3d(meshes.add(merge(&crate_geo, &plan.crates))),
+                    MeshMaterial3d(crate_mat),
+                    Transform::IDENTITY,
+                ))
+                .id(),
+        );
+    }
+
+    if !plan.barrels.is_empty() {
+        let barrel_geo = Mesh::from(Cylinder::new(0.14, 0.36));
+        let barrel_mat = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.36, 0.24, 0.14),
+            perceptual_roughness: 0.85,
+            metallic: 0.0,
+            ..default()
+        });
+        out.push(
+            commands
+                .spawn((
+                    Mesh3d(meshes.add(merge(&barrel_geo, &plan.barrels))),
+                    MeshMaterial3d(barrel_mat),
                     Transform::IDENTITY,
                 ))
                 .id(),
@@ -1490,10 +1620,10 @@ mod tests {
         // and the demo floor is the WORST case in the game for it (625 tiles,
         // five buckets). A real floor is ~194×146.
         assert!(
-            s.per_tile_entities() > 10 * plan.batched_entities(),
+            s.per_tile_entities() > 10 * plan.wall_batched_entities(),
             "batching must be worth doing even on the demo floor: {} per-tile vs {} batched",
             s.per_tile_entities(),
-            plan.batched_entities()
+            plan.wall_batched_entities()
         );
     }
 

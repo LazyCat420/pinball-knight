@@ -1826,7 +1826,7 @@ fn update_dungeon_hud(
 
     let ult_charge = (p.overcharge.max(p.sprint_charge)).clamp(0.0, 1.0);
     let rampage_ready = p.overcharge >= 0.99 || p.sprint_charge >= 0.99;
-    let rampage_active = p.is_ball() || p.is_rolling();
+    let rampage_active = false; // Never show FPS crosshairs during standard isometric marble gameplay
 
     let hud_view = HudView {
         hp: 6,

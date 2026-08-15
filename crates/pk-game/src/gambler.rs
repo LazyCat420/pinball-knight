@@ -446,6 +446,47 @@ fn sym_ink(s: Symbol) -> u32 {
     }
 }
 
+fn sym_tone_ink(s: Symbol, tone: pk_gui::gambler::symbols::Tone) -> u32 {
+    use pk_gui::gambler::symbols::Tone;
+    match (s, tone) {
+        (Symbol::Jackpot, Tone::Ink) => 0x0038_2408,
+        (Symbol::Jackpot, Tone::Shade) => 0x007a_5012,
+        (Symbol::Jackpot, Tone::Base) => 0x00bd_821d,
+        (Symbol::Jackpot, Tone::Lite) => 0x00f5_c138,
+        (Symbol::Jackpot, Tone::Hi) => 0x00ff_f7b3,
+
+        (Symbol::Target, Tone::Ink) => 0x0038_0c10,
+        (Symbol::Target, Tone::Shade) => 0x0075_1a24,
+        (Symbol::Target, Tone::Base) => 0x00b8_2e3d,
+        (Symbol::Target, Tone::Lite) => 0x00f5_5869,
+        (Symbol::Target, Tone::Hi) => 0x00ff_b3bd,
+
+        (Symbol::Flipper, Tone::Ink) => 0x000c_2438,
+        (Symbol::Flipper, Tone::Shade) => 0x001a_4e7a,
+        (Symbol::Flipper, Tone::Base) => 0x002c_7bbd,
+        (Symbol::Flipper, Tone::Lite) => 0x005c_d3ff,
+        (Symbol::Flipper, Tone::Hi) => 0x00bd_f0ff,
+
+        (Symbol::Bumper, Tone::Ink) => 0x0010_2b18,
+        (Symbol::Bumper, Tone::Shade) => 0x001f_5c32,
+        (Symbol::Bumper, Tone::Base) => 0x002f_8f4e,
+        (Symbol::Bumper, Tone::Lite) => 0x005c_e684,
+        (Symbol::Bumper, Tone::Hi) => 0x00b3_ffd0,
+
+        (Symbol::Ball, Tone::Ink) => 0x001a_1c23,
+        (Symbol::Ball, Tone::Shade) => 0x0045_4d5b,
+        (Symbol::Ball, Tone::Base) => 0x0078_869c,
+        (Symbol::Ball, Tone::Lite) => 0x00b0_bfd4,
+        (Symbol::Ball, Tone::Hi) => 0x00ff_ffff,
+
+        (Symbol::Skull, Tone::Ink) => 0x0012_141a,
+        (Symbol::Skull, Tone::Shade) => 0x002b_303d,
+        (Symbol::Skull, Tone::Base) => 0x004f_5869,
+        (Symbol::Skull, Tone::Lite) => 0x008a_94a6,
+        (Symbol::Skull, Tone::Hi) => 0x00e1_e6f0,
+    }
+}
+
 fn paint_slots(d: &SlotsDrive) -> GamePaint {
     let mut prims = Vec::new();
     let reel_w = 92.0;
@@ -466,33 +507,53 @@ fn paint_slots(d: &SlotsDrive) -> GamePaint {
         match (d.reels(), d.stopped(i)) {
             (Some(reels), true) => {
                 let s = reels[i];
+                let slot_sym = match s {
+                    Symbol::Ball => pk_gui::gambler::symbols::SlotSymbol::Ball,
+                    Symbol::Flipper => pk_gui::gambler::symbols::SlotSymbol::Flipper,
+                    Symbol::Jackpot => pk_gui::gambler::symbols::SlotSymbol::Star,
+                    Symbol::Skull => pk_gui::gambler::symbols::SlotSymbol::Skull,
+                    Symbol::Bumper => pk_gui::gambler::symbols::SlotSymbol::Crown,
+                    Symbol::Target => pk_gui::gambler::symbols::SlotSymbol::Cherry,
+                };
+                let runs = pk_gui::gambler::symbols::get_symbol_runs(slot_sym);
+                let scale = 2.4;
+                let sx0 = x + (reel_w - 16.0 * scale) / 2.0;
+                let sy0 = y0 + 10.0;
+                for r in runs {
+                    prims.push(GamePrim::Fill {
+                        x: sx0 + r.x as f64 * scale,
+                        y: sy0 + r.y as f64 * scale,
+                        w: r.w as f64 * scale,
+                        h: r.h as f64 * scale,
+                        colour: sym_tone_ink(s, r.tone),
+                    });
+                }
                 prims.push(GamePrim::Label {
                     x: x + reel_w / 2.0,
-                    y: y0 + reel_h / 2.0 - 8.0,
+                    y: y0 + reel_h - 14.0,
                     s: s.name().into(),
                     size: 8,
                     colour: sym_ink(s),
                     centre: true,
                 });
             }
-            // A SPINNING reel is a motion bar, not a symbol: the legacy
-            // painter's note is that blur is a solid bar here, never an alpha
-            // gradient, because the surface is nearest-sampled.
+            // A SPINNING reel: vertical motion streaks with alternating tone bands
             _ => {
-                for b in 0..3 {
+                for b in 0..4 {
+                    let offset = (b as f64 * 16.0) % (reel_h - 16.0);
                     prims.push(GamePrim::Fill {
                         x: x + 8.0,
-                        y: y0 + 14.0 + b as f64 * 20.0,
+                        y: y0 + 8.0 + offset,
                         w: reel_w - 16.0,
                         h: 10.0,
-                        colour: DIM,
+                        colour: if b % 2 == 0 { DIM } else { 0x0026_2d3d },
                     });
                 }
             }
         }
     }
 
-    // The line, once every reel is down.
+    // The result banner, once every reel is down.
     if d.reels().is_some() && d.stopped(2) {
         prims.push(GamePrim::Label {
             x: GAME_W / 2.0,
@@ -508,9 +569,6 @@ fn paint_slots(d: &SlotsDrive) -> GamePaint {
 
 fn paint_roulette(d: &RouletteDrive) -> GamePaint {
     let mut prims = Vec::new();
-    // The wheel is a BAR, not a disc: a 130px viewport cannot hold a readable
-    // wheel, and an arc on this surface would be the one anti-aliased thing on
-    // screen. The ball's angle drives a marker along the bar instead.
     let bar_x = 24.0;
     let bar_y = 54.0;
     let bar_w = GAME_W - 48.0;
@@ -539,19 +597,34 @@ fn paint_roulette(d: &RouletteDrive) -> GamePaint {
             h: bar_h - 2.0,
             colour,
         });
+        prims.push(GamePrim::Label {
+            x: x + w / 2.0,
+            y: bar_y + 8.0,
+            s: format!("{p}"),
+            size: 8,
+            colour: BONE,
+            centre: true,
+        });
     }
 
     // The ball, and the resting pocket once it is down.
     if let Some(f) = d.frame() {
         let w = bar_w / n;
-        // Ball angle → a position along the bar. The physics is angular; this
-        // maps one revolution onto the strip so motion reads as motion.
         let frac = (f.theta.rem_euclid(std::f64::consts::TAU)) / std::f64::consts::TAU;
+        let ball_x = bar_x + frac * bar_w;
+        // Motion streak
         prims.push(GamePrim::Fill {
-            x: bar_x + frac * bar_w - 2.0,
+            x: ball_x - 3.0,
             y: bar_y - 8.0,
-            w: 4.0,
+            w: 6.0,
             h: 8.0,
+            colour: GOLD,
+        });
+        prims.push(GamePrim::Fill {
+            x: ball_x - 1.5,
+            y: bar_y - 6.0,
+            w: 3.0,
+            h: 6.0,
             colour: BONE,
         });
         if !d.busy() {
@@ -587,60 +660,74 @@ fn paint_roulette(d: &RouletteDrive) -> GamePaint {
 fn paint_darts(d: &DartsDrive<Mulberry32Fn>) -> GamePaint {
     let mut prims = Vec::new();
     let m = d.machine();
-    // The board, as nested rings. Square rings, for the same nearest-sampling
-    // reason the wheel is a bar.
     let cx = GAME_W / 2.0;
-    let cy = 74.0;
-    let r = 46.0;
-    for (i, colour) in [(0, FELT), (1, DIM), (2, WARM), (3, GOLD)] {
-        let k = r * (1.0 - f64::from(i) * 0.25);
+    let cy = 64.0;
+    let r_outer = 46.0;
+
+    // Segmented concentric dartboard rings
+    for (r, col) in [
+        (r_outer, 0x0012_1820),
+        (r_outer * 0.95, 0x002e_5a36),
+        (r_outer * 0.65, 0x008a_2b38),
+        (r_outer * 0.58, 0x002e_5a36),
+        (r_outer * 0.15, 0x008a_2b38),
+        (r_outer * 0.06, 0x00d9_5763),
+    ] {
         prims.push(GamePrim::Stroke {
-            x: cx - k,
-            y: cy - k,
-            w: k * 2.0,
-            h: k * 2.0,
-            colour,
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+            colour: col,
         });
     }
 
     // The darts already in the board.
     for dart in m.darts() {
+        let dx = cx + dart.x * r_outer;
+        let dy = cy + dart.y * r_outer;
         prims.push(GamePrim::Fill {
-            x: cx + dart.x * r - 1.5,
-            y: cy + dart.y * r - 1.5,
+            x: dx - 1.5,
+            y: dy - 1.5,
             w: 3.0,
             h: 3.0,
+            colour: GOLD,
+        });
+        prims.push(GamePrim::Fill {
+            x: dx - 0.5,
+            y: dy - 0.5,
+            w: 1.0,
+            h: 1.0,
             colour: BONE,
         });
     }
 
-    // The sweep: a vertical line while aiming across, a horizontal one while
-    // aiming down. This is the whole interaction, so it has to be legible.
+    // Aiming sweeps
     match m.phase() {
         ThrowPhase::AimX => {
-            let x = cx + m.cursor() * r;
+            let x = cx + m.cursor() * r_outer;
             prims.push(GamePrim::Fill {
                 x: x - 1.0,
-                y: cy - r,
+                y: cy - r_outer,
                 w: 2.0,
-                h: r * 2.0,
+                h: r_outer * 2.0,
                 colour: COLD,
             });
         }
         ThrowPhase::AimY => {
-            let x = cx + m.locked_x() * r;
+            let x = cx + m.locked_x() * r_outer;
             prims.push(GamePrim::Fill {
                 x: x - 1.0,
-                y: cy - r,
+                y: cy - r_outer,
                 w: 2.0,
-                h: r * 2.0,
+                h: r_outer * 2.0,
                 colour: DIM,
             });
-            let y = cy + m.cursor() * m.y_range() * r;
+            let y = cy + m.cursor() * m.y_range() * r_outer;
             prims.push(GamePrim::Fill {
-                x: cx - r,
+                x: cx - r_outer,
                 y: y - 1.0,
-                w: r * 2.0,
+                w: r_outer * 2.0,
                 h: 2.0,
                 colour: COLD,
             });
@@ -672,67 +759,149 @@ fn paint_darts(d: &DartsDrive<Mulberry32Fn>) -> GamePaint {
 
 fn paint_blackjack(t: &BlackjackTable) -> GamePaint {
     let mut prims = Vec::new();
-    let card_w = 26.0;
-    let card_h = 36.0;
+    // Green felt table background
+    prims.push(GamePrim::Fill {
+        x: 6.0,
+        y: 6.0,
+        w: GAME_W - 12.0,
+        h: 120.0,
+        colour: FELT,
+    });
+    prims.push(GamePrim::Stroke {
+        x: 6.0,
+        y: 6.0,
+        w: GAME_W - 12.0,
+        h: 120.0,
+        colour: 0x002c_4838,
+    });
+    let card_w = 28.0;
+    let card_h = 38.0;
 
-    let row = |prims: &mut Vec<GamePrim>, cards: &[String], y: f64, hide_first: bool| {
-        for (i, label) in cards.iter().enumerate() {
-            let x = 24.0 + i as f64 * (card_w + 5.0);
-            let down = hide_first && i == 1;
+    let draw_card = |prims: &mut Vec<GamePrim>, card: &pk_core::gambler::blackjack::Card, x: f64, y: f64, down: bool| {
+        if down {
             prims.push(GamePrim::Fill {
                 x,
                 y,
                 w: card_w,
                 h: card_h,
-                colour: if down { DIM } else { BONE },
+                colour: 0x001f_2d3d,
             });
-            if !down {
-                prims.push(GamePrim::Label {
-                    x: x + 2.0,
-                    y: y + 4.0,
-                    s: label.clone(),
-                    size: 8,
-                    colour: INK,
-                    centre: false,
-                });
+            prims.push(GamePrim::Stroke {
+                x,
+                y,
+                w: card_w,
+                h: card_h,
+                colour: GOLD,
+            });
+            prims.push(GamePrim::Fill {
+                x: x + 3.0,
+                y: y + 3.0,
+                w: card_w - 6.0,
+                h: card_h - 6.0,
+                colour: DIM,
+            });
+            return;
+        }
+
+        prims.push(GamePrim::Fill {
+            x,
+            y,
+            w: card_w,
+            h: card_h,
+            colour: BONE,
+        });
+        prims.push(GamePrim::Stroke {
+            x,
+            y,
+            w: card_w,
+            h: card_h,
+            colour: INK,
+        });
+
+        let rank_str = pk_core::gambler::blackjack::rank_label(card.rank);
+        let rank_bm = pk_gui::gambler::cards_art::rank_bitmap_3x5(&rank_str);
+        let is_red = card.suit == pk_core::gambler::blackjack::Suit::Hearts
+            || card.suit == pk_core::gambler::blackjack::Suit::Diamonds;
+        let card_ink = if is_red { WARM } else { INK };
+
+        // Corner rank bitmap
+        for ry in 0..5 {
+            for rx in 0..3 {
+                if rank_bm[ry * 3 + rx] == 1 {
+                    prims.push(GamePrim::Fill {
+                        x: x + 2.5 + rx as f64 * 1.3,
+                        y: y + 2.5 + ry as f64 * 1.3,
+                        w: 1.3,
+                        h: 1.3,
+                        colour: card_ink,
+                    });
+                }
+            }
+        }
+
+        // Center suit pip
+        let suit_str = match card.suit {
+            pk_core::gambler::blackjack::Suit::Hearts => "heart",
+            pk_core::gambler::blackjack::Suit::Diamonds => "diamond",
+            pk_core::gambler::blackjack::Suit::Spades => "spade",
+            pk_core::gambler::blackjack::Suit::Clubs => "club",
+        };
+        let pip_bm = pk_gui::gambler::cards_art::suit_pip_7x7(suit_str);
+        let px0 = x + (card_w - 7.0 * 1.8) / 2.0;
+        let py0 = y + (card_h - 7.0 * 1.8) / 2.0;
+        for py in 0..7 {
+            for px in 0..7 {
+                if pip_bm[py * 7 + px] == 1 {
+                    prims.push(GamePrim::Fill {
+                        x: px0 + px as f64 * 1.8,
+                        y: py0 + py as f64 * 1.8,
+                        w: 1.8,
+                        h: 1.8,
+                        colour: card_ink,
+                    });
+                }
             }
         }
     };
 
-    let dealer: Vec<String> = t
-        .dealer
-        .iter()
-        .map(|d| pk_core::gambler::blackjack::rank_label(d.card.rank))
-        .collect();
-    let player: Vec<String> = t
-        .player
-        .iter()
-        .map(|d| pk_core::gambler::blackjack::rank_label(d.card.rank))
-        .collect();
+    let dealer_cards: Vec<_> = t.dealer.iter().map(|d| d.card).collect();
+    let dealer_val = pk_core::gambler::blackjack::hand_value(&dealer_cards);
+    let player_cards: Vec<_> = t.player.iter().map(|d| d.card).collect();
+    let player_val = pk_core::gambler::blackjack::hand_value(&player_cards);
 
     prims.push(GamePrim::Label {
         x: 8.0,
-        y: 22.0,
-        s: "DEALER".into(),
+        y: 12.0,
+        s: if t.hole_down() || t.dealer.is_empty() { "DEALER".into() } else { format!("DEALER ({})", dealer_val.total) },
         size: 8,
         colour: COLD,
         centre: false,
     });
-    row(&mut prims, &dealer, 32.0, t.hole_down());
+
+    for (i, dealt) in t.dealer.iter().enumerate() {
+        let x = 24.0 + i as f64 * (card_w + 5.0);
+        let down = t.hole_down() && i == 1;
+        draw_card(&mut prims, &dealt.card, x, 22.0, down);
+    }
+
     prims.push(GamePrim::Label {
         x: 8.0,
-        y: 74.0,
-        s: "YOU".into(),
+        y: 68.0,
+        s: if t.player.is_empty() { "YOU".into() } else { format!("YOU ({})", player_val.total) },
         size: 8,
         colour: GOLD,
         centre: false,
     });
-    row(&mut prims, &player, 84.0, false);
+
+    for (i, dealt) in t.player.iter().enumerate() {
+        let x = 24.0 + i as f64 * (card_w + 5.0);
+        draw_card(&mut prims, &dealt.card, x, 78.0, false);
+    }
 
     if t.phase() == BjPhase::Done && !t.result_label.is_empty() {
         prims.push(GamePrim::Label {
             x: GAME_W - 8.0,
-            y: 22.0,
+            y: 12.0,
             s: t.result_label.to_uppercase(),
             size: 8,
             colour: GOLD,

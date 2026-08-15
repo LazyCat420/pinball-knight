@@ -599,19 +599,98 @@ pub fn spawn_real_floor_decor(
     materials: &mut Assets<StandardMaterial>,
     floor: &ActiveFloor,
 ) -> Vec<Entity> {
-    // ── The exit marker: a tall amber pillar, unlit so it reads at any angle ──
+    let mut entities = Vec::new();
+    let tf = floor.exit_marker_transform();
+    let ex = tf.translation.x;
+    let ez = tf.translation.z;
+
+    // ── The Exit Marker: Void Pit, Stepped Slabs, Arcane Pylons, and Beacon Light ──
     let marker = commands
         .spawn((
             GeneratedExitMarker,
-            Mesh3d(meshes.add(Cuboid::new(0.5, 0.7, 0.5))),
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(1.0, 1.0))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(1.0, 0.72, 0.18),
+                base_color: Color::srgb(0.02, 0.04, 0.08),
                 unlit: true,
                 ..default()
             })),
-            floor.exit_marker_transform(),
+            Transform::from_xyz(ex, 0.012, ez),
         ))
         .id();
+    entities.push(marker);
+
+    // 3 Stepped stone descending stairs
+    let step_mesh = meshes.add(Cuboid::new(0.9, 0.05, 0.26));
+    let step_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.35, 0.38, 0.42),
+        perceptual_roughness: 0.9,
+        ..default()
+    });
+    for s in 0..3 {
+        let step_entity = commands
+            .spawn((
+                Mesh3d(step_mesh.clone()),
+                MeshMaterial3d(step_mat.clone()),
+                Transform::from_xyz(
+                    ex,
+                    0.02 - s as f32 * 0.005,
+                    ez - 0.31 + s as f32 * 0.31,
+                ).with_scale(Vec3::splat(1.0 - s as f32 * 0.18)),
+            ))
+            .id();
+        entities.push(step_entity);
+    }
+
+    // 4 Arcane gate pylons with glowing emissive caps
+    let pylon_mesh = meshes.add(Cuboid::new(0.14, 0.70, 0.14));
+    let pylon_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.22, 0.26, 0.32),
+        perceptual_roughness: 0.5,
+        metallic: 0.5,
+        ..default()
+    });
+    let cap_mesh = meshes.add(Cuboid::new(0.20, 0.12, 0.20));
+    let arcane_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.43, 0.81, 0.91),
+        emissive: LinearRgba::rgb(0.43 * 3.0, 0.81 * 3.0, 0.91 * 3.0),
+        unlit: true,
+        ..default()
+    });
+    for (ox, oz) in [(-0.42, -0.42), (0.42, -0.42), (-0.42, 0.42), (0.42, 0.42)] {
+        let pylon = commands
+            .spawn((
+                Mesh3d(pylon_mesh.clone()),
+                MeshMaterial3d(pylon_mat.clone()),
+                Transform::from_xyz(ex + ox, 0.35, ez + oz),
+            ))
+            .id();
+        let cap = commands
+            .spawn((
+                Mesh3d(cap_mesh.clone()),
+                MeshMaterial3d(arcane_mat.clone()),
+                Transform::from_xyz(ex + ox, 0.72, ez + oz),
+            ))
+            .id();
+        entities.push(pylon);
+        entities.push(cap);
+    }
+
+    // Tall translucent arcane beacon beam cylinder
+    let beam_mesh = meshes.add(Cylinder::new(0.28, 3.2));
+    let beam_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.43, 0.81, 0.91, 0.28),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
+    let beam = commands
+        .spawn((
+            Mesh3d(beam_mesh),
+            MeshMaterial3d(beam_mat),
+            Transform::from_xyz(ex, 1.6, ez),
+        ))
+        .id();
+    entities.push(beam);
 
     // ── The banner ──
     let banner = commands
@@ -619,13 +698,6 @@ pub fn spawn_real_floor_decor(
             RealFloorBanner,
             Node {
                 position_type: PositionType::Absolute,
-                // BELOW the frame-time readout, not beside it. `setup_common`
-                // spawns that as a FULL-WIDTH centred row at `top: 6`, so a
-                // top-left banner shares the line and this one is long enough to
-                // reach the middle: the first screenshot came back reading
-                // "start=20.21ms (49 fps)" with both strings drawn over each
-                // other. Found by looking at the picture — the gate that checked
-                // `debugBanner === true` was green through it.
                 top: Val::Px(26.0),
                 left: Val::Px(8.0),
                 ..default()
@@ -639,8 +711,9 @@ pub fn spawn_real_floor_decor(
             TextColor(Color::srgba(1.0, 0.82, 0.35, 0.95)),
         ))
         .id();
+    entities.push(banner);
 
-    vec![marker, banner]
+    entities
 }
 
 /// The red card. Spawned instead of a floor, never alongside one.
