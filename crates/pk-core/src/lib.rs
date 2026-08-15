@@ -85,6 +85,7 @@ pub mod rng;
 pub mod run;
 pub mod secrets;
 pub mod settings_save;
+pub mod sim;
 pub mod spawn;
 pub mod stagger;
 pub mod state;
@@ -96,3 +97,4 @@ pub mod zombie_types;
 
 pub use best_depth::*;
 pub use settings_save::*;
+pub use sim::*;
