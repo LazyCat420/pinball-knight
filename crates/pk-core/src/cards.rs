@@ -30,7 +30,10 @@
 //! value [`crate::economy::forge`] takes: these functions make a VARIABLE
 //! number of draws, and the count and order is the thing the tests pin.
 //!
-//! PORTS: `cards.ts`
+//! PORTS: `cards.ts`, `card-reader.ts`
+
+pub mod reader;
+pub use reader::*;
 
 use std::borrow::Cow;
 
