@@ -1,10 +1,11 @@
-//! Developer tooling, diagnostic harnesses, testing overrides, diagnostic bundle entries, ghost workbench floors, headless floor generation, circuit census, mega floors, monster lab, and floor SVG export.
+//! Developer tooling, diagnostic harnesses, testing overrides, diagnostic bundle entries, ghost workbench floors, headless floor generation, circuit census, mega floors, monster lab, floor SVG export, and FX lab.
 //!
-//! PORTS: `dev/floor-lock.ts`, `dev/ghost-command.ts`, `dev/mega-entry.ts`, `dev/ghost-maze.ts`, `dev/headless-floor.ts`, `dev/circuit-census.ts`, `dev/mega-floor.ts`, `dev/monster-lab.ts`, `dev/floor-svg.ts`
+//! PORTS: `dev/floor-lock.ts`, `dev/ghost-command.ts`, `dev/mega-entry.ts`, `dev/ghost-maze.ts`, `dev/headless-floor.ts`, `dev/circuit-census.ts`, `dev/mega-floor.ts`, `dev/monster-lab.ts`, `dev/floor-svg.ts`, `dev/fx-lab.ts`
 
 pub mod circuit_census;
 pub mod floor_lock;
 pub mod floor_svg;
+pub mod fx_lab;
 pub mod ghost_command;
 pub mod ghost_maze;
 pub mod headless_floor;
@@ -15,6 +16,7 @@ pub mod monster_lab;
 pub use circuit_census::*;
 pub use floor_lock::*;
 pub use floor_svg::*;
+pub use fx_lab::*;
 pub use ghost_command::*;
 pub use ghost_maze::*;
 pub use headless_floor::*;
