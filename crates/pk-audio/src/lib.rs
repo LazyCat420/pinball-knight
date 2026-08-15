@@ -41,7 +41,7 @@
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
 //!
-//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`, `sfx/index.ts`, `legacy/src/utils/audio-manager.ts`, `legacy/src/scenes/tavern/gambler/audio.ts`, `legacy/src/scenes/tavern/gambler/blackjack-audio.ts`
+//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`, `sfx/index.ts`, `legacy/src/utils/audio-manager.ts`, `legacy/src/scenes/tavern/gambler/audio.ts`, `legacy/src/scenes/tavern/gambler/blackjack-audio.ts`, `legacy/src/scenes/tavern/gambler/roulette-audio.ts`
 
 #![forbid(unsafe_code)]
 
@@ -52,6 +52,7 @@ pub mod gambler_audio;
 pub mod manager;
 pub mod patches;
 pub mod registry;
+pub mod roulette_audio;
 pub mod sfx_hub;
 pub mod synth;
 
@@ -60,6 +61,7 @@ pub use blackjack_audio::*;
 pub use gambler_audio::*;
 pub use manager::*;
 pub use registry::*;
+pub use roulette_audio::*;
 pub use sfx_hub::*;
 
 #[cfg(not(target_arch = "wasm32"))]
