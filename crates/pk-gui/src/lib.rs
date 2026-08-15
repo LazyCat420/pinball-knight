@@ -1,12 +1,13 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
-//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `ui.ts`, `legacy/src/pixel/pixel-font.ts`, `hud.ts`, `map-overlay.ts`, `hud-meter.ts`, `gui/apply-settings.ts`, `pickup-toast.ts`
+//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `ui.ts`, `legacy/src/pixel/pixel-font.ts`, `hud.ts`, `map-overlay.ts`, `hud-meter.ts`, `gui/apply-settings.ts`, `pickup-toast.ts`, `gui/globe-ripple.ts`
 
 pub mod apply_settings;
 pub mod boot;
 pub mod cards;
 pub mod coords;
 pub mod font;
+pub mod globe_ripple;
 pub mod hud_ctrl;
 pub mod hud_meter;
 pub mod icons;
@@ -34,6 +35,7 @@ pub use apply_settings::*;
 pub use boot::*;
 pub use coords::*;
 pub use font::Fonts;
+pub use globe_ripple::*;
 pub use hud_ctrl::*;
 pub use hud_meter::*;
 pub use im::{Rect, UiFrame, UiInput};
