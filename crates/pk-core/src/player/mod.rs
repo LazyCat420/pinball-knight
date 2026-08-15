@@ -1,11 +1,13 @@
-//! Player movement verbs, inputs, and state management.
+//! Player movement verbs, inputs, inventory, and skill runtime progression.
 //!
-//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`
+//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`, `skill-runtime.ts`
 
 pub mod inventory;
+pub mod skill_runtime;
 pub mod types;
 pub mod verbs;
 
 pub use inventory::*;
+pub use skill_runtime::*;
 pub use types::*;
 pub use verbs::*;
