@@ -1,7 +1,9 @@
-//! Engine boot sequences, callback bus wiring, and initialization.
+//! Engine boot sequences, callback bus wiring, run seed parameters, and initialization.
 //!
-//! PORTS: `boot/wiring.ts`
+//! PORTS: `boot/wiring.ts`, `boot/seed-param.ts`
 
+pub mod seed_param;
 pub mod wiring;
 
+pub use seed_param::*;
 pub use wiring::*;
