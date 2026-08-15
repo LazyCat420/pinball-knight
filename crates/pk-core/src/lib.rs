@@ -25,7 +25,7 @@
 //! Nothing here is a correctness lint. Anything that could change a digest
 //! stays on, and CI runs clippy at deny level per crate.
 //!
-//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`
+//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`
 #![allow(
     // `for i in 0..STATIONS.len()` mirrors `for (let i = 0; i < …; i++)`. The
     // iterator rewrite is better Rust and worse evidence: several of these
@@ -40,6 +40,7 @@
 )]
 
 pub mod abilities;
+pub mod best_depth;
 pub mod bestiary;
 pub mod boot;
 pub mod boss;
@@ -93,4 +94,5 @@ pub mod tile_shape;
 pub mod zombie_ai;
 pub mod zombie_types;
 
+pub use best_depth::*;
 pub use settings_save::*;
