@@ -1,10 +1,11 @@
-//! Scene rendering helpers: arc-lanes, arc-kickers, light crossing model, aim indicator, palette shading, monster portraits, palette sources, paint types, tell clips, and knight look.
+//! Scene rendering helpers: arc-lanes, arc-kickers, light crossing model, aim indicator, palette shading, monster portraits, palette sources, paint types, tell clips, knight look, and canvas backing.
 //!
-//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`
+//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`, `engine/render/canvas-backing.ts`
 
 pub mod aim_indicator;
 pub mod arc_kickers;
 pub mod arc_lanes;
+pub mod canvas_backing;
 pub mod knight_look;
 pub mod light_crossing;
 pub mod monster_portrait;
@@ -16,6 +17,7 @@ pub mod tell_clips;
 pub use aim_indicator::*;
 pub use arc_kickers::*;
 pub use arc_lanes::*;
+pub use canvas_backing::*;
 pub use knight_look::*;
 pub use light_crossing::*;
 pub use monster_portrait::*;
