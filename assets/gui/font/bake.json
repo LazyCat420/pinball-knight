@@ -1,47 +1,47 @@
 {
-  "bakedAt": "2026-08-15T04:45:19.204Z",
-  "legacyRev": "fa3a64d248402d4fafc5eca90c7f39bedc3db63c",
+  "bakedAt": "2026-08-10T06:31:06.451Z",
+  "legacyRev": "6fe8452db20cd7fadb6f7743bc20da79c8f5608b-dirty",
   "charsetLen": 100,
   "outputs": {
     "ps2p-8.png": {
       "w": 192,
       "h": 112,
-      "bytes": 5430
+      "bytes": 3725
     },
     "ps2p-16.png": {
       "w": 320,
       "h": 196,
-      "bytes": 7044
+      "bytes": 5265
     },
     "ps2p-24.png": {
       "w": 448,
       "h": 280,
-      "bytes": 9191
+      "bytes": 7611
     },
     "ps2p-32.png": {
       "w": 576,
       "h": 364,
-      "bytes": 11446
+      "bytes": 9446
     },
     "ps2p-48.png": {
       "w": 832,
       "h": 532,
-      "bytes": 17197
+      "bytes": 15091
     },
     "ps2p-64.png": {
       "w": 1088,
       "h": 700,
-      "bytes": 25352
+      "bytes": 22159
     },
     "vt323-16.png": {
-      "w": 176,
+      "w": 160,
       "h": 196,
-      "bytes": 11334
+      "bytes": 11030
     },
     "vt323-32.png": {
       "w": 272,
       "h": 364,
-      "bytes": 23702
+      "bytes": 22163
     }
   }
 }
