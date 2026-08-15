@@ -1,9 +1,10 @@
 //! Post-processing and scene FX utilities.
 //!
-//! PORTS: `fx/heat.ts`, `fx/elements/noise.ts`, `fx/pools/sigil-pool.ts`, `fx/pools/ring-pool.ts`, `fx/elements/goo.ts`, `fx/pools/bolt-pool.ts`, `fx/pools/blade-ring.ts`, `fx/elements/frost.ts`, `fx/elements/rod.ts`
+//! PORTS: `fx/heat.ts`, `fx/elements/noise.ts`, `fx/pools/sigil-pool.ts`, `fx/pools/ring-pool.ts`, `fx/elements/goo.ts`, `fx/pools/bolt-pool.ts`, `fx/pools/blade-ring.ts`, `fx/elements/frost.ts`, `fx/elements/rod.ts`, `fx/elements/element.ts`, `fx/index.ts`
 
 pub mod blade_ring;
 pub mod bolt_pool;
+pub mod element;
 pub mod frost;
 pub mod goo;
 pub mod heat;
@@ -14,6 +15,7 @@ pub mod sigil_pool;
 
 pub use blade_ring::*;
 pub use bolt_pool::*;
+pub use element::*;
 pub use frost::*;
 pub use goo::*;
 pub use heat::*;
