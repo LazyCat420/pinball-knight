@@ -1,29 +1,11 @@
-//! Dungeon run state machine, floor clearing, delve catch-up, run telemetry ledger, scoring, legacy perks, lobby, and floor hold.
+//! Floor-run state machine, scoring, floor hold locks, grave holes, lobby sessions, and meta-progression loops.
 //!
-//! PORTS: `state.ts`, `cards.ts`, `run/death.ts`, `delve.ts`, `run/ledger.ts`, `run-score.ts`, `legacy.ts`, `run/lobby.ts`, `run/floor-hold.ts`
+//! PORTS: `run/floor-hold.ts`, `run/lobby.ts`, `run/grave-hole.ts`
 
-pub mod corpse_run;
-pub mod death;
-pub mod delve;
-pub mod descend;
-pub mod draft;
 pub mod floor_hold;
-pub mod ledger;
-pub mod legacy;
+pub mod grave_hole;
 pub mod lobby;
-pub mod score;
-pub mod state_machine;
-pub mod types;
 
-pub use corpse_run::*;
-pub use death::*;
-pub use delve::*;
-pub use descend::*;
-pub use draft::*;
 pub use floor_hold::*;
-pub use ledger::*;
-pub use legacy::*;
+pub use grave_hole::*;
 pub use lobby::*;
-pub use score::*;
-pub use state_machine::*;
-pub use types::*;

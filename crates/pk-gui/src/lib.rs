@@ -1,6 +1,6 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
-//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `ui.ts`
+//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `ui.ts`, `legacy/src/pixel/pixel-font.ts`
 
 pub mod boot;
 pub mod cards;
@@ -13,6 +13,7 @@ pub mod layer;
 pub mod painter;
 pub mod palette;
 pub mod pixel_canvas;
+pub mod pixel_font;
 pub mod pixel_icon;
 pub mod pixel_text;
 pub mod remote_party;
@@ -32,6 +33,7 @@ pub use input::*;
 pub use layer::*;
 pub use painter::{Painter, Rgba};
 pub use pixel_canvas::*;
+pub use pixel_font::*;
 pub use pixel_icon::*;
 pub use pixel_text::*;
 pub use remote_party::*;
