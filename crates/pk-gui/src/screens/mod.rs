@@ -1,6 +1,6 @@
-//! Screen UI views: shop, haul, armory, forge, gambler, alchemist, dealer, etc.
+//! Screen UI views: shop, haul, armory, forge, gambler, alchemist, dealer, scroll_probe, etc.
 //!
-//! PORTS: `gui/screens/shop.ts`, `legacy/src/scenes/tavern/boot-notice.ts`, `gui/screens/haul.ts`
+//! PORTS: `gui/screens/shop.ts`, `legacy/src/scenes/tavern/boot-notice.ts`, `gui/screens/haul.ts`, `gui/screens/scroll-probe.ts`
 
 pub mod alchemist;
 pub mod armory;
@@ -15,6 +15,7 @@ pub mod haul;
 pub mod hud;
 pub mod intro;
 pub mod menu;
+pub mod scroll_probe;
 pub mod settings;
 pub mod shop;
 pub mod tavern;
