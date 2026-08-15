@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/bestiary.ts, boss.ts
 
 use pk_core::grid::Grid;
-use pk_core::monsters::boss_king::{step_boss_king, BossKingAction, BossKingState, KingPhase};
+use pk_core::monsters::boss_king::{step_boss_king, BossKingState, KingPhase};
 use pk_core::monsters::ghost::{ghost_hover_offset, step_ghost};
 use pk_core::monsters::golem::generate_golem_shards;
 use pk_core::monsters::jester::JesterDisc;

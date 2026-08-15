@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/gui/screens/menu.ts, settings.ts, floor-loading.ts, debug.ts
 
 use pk_gui::font::Fonts;
-use pk_gui::im::{begin_ui, empty_ui_input, rect, Rect};
+use pk_gui::im::{begin_ui, empty_ui_input, rect};
 use pk_gui::painter::Painter;
 use pk_gui::screens::debug::{paint_debug, DebugInspectorState};
 use pk_gui::screens::floor_loading::{paint_floor_loading, FloorLoadingState};

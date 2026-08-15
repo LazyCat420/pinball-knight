@@ -1,7 +1,6 @@
 // Parity test for Card Socketing, Weapon Stat Modifiers, and Stash Overflow.
 // Replicates legacy/src/game/pinball-knight/cards.ts, economy/pickups.ts
 
-use pk_core::items::WeaponId;
 use pk_core::player::inventory::PlayerInventory;
 
 #[test]

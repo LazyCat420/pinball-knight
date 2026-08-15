@@ -3,9 +3,9 @@
 
 use pk_core::marble::floor_fx::{
     spawn_floor_fx, step_floor_fx, FloorFxKind, CARD_BURN_TICK, FIRE_PUDDLE_DMG,
-    FLOOR_FX_MAX, OIL_IGNITE_LIFE, WATER_SLIP_SPEED,
+    FLOOR_FX_MAX, OIL_IGNITE_LIFE,
 };
-use pk_core::marble::puffs::{spawn_puff_burst, step_puffs, PuffPool, MAX_PUFFS};
+use pk_core::marble::puffs::{spawn_puff_burst, step_puffs, PuffPool};
 use pk_core::monsters::types::{EnemyKind, LiveMonster};
 
 #[test]

@@ -1,7 +1,7 @@
 // Parity test suite for Sustained Ambience Audio Beds.
 // Replicates legacy/src/game/pinball-knight/sfx/ambience.ts
 
-use pk_audio::ambience::{AmbienceKind, AmbienceManager, AMB_HOLD};
+use pk_audio::ambience::{AmbienceKind, AmbienceManager};
 
 #[test]
 fn ambience_accumulates_levels_additively() {

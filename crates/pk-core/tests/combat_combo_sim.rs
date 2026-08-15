@@ -1,7 +1,7 @@
 // Parity test for Combat Combo Chain, Finisher Multipliers, and Weapon Heft.
 // Replicates legacy/src/game/pinball-knight/combo.test.ts, entities/combat.ts
 
-use pk_core::combat::combo::{CombatComboState, ComboStage, BASE_SWING_DURATION, COMBO_RESET_WINDOW};
+use pk_core::combat::combo::{CombatComboState, ComboStage, COMBO_RESET_WINDOW};
 use pk_core::items::WeaponId;
 
 #[test]

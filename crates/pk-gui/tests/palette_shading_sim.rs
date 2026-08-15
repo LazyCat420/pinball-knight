@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/render/palette-shading.ts
 
 use pk_gui::render::palette_shading::{
-    family_index_of, shade_by, shade_table, FAMILIES, PALETTE_N, SHADE_DOWN, SHADE_UP,
+    family_index_of, shade_table, FAMILIES, PALETTE_N, SHADE_DOWN, SHADE_UP,
 };
 
 #[test]

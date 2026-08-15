@@ -3,7 +3,6 @@
 //! PORTS: `engine/render/animator.ts`, `engine/render/figure.ts`, `entities/marble.ts`
 
 use bevy::prelude::*;
-use pk_core::state::{Facing, Player};
 
 pub const BALL_MIN_SPEED: f64 = 4.8;
 

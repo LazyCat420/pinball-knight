@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/maze/assembly.ts, assembly-lib.ts, assembly-place.ts
 
 use pk_core::grid::{at, Grid, T_FLOOR, T_WALL};
-use pk_core::maze::assembly::{rotate_assembly, rotate_dir, Dir, E, N, S, W};
+use pk_core::maze::assembly::{rotate_assembly, rotate_dir, E, N, S, W};
 use pk_core::maze::assembly_lib::{all_machines, orbit, slingshot_pair};
 use pk_core::maze::assembly_place::{can_place_assembly, stamp_assembly};
 

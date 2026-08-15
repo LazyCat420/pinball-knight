@@ -3,7 +3,7 @@
 
 use pk_core::engine::gamepad::{
     apply_deadzone, read_gamepad, GamepadActionState, GamepadButton, GamepadRawState,
-    AIM_DEADZONE, STICK_DEADZONE,
+    STICK_DEADZONE,
 };
 
 #[test]

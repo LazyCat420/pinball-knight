@@ -3,7 +3,7 @@
 
 use pk_core::camera::{
     screen_dir_to_world, screen_px_to_world_ground, step_camera, world_to_screen_px,
-    CameraConfig, IsoCamera, ISO_YAW,
+    IsoCamera, ISO_YAW,
 };
 
 #[test]
