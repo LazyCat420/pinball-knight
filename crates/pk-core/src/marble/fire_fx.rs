@@ -2,8 +2,6 @@
 //!
 //! PORTS: `fx/elements/fire.ts`
 
-use std::f64::consts::PI;
-
 pub const FIRE_RAMP: [u8; 5] = [14, 15, 16, 17, 18];
 pub const FIRE_STOPS: [f64; 4] = [0.26, 0.50, 0.74, 0.90];
 
