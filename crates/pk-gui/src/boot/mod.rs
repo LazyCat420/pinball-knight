@@ -1,7 +1,9 @@
-//! Engine boot sequences and pipeline warmup.
+//! Engine boot sequences, scene configuration, and pipeline warmup.
 //!
-//! PORTS: `boot/warmup.ts`
+//! PORTS: `boot/warmup.ts`, `boot/scene.ts`
 
+pub mod scene;
 pub mod warmup;
 
+pub use scene::*;
 pub use warmup::*;

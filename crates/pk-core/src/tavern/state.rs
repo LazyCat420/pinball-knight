@@ -6,7 +6,7 @@
 //! PORTS: `legacy/src/scenes/tavern/state.ts`
 
 /// Run stats handed in by the dungeon when it opens the tavern.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TavernStats {
     pub grade: String,
     pub floor: i32,
