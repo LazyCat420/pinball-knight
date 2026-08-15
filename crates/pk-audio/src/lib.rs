@@ -41,7 +41,7 @@
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
 //!
-//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`
+//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`, `sfx/index.ts`
 
 #![forbid(unsafe_code)]
 
@@ -49,11 +49,12 @@ pub mod ambience;
 pub mod bus;
 pub mod patches;
 pub mod registry;
+pub mod sfx_hub;
 pub mod synth;
 
 pub use ambience::*;
-pub use bus::*;
 pub use registry::*;
+pub use sfx_hub::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod soft;
@@ -63,8 +64,6 @@ pub mod native;
 
 #[cfg(target_arch = "wasm32")]
 pub mod web;
-
-use patches::Engine;
 
 // ── The live backend for this target ────────────────────────────────────────
 #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
