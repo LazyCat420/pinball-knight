@@ -50,9 +50,7 @@
 //! `T_CRACKED` bands (whose face texture IS baked, and unused until the bands
 //! are geometry).
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — the wall/floor/cap GEOMETRY and its
-//! material buckets. Still open: arches, banners, the stairs marker
-//! (`:1521-1693`), cracked bands as removable meshes (`:1475-1520`).
+//! PORTS: `maze/build.ts`
 
 use std::collections::BTreeMap;
 
