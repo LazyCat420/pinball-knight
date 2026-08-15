@@ -41,17 +41,19 @@
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
 //!
-//! PORTS: `sfx/bus.ts`
+//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`
 
 #![forbid(unsafe_code)]
 
 pub mod ambience;
 pub mod bus;
 pub mod patches;
+pub mod registry;
 pub mod synth;
 
 pub use ambience::*;
 pub use bus::*;
+pub use registry::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod soft;
