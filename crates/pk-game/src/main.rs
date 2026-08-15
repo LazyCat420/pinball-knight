@@ -1417,6 +1417,7 @@ fn sync_knight(
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
     mut ghost_timer: Local<f32>,
     mut last_slash_active: Local<bool>,
+    mut last_squash_active: Local<bool>,
 ) {
     let Ok((mut tf, mut mat)) = q.single_mut() else {
         return;
@@ -1434,6 +1435,26 @@ fn sync_knight(
 
     let is_ball = sim.0.player.is_ball() || sim.0.player.is_rolling();
     let is_attacking = sim.0.player.is_attacking();
+
+    // Spawn ball impact sparks on wall/bumper collision squash
+    if sim.0.player.squash_t > 0.0 && !*last_squash_active {
+        let spark_color = if sim.0.player.overcharge >= 0.8 || sim.0.player.mom_speed >= 8.0 {
+            Color::srgb_u8(255, 215, 64)
+        } else {
+            Color::srgb_u8(180, 225, 255)
+        };
+        let normal = Vec3::new(sim.0.player.squash_nx as f32, 0.0, sim.0.player.squash_nz as f32);
+        ball_anim::spawn_ball_impact_sparks(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            tf.translation,
+            normal,
+            spark_color,
+            6,
+        );
+    }
+    *last_squash_active = sim.0.player.squash_t > 0.0;
 
     // Spawn slash trail on attack swing start
     if is_attacking && !*last_slash_active {
@@ -1671,10 +1692,19 @@ fn update_dungeon_hud(
     }
     let px = p.x.floor() as i32;
     let py = p.z.floor() as i32;
+    let stairs_tile = g.t.iter().enumerate().find_map(|(idx, &t)| {
+        if t == pk_core::grid::T_STAIRS {
+            let sx = (idx as i32) % (g.w as i32);
+            let sy = (idx as i32) / (g.w as i32);
+            Some((sx, sy))
+        } else {
+            None
+        }
+    });
     let minimap = Some(HudMinimapView {
         player_tile_x: px,
         player_tile_y: py,
-        stairs_tile: None,
+        stairs_tile,
         tiles,
         width: w,
         height: h,
@@ -1692,6 +1722,10 @@ fn update_dungeon_hud(
         },
     });
 
+    let ult_charge = (p.overcharge.max(p.sprint_charge)).clamp(0.0, 1.0);
+    let rampage_ready = p.overcharge >= 0.99 || p.sprint_charge >= 0.99;
+    let rampage_active = p.is_ball() || p.is_rolling();
+
     let hud_view = HudView {
         hp: 6,
         max_hp: 6,
@@ -1699,9 +1733,9 @@ fn update_dungeon_hud(
         max_mana: 100,
         level,
         kills: sim.0.jackpots as u32,
-        ult_charge: p.sprint_charge.clamp(0.0, 1.0),
-        rampage_ready: p.sprint_charge >= 0.99,
-        rampage_active: false,
+        ult_charge,
+        rampage_ready,
+        rampage_active,
         fps_streak: 0,
         fps_timer: 0.0,
         combo,
