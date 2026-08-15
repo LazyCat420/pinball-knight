@@ -1,6 +1,6 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
-//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`
+//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`
 
 pub mod boot;
 pub mod cards;
@@ -12,6 +12,7 @@ pub mod layer;
 pub mod painter;
 pub mod palette;
 pub mod pixel_canvas;
+pub mod pixel_icon;
 pub mod remote_party;
 pub mod render;
 pub mod root;
@@ -27,6 +28,7 @@ pub use input::*;
 pub use layer::*;
 pub use painter::{Painter, Rgba};
 pub use pixel_canvas::*;
+pub use pixel_icon::*;
 pub use remote_party::*;
 pub use render::*;
 pub use stack::{ScreenEntry, UiStack};
