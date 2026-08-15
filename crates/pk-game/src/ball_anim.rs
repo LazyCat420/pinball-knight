@@ -35,38 +35,29 @@ pub fn compute_dodge_roll_tuck(tau: f32) -> f32 {
     0.72 + 0.12 * (t * std::f32::consts::PI).sin()
 }
 
-/// Computes the 3D rotation for a dodge roll completing a 360 degree spin along the roll direction.
-pub fn compute_dodge_roll_rotation(cam_rot: Quat, dir_x: f32, dir_z: f32, tau: f32) -> Quat {
-    let t = tau.clamp(0.0, 1.0);
-    let spin_angle = -t * std::f32::consts::TAU;
-    let roll_axis = Vec3::new(dir_z, 0.0, -dir_x).normalize_or_zero();
-    let roll_rot = if roll_axis.length_squared() > 0.01 {
-        Quat::from_axis_angle(roll_axis, spin_angle)
-    } else {
-        Quat::from_rotation_x(spin_angle)
-    };
-    cam_rot * roll_rot
+/// Computes the camera-planar rotation for billboard sprites spinning in screen space.
+/// Ensures the sprite quad normal stays exactly parallel to the camera forward vector.
+pub fn compute_billboard_spin_rotation(cam_rot: Quat, spin_angle: f32) -> Quat {
+    cam_rot * Quat::from_rotation_z(spin_angle)
 }
 
-/// Computes the 3D rotation for a continuous pinball marble roll along its velocity vector.
+/// Computes the 3D rotation for a dodge roll completing a 360 degree spin along the roll direction.
+pub fn compute_dodge_roll_rotation(cam_rot: Quat, _dir_x: f32, _dir_z: f32, tau: f32) -> Quat {
+    let t = tau.clamp(0.0, 1.0);
+    let spin_angle = -t * std::f32::consts::TAU;
+    compute_billboard_spin_rotation(cam_rot, spin_angle)
+}
+
+/// Computes the rotation for a continuous pinball marble roll along its velocity vector.
+/// Keeps the billboard quad strictly camera-planar while spinning in screen space.
 pub fn compute_marble_pinball_rotation(
     cam_rot: Quat,
-    dir_x: f32,
-    dir_z: f32,
-    speed: f32,
+    _dir_x: f32,
+    _dir_z: f32,
+    _speed: f32,
     spin_angle: f32,
 ) -> Quat {
-    let speed_ratio = (speed / 14.0).clamp(0.0, 1.0);
-    let pitch = 0.38 * speed_ratio;
-    let tilt_rot = Quat::from_rotation_x(-pitch);
-
-    let roll_axis = Vec3::new(dir_z, 0.0, -dir_x).normalize_or_zero();
-    let spin_rot = if roll_axis.length_squared() > 0.01 {
-        Quat::from_axis_angle(roll_axis, -spin_angle)
-    } else {
-        Quat::IDENTITY
-    };
-    cam_rot * tilt_rot * spin_rot
+    compute_billboard_spin_rotation(cam_rot, -spin_angle)
 }
 
 /// Spawns particle sparks at the contact point when the ball strikes a wall or bumper.

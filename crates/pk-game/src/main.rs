@@ -650,12 +650,13 @@ fn publish_stats(
             // sim-less count frozen at hand-off plus the sim's own tick: one
             // monotonic series across every state.
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floorSource":"{}","authoredFloor":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{},"perf":{}}}"#,
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"plungerArmed":{},"intro":{},"tavern":{},"floorSource":"{}","authoredFloor":{},"floor":{},"floorError":{},"loading":{},"runLevel":{},"gui":{},"perf":{}}}"#,
                 *ticks + sim.0.tick,
                 p.x,
                 p.z,
                 p.facing,
                 p.moving,
+                sim.0.plunger_armed,
                 intro_field,
                 tavern_field,
                 plan.source.label(),
@@ -1572,8 +1573,9 @@ fn sync_knight(
         };
         (roll_cells, f)
     } else if sim.0.player.is_ball() {
+        let rate = 1.0 + (sim.0.player.mom_speed * 0.1) as f32;
         let f = if !roll_cells.is_empty() {
-            (spin_tracker.spin_angle * (roll_cells.len() as f32 / std::f32::consts::TAU)).floor() as usize % roll_cells.len()
+            ((sim.0.tick as f32 * 16.0 * rate / 60.0).floor() as usize) % roll_cells.len()
         } else {
             0
         };

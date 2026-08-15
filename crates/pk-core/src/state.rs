@@ -132,6 +132,45 @@ pub const SQUASH_RECOVER: f64 = 0.18;
 pub const SQUASH_DEPTH: f64 = 0.30;
 pub const SQUASH_MIN_SPEED: f64 = 5.0;
 
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            z: 0.0,
+            facing: Facing::S,
+            moving: false,
+            mom_x: 0.0,
+            mom_z: 0.0,
+            mom_speed: 0.0,
+            bounce_combo: 0.0,
+            bounce_combo_t: 0.0,
+            sprint_charge: 0.0,
+            overcharge: 0.0,
+            oil_t: 0.0,
+            turbo_t: 0.0,
+            spring_t: 0.0,
+            iframes: 0.0,
+            steer_lock_t: 0.0,
+            grab_t: 0.0,
+            grab_x: 0.0,
+            grab_z: 0.0,
+            throw_dir_x: 0.0,
+            throw_dir_z: 0.0,
+            throw_speed: 0.0,
+            rail: crate::rail::fresh_rail(),
+            roll_t: -1.0,
+            roll_dir_x: 0.0,
+            roll_dir_z: 0.0,
+            squash_t: 0.0,
+            squash_amp: 0.0,
+            squash_nx: 0.0,
+            squash_nz: 0.0,
+            slash: crate::player::MeleeSlash::default(),
+            inventory: crate::player::PlayerInventory::default(),
+        }
+    }
+}
+
 impl Player {
     pub fn is_attacking(&self) -> bool {
         self.slash.active

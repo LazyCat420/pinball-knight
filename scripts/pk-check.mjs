@@ -404,6 +404,7 @@ async function realFloorGates(page, gate, errors) {
   gate(rate > 45 && rate < 75, `sim ticking on the generated floor (${rate.toFixed(1)} Hz)`);
 
   const hold = async (keys, ms) => {
+    await page.locator("canvas").click().catch(() => {});
     for (const k of keys) await page.keyboard.down(k);
     await page.waitForTimeout(ms);
     // Release EVERY movement key, not only the ones held: a dropped keyup under
@@ -638,7 +639,15 @@ async function main() {
       const rate = await simRate(page, pk);
       gate(rate > 45 && rate < 75, `sim ticking (${rate.toFixed(1)} Hz)`);
 
-      // Gate: input moves the knight.
+      // Gate: input moves the knight (fire plunger first if armed in chute).
+      await page.locator("canvas").click().catch(() => {});
+      const st0 = await pk();
+      if (st0?.plungerArmed) {
+        await page.keyboard.down("Space");
+        await page.waitForTimeout(400);
+        await page.keyboard.up("Space");
+        await page.waitForTimeout(800);
+      }
       const x0 = (await pk()).x;
       await page.keyboard.down("d");
       await page.waitForTimeout(1000);
@@ -873,6 +882,7 @@ async function main() {
 
     if (tav) {
       const hold = async (keys, ms) => {
+        await tavPage.locator("canvas").click().catch(() => {});
         for (const k of keys) await tavPage.keyboard.down(k);
         await tavPage.waitForTimeout(ms);
         // Release EVERY movement key, not just the ones this hold pressed: a
