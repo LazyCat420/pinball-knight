@@ -1,6 +1,7 @@
-//! Gameplay Input Subsystem — Keybindings, action buffering, and gamepad mapping.
-//!
-//! PORTS: `engine/input.ts`
+//! PORTS: `engine/input.ts`, `input/keymap.ts`
+
+pub mod keymap;
+pub use keymap::*;
 
 use std::collections::{HashSet, VecDeque};
 
