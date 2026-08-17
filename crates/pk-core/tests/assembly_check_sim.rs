@@ -61,6 +61,10 @@ fn assembly_check_flags_blocked_launcher_and_overlaps() {
     assert!(result.is_err());
     let issues = result.unwrap_err();
 
-    assert!(issues.iter().any(|i| i.kind == AssemblyIssueKind::BlockedLauncher));
-    assert!(issues.iter().any(|i| i.kind == AssemblyIssueKind::OverlappingParts));
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == AssemblyIssueKind::BlockedLauncher));
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == AssemblyIssueKind::OverlappingParts));
 }

@@ -228,7 +228,6 @@ pub fn make_banner_image(arcane: bool) -> Image {
     img
 }
 
-
 /// Every texture handle a floor's materials need, uploaded once per descend.
 pub struct MazeTextures {
     pub floor: Handle<Image>,

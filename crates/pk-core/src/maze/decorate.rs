@@ -131,12 +131,11 @@ pub fn decorate_maze(
                 });
             }
             // BOOSTERS along straight corridors (2 opposite open neighbours)
-            else if open_count == 2 && ((north && south) || (west && east)) && rng.next_f64() < 0.22 {
-                let (di, dj) = if north && south {
-                    (0, 1)
-                } else {
-                    (1, 0)
-                };
+            else if open_count == 2
+                && ((north && south) || (west && east))
+                && rng.next_f64() < 0.22
+            {
+                let (di, dj) = if north && south { (0, 1) } else { (1, 0) };
                 dec.parts.push(PinballPartSpot {
                     i,
                     j,

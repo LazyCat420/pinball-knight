@@ -8,8 +8,8 @@
 //!
 //! PORTS: `recipes.ts`
 
-use std::collections::BTreeMap;
 use crate::reagents::{ReagentId, ReagentTier};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RecipeId {

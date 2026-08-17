@@ -777,7 +777,11 @@ fn paint_blackjack(t: &BlackjackTable) -> GamePaint {
     let card_w = 28.0;
     let card_h = 38.0;
 
-    let draw_card = |prims: &mut Vec<GamePrim>, card: &pk_core::gambler::blackjack::Card, x: f64, y: f64, down: bool| {
+    let draw_card = |prims: &mut Vec<GamePrim>,
+                     card: &pk_core::gambler::blackjack::Card,
+                     x: f64,
+                     y: f64,
+                     down: bool| {
         if down {
             prims.push(GamePrim::Fill {
                 x,
@@ -872,7 +876,11 @@ fn paint_blackjack(t: &BlackjackTable) -> GamePaint {
     prims.push(GamePrim::Label {
         x: 8.0,
         y: 12.0,
-        s: if t.hole_down() || t.dealer.is_empty() { "DEALER".into() } else { format!("DEALER ({})", dealer_val.total) },
+        s: if t.hole_down() || t.dealer.is_empty() {
+            "DEALER".into()
+        } else {
+            format!("DEALER ({})", dealer_val.total)
+        },
         size: 8,
         colour: COLD,
         centre: false,
@@ -887,7 +895,11 @@ fn paint_blackjack(t: &BlackjackTable) -> GamePaint {
     prims.push(GamePrim::Label {
         x: 8.0,
         y: 68.0,
-        s: if t.player.is_empty() { "YOU".into() } else { format!("YOU ({})", player_val.total) },
+        s: if t.player.is_empty() {
+            "YOU".into()
+        } else {
+            format!("YOU ({})", player_val.total)
+        },
         size: 8,
         colour: GOLD,
         centre: false,

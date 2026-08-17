@@ -7,13 +7,7 @@ use crate::enemies::*;
 use crate::grid::Grid;
 
 /// Advances ghost phasing simulation through walls and bobbing animation.
-pub fn step_ghost(
-    m: &mut LiveMonster,
-    grid: &Grid,
-    player_x: f64,
-    player_z: f64,
-    dt: f64,
-) {
+pub fn step_ghost(m: &mut LiveMonster, grid: &Grid, player_x: f64, player_z: f64, dt: f64) {
     m.bob_t += dt;
 
     if m.vuln_t > 0.0 {

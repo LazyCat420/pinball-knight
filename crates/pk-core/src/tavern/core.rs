@@ -29,10 +29,10 @@ impl TavernSession {
     /// Advances tavern locomotion and checks for station focus.
     pub fn step(&mut self, input: (f64, f64), dt: f64) {
         let speed = 4.0;
-        self.player_pos.0 = (self.player_pos.0 + input.0 * speed * dt)
-            .clamp(ROOM_MIN_X + 0.5, ROOM_MAX_X - 0.5);
-        self.player_pos.1 = (self.player_pos.1 + input.1 * speed * dt)
-            .clamp(ROOM_MIN_Z + 0.5, ROOM_MAX_Z - 0.5);
+        self.player_pos.0 =
+            (self.player_pos.0 + input.0 * speed * dt).clamp(ROOM_MIN_X + 0.5, ROOM_MAX_X - 0.5);
+        self.player_pos.1 =
+            (self.player_pos.1 + input.1 * speed * dt).clamp(ROOM_MIN_Z + 0.5, ROOM_MAX_Z - 0.5);
 
         // Lerp camera towards player
         let lerp = (dt * 5.0).min(1.0);

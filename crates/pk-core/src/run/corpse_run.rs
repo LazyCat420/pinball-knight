@@ -32,7 +32,9 @@ pub fn record_corpse_pile(piles: &mut Vec<CorpsePile>, new_pile: CorpsePile) {
     let floor_piles_indices: Vec<usize> = piles
         .iter()
         .enumerate()
-        .filter(|(_, p)| p.floor == new_pile.floor && (p.owner == new_pile.owner || p.owner.is_empty()))
+        .filter(|(_, p)| {
+            p.floor == new_pile.floor && (p.owner == new_pile.owner || p.owner.is_empty())
+        })
         .map(|(idx, _)| idx)
         .collect();
 

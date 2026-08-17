@@ -16,4 +16,5 @@ pub struct GhostAfterimage {
 pub mod ball_anim;
 pub mod coins_render;
 pub mod combat_feedback;
+pub mod mat_cache;
 pub mod slash_render;

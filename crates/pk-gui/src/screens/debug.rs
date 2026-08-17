@@ -2,9 +2,7 @@
 //!
 //! PORTS-PARTIAL: `gui/screens/debug.ts` - NOT a finished port - 74 rust code lines against 378 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
-use crate::im::{
-    fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,7 +62,10 @@ pub fn paint_debug(f: &mut UiFrame, state: &DebugInspectorState, bounds: Rect) {
         format!("FPS: {:.1} ({:.2} ms)", state.fps, state.frame_time_ms),
         format!("MONSTERS: {}", state.monster_count),
         format!("FLOOR FX: {}", state.floor_fx_count),
-        format!("POS: ({:.2}, {:.2})", state.player_pos.0, state.player_pos.1),
+        format!(
+            "POS: ({:.2}, {:.2})",
+            state.player_pos.0, state.player_pos.1
+        ),
         format!("SPEED: {:.2}", state.player_speed),
         format!("GOD MODE: {}", if state.god_mode { "ON" } else { "OFF" }),
         format!("NOCLIP: {}", if state.noclip { "ON" } else { "OFF" }),

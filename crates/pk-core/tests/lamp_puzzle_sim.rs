@@ -28,7 +28,10 @@ fn author_lamp_puzzle_places_braziers_and_vault_on_reachable_floor() {
     let lamp_count = lamp_count_for(2);
 
     let plan = author_lamp_puzzle(&g, start, |_i, _j| false, &mut rng, lamp_count);
-    assert!(plan.is_some(), "Should author valid lamp puzzle on open floor");
+    assert!(
+        plan.is_some(),
+        "Should author valid lamp puzzle on open floor"
+    );
 
     let p = plan.unwrap();
     assert_eq!(p.lamps.len(), lamp_count);

@@ -20,12 +20,7 @@ pub struct FlowLoopSummary {
 
 /// Traces a forward straight line ray from an interactive part along its heading.
 /// Stops when encountering a solid obstacle or reaching max_dist.
-pub fn exit_ray(
-    g: &Grid,
-    pos: (i32, i32),
-    dir: (f64, f64),
-    max_dist: usize,
-) -> Vec<(i32, i32)> {
+pub fn exit_ray(g: &Grid, pos: (i32, i32), dir: (f64, f64), max_dist: usize) -> Vec<(i32, i32)> {
     let mut ray = Vec::new();
     let step_x = dir.0.round() as i32;
     let step_z = dir.1.round() as i32;

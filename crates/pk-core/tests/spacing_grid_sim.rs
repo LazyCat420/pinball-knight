@@ -57,7 +57,11 @@ fn spacing_grid_manhattan_matches_brute_force_oracle() {
             (dx + dy) < 6.0
         });
 
-        assert_eq!(grid_hit, oracle_hit, "Manhattan mismatch at ({}, {})", qx, qy);
+        assert_eq!(
+            grid_hit, oracle_hit,
+            "Manhattan mismatch at ({}, {})",
+            qx, qy
+        );
     }
 }
 

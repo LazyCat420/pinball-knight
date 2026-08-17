@@ -355,7 +355,14 @@ impl LiveEnemy {
                 self.vz += (target_vz - self.vz) * blend.min(1.0);
 
                 // Circle collision step
-                let res = move_circle(grid, self.x, self.z, self.radius, self.vx * dt, self.vz * dt);
+                let res = move_circle(
+                    grid,
+                    self.x,
+                    self.z,
+                    self.radius,
+                    self.vx * dt,
+                    self.vz * dt,
+                );
                 self.x = res.x;
                 self.z = res.z;
             }

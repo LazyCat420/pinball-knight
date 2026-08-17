@@ -1,8 +1,8 @@
 // Parity test suite for Floor Haul Card Reader.
 // Replicates legacy/src/game/pinball-knight/card-reader.ts
 
-use std::collections::HashSet;
 use pk_core::cards::reader::{group_floor_haul, is_notable_pull, HaulEntry};
+use std::collections::HashSet;
 
 #[test]
 fn notable_pulls_flag_high_tier_shiny_and_first_time_discoveries() {

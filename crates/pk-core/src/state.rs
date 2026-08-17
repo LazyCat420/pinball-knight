@@ -475,24 +475,24 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
         let combo = s.player.bounce_combo;
 
         for m in &mut s.monsters {
-            if m.mode == crate::monsters::types::EnemyMode::Dead || s.player.slash.hit_entities.contains(&m.id) {
+            if m.mode == crate::monsters::types::EnemyMode::Dead
+                || s.player.slash.hit_entities.contains(&m.id)
+            {
                 continue;
             }
             let dx = m.x - px;
             let dz = m.z - pz;
             let dist = (dx * dx + dz * dz).sqrt();
             if dist <= reach + m.radius {
-                let dot = if dist > 0.001 { (dx * sx + dz * sz) / dist } else { 1.0 };
+                let dot = if dist > 0.001 {
+                    (dx * sx + dz * sz) / dist
+                } else {
+                    1.0
+                };
                 if dot > 0.15 {
                     s.player.slash.hit_entities.push(m.id);
                     let (incoming_dmg, _is_crit) = crate::combat::damage::calculate_player_damage(
-                        base_dmg,
-                        0,
-                        1.0,
-                        mom_speed,
-                        0.15,
-                        1.5,
-                        false,
+                        base_dmg, 0, 1.0, mom_speed, 0.15, 1.5, false,
                     );
                     let hit = crate::combat::damage::resolve_enemy_hit(
                         m.hp,
@@ -559,7 +559,11 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     }
 
     // Monster AI & collision against player
-    let dt_monster = if s.abilities.time_crawl_t > 0.0 { DT * 0.25 } else { DT };
+    let dt_monster = if s.abilities.time_crawl_t > 0.0 {
+        DT * 0.25
+    } else {
+        DT
+    };
     let px = s.player.x;
     let pz = s.player.z;
 
@@ -592,7 +596,11 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             m.z = res.z;
 
             // Contact with player
-            if dist <= (m.radius + PLAYER_R) && s.player.iframes <= 0.0 && !s.player.is_ball() && !s.player.is_rolling() {
+            if dist <= (m.radius + PLAYER_R)
+                && s.player.iframes <= 0.0
+                && !s.player.is_ball()
+                && !s.player.is_rolling()
+            {
                 s.player.iframes = 0.65;
                 s.player.squash_t = 0.18;
                 s.player.squash_amp = 0.35;
@@ -626,7 +634,8 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             return;
         } else if s.plunger_charging && s.plunger_power > 0.0 {
             // RELEASED → FIRE into play!
-            let launch_speed = PLUNGER_MIN_SPEED + (PLUNGER_SPEED - PLUNGER_MIN_SPEED) * s.plunger_power;
+            let launch_speed =
+                PLUNGER_MIN_SPEED + (PLUNGER_SPEED - PLUNGER_MIN_SPEED) * s.plunger_power;
             s.player.mom_x = pdx;
             s.player.mom_z = pdz;
             s.player.mom_speed = launch_speed;
@@ -647,7 +656,8 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
 
     // ── Dodge Roll (Space while moving) ──
-    if input.dodge && s.player.roll_t < 0.0 && (s.player.moving || s.cur_speed >= 0.2 || len > 1e-4) {
+    if input.dodge && s.player.roll_t < 0.0 && (s.player.moving || s.cur_speed >= 0.2 || len > 1e-4)
+    {
         let (rx, rz) = if len > 1e-4 {
             (input.move_x / len, input.move_z / len)
         } else {
@@ -691,7 +701,12 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             s.player.roll_t = -1.0;
         }
         let cur = s.cur_speed;
-        crate::pinball::touch_pinball_parts(s, true, cur, (s.player.roll_dir_x, s.player.roll_dir_z));
+        crate::pinball::touch_pinball_parts(
+            s,
+            true,
+            cur,
+            (s.player.roll_dir_x, s.player.roll_dir_z),
+        );
         return;
     }
 
@@ -1016,6 +1031,9 @@ mod tests {
         simulate(&mut s, &release);
         assert!(!s.plunger_armed, "plunger disarms on fire");
         assert!(!s.plunger_charging);
-        assert!(s.player.mom_speed > PLUNGER_MIN_SPEED, "ball launched at high speed");
+        assert!(
+            s.player.mom_speed > PLUNGER_MIN_SPEED,
+            "ball launched at high speed"
+        );
     }
 }

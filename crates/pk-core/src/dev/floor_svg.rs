@@ -30,7 +30,12 @@ impl Default for SvgOptions {
 pub fn render_floor_svg(grid: &Grid, opts: &SvgOptions) -> String {
     let px = opts.px.max(1);
     let (vx, vy, vw, vh) = match opts.crop {
-        Some((cx, cy, cw, ch)) => (cx * px as i32, cy * px as i32, cw * px as i32, ch * px as i32),
+        Some((cx, cy, cw, ch)) => (
+            cx * px as i32,
+            cy * px as i32,
+            cw * px as i32,
+            ch * px as i32,
+        ),
         None => (0, 0, grid.w * px as i32, grid.h * px as i32),
     };
 

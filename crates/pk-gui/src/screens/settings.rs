@@ -2,9 +2,7 @@
 //!
 //! PORTS: `gui/screens/settings.ts`
 
-use crate::im::{
-    fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
 
 #[derive(Clone, Debug, PartialEq)]

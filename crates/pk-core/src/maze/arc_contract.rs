@@ -94,24 +94,16 @@ pub fn junction_check(a: &ArcFeature, b: &ArcFeature, mx: f64, mz: f64) -> Junct
     }
 }
 
-const SIDES: [(i32, i32); 4] = [
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-];
+const SIDES: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
-pub fn junction_clear<T: AsRef<[(i32, i32)]>>(
-    g: &Grid,
-    tiles: T,
-    feature: &ArcFeature,
-) -> bool {
+pub fn junction_clear<T: AsRef<[(i32, i32)]>>(g: &Grid, tiles: T, feature: &ArcFeature) -> bool {
     let arc_idx = match &g.arc_idx {
         Some(arr) => arr,
         None => return true,
     };
     let tiles_slice = tiles.as_ref();
-    let own: std::collections::HashSet<usize> = tiles_slice.iter().map(|&(ti, tj)| idx(g, ti, tj)).collect();
+    let own: std::collections::HashSet<usize> =
+        tiles_slice.iter().map(|&(ti, tj)| idx(g, ti, tj)).collect();
 
     for &(ti, tj) in tiles_slice {
         for (di, dj) in SIDES {
@@ -355,7 +347,8 @@ pub fn compact_arcs(g: &mut Grid, min_tiles: usize) -> usize {
     }
 
     let chained = |f: &ArcFeature| f.owner == Some("island") || f.owner == Some("funnel");
-    let trimmed: Vec<Option<ArcFeature>> = g.arcs.iter().map(|f| trim_arc_to_backing(g, f)).collect();
+    let trimmed: Vec<Option<ArcFeature>> =
+        g.arcs.iter().map(|f| trim_arc_to_backing(g, f)).collect();
     let keep: Vec<bool> = g
         .arcs
         .iter()
@@ -425,4 +418,3 @@ pub fn clear_orphan_arc_tiles(g: &mut Grid) -> usize {
     }
     n
 }
-

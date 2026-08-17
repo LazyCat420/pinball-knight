@@ -38,12 +38,7 @@ pub fn build_mega_floor(opts: &MegaFloorOptions) -> Option<MegaFloor> {
     let spec = derive_floor_spec(opts.level as i32, opts.seed);
     let track = build_track_floor_from_spec(&spec).ok()?;
 
-    let walkable = track
-        .grid
-        .t
-        .iter()
-        .filter(|&&cell| cell == T_FLOOR)
-        .count();
+    let walkable = track.grid.t.iter().filter(|&&cell| cell == T_FLOOR).count();
 
     Some(MegaFloor {
         grid: track.grid,

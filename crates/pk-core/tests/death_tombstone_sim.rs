@@ -1,7 +1,9 @@
 // Parity test suite for Player Death, Tombstone Recovery, and Level Constants.
 // Replicates legacy/src/game/pinball-knight/run/death.ts and constants/level.ts
 
-use pk_core::constants::level::{is_boss_floor, level_chests_count, level_grid_size, level_horde_budget};
+use pk_core::constants::level::{
+    is_boss_floor, level_chests_count, level_grid_size, level_horde_budget,
+};
 use pk_core::run::death::{claim_tombstone, handle_player_death};
 
 #[test]

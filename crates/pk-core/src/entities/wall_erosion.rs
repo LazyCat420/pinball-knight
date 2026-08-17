@@ -40,7 +40,13 @@ impl WallErosionTracker {
     }
 
     /// Calculates erosion from a lava marble impact scaled by impact velocity.
-    pub fn erode_from_lava(&mut self, i: i32, j: i32, impact_speed: f64, current_floor: u32) -> bool {
+    pub fn erode_from_lava(
+        &mut self,
+        i: i32,
+        j: i32,
+        impact_speed: f64,
+        current_floor: u32,
+    ) -> bool {
         if impact_speed < LAVA_MELT_MIN_SPEED {
             return false;
         }

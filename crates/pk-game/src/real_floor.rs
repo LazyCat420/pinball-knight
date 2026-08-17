@@ -631,11 +631,8 @@ pub fn spawn_real_floor_decor(
             .spawn((
                 Mesh3d(step_mesh.clone()),
                 MeshMaterial3d(step_mat.clone()),
-                Transform::from_xyz(
-                    ex,
-                    0.02 - s as f32 * 0.005,
-                    ez - 0.31 + s as f32 * 0.31,
-                ).with_scale(Vec3::splat(1.0 - s as f32 * 0.18)),
+                Transform::from_xyz(ex, 0.02 - s as f32 * 0.005, ez - 0.31 + s as f32 * 0.31)
+                    .with_scale(Vec3::splat(1.0 - s as f32 * 0.18)),
             ))
             .id();
         entities.push(step_entity);

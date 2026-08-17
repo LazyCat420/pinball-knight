@@ -2,8 +2,8 @@
 //!
 //! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
-use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
 use super::stagger::{pain_chance, stagger_time};
+use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
 
 pub const KNOCKBACK_ZOMBIE: f64 = 1.1;
 pub const KNOCKBACK_PLAYER: f64 = 1.4;

@@ -88,7 +88,8 @@ pub fn step_tide(
     let interval = TIDE_INTERVAL_CALM + alpha * (TIDE_INTERVAL_PEAK - TIDE_INTERVAL_CALM);
     let target_share = TIDE_SHARE_CALM + alpha * (TIDE_SHARE_PEAK - TIDE_SHARE_CALM);
     let target_count = (tide.base_horde as f64 * target_share).round() as usize;
-    let pulse = TIDE_PULSE_CALM + (alpha * (TIDE_PULSE_PEAK - TIDE_PULSE_CALM) as f64).round() as usize;
+    let pulse =
+        TIDE_PULSE_CALM + (alpha * (TIDE_PULSE_PEAK - TIDE_PULSE_CALM) as f64).round() as usize;
 
     let mut spawned = Vec::new();
 
@@ -107,7 +108,10 @@ pub fn step_tide(
                     let ti = pi + di;
                     let tj = pj + dj;
                     let dist = ((di * di + dj * dj) as f64).sqrt();
-                    if dist >= TIDE_SPAWN_MIN_TILES && dist <= TIDE_SPAWN_MAX_TILES && is_walkable(grid, ti, tj) {
+                    if dist >= TIDE_SPAWN_MIN_TILES
+                        && dist <= TIDE_SPAWN_MAX_TILES
+                        && is_walkable(grid, ti, tj)
+                    {
                         candidates.push((ti, tj));
                     }
                 }

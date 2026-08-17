@@ -65,15 +65,7 @@ impl DecalPool {
     }
 
     /// Spawns a persistent floor decal stamp, wrapping around circular pool capacity.
-    pub fn spawn(
-        &mut self,
-        kind: DecalKind,
-        x: f64,
-        z: f64,
-        rot: f64,
-        scale: f64,
-        life: f64,
-    ) {
+    pub fn spawn(&mut self, kind: DecalKind, x: f64, z: f64, rot: f64, scale: f64, life: f64) {
         self.decals[self.cursor] = DecalStamp {
             kind,
             x,

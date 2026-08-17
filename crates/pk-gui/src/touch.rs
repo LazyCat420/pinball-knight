@@ -46,7 +46,7 @@ impl VirtualStick {
         }
 
         let norm_dist = (dist / self.radius).min(1.0);
-        ( (dx / dist) * norm_dist, (dy / dist) * norm_dist )
+        ((dx / dist) * norm_dist, (dy / dist) * norm_dist)
     }
 }
 
@@ -148,8 +148,10 @@ impl TouchGamepad {
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 if dist > self.move_stick.radius {
-                    self.move_stick.thumb_x = self.move_stick.center_x + (dx / dist) * self.move_stick.radius;
-                    self.move_stick.thumb_y = self.move_stick.center_y + (dy / dist) * self.move_stick.radius;
+                    self.move_stick.thumb_x =
+                        self.move_stick.center_x + (dx / dist) * self.move_stick.radius;
+                    self.move_stick.thumb_y =
+                        self.move_stick.center_y + (dy / dist) * self.move_stick.radius;
                 } else {
                     self.move_stick.thumb_x = x;
                     self.move_stick.thumb_y = y;

@@ -40,8 +40,10 @@ pub fn spawn_slash_arc_trail(
         },
         Mesh3d(mesh),
         MeshMaterial3d(mat),
-        Transform::from_translation(origin + Vec3::new(facing_dir.x * 0.7, 0.4, facing_dir.y * 0.7))
-            .with_rotation(rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_3)),
+        Transform::from_translation(
+            origin + Vec3::new(facing_dir.x * 0.7, 0.4, facing_dir.y * 0.7),
+        )
+        .with_rotation(rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_3)),
     ));
 }
 
@@ -49,7 +51,12 @@ pub fn spawn_slash_arc_trail(
 pub fn step_slash_trails(
     mut commands: Commands,
     time: Res<Time>,
-    mut q: Query<(Entity, &mut SlashArcTrail, &mut Transform, &MeshMaterial3d<StandardMaterial>)>,
+    mut q: Query<(
+        Entity,
+        &mut SlashArcTrail,
+        &mut Transform,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let dt = time.delta_secs();

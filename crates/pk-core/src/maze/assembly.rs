@@ -53,9 +53,18 @@ pub struct Assembly {
 pub fn rotate_dir(d: Dir, rot: u8) -> Dir {
     match rot % 4 {
         0 => d,
-        1 => Dir { di: -d.dj, dj: d.di },
-        2 => Dir { di: -d.di, dj: -d.dj },
-        3 => Dir { di: d.dj, dj: -d.di },
+        1 => Dir {
+            di: -d.dj,
+            dj: d.di,
+        },
+        2 => Dir {
+            di: -d.di,
+            dj: -d.dj,
+        },
+        3 => Dir {
+            di: d.dj,
+            dj: -d.di,
+        },
         _ => d,
     }
 }

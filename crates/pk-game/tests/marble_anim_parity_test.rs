@@ -41,7 +41,8 @@ fn test_in_plane_spin_rotates_xy_without_out_of_plane_z() {
         let transformed = rot * up_vec;
 
         assert!(
-            (transformed.x - expected_dir.x).abs() < 1e-4 && (transformed.y - expected_dir.y).abs() < 1e-4,
+            (transformed.x - expected_dir.x).abs() < 1e-4
+                && (transformed.y - expected_dir.y).abs() < 1e-4,
             "In-plane spin failed at angle {angle}: got {:?}, expected {:?}",
             transformed,
             expected_dir

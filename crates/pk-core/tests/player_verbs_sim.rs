@@ -30,7 +30,10 @@ fn melee_slash_strikes_monsters_inside_forward_arc() {
     assert_eq!(hits[0].monster_id, 1);
     assert!(monsters[0].hp < initial_hp_front);
     assert_eq!(monsters[1].hp, initial_hp_back);
-    assert!(monsters[0].vz > 0.0, "Knockback should propel monster southward");
+    assert!(
+        monsters[0].vz > 0.0,
+        "Knockback should propel monster southward"
+    );
 }
 
 #[test]
@@ -51,7 +54,10 @@ fn dash_roll_grants_iframes_and_moves_player() {
         step_dash(&mut player, &grid, 0.016);
     }
 
-    assert!(player.x > start_x, "Dash should displace player position forward");
+    assert!(
+        player.x > start_x,
+        "Dash should displace player position forward"
+    );
 }
 
 #[test]
@@ -68,6 +74,9 @@ fn plunger_accumulates_tension_and_launches_impulse() {
     // Release launch key
     let launched = step_plunger(&mut player, false, 0.0, -1.0, 1.0 / 60.0);
     assert!(launched);
-    assert!(player.vz < -5.0, "Player must launch northward with high velocity");
+    assert!(
+        player.vz < -5.0,
+        "Player must launch northward with high velocity"
+    );
     assert!(player.pinball_mode);
 }

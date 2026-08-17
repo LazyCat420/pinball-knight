@@ -71,7 +71,10 @@ pub enum ShopError {
 
 /// Executes a purchase transaction against the rolling cart merchant.
 /// Returns the updated gold balance and purchased entry reference on success.
-pub fn buy_shop_item(current_gold: u32, item_idx: usize) -> Result<(u32, &'static ShopEntry), ShopError> {
+pub fn buy_shop_item(
+    current_gold: u32,
+    item_idx: usize,
+) -> Result<(u32, &'static ShopEntry), ShopError> {
     if item_idx >= SHOP_STOCK.len() {
         return Err(ShopError::InvalidItemIndex(item_idx));
     }

@@ -32,12 +32,7 @@ fn multiball_samples_lagged_trail_and_damages_monsters() {
     let echo1_x = state.echoes[0].x;
     let echo1_z = state.echoes[0].z;
 
-    let mut monsters = vec![LiveMonster::new(
-        1,
-        EnemyKind::Zombie,
-        echo1_x,
-        echo1_z,
-    )];
+    let mut monsters = vec![LiveMonster::new(1, EnemyKind::Zombie, echo1_x, echo1_z)];
 
     let hits = step_multiball(&mut state, 0.0, -6.2, &mut monsters, 20.0, 0.016);
     assert_eq!(hits.len(), 1);

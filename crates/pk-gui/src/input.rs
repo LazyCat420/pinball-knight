@@ -2,8 +2,8 @@
 //!
 //! PORTS: `gui/input.ts`
 
-use std::collections::{HashMap, HashSet};
 use crate::im::{Pointer, UiInput};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct UiInputManager {
@@ -124,8 +124,16 @@ impl UiInputManager {
     /// Consumes the accumulated input edges and returns the normalized `UiInput` for one painted frame.
     pub fn take_frame(&mut self, zoom: u32, offset_x: f64, offset_y: f64) -> UiInput {
         let z = zoom as f64;
-        let ui_x = if self.pointer_x >= 0.0 { (self.pointer_x - offset_x) / z } else { -1.0 };
-        let ui_y = if self.pointer_y >= 0.0 { (self.pointer_y - offset_y) / z } else { -1.0 };
+        let ui_x = if self.pointer_x >= 0.0 {
+            (self.pointer_x - offset_x) / z
+        } else {
+            -1.0
+        };
+        let ui_y = if self.pointer_y >= 0.0 {
+            (self.pointer_y - offset_y) / z
+        } else {
+            -1.0
+        };
 
         let pointer = Pointer {
             x: ui_x,

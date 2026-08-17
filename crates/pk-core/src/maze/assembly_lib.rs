@@ -2,7 +2,7 @@
 //!
 //! PORTS: `maze/assembly-lib.ts`
 
-use super::assembly::{Assembly, AssemblyPart, AssemblyPort, PortRole, Dir, E, N, S, W};
+use super::assembly::{Assembly, AssemblyPart, AssemblyPort, Dir, PortRole, E, N, S, W};
 
 /// The classic Orbit: a curved wraparound lane that returns the ball with preserved speed.
 pub fn orbit() -> Assembly {
@@ -11,9 +11,15 @@ pub fn orbit() -> Assembly {
         w: 4,
         h: 3,
         floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
             (3, 1),
-            (0, 2), (1, 2), (2, 2), (3, 2),
+            (0, 2),
+            (1, 2),
+            (2, 2),
+            (3, 2),
         ],
         parts: vec![
             AssemblyPart {
@@ -73,9 +79,21 @@ pub fn slingshot_pair() -> Assembly {
         w: 5,
         h: 3,
         floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0), (4, 0),
-            (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
-            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (0, 1),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (0, 2),
+            (1, 2),
+            (2, 2),
+            (3, 2),
+            (4, 2),
         ],
         parts: vec![
             AssemblyPart {
@@ -119,8 +137,16 @@ pub fn drop_target_bank() -> Assembly {
         w: 5,
         h: 2,
         floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0), (4, 0),
-            (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (0, 1),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
         ],
         parts: vec![
             AssemblyPart {
@@ -148,14 +174,12 @@ pub fn drop_target_bank() -> Assembly {
                 seq: Some(2),
             },
         ],
-        ports: vec![
-            AssemblyPort {
-                ci: 2,
-                cj: 1,
-                dir: N,
-                role: PortRole::Entry,
-            },
-        ],
+        ports: vec![AssemblyPort {
+            ci: 2,
+            cj: 1,
+            dir: N,
+            role: PortRole::Entry,
+        }],
     }
 }
 
@@ -166,20 +190,24 @@ pub fn scoop_return() -> Assembly {
         w: 3,
         h: 3,
         floor: vec![
-            (0, 0), (1, 0), (2, 0),
-            (0, 1), (1, 1), (2, 1),
-            (0, 2), (1, 2), (2, 2),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (0, 1),
+            (1, 1),
+            (2, 1),
+            (0, 2),
+            (1, 2),
+            (2, 2),
         ],
-        parts: vec![
-            AssemblyPart {
-                ci: 1,
-                cj: 1,
-                kind: "scoop".to_string(),
-                dir: Some(S),
-                role: Some("eject".to_string()),
-                seq: Some(0),
-            },
-        ],
+        parts: vec![AssemblyPart {
+            ci: 1,
+            cj: 1,
+            kind: "scoop".to_string(),
+            dir: Some(S),
+            role: Some("eject".to_string()),
+            seq: Some(0),
+        }],
         ports: vec![
             AssemblyPort {
                 ci: 1,
@@ -204,11 +232,16 @@ pub fn plunger_runway() -> Assembly {
         w: 2,
         h: 5,
         floor: vec![
-            (0, 0), (1, 0),
-            (0, 1), (1, 1),
-            (0, 2), (1, 2),
-            (0, 3), (1, 3),
-            (0, 4), (1, 4),
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            (1, 1),
+            (0, 2),
+            (1, 2),
+            (0, 3),
+            (1, 3),
+            (0, 4),
+            (1, 4),
         ],
         parts: vec![
             AssemblyPart {
@@ -228,14 +261,12 @@ pub fn plunger_runway() -> Assembly {
                 seq: Some(1),
             },
         ],
-        ports: vec![
-            AssemblyPort {
-                ci: 0,
-                cj: 0,
-                dir: N,
-                role: PortRole::Exit,
-            },
-        ],
+        ports: vec![AssemblyPort {
+            ci: 0,
+            cj: 0,
+            dir: N,
+            role: PortRole::Exit,
+        }],
     }
 }
 

@@ -2,10 +2,8 @@
 //!
 //! PORTS: `maze/prefabs.ts`
 
-use std::collections::HashSet;
 use crate::grid::{set_tile, Grid, T_FLOOR};
-
-
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefab {
@@ -22,111 +20,55 @@ pub struct OwnedPrefab {
 pub const PREFABS: [Prefab; 13] = [
     Prefab {
         name: "slalom",
-        cells: &[
-            "..R##",
-            "#..R#",
-            "##..R",
-            "#R..#",
-            "R..##",
-        ],
+        cells: &["..R##", "#..R#", "##..R", "#R..#", "R..##"],
     },
     Prefab {
         name: "gauntlet",
-        cells: &[
-            ".G.O.G.",
-        ],
+        cells: &[".G.O.G."],
     },
     Prefab {
         name: "oilworks",
-        cells: &[
-            "B..B",
-            ".OO.",
-            ".OO.",
-            "B..B",
-        ],
+        cells: &["B..B", ".OO.", ".OO.", "B..B"],
     },
     Prefab {
         name: "parlor",
-        cells: &[
-            "#.P.#",
-            "....*",
-            "P.$.P",
-            "*....",
-            "#.P.#",
-        ],
+        cells: &["#.P.#", "....*", "P.$.P", "*....", "#.P.#"],
     },
     Prefab {
         name: "slingway",
-        cells: &[
-            ".L..L..L.",
-        ],
+        cells: &[".L..L..L."],
     },
     Prefab {
         name: "pitstop",
-        cells: &[
-            "S.$",
-            "#.D",
-        ],
+        cells: &["S.$", "#.D"],
     },
     Prefab {
         name: "bullring",
-        cells: &[
-            "*...*",
-            ".B.B.",
-            "..$..",
-            ".B.B.",
-            "*...*",
-        ],
+        cells: &["*...*", ".B.B.", "..$..", ".B.B.", "*...*"],
     },
     Prefab {
         name: "switchback",
-        cells: &[
-            "R.O##",
-            "###.#",
-            "##O.R",
-        ],
+        cells: &["R.O##", "###.#", "##O.R"],
     },
     Prefab {
         name: "mirrormaze",
-        cells: &[
-            "M.M.M",
-            ".....",
-            "M.T.M",
-            ".$.*.",
-            "M.M.M",
-        ],
+        cells: &["M.M.M", ".....", "M.T.M", ".$.*.", "M.M.M"],
     },
     Prefab {
         name: "pitroom",
-        cells: &[
-            ".....",
-            ".I.I.",
-            "...$.",
-            ".I.I.",
-            ".....",
-        ],
+        cells: &[".....", ".I.I.", "...$.", ".I.I.", "....."],
     },
     Prefab {
         name: "sbend",
-        cells: &[
-            ".M#",
-            "#.#",
-            "#M.",
-        ],
+        cells: &[".M#", "#.#", "#M."],
     },
     Prefab {
         name: "squeeze",
-        cells: &[
-            ".E..E.",
-        ],
+        cells: &[".E..E."],
     },
     Prefab {
         name: "boulevard",
-        cells: &[
-            ".....",
-            ".BFB.",
-            ".....",
-        ],
+        cells: &[".....", ".BFB.", "....."],
     },
 ];
 
@@ -215,7 +157,11 @@ pub fn rotate_prefab(p: &OwnedPrefab) -> OwnedPrefab {
 pub fn mirror_prefab(p: &OwnedPrefab) -> OwnedPrefab {
     OwnedPrefab {
         name: p.name.clone(),
-        cells: p.cells.iter().map(|row| row.chars().rev().collect()).collect(),
+        cells: p
+            .cells
+            .iter()
+            .map(|row| row.chars().rev().collect())
+            .collect(),
     }
 }
 
@@ -278,25 +224,79 @@ pub const THEMES: [FloorTheme; 4] = [
         name: "crypt",
         pool: &["slalom", "bullring", "pitstop", "slingway", "boulevard"],
         landmarks: &["tilttable", "pachinko"],
-        deal: &["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
+        deal: &[
+            "bumper",
+            "ramp",
+            "spring",
+            "glove",
+            "flipper",
+            "spinpad",
+            "mirror",
+            "slingshot",
+            "oil",
+        ],
     },
     FloorTheme {
         name: "warren",
-        pool: &["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
+        pool: &[
+            "oilworks",
+            "switchback",
+            "gauntlet",
+            "pitstop",
+            "pitroom",
+            "sbend",
+        ],
         landmarks: &["nest", "grinder"],
-        deal: &["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
+        deal: &[
+            "oil",
+            "bumper",
+            "ramp",
+            "oil",
+            "spring",
+            "glove",
+            "flipper",
+            "ramp",
+            "slingshot",
+        ],
     },
     FloorTheme {
         name: "bloodworks",
         pool: &["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
         landmarks: &["grinder", "pachinko"],
-        deal: &["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
+        deal: &[
+            "glove",
+            "bumper",
+            "flipper",
+            "spring",
+            "glove",
+            "oil",
+            "bumper",
+            "slingshot",
+            "spinpad",
+        ],
     },
     FloorTheme {
         name: "arcane",
-        pool: &["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
+        pool: &[
+            "parlor",
+            "slalom",
+            "oilworks",
+            "bullring",
+            "mirrormaze",
+            "sbend",
+        ],
         landmarks: &["observatory", "tilttable"],
-        deal: &["spinpad", "bumper", "mirror", "spring", "oil", "glove", "flipper", "slingshot", "mirror"],
+        deal: &[
+            "spinpad",
+            "bumper",
+            "mirror",
+            "spring",
+            "oil",
+            "glove",
+            "flipper",
+            "slingshot",
+            "mirror",
+        ],
     },
 ];
 
@@ -375,7 +375,13 @@ pub fn anchor_kind(c: char) -> Option<&'static str> {
     }
 }
 
-pub fn carve_stamp(g: &mut Grid, pf: &OwnedPrefab, cx: usize, cy: usize, anchors: &mut Vec<PrefabAnchor>) {
+pub fn carve_stamp(
+    g: &mut Grid,
+    pf: &OwnedPrefab,
+    cx: usize,
+    cy: usize,
+    anchors: &mut Vec<PrefabAnchor>,
+) {
     let ph = pf.cells.len();
     let pw = pf.cells[0].len();
     let carved_at = |dx: isize, dy: isize| -> bool {
@@ -402,7 +408,11 @@ pub fn carve_stamp(g: &mut Grid, pf: &OwnedPrefab, cx: usize, cy: usize, anchors
             }
             let ch = pf.cells[dy].as_bytes()[dx] as char;
             if let Some(kind) = anchor_kind(ch) {
-                anchors.push(PrefabAnchor { i: ti as usize, j: tj as usize, kind });
+                anchors.push(PrefabAnchor {
+                    i: ti as usize,
+                    j: tj as usize,
+                    kind,
+                });
             }
         }
     }
@@ -427,7 +437,11 @@ pub fn stamp_from<R: FnMut() -> f64>(
     let mut anchors = Vec::new();
     let mut stamped = Vec::new();
     if shapes.is_empty() {
-        return StampResult { anchors, stamped, claimed };
+        return StampResult {
+            anchors,
+            stamped,
+            claimed,
+        };
     }
 
     let mut bag = ShuffleBag::new(shapes);
@@ -504,7 +518,12 @@ pub fn stamp_from<R: FnMut() -> f64>(
 
         if let (Some(cx), Some(cy)) = (cx_found, cy_found) {
             carve_stamp(g, pf, cx, cy, &mut anchors);
-            claimed.push(ClaimRect { cx, cy, w: pw, h: ph });
+            claimed.push(ClaimRect {
+                cx,
+                cy,
+                w: pw,
+                h: ph,
+            });
             stamped.push(pf.name.clone());
             pending = None;
             pending_tries = 0;
@@ -520,7 +539,11 @@ pub fn stamp_from<R: FnMut() -> f64>(
         }
     }
 
-    StampResult { anchors, stamped, claimed }
+    StampResult {
+        anchors,
+        stamped,
+        claimed,
+    }
 }
 
 pub fn stamp_landmark<R: FnMut() -> f64>(

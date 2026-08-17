@@ -63,7 +63,8 @@ pub fn measure_density(input: &DensityInput, walkable: usize) -> DensityMetrics 
     let spawns_per_1k = input.spawns as f64 * scale;
     let torches_per_1k = input.torches as f64 * scale;
     let props_per_1k = input.props as f64 * scale;
-    let furniture_per_1k = (input.parts + input.spawns + input.torches + input.props) as f64 * scale;
+    let furniture_per_1k =
+        (input.parts + input.spawns + input.torches + input.props) as f64 * scale;
 
     let route_share = if input.parts == 0 {
         0.0

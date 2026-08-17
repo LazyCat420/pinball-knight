@@ -341,8 +341,20 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
             let wall_count = (w_e as i32) + (w_w as i32) + (w_n as i32) + (w_s as i32);
             if wall_count >= 2 && (i * 53 + j * 29).rem_euclid(CLUTTER_EVERY) == 0 {
                 let (x, z) = tile_center(grid, i, j);
-                let ox = if w_e { 0.3 } else if w_w { -0.3 } else { 0.0 };
-                let oz = if w_s { 0.3 } else if w_n { -0.3 } else { 0.0 };
+                let ox = if w_e {
+                    0.3
+                } else if w_w {
+                    -0.3
+                } else {
+                    0.0
+                };
+                let oz = if w_s {
+                    0.3
+                } else if w_n {
+                    -0.3
+                } else {
+                    0.0
+                };
                 let rot = (((i * 71 + j * 37) % 100) as f32 / 100.0 - 0.5) * 0.6;
                 if (i + j) % 2 == 0 {
                     crates.push(Placement {

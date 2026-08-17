@@ -92,7 +92,8 @@ impl RicochetState {
         self.flavor = flavor;
         self.time_remaining = flavor.duration();
         let speed = flavor.speed();
-        let len = (initial_heading.0 * initial_heading.0 + initial_heading.1 * initial_heading.1).sqrt();
+        let len =
+            (initial_heading.0 * initial_heading.0 + initial_heading.1 * initial_heading.1).sqrt();
         let (dir_x, dir_z) = if len > 1e-4 {
             (initial_heading.0 / len, initial_heading.1 / len)
         } else {

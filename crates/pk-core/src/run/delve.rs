@@ -50,7 +50,8 @@ pub fn calculate_delve_boon(target_floor: u32) -> DelveBoon {
     let bonus_hearts = ((floors_cleared as f64 * HEARTS_PER_FLOOR).floor() as i32).min(HEARTS_CAP);
     let bonus_hp = bonus_hearts * 10;
 
-    let weapon_upgrades = ((floors_cleared as f64 * UPGRADE_PER_FLOOR).floor() as u32).min(UPGRADE_CAP);
+    let weapon_upgrades =
+        ((floors_cleared as f64 * UPGRADE_PER_FLOOR).floor() as u32).min(UPGRADE_CAP);
     let weapon_level = 1 + weapon_upgrades;
 
     DelveBoon {

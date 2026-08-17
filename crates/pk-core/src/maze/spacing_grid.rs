@@ -53,8 +53,16 @@ impl SpacingGrid {
             return false;
         }
 
-        let bi = if i >= 0 { i / self.cell } else { (i - self.cell + 1) / self.cell };
-        let bj = if j >= 0 { j / self.cell } else { (j - self.cell + 1) / self.cell };
+        let bi = if i >= 0 {
+            i / self.cell
+        } else {
+            (i - self.cell + 1) / self.cell
+        };
+        let bj = if j >= 0 {
+            j / self.cell
+        } else {
+            (j - self.cell + 1) / self.cell
+        };
 
         for dbi in -1..=1 {
             for dbj in -1..=1 {
@@ -74,8 +82,16 @@ impl SpacingGrid {
 
     /// Inserts a point into the spatial hash grid.
     pub fn add(&mut self, i: i32, j: i32) {
-        let bi = if i >= 0 { i / self.cell } else { (i - self.cell + 1) / self.cell };
-        let bj = if j >= 0 { j / self.cell } else { (j - self.cell + 1) / self.cell };
+        let bi = if i >= 0 {
+            i / self.cell
+        } else {
+            (i - self.cell + 1) / self.cell
+        };
+        let bj = if j >= 0 {
+            j / self.cell
+        } else {
+            (j - self.cell + 1) / self.cell
+        };
         let k = Self::key(bi, bj);
 
         self.buckets.entry(k).or_default().push((i, j));

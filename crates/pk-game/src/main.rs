@@ -40,6 +40,7 @@ mod fx;
 mod gambler;
 mod gui;
 mod intro;
+mod mat_cache;
 mod maze_art;
 mod overworld;
 mod perf;
@@ -295,15 +296,21 @@ fn main() {
     };
 
     let scene_name = match start {
-        AppState::Intro => "Intro (Title Sequence — press Space/Enter or Click to continue to Tavern)",
+        AppState::Intro => {
+            "Intro (Title Sequence — press Space/Enter or Click to continue to Tavern)"
+        }
         AppState::Tavern => "Tavern Hub (WASD to move, Shift to sprint, Talk to Keepers)",
-        AppState::FloorLoading => "Dungeon Floor (WASD to move, Shift to sprint, Space/Click to interact/attack)",
+        AppState::FloorLoading => {
+            "Dungeon Floor (WASD to move, Shift to sprint, Space/Click to interact/attack)"
+        }
         _ => "Game",
     };
     println!("════════════════════════════════════════════════════════════════════");
     println!(" [Pinball Knight] Bevy Engine running on Vulkan/WebGPU");
     println!(" [Pinball Knight] Initial Scene: {}", scene_name);
-    println!(" [Pinball Knight] Controls: WASD/Arrows (Move), Shift (Sprint), Space/Click (Action)");
+    println!(
+        " [Pinball Knight] Controls: WASD/Arrows (Move), Shift (Sprint), Space/Click (Action)"
+    );
     println!(" [Pinball Knight] Exit: Alt+F4 or close window (Ctrl+C in terminal)");
     println!("════════════════════════════════════════════════════════════════════");
 
@@ -824,7 +831,11 @@ fn decode_sheet(
         SheetClips {
             material,
             idle,
-            run: if run.is_empty() { walk.clone() } else { run.clone() },
+            run: if run.is_empty() {
+                walk.clone()
+            } else {
+                run.clone()
+            },
             roll: if roll.is_empty() {
                 if !run.is_empty() {
                     run
@@ -834,7 +845,11 @@ fn decode_sheet(
             } else {
                 roll
             },
-            attack: if attack.is_empty() { walk.clone() } else { attack },
+            attack: if attack.is_empty() {
+                walk.clone()
+            } else {
+                attack
+            },
             walk,
             aspect,
         },
@@ -971,14 +986,56 @@ fn setup_common(
         &mut materials,
         false,
     );
-    let (brute, _) = decode_sheet(BRUTE_S_PNG, BRUTE_S_JSON, &mut images, &mut materials, false);
+    let (brute, _) = decode_sheet(
+        BRUTE_S_PNG,
+        BRUTE_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
     let (frog, _) = decode_sheet(FROG_S_PNG, FROG_S_JSON, &mut images, &mut materials, false);
-    let (goblin, _) = decode_sheet(GOBLIN_S_PNG, GOBLIN_S_JSON, &mut images, &mut materials, false);
-    let (jester, _) = decode_sheet(JESTER_S_PNG, JESTER_S_JSON, &mut images, &mut materials, false);
-    let (reaper, _) = decode_sheet(REAPER_S_PNG, REAPER_S_JSON, &mut images, &mut materials, false);
-    let (slime, _) = decode_sheet(SLIME_S_PNG, SLIME_S_JSON, &mut images, &mut materials, false);
-    let (spider, _) = decode_sheet(SPIDER_S_PNG, SPIDER_S_JSON, &mut images, &mut materials, false);
-    let (stiltneck, _) = decode_sheet(STILTNECK_S_PNG, STILTNECK_S_JSON, &mut images, &mut materials, false);
+    let (goblin, _) = decode_sheet(
+        GOBLIN_S_PNG,
+        GOBLIN_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (jester, _) = decode_sheet(
+        JESTER_S_PNG,
+        JESTER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (reaper, _) = decode_sheet(
+        REAPER_S_PNG,
+        REAPER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (slime, _) = decode_sheet(
+        SLIME_S_PNG,
+        SLIME_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (spider, _) = decode_sheet(
+        SPIDER_S_PNG,
+        SPIDER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (stiltneck, _) = decode_sheet(
+        STILTNECK_S_PNG,
+        STILTNECK_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
 
     commands.insert_resource(authored_render::MonsterArt {
         zombie,
@@ -1117,21 +1174,23 @@ fn setup_dungeon(
                 _ => pk_core::monsters::types::EnemyKind::Zombie,
             };
             let (sx, sz) = (spawn_tile.i as f64 + 0.5, spawn_tile.j as f64 + 0.5);
-            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
-                idx as u32 + 1,
-                kind,
-                sx,
-                sz,
-            ));
+            sim.monsters
+                .push(pk_core::monsters::types::LiveMonster::new(
+                    idx as u32 + 1,
+                    kind,
+                    sx,
+                    sz,
+                ));
         }
         if let Some(frog) = f.plan.frog {
             let (sx, sz) = (frog.i as f64 + 0.5, frog.j as f64 + 0.5);
-            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
-                999,
-                pk_core::monsters::types::EnemyKind::Croaker,
-                sx,
-                sz,
-            ));
+            sim.monsters
+                .push(pk_core::monsters::types::LiveMonster::new(
+                    999,
+                    pk_core::monsters::types::EnemyKind::Croaker,
+                    sx,
+                    sz,
+                ));
         }
 
         let inert = authored_floor::unhonoured_part_kinds(&f.plan);
@@ -1433,7 +1492,11 @@ pub struct GhostAfterimage {
 fn step_ghost_afterimages(
     mut commands: Commands,
     time: Res<Time>,
-    mut q: Query<(Entity, &mut GhostAfterimage, &MeshMaterial3d<StandardMaterial>)>,
+    mut q: Query<(
+        Entity,
+        &mut GhostAfterimage,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let dt = time.delta_secs();
@@ -1501,7 +1564,11 @@ fn sync_knight(
         } else {
             Color::srgb_u8(180, 225, 255)
         };
-        let normal = Vec3::new(sim.0.player.squash_nx as f32, 0.0, sim.0.player.squash_nz as f32);
+        let normal = Vec3::new(
+            sim.0.player.squash_nx as f32,
+            0.0,
+            sim.0.player.squash_nz as f32,
+        );
         ball_anim::spawn_ball_impact_sparks(
             &mut commands,
             &mut meshes,
@@ -1616,7 +1683,11 @@ fn sync_knight(
         } else {
             &clips.walk
         };
-        let fps = if sim.0.player.sprint_charge > 0.4 { 12 } else { 8 };
+        let fps = if sim.0.player.sprint_charge > 0.4 {
+            12
+        } else {
+            8
+        };
         let f = if !cells.is_empty() {
             (sim.0.tick * fps / 60) as usize % cells.len()
         } else {
@@ -1649,11 +1720,12 @@ fn sync_knight(
         *ghost_timer += time.delta_secs();
         if *ghost_timer >= 0.055 {
             *ghost_timer = 0.0;
-            let aura_color = if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
-                Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
-            } else {
-                Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
-            };
+            let aura_color =
+                if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
+                    Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
+                } else {
+                    Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
+                };
             let quad_h = 1.15f32;
             let quad_w = quad_h * art.s.aspect;
             let base_tex = materials
@@ -1680,7 +1752,9 @@ fn sync_knight(
                 },
                 Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
                 MeshMaterial3d(ghost_mat),
-                Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
+                Transform::from_translation(tf.translation)
+                    .with_rotation(tf.rotation)
+                    .with_scale(tf.scale),
             ));
         }
     }
@@ -1707,12 +1781,8 @@ fn step_live_monsters(
     };
     let dt = time.delta_secs();
 
-    let sim_map: std::collections::HashMap<u32, &pk_core::monsters::LiveMonster> = sim
-        .0
-        .monsters
-        .iter()
-        .map(|m| (m.id, m))
-        .collect();
+    let sim_map: std::collections::HashMap<u32, &pk_core::monsters::LiveMonster> =
+        sim.0.monsters.iter().map(|m| (m.id, m)).collect();
 
     for (entity, mut tf, mut comp, mat_handle) in monster_q.iter_mut() {
         let Some(sm) = sim_map.get(&comp.id) else {
@@ -1786,7 +1856,10 @@ fn step_live_monsters(
             5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
             6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
             7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
-            8 => monster_art.stiltneck.as_ref().unwrap_or(&monster_art.zombie),
+            8 => monster_art
+                .stiltneck
+                .as_ref()
+                .unwrap_or(&monster_art.zombie),
             _ => &monster_art.zombie,
         };
 
@@ -1966,4 +2039,3 @@ fn update_dungeon_hud(
 
     gui::set_view(&mut gui.views.hud, Some(hud_view));
 }
-

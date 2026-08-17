@@ -64,7 +64,10 @@ pub fn compute_pixel_fit(
 pub fn device_to_logical(dev_x: f64, dev_y: f64, fit: &FitResult) -> (f64, f64) {
     let lx = (dev_x - fit.offset_x) / fit.scale as f64;
     let ly = (dev_y - fit.offset_y) / fit.scale as f64;
-    (lx.clamp(0.0, fit.width as f64), ly.clamp(0.0, fit.height as f64))
+    (
+        lx.clamp(0.0, fit.width as f64),
+        ly.clamp(0.0, fit.height as f64),
+    )
 }
 
 /// Maps a point in logical pixel-art coordinates to device screen pixel space.

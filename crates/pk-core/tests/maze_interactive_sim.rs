@@ -10,7 +10,12 @@ fn high_speed_impact_breaks_cracked_wall_to_floor() {
     set_tile(&mut grid, 5, 5, T_CRACKED);
 
     // Fast impact breaks wall
-    let broken = InteractiveMazeState::try_break_cracked_wall(&mut grid, 5, 5, SECRET_WALL_BREAK_SPEED + 1.0);
+    let broken = InteractiveMazeState::try_break_cracked_wall(
+        &mut grid,
+        5,
+        5,
+        SECRET_WALL_BREAK_SPEED + 1.0,
+    );
     assert!(broken, "Wall should break at high speed");
     assert_eq!(grid.t[5 * 10 + 5], T_FLOOR, "Tile must become T_FLOOR");
 }
@@ -21,7 +26,12 @@ fn low_speed_impact_does_not_break_cracked_wall() {
     set_tile(&mut grid, 5, 5, T_CRACKED);
 
     // Gentle roll does not break wall
-    let broken = InteractiveMazeState::try_break_cracked_wall(&mut grid, 5, 5, SECRET_WALL_BREAK_SPEED - 1.0);
+    let broken = InteractiveMazeState::try_break_cracked_wall(
+        &mut grid,
+        5,
+        5,
+        SECRET_WALL_BREAK_SPEED - 1.0,
+    );
     assert!(!broken, "Wall should not break below speed threshold");
     assert_eq!(grid.t[5 * 10 + 5], T_CRACKED, "Tile must remain T_CRACKED");
 }

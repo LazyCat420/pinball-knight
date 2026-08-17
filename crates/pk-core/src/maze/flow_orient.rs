@@ -4,12 +4,7 @@
 
 use crate::grid::{at, idx, is_walkable, Grid, T_FLOOR, T_STAIRS};
 
-pub const CARDS: [(i32, i32); 4] = [
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-];
+pub const CARDS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
 pub const UNREACHED: i32 = 0x3fffffff;
 

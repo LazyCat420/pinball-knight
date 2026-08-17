@@ -153,7 +153,8 @@ pub fn step_plunger(
 ) -> bool {
     if is_holding_launch {
         player.plunger.pulling = true;
-        player.plunger.tension = (player.plunger.tension + PLUNGER_PULL_RATE * dt).min(PLUNGER_MAX_TENSION);
+        player.plunger.tension =
+            (player.plunger.tension + PLUNGER_PULL_RATE * dt).min(PLUNGER_MAX_TENSION);
         false
     } else if player.plunger.pulling {
         // Released! Launch the player with impulse

@@ -133,7 +133,10 @@ pub fn screen_px_to_world_ground(
 
     let (dx, dz) = screen_dir_to_world(cam_space_x, cam_space_z, cam.config.yaw);
 
-    (cam.current_x + cam.lead_x + dx, cam.current_z + cam.lead_z + dz)
+    (
+        cam.current_x + cam.lead_x + dx,
+        cam.current_z + cam.lead_z + dz,
+    )
 }
 
 /// Steps smooth camera damping towards target with velocity-based lookahead lead.

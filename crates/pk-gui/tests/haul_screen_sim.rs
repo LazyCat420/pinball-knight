@@ -48,7 +48,11 @@ fn compute_haul_summary_stacks_and_counts_cards() {
 
     // Stacks
     assert_eq!(summary.stacks.len(), 2);
-    let nail_stack = summary.stacks.iter().find(|s| s.id == "card_iron_nail").unwrap();
+    let nail_stack = summary
+        .stacks
+        .iter()
+        .find(|s| s.id == "card_iron_nail")
+        .unwrap();
     assert_eq!(nail_stack.count, 2);
     assert!(nail_stack.is_fresh);
     assert!(nail_stack.is_shiny);

@@ -5,7 +5,10 @@ use pk_core::dev::ghost_command::{describe_ghost_maze, reroll_ghost_seed};
 
 #[test]
 fn describe_formats_state_appropriately() {
-    assert_eq!(describe_ghost_maze(None, None), "OFF — playing the real game");
+    assert_eq!(
+        describe_ghost_maze(None, None),
+        "OFF — playing the real game"
+    );
     assert_eq!(
         describe_ghost_maze(Some(3), Some(1337)),
         "GHOST MAZE · depth 3 · seed 1337"

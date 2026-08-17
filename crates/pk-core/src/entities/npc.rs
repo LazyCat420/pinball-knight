@@ -259,7 +259,14 @@ pub fn step_merchant(
         merchant.vz *= 0.9;
     }
 
-    let next_pos = move_circle(grid, merchant.x, merchant.z, 0.4, merchant.vx * dt, merchant.vz * dt);
+    let next_pos = move_circle(
+        grid,
+        merchant.x,
+        merchant.z,
+        0.4,
+        merchant.vx * dt,
+        merchant.vz * dt,
+    );
     merchant.x = next_pos.x;
     merchant.z = next_pos.z;
 

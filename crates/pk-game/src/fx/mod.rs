@@ -37,8 +37,8 @@ pub mod tavern_fx;
 use crate::post::sizing::PPU;
 use crate::AppState;
 use material::{particle_mesh, ParticleInstance, ParticleMaterial};
-use pool::{CAP, MAX_DT};
 pub use pool::Particles;
+use pool::{CAP, MAX_DT};
 pub use tavern_fx::SparkBurst;
 
 /// Handles for the single entity everything renders through.

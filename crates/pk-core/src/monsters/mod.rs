@@ -17,7 +17,7 @@ pub use boss_king::{step_boss_king, BossKingAction, BossKingState, KingPhase};
 pub use croaker::{step_croaker_hop, CROAKER_ACID_DAMAGE, CROAKER_ACID_RADIUS};
 pub use ghost::{ghost_hover_offset, step_ghost};
 pub use golem::{generate_golem_shards, ShardBurst};
-pub use jester::{JesterDisc};
+pub use jester::JesterDisc;
 pub use separation::apply_monster_separation;
 pub use stiltneck::{resolve_bomb_blast, step_stiltneck_bombs, BlastResult, StiltneckBomb};
 pub use types::{EnemyKind, EnemyMode, LiveMonster, MonsterDef};

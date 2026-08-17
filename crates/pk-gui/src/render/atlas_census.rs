@@ -18,12 +18,7 @@ pub struct CellStats {
 }
 
 /// Computes pixel art cleanliness and noise metrics on an RGBA pixel buffer.
-pub fn census_cell(
-    rgba: &[u8],
-    width: usize,
-    height: usize,
-    palette: &[[u8; 3]],
-) -> CellStats {
+pub fn census_cell(rgba: &[u8], width: usize, height: usize, palette: &[[u8; 3]]) -> CellStats {
     let mut map = vec![IDX_CLEAR; width * height];
     let mut opaque = 0;
     let mut unmatched = 0;

@@ -237,11 +237,9 @@ impl GuiLayer {
     pub fn open(&mut self, id: ScreenId) {
         let entry = match id {
             // The in-game HUD overlay: non-modal, does NOT pause the sim.
-            ScreenId::Hud => {
-                ScreenEntry::new(id, false)
-                    .with_design(HUD_DESIGN_W, HUD_DESIGN_H, HUD_MAX_ZOOM)
-                    .animating()
-            }
+            ScreenId::Hud => ScreenEntry::new(id, false)
+                .with_design(HUD_DESIGN_W, HUD_DESIGN_H, HUD_MAX_ZOOM)
+                .animating(),
             // A label pinned to the scene: no design box, so it paints at 1x on
             // whatever the lattice is, exactly like the legacy scene overlay.
             ScreenId::StationPrompt => ScreenEntry::new(id, false),

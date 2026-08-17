@@ -15,11 +15,7 @@ pub struct FloorMetrics {
 }
 
 /// Analyzes navigational complexity of a generated floor layout.
-pub fn analyze_floor_metrics(
-    g: &Grid,
-    start: (i32, i32),
-    exit: (i32, i32),
-) -> FloorMetrics {
+pub fn analyze_floor_metrics(g: &Grid, start: (i32, i32), exit: (i32, i32)) -> FloorMetrics {
     let mut total_floor_tiles = 0;
     for j in 0..g.h {
         for i in 0..g.w {

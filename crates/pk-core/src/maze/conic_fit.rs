@@ -6,7 +6,6 @@ use std::f64::consts::{PI, TAU};
 
 use crate::tile_shape::ArcFeature;
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pt {
     pub x: f64,
@@ -90,7 +89,6 @@ pub fn arc_chain_from_samples(
     }
     out
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ellipse {
@@ -206,7 +204,6 @@ pub fn parabolic_jaws(
         arc_chain_from_samples(&samples, true, Some("funnel"))
     };
 
-
     ParabolicJawsResult {
         left: mk(-u_throat, -u_end),
         right: mk(u_throat, u_end),
@@ -252,7 +249,6 @@ pub fn nearest_on_chain(chain: &[ArcFeature], x: f64, z: f64) -> Option<NearestO
                 nz: (sign * dz) / d,
                 feature: f.clone(),
             });
-
         }
     }
     best

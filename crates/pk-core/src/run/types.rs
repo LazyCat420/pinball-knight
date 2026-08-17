@@ -48,7 +48,8 @@ impl RunSummary {
         let time_penalty = (self.elapsed_seconds as u64) * 2;
         let win_bonus = if self.is_victory { 10000 } else { 0 };
 
-        (floor_score + kill_score + gold_score + combo_bonus + win_bonus).saturating_sub(time_penalty)
+        (floor_score + kill_score + gold_score + combo_bonus + win_bonus)
+            .saturating_sub(time_penalty)
     }
 
     pub fn calculate_grade(&self) -> &'static str {

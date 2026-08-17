@@ -2,8 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/economy/coins.ts, coins.test.ts
 
 use pk_core::economy::coins::{
-    coin_count_for, split_coin_value, update_coins_physics, CoinEntity,
-    COIN_MAX_PER_DROP,
+    coin_count_for, split_coin_value, update_coins_physics, CoinEntity, COIN_MAX_PER_DROP,
 };
 
 #[test]
@@ -50,13 +49,14 @@ fn coin_magnet_pulls_and_credits_within_pickup_range() {
 
 #[test]
 fn sprint_aura_doubles_magnetic_pull_range() {
-    let mut coins = vec![
-        CoinEntity::new(1, 3.5, 0.0, 50, 0.0, 0.0),
-    ];
+    let mut coins = vec![CoinEntity::new(1, 3.5, 0.0, 50, 0.0, 0.0)];
 
     // Distance is 3.5 units. Normal magnet is 2.2 units (does not reach).
     update_coins_physics(&mut coins, 0.0, 0.0, false, 0.016);
-    assert_eq!(coins[0].vx, 0.0, "Normal magnet does not reach at 3.5 units");
+    assert_eq!(
+        coins[0].vx, 0.0,
+        "Normal magnet does not reach at 3.5 units"
+    );
 
     // Sprint aura magnet reaches 2.2 * 2.0 = 4.4 units!
     update_coins_physics(&mut coins, 0.0, 0.0, true, 0.016);

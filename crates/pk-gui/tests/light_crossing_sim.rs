@@ -2,9 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/render/light-crossing.ts
 
 use pk_gui::palette::PALETTE_HEX;
-use pk_gui::render::light_crossing::{
-    crossing_rate_for_rig, hex_to_srgb, snap_to_palette, Rig,
-};
+use pk_gui::render::light_crossing::{crossing_rate_for_rig, hex_to_srgb, snap_to_palette, Rig};
 
 #[test]
 fn snap_to_palette_maps_exact_hex_colors_to_their_own_indices() {

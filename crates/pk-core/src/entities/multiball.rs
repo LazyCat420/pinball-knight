@@ -2,8 +2,8 @@
 //!
 //! PORTS-PARTIAL: `entities/multiball.ts` - NOT a finished port - 1 of 12 exported names carried over (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
-use std::collections::{HashMap, VecDeque};
 use crate::monsters::types::{EnemyMode, LiveMonster};
+use std::collections::{HashMap, VecDeque};
 
 pub const MULTIBALL_COUNT: usize = 2;
 pub const MULTIBALL_TRAIL_SECONDS: f64 = 1.0;

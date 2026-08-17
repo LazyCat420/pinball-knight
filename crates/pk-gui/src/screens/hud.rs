@@ -16,12 +16,10 @@
 //! PORTS-PARTIAL: `hud-face.ts` - NOT a finished port - 1 of 10 exported names carried over (10%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `map-render.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
-use crate::im::{
-    bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::painter::Rgba;
 use crate::palette::c;
-use crate::theme::{GRID, Ui};
+use crate::theme::{Ui, GRID};
 
 /// Authored design box: `design: { w: 600, h: 338, max: 2 }`.
 pub const DESIGN_W: f64 = 600.0;
@@ -226,7 +224,7 @@ fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash
         w: 36.0,
         h: 36.0,
     };
-    
+
     let helm_color = if pain_flash > 0.0 {
         Ui::DANGER
     } else if ratio > 0.6 {
@@ -326,8 +324,10 @@ fn paint_minimap(f: &mut UiFrame, map_rect: &Rect, minimap: Option<&HudMinimapVi
                         };
                         let px = cx + (dx as f64) * tile_size - tile_size / 2.0;
                         let py = cy + (dy as f64) * tile_size - tile_size / 2.0;
-                        if px >= map_rect.x && px + tile_size <= map_rect.x + map_rect.w
-                            && py >= map_rect.y && py + tile_size <= map_rect.y + map_rect.h
+                        if px >= map_rect.x
+                            && px + tile_size <= map_rect.x + map_rect.w
+                            && py >= map_rect.y
+                            && py + tile_size <= map_rect.y + map_rect.h
                         {
                             fill_rect(
                                 f,
@@ -488,12 +488,7 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
     x += w_skills + gap;
 
     // ── 2. WEAPON ──
-    let wpn_rect = Rect {
-        x,
-        y,
-        w: w_wpn,
-        h,
-    };
+    let wpn_rect = Rect { x, y, w: w_wpn, h };
     let wpn_label = v
         .weapon
         .as_ref()
@@ -607,12 +602,7 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
     x += w_stats + gap;
 
     // ── 7. BELT ──
-    let belt_rect = Rect {
-        x,
-        y,
-        w: w_belt,
-        h,
-    };
+    let belt_rect = Rect { x, y, w: w_belt, h };
     cell(f, &belt_rect, Some("BELT · 1-4"));
     for i in 0..4 {
         let tr = Rect {

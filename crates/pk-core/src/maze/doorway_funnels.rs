@@ -6,7 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::f64::consts::TAU;
 
 use crate::flow_field::bfs_distances;
-use crate::grid::{at, idx, is_walkable, set_shape, set_tile, shape_at, Grid, T_CRACKED, T_FLOOR, T_WALL};
+use crate::grid::{
+    at, idx, is_walkable, set_shape, set_tile, shape_at, Grid, T_CRACKED, T_FLOOR, T_WALL,
+};
 use crate::maze::arc_contract::junction_clear;
 use crate::maze::conic_fit::{parabolic_jaws, Pt, THROAT_ANGLE_DEG};
 use crate::maze::doorways::Doorway;
@@ -183,7 +185,8 @@ pub fn plan_chain<F: Fn(i32, i32) -> bool, S: Fn(i32, i32) -> bool>(
                     if !is_walkable(g, ti, tj) {
                         continue;
                     }
-                    if !FUNNEL_FILL || at(g, ti, tj) == T_CRACKED || !fillable(g, ti, tj, occupied) {
+                    if !FUNNEL_FILL || at(g, ti, tj) == T_CRACKED || !fillable(g, ti, tj, occupied)
+                    {
                         ok = false;
                         break;
                     }
@@ -307,7 +310,6 @@ pub fn commit_jaw(g: &mut Grid, plan: &mut JawPlan) -> usize {
     plan.features.len()
 }
 
-
 pub fn revert_jaw(g: &mut Grid, plan: &mut JawPlan) {
     for f in &mut plan.features {
         f.kicks.clear();
@@ -370,7 +372,8 @@ pub fn author_doorway_funnels<F: Fn(i32, i32) -> bool>(
             z: (d.site.j as f64) + 0.5,
         };
         let sealed = |i: i32, j: i32| -> bool {
-            ((i - d.site.i) * d.site.ai + (j - d.site.j) * d.site.aj).abs() as f64 <= THRESHOLD_KEEPOUT
+            ((i - d.site.i) * d.site.ai + (j - d.site.j) * d.site.aj).abs() as f64
+                <= THRESHOLD_KEEPOUT
         };
         let mut jaws_here = 0;
 
@@ -409,7 +412,8 @@ pub fn author_doorway_funnels<F: Fn(i32, i32) -> bool>(
                 };
 
                 let junction_ok = plan.features.iter().enumerate().all(|(k, f)| {
-                    let tile_coords: Vec<(i32, i32)> = plan.arc_tiles[k].iter().map(|t| (t.i, t.j)).collect();
+                    let tile_coords: Vec<(i32, i32)> =
+                        plan.arc_tiles[k].iter().map(|t| (t.i, t.j)).collect();
                     junction_clear(g, &tile_coords, f)
                 });
                 if !junction_ok {

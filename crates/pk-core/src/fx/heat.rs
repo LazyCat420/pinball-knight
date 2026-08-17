@@ -44,7 +44,11 @@ pub fn project_heat_sources(
     viewport_h: f64,
 ) -> HeatSpotFrame {
     // Sort descending by score
-    sources.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    sources.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut frame = HeatSpotFrame::default();
     let count = sources.len().min(HEAT_SPOTS);

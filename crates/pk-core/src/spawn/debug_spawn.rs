@@ -2,9 +2,9 @@
 //!
 //! PORTS: `debug-spawn.ts`
 
-use std::f64::consts::PI;
 use crate::grid::{is_walkable, world_to_tile, Grid};
 use crate::monsters::EnemyKind;
+use std::f64::consts::PI;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpawnLayout {

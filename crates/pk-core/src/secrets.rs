@@ -4,8 +4,9 @@
 //!
 //! PORTS-PARTIAL: `secrets.ts` - NOT a finished port - 2 of 8 exported names carried over (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
-use crate::grid::{at, is_walkable, set_tile, shape_at, Grid, SHAPE_FULL, T_CRACKED, T_FLOOR, T_WALL};
-
+use crate::grid::{
+    at, is_walkable, set_tile, shape_at, Grid, SHAPE_FULL, T_CRACKED, T_FLOOR, T_WALL,
+};
 
 pub const REVOLVE_TIME: f64 = 0.85;
 pub const REVOLVE_SWEEP: f64 = std::f64::consts::PI * 1.15;
@@ -38,7 +39,8 @@ pub fn stamp_secret_bands<R: FnMut() -> f64, F: Fn(i32, i32) -> bool>(
     while j + 1 <= h - 3 {
         let mut i = 2;
         while i + 1 <= w - 3 {
-            if plain(g, i, j) && plain(g, i + 1, j) && plain(g, i, j + 1) && plain(g, i + 1, j + 1) {
+            if plain(g, i, j) && plain(g, i + 1, j) && plain(g, i, j + 1) && plain(g, i + 1, j + 1)
+            {
                 let horizontal = floor(g, i - 1, j)
                     && floor(g, i - 1, j + 1)
                     && floor(g, i + 2, j)
@@ -69,7 +71,10 @@ pub fn stamp_secret_bands<R: FnMut() -> f64, F: Fn(i32, i32) -> bool>(
         if picked.len() >= count {
             break;
         }
-        if picked.iter().any(|p| (p.i - c.i).abs() + (p.j - c.j).abs() < spacing) {
+        if picked
+            .iter()
+            .any(|p| (p.i - c.i).abs() + (p.j - c.j).abs() < spacing)
+        {
             continue;
         }
         for &(di, dj) in &[(0, 0), (1, 0), (0, 1), (1, 1)] {
@@ -122,5 +127,4 @@ mod tests {
         let stamped = stamp_secret_bands(&mut g, || 0.5, 4, 8, |_, _| false);
         assert_eq!(stamped.len(), 0);
     }
-
 }

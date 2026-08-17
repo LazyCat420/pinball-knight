@@ -425,7 +425,10 @@ mod tests {
         // Diamond
         m.apply_material(MarbleMaterial::Diamond);
         assert_eq!(m.flat_restitution(), Some(DIAMOND_RESTITUTION));
-        assert_eq!(m.break_speeds(), (DIAMOND_SECRET_BREAK_SPEED, DIAMOND_WALL_BREAK_SPEED));
+        assert_eq!(
+            m.break_speeds(),
+            (DIAMOND_SECRET_BREAK_SPEED, DIAMOND_WALL_BREAK_SPEED)
+        );
 
         // Water
         m.apply_material(MarbleMaterial::Water);

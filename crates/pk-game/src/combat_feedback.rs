@@ -68,7 +68,12 @@ pub fn spawn_floating_damage(
 pub fn step_damage_numbers(
     mut commands: Commands,
     time: Res<Time>,
-    mut q: Query<(Entity, &mut DamageNumberText, &mut Transform, &mut TextColor)>,
+    mut q: Query<(
+        Entity,
+        &mut DamageNumberText,
+        &mut Transform,
+        &mut TextColor,
+    )>,
 ) {
     let dt = time.delta_secs();
     for (entity, mut dtext, mut tf, mut color) in q.iter_mut() {

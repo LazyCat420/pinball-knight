@@ -118,26 +118,35 @@ pub fn spawn_authored_decor(
 ) -> (Vec<Entity>, TorchAnchors) {
     let g = &floor.grid;
     let mut out = Vec::new();
+    // ONE material per look for the whole floor build. 102 parts and 84 props
+    // used to mint a material each; see `mat_cache` for what that cost.
+    let cache = &mut crate::mat_cache::MatCache::default();
 
     // ── Torches: a sconce, a flame, and an anchor for the light pool ────────
     let sconce_mesh = meshes.add(Cuboid::new(0.18, 0.3, 0.18));
-    let sconce_mat = materials.add(StandardMaterial {
-        base_color: c(SCONCE_IRON),
-        perceptual_roughness: 0.4,
-        metallic: 0.6,
-        ..default()
-    });
+    let sconce_mat = cache.add(
+        materials,
+        StandardMaterial {
+            base_color: c(SCONCE_IRON),
+            perceptual_roughness: 0.4,
+            metallic: 0.6,
+            ..default()
+        },
+    );
     let flame_mesh = meshes.add(Rectangle::new(0.3, 0.34));
     // Unlit and emissive: the flame is the light SOURCE's sprite, so shading it
     // with the pool it belongs to would darken every torch the pool is not
     // parked on — 35 of 41 on L3.
-    let flame_mat = materials.add(StandardMaterial {
-        base_color: c(TORCH_FLAME),
-        emissive: LinearRgba::from(c(TORCH_FLAME)) * 4.0,
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    });
+    let flame_mat = cache.add(
+        materials,
+        StandardMaterial {
+            base_color: c(TORCH_FLAME),
+            emissive: LinearRgba::from(c(TORCH_FLAME)) * 4.0,
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        },
+    );
 
     let mut anchors = Vec::with_capacity(floor.plan.torches.len());
     for t in &floor.plan.torches {
@@ -218,11 +227,14 @@ pub fn spawn_authored_decor(
             .spawn((
                 AuthoredDecor,
                 Mesh3d(meshes.add(Cuboid::new(0.5, 0.9, 0.5))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: c(STAIRS_BEACON),
-                    unlit: true,
-                    ..default()
-                })),
+                MeshMaterial3d(cache.add(
+                    materials,
+                    StandardMaterial {
+                        base_color: c(STAIRS_BEACON),
+                        unlit: true,
+                        ..default()
+                    },
+                )),
                 Transform::from_xyz(sx as f32, 0.45, sz as f32),
             ))
             .id(),
@@ -230,10 +242,10 @@ pub fn spawn_authored_decor(
 
     // ── Parts, props, items ─────────────────────────────────────────────────
     for p in &floor.plan.parts {
-        out.extend(spawn_part(commands, meshes, materials, g, p));
+        out.extend(spawn_part(commands, meshes, materials, cache, g, p));
     }
     for p in &floor.plan.props {
-        out.push(spawn_prop(commands, meshes, materials, g, p));
+        out.push(spawn_prop(commands, meshes, materials, cache, g, p));
     }
     for it in &floor.plan.items {
         let (x, z) = tile_center(g, it.i, it.j);
@@ -248,11 +260,14 @@ pub fn spawn_authored_decor(
                 .spawn((
                     AuthoredDecor,
                     Mesh3d(meshes.add(Sphere::new(0.14))),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: c(colour),
-                        emissive: LinearRgba::from(c(colour)) * 0.6,
-                        ..default()
-                    })),
+                    MeshMaterial3d(cache.add(
+                        materials,
+                        StandardMaterial {
+                            base_color: c(colour),
+                            emissive: LinearRgba::from(c(colour)) * 0.6,
+                            ..default()
+                        },
+                    )),
                     Transform::from_xyz(x as f32, 0.22, z as f32),
                 ))
                 .id(),
@@ -273,6 +288,7 @@ fn spawn_part(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    cache: &mut crate::mat_cache::MatCache,
     g: &Grid,
     p: &PinballPart,
 ) -> Vec<Entity> {
@@ -291,12 +307,15 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cylinder::new(0.34, 0.16))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x544e63),
-                            metallic: 0.7,
-                            perceptual_roughness: 0.3,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x544e63),
+                                metallic: 0.7,
+                                perceptual_roughness: 0.3,
+                                ..default()
+                            },
+                        )),
                         Transform::from_xyz(x as f32, 0.08, z as f32),
                     ))
                     .id(),
@@ -307,13 +326,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Torus::new(0.045, 0.30))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xf0a63c),
-                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.8,
-                            metallic: 0.8,
-                            perceptual_roughness: 0.2,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0xf0a63c),
+                                emissive: LinearRgba::from(c(0xf0a63c)) * 0.8,
+                                metallic: 0.8,
+                                perceptual_roughness: 0.2,
+                                ..default()
+                            },
+                        )),
                         Transform::from_xyz(x as f32, 0.17, z as f32)
                             .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
                     ))
@@ -325,13 +347,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Sphere::new(0.26))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x6fd0e8),
-                            emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
-                            perceptual_roughness: 0.2,
-                            metallic: 0.1,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x6fd0e8),
+                                emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
+                                perceptual_roughness: 0.2,
+                                metallic: 0.1,
+                                ..default()
+                            },
+                        )),
                         Transform::from_xyz(x as f32, 0.16, z as f32),
                     ))
                     .id(),
@@ -344,23 +369,29 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.72, 0.04, 0.56))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x1a1f2b),
-                            metallic: 0.8,
-                            perceptual_roughness: 0.4,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x1a1f2b),
+                                metallic: 0.8,
+                                perceptual_roughness: 0.4,
+                                ..default()
+                            },
+                        )),
                         xf.with_translation(Vec3::new(x as f32, 0.02, z as f32)),
                     ))
                     .id(),
             );
             // 2 Glowing arcane guide strips down each side
-            let strip_mat = materials.add(StandardMaterial {
-                base_color: c(0x6fd0e8),
-                emissive: LinearRgba::from(c(0x6fd0e8)) * 1.5,
-                unlit: true,
-                ..default()
-            });
+            let strip_mat = cache.add(
+                materials,
+                StandardMaterial {
+                    base_color: c(0x6fd0e8),
+                    emissive: LinearRgba::from(c(0x6fd0e8)) * 1.5,
+                    unlit: true,
+                    ..default()
+                },
+            );
             let strip_mesh = meshes.add(Cuboid::new(0.72, 0.05, 0.05));
             for zside in [-0.25f32, 0.25f32] {
                 entities.push(
@@ -390,12 +421,15 @@ fn spawn_part(
                                 base_emissive: chevron_emissive,
                             },
                             Mesh3d(arrow_mesh.clone()),
-                            MeshMaterial3d(materials.add(StandardMaterial {
-                                base_color: chevron_color,
-                                emissive: chevron_emissive * 1.8,
-                                unlit: true,
-                                ..default()
-                            })),
+                            MeshMaterial3d(cache.add(
+                                materials,
+                                StandardMaterial {
+                                    base_color: chevron_color,
+                                    emissive: chevron_emissive * 1.8,
+                                    unlit: true,
+                                    ..default()
+                                },
+                            )),
                             chevron_tf,
                         ))
                         .id(),
@@ -408,13 +442,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.64, 0.28, 0.24))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x544e63),
-                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.4,
-                            metallic: 0.6,
-                            perceptual_roughness: 0.4,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x544e63),
+                                emissive: LinearRgba::from(c(0xf0a63c)) * 0.4,
+                                metallic: 0.6,
+                                perceptual_roughness: 0.4,
+                                ..default()
+                            },
+                        )),
                         xf.with_translation(Vec3::new(x as f32, 0.14, z as f32)),
                     ))
                     .id(),
@@ -426,13 +463,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cylinder::new(0.32, 0.06))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x6fd0e8),
-                            emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
-                            metallic: 0.7,
-                            perceptual_roughness: 0.3,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x6fd0e8),
+                                emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
+                                metallic: 0.7,
+                                perceptual_roughness: 0.3,
+                                ..default()
+                            },
+                        )),
                         Transform::from_xyz(x as f32, 0.03, z as f32),
                     ))
                     .id(),
@@ -444,13 +484,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.55, 0.36, 0.16))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x544e63),
-                            emissive: LinearRgba::from(c(0x6fd0e8)) * 0.6,
-                            metallic: 0.7,
-                            perceptual_roughness: 0.3,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0x544e63),
+                                emissive: LinearRgba::from(c(0x6fd0e8)) * 0.6,
+                                metallic: 0.7,
+                                perceptual_roughness: 0.3,
+                                ..default()
+                            },
+                        )),
                         xf.with_translation(Vec3::new(x as f32, 0.18, z as f32)),
                     ))
                     .id(),
@@ -462,13 +505,16 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.36, 0.38, 0.14))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xf0a63c),
-                            emissive: LinearRgba::from(c(0xf0a63c)) * 1.2,
-                            metallic: 0.8,
-                            perceptual_roughness: 0.2,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(0xf0a63c),
+                                emissive: LinearRgba::from(c(0xf0a63c)) * 1.2,
+                                metallic: 0.8,
+                                perceptual_roughness: 0.2,
+                                ..default()
+                            },
+                        )),
                         xf.with_translation(Vec3::new(x as f32, 0.19, z as f32)),
                     ))
                     .id(),
@@ -494,11 +540,14 @@ fn spawn_part(
                     .spawn((
                         AuthoredDecor,
                         Mesh3d(meshes.add(mesh)),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(colour),
-                            perceptual_roughness: 0.6,
-                            ..default()
-                        })),
+                        MeshMaterial3d(cache.add(
+                            materials,
+                            StandardMaterial {
+                                base_color: c(colour),
+                                perceptual_roughness: 0.6,
+                                ..default()
+                            },
+                        )),
                         xf.with_translation(Vec3::new(x as f32, y, z as f32)),
                     ))
                     .id(),
@@ -512,6 +561,7 @@ fn spawn_prop(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    cache: &mut crate::mat_cache::MatCache,
     g: &Grid,
     p: &Prop,
 ) -> Entity {
@@ -525,11 +575,14 @@ fn spawn_prop(
         .spawn((
             AuthoredDecor,
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: c(colour),
-                perceptual_roughness: 0.9,
-                ..default()
-            })),
+            MeshMaterial3d(cache.add(
+                materials,
+                StandardMaterial {
+                    base_color: c(colour),
+                    perceptual_roughness: 0.9,
+                    ..default()
+                },
+            )),
             Transform::from_xyz(x as f32, y, z as f32),
         ))
         .id()
@@ -813,6 +866,7 @@ pub fn spawn_live_horde(
     art: &MonsterArt,
     monsters: &[pk_core::monsters::LiveMonster],
 ) -> Vec<Entity> {
+    let cache = &mut crate::mat_cache::MatCache::default();
     let mut spawned = Vec::new();
     let rot = billboard(0.0);
     let quad_h = 1.15f32;
@@ -843,7 +897,7 @@ pub fn spawn_live_horde(
         };
 
         let base_mat = materials.get(&clips.material).cloned().unwrap_or_default();
-        let monster_mat = materials.add(base_mat);
+        let monster_mat = cache.add(materials, base_mat);
 
         let quad_w = quad_h * clips.aspect;
         let mesh = Mesh::from(bevy::math::primitives::Rectangle::new(quad_w, quad_h));
@@ -887,6 +941,7 @@ pub fn spawn_standing_horde(
     art: &MonsterArt,
     floor: &AuthoredFloor,
 ) -> Option<Entity> {
+    let cache = &mut crate::mat_cache::MatCache::default();
     let clip = art
         .zombie
         .idle
@@ -973,4 +1028,3 @@ pub fn step_booster_chevrons(
         }
     }
 }
-

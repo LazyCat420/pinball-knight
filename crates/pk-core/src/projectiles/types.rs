@@ -102,10 +102,18 @@ impl Projectile {
             max_life: life,
             damage,
             is_player: true,
-            pierce: if kind == ProjectileKind::Flame || kind == ProjectileKind::Laser { 99 } else { 0 },
+            pierce: if kind == ProjectileKind::Flame || kind == ProjectileKind::Laser {
+                99
+            } else {
+                0
+            },
             curve_rate: 0.0,
             dead: false,
-            radius: if kind == ProjectileKind::Flame { 0.28 } else { HIT_R },
+            radius: if kind == ProjectileKind::Flame {
+                0.28
+            } else {
+                HIT_R
+            },
         }
     }
 

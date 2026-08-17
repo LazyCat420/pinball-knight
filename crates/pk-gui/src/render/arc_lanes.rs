@@ -148,7 +148,11 @@ pub struct ArcLaneVisual {
 
 impl ArcLaneVisual {
     pub fn new(band: LaneBand, cxw: f64, czw: f64, r: f64, h: f64, solid_out: bool) -> Self {
-        let off = if solid_out { -ARC_LANE_THICK } else { ARC_LANE_THICK };
+        let off = if solid_out {
+            -ARC_LANE_THICK
+        } else {
+            ARC_LANE_THICK
+        };
         let y0 = h * 0.06;
         let y1 = h * 0.42;
 

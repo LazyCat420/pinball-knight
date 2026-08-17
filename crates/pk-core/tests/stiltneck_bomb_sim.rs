@@ -1,9 +1,11 @@
 // Parity test for Stiltneck Bomb Fuse and Blast Physics.
 // Replicates legacy/src/game/pinball-knight/entities/stiltneck-bomb.test.ts
 
-use pk_core::monsters::types::{EnemyKind, EnemyMode, LiveMonster};
+use pk_core::enemies::{
+    STILTNECK_BLAST_DAMAGE, STILTNECK_BLAST_ENEMY_DAMAGE, STILTNECK_BLAST_RADIUS,
+};
 use pk_core::monsters::stiltneck::resolve_bomb_blast;
-use pk_core::enemies::{STILTNECK_BLAST_DAMAGE, STILTNECK_BLAST_ENEMY_DAMAGE, STILTNECK_BLAST_RADIUS};
+use pk_core::monsters::types::{EnemyKind, EnemyMode, LiveMonster};
 
 #[test]
 fn blast_hurts_monsters_inside_radius_and_leaves_outside() {
@@ -25,7 +27,12 @@ fn blast_hurts_monsters_inside_radius_and_leaves_outside() {
 
 #[test]
 fn blast_hits_horde_at_full_damage_on_the_rim() {
-    let mut monsters = vec![LiveMonster::new(1, EnemyKind::Zombie, STILTNECK_BLAST_RADIUS - 0.01, 0.0)];
+    let mut monsters = vec![LiveMonster::new(
+        1,
+        EnemyKind::Zombie,
+        STILTNECK_BLAST_RADIUS - 0.01,
+        0.0,
+    )];
     let initial_hp = monsters[0].hp;
 
     resolve_bomb_blast(0.0, 0.0, 99.0, 99.0, 0.0, &mut monsters);
@@ -43,7 +50,10 @@ fn blast_cannot_touch_death_dealer_reaper() {
 
     resolve_bomb_blast(0.0, 0.0, 99.0, 99.0, 0.0, &mut monsters);
 
-    assert_eq!(monsters[0].hp, initial_hp, "Reaper must be immune to bomb blasts");
+    assert_eq!(
+        monsters[0].hp, initial_hp,
+        "Reaper must be immune to bomb blasts"
+    );
 }
 
 #[test]
@@ -66,12 +76,26 @@ fn blast_falls_off_with_distance_for_the_player() {
     assert_eq!(res_center.player_damage, STILTNECK_BLAST_DAMAGE);
 
     // Near the rim
-    let res_rim = resolve_bomb_blast(0.0, 0.0, STILTNECK_BLAST_RADIUS - 0.02, 0.0, 0.0, &mut monsters);
+    let res_rim = resolve_bomb_blast(
+        0.0,
+        0.0,
+        STILTNECK_BLAST_RADIUS - 0.02,
+        0.0,
+        0.0,
+        &mut monsters,
+    );
     assert!(res_rim.player_damage > 0);
     assert!(res_rim.player_damage < res_center.player_damage);
 
     // Outside the radius
-    let res_miss = resolve_bomb_blast(0.0, 0.0, STILTNECK_BLAST_RADIUS + 0.05, 0.0, 0.0, &mut monsters);
+    let res_miss = resolve_bomb_blast(
+        0.0,
+        0.0,
+        STILTNECK_BLAST_RADIUS + 0.05,
+        0.0,
+        0.0,
+        &mut monsters,
+    );
     assert_eq!(res_miss.player_damage, 0);
 }
 

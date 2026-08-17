@@ -12,8 +12,14 @@ fn modal_hierarchy_prioritizes_active_screens_in_correct_order() {
         route_key("q", &modal, 0),
         RoutedKeyAction::CastAbility("slot_q".to_string())
     );
-    assert_eq!(route_key("1", &modal, 0), RoutedKeyAction::SelectWeaponSlot(0));
-    assert_eq!(route_key("Tab", &modal, 0), RoutedKeyAction::SelectWeaponSlot(1));
+    assert_eq!(
+        route_key("1", &modal, 0),
+        RoutedKeyAction::SelectWeaponSlot(0)
+    );
+    assert_eq!(
+        route_key("Tab", &modal, 0),
+        RoutedKeyAction::SelectWeaponSlot(1)
+    );
 
     // 2. Map overlay open -> ESC closes map
     modal.is_map_open = true;
@@ -22,7 +28,10 @@ fn modal_hierarchy_prioritizes_active_screens_in_correct_order() {
 
     // 3. Card reader open -> Space advances haul
     modal.is_card_reader_open = true;
-    assert_eq!(route_key(" ", &modal, 0), RoutedKeyAction::AdvanceCardReader);
+    assert_eq!(
+        route_key(" ", &modal, 0),
+        RoutedKeyAction::AdvanceCardReader
+    );
     modal.is_card_reader_open = false;
 
     // 4. Debug Console toggle has priority over other screens

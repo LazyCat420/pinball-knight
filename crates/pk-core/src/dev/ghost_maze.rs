@@ -38,7 +38,9 @@ impl GhostMazeStore {
     pub fn enter(&mut self, level: Option<u32>, seed: Option<u32>) -> GhostMaze {
         let cur = self.get();
         let next = GhostMaze {
-            level: level.or_else(|| cur.map(|c| c.level)).unwrap_or(DEFAULT_LEVEL),
+            level: level
+                .or_else(|| cur.map(|c| c.level))
+                .unwrap_or(DEFAULT_LEVEL),
             seed: seed.or_else(|| cur.map(|c| c.seed)).unwrap_or(DEFAULT_SEED),
         };
         self.set(Some(next));

@@ -58,12 +58,5 @@ fn rail_exit_checks_forward_runway() {
     assert_eq!(ez, 8);
 
     // Runway is open floor
-    assert!(has_clear_rail_runway(
-        &g,
-        ex,
-        ez,
-        dx,
-        dz,
-        RAIL_MIN_RUNWAY
-    ));
+    assert!(has_clear_rail_runway(&g, ex, ez, dx, dz, RAIL_MIN_RUNWAY));
 }

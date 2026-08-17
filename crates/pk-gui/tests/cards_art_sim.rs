@@ -1,9 +1,7 @@
 // Parity test suite for Pixel Playing Cards Art Engine.
 // Replicates legacy/src/scenes/tavern/gambler/cards-art.ts
 
-use pk_gui::gambler::cards_art::{
-    rank_bitmap_3x5, rotate_180_3x5, suit_pip_5x5, suit_pip_7x7,
-};
+use pk_gui::gambler::cards_art::{rank_bitmap_3x5, rotate_180_3x5, suit_pip_5x5, suit_pip_7x7};
 
 #[test]
 fn cards_art_rank_bitmaps_and_180_inversion() {

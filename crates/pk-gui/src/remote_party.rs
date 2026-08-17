@@ -53,19 +53,22 @@ impl RemotePartyManager {
         clip: &str,
         dead: bool,
     ) {
-        let peer = self.peers.entry(id.to_string()).or_insert_with(|| RemotePeerView {
-            id: id.to_string(),
-            slot,
-            name: name.to_string(),
-            target_x: x,
-            target_z: z,
-            current_x: x,
-            current_z: z,
-            facing: Facing::S,
-            clip: clip.to_string(),
-            dead,
-            last_seen_t: 0.0,
-        });
+        let peer = self
+            .peers
+            .entry(id.to_string())
+            .or_insert_with(|| RemotePeerView {
+                id: id.to_string(),
+                slot,
+                name: name.to_string(),
+                target_x: x,
+                target_z: z,
+                current_x: x,
+                current_z: z,
+                facing: Facing::S,
+                clip: clip.to_string(),
+                dead,
+                last_seen_t: 0.0,
+            });
 
         peer.target_x = x;
         peer.target_z = z;

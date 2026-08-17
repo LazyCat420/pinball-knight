@@ -88,7 +88,12 @@ pub fn generate_maze(
             let wall_ty = (cy as i32 * 2 + 1 + dy) as i32;
             set_tile(&mut g, wall_tx, wall_ty, T_FLOOR);
             // Carve neighbor cell
-            set_tile(&mut g, (n_cx * 2 + 1) as i32, (n_cy * 2 + 1) as i32, T_FLOOR);
+            set_tile(
+                &mut g,
+                (n_cx * 2 + 1) as i32,
+                (n_cy * 2 + 1) as i32,
+                T_FLOOR,
+            );
 
             active.push((n_cx, n_cy));
         } else {

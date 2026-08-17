@@ -41,10 +41,22 @@ impl PlayerFacing {
             Self::North => (0.0, -1.0),
             Self::East => (1.0, 0.0),
             Self::West => (-1.0, 0.0),
-            Self::SouthEast => (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-            Self::SouthWest => (-std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-            Self::NorthEast => (std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
-            Self::NorthWest => (-std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
+            Self::SouthEast => (
+                std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::SouthWest => (
+                -std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::NorthEast => (
+                std::f64::consts::FRAC_1_SQRT_2,
+                -std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::NorthWest => (
+                -std::f64::consts::FRAC_1_SQRT_2,
+                -std::f64::consts::FRAC_1_SQRT_2,
+            ),
         }
     }
 }

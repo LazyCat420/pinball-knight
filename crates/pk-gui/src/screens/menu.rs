@@ -2,9 +2,7 @@
 //!
 //! PORTS: `gui/screens/menu.ts`
 
-use crate::im::{
-    fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,7 +93,10 @@ pub fn paint_menu(f: &mut UiFrame, state: &mut KnightMenuState, bounds: Rect) {
         },
     );
 
-    let stats_blurb = format!("LVL {} | GOLD: {}g | SP: {}", state.level, state.gold, state.skill_points);
+    let stats_blurb = format!(
+        "LVL {} | GOLD: {}g | SP: {}",
+        state.level, state.gold, state.skill_points
+    );
     text(
         f,
         &stats_blurb,

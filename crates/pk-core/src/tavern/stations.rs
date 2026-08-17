@@ -31,7 +31,11 @@ impl StationFxState {
 
     /// Ticks smooth fade transitions and breathing opacity for the spotlight disc.
     pub fn update(&mut self, dt: f32, time: f32) {
-        let target = if self.current_station.is_some() { 1.0 } else { 0.0 };
+        let target = if self.current_station.is_some() {
+            1.0
+        } else {
+            0.0
+        };
         let diff = target - self.fade;
         self.fade += diff.signum() * diff.abs().min(dt * 6.0);
         self.disc_opacity = self.fade * (0.22 + (time * 4.0).sin() * 0.05);
