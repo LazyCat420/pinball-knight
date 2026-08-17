@@ -3,7 +3,9 @@
 //!
 //! ── WHERE THIS SITS IN THE GRAPH ──────────────────────────────────────────
 //!
-//!     Node3d::EndMainPass → PkBloom → PkComposite → Node3d::Tonemapping
+//! ```text
+//! Node3d::EndMainPass -> PkBloom -> PkComposite -> Node3d::Tonemapping
+//! ```
 //!
 //! Before tonemapping, which is the whole point: the camera runs
 //! `Tonemapping::None` (the node then no-ops), so the composite is handed raw
@@ -289,16 +291,22 @@ impl Plugin for PixelPipelinePlugin {
 /// Bevy's orthographic matrix passes `far` and `near` to `orthographic_rh` the
 /// wrong way round on purpose (reversed-Z), so for a view-space distance `d`:
 ///
-///     raw = (far - d) / (far - near)          raw = 1 at near, 0 at far
+/// ```text
+/// raw = (far - d) / (far - near)          raw = 1 at near, 0 at far
+/// ```
 ///
 /// while the oracle's ortho depth is the conventional
 ///
-///     legacy = (d - 0.1) / (200 - 0.1)
+/// ```text
+/// legacy = (d - 0.1) / (200 - 0.1)
+/// ```
 ///
 /// Substituting gives `legacy = a * raw + b` with
 ///
-///     a = -(far - near) / (LEGACY_FAR - LEGACY_NEAR)
-///     b = (far - LEGACY_NEAR) / (LEGACY_FAR - LEGACY_NEAR)
+/// ```text
+/// a = -(far - near) / (LEGACY_FAR - LEGACY_NEAR)
+/// b = (far - LEGACY_NEAR) / (LEGACY_FAR - LEGACY_NEAR)
+/// ```
 ///
 /// ⚠️ THE SCALE IS THE HALF THAT IS EASY TO MISS. A naive "reversed-Z, so
 /// `1 - raw`" gets the DIRECTION right and the UNITS wrong by the ratio of the
