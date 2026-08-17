@@ -10,7 +10,7 @@
 
 use crate::im::{
     begin_scroll, button, end_scroll, fill_rect, heading, rect, stroke_rect, tabs, ButtonOpts,
-    UiFrame,
+    Rect, UiFrame,
 };
 use crate::theme::Ui;
 
@@ -174,4 +174,19 @@ pub fn paint_debug_console(
     }
 
     end_scroll(f, &content_rect, 400.0, state.scroll_offset);
+}
+
+/// Paints the live debug telemetry and entity inspector HUD overlay.
+pub fn paint_debug(f: &mut UiFrame, _state: &DebugInspectorState, bounds: Rect) {
+    let panel_rect = rect(bounds.x + 8.0, bounds.y + 8.0, 240.0, 180.0);
+
+    fill_rect(f, &panel_rect, Ui::SCRIM);
+    stroke_rect(f, &panel_rect, Ui::GOLD, 1.0);
+
+    heading(
+        f,
+        &rect(panel_rect.x + 8.0, panel_rect.y + 6.0, 224.0, 16.0),
+        "DEBUG TELEMETRY",
+        Ui::HEADING,
+    );
 }

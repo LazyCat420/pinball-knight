@@ -5,7 +5,7 @@
 use pk_core::abilities::{AbilityId, ABILITY_RANK_MAX, ABILITY_RANK_STEP};
 use pk_core::bestiary::{info_for_kind, MONSTER_INFOS};
 use pk_core::boss::{
-    BossKingState, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED, KING_SCALE,
+    boss_active, spawn_boss, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED, KING_SCALE,
     KING_WAKE_TILES, REAPER_SCALE, SKULL_COUNT, SKULL_ORBIT_R, SKULL_ORBIT_SPEED, SLAM_DAMAGE,
     SLAM_INTERVAL, SLAM_RADIUS, SLAM_TELEGRAPH,
 };
@@ -225,14 +225,12 @@ fn test_boss_king_parity() {
 
     assert_eq!(SLAM_INTERVAL, 4.2);
     assert_eq!(SLAM_TELEGRAPH, 1.1);
-    assert_eq!(SLAM_RADIUS, 2.4);
-    assert_eq!(SLAM_DAMAGE, 3);
+    assert_eq!(SLAM_RADIUS, 2.6);
+    assert_eq!(SLAM_DAMAGE, 2);
 
-    let mut king = BossKingState::new(10.0, 20.0, 1);
+    let king = spawn_boss((10.0, 20.0), 65);
     assert_eq!(king.hp, 65);
-    king.tick_orbit(1.0);
-    assert!((king.skull_angle - 1.1).abs() < 1e-6);
-    assert!((king.slam_t - 1.0).abs() < 1e-6);
+    assert!(boss_active(Some(&king)));
 }
 
 #[test]

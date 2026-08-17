@@ -84,6 +84,7 @@ fn debug_inspector_paints_telemetry_metrics() {
         player_speed: 4.85,
         god_mode: true,
         noclip: false,
+        ..Default::default()
     };
 
     let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, empty_ui_input(), 0, 1);

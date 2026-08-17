@@ -1369,8 +1369,11 @@ mod tests {
             // ── gui/screens/debug.ts: ROW REMOVED 2026-08-17 ──
             // Complete 1:1 debug panel layout constants, chip formatters, section
             // definitions, action traits, and immediate-mode docked panel UI in
-            // crates/pk-gui/src/screens/debug.rs, gated by crates/pk-gui/tests/debug_screen_sim.rs.
-            ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
+            // ── maze/arc-sweeps.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 arc sweep fillets, orbit islands, kicker rubber bands,
+            // booster lanes, rail exits, and flow-field rail orientation in
+            // crates/pk-core/src/maze/arc_sweeps.rs, gated by
+            // crates/pk-core/tests/arc_sweeps_parity_sim.rs and arc_sweeps_sim.rs.
             // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
             // All 77 exported values transcribed and gated both ways by
             // `crates/pk-core/tests/constants_render.rs` against

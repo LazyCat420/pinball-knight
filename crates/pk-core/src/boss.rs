@@ -97,6 +97,8 @@ pub struct BossState {
     pub scaled_for: usize,
 }
 
+pub type BossKingState = BossState;
+
 impl BossState {
     pub fn new(anchor_x: f64, anchor_z: f64, hp: i32) -> Self {
         let mut skulls = Vec::with_capacity(SKULL_COUNT);
