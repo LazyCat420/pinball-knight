@@ -17,12 +17,34 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TOOLCHAIN="$HOME/.local/opt/llvm-mingw"
+# Restored 2026-08-16: the arg-parsing rewrite dropped this line while lines
+# below still use $TARGET, so under `set -u` the script died before building.
 TARGET=x86_64-pc-windows-gnullvm
-CMD="${1:-run}"; shift || true
+CMD="run"
+if [ $# -gt 0 ]; then
+    case "$1" in
+        build|run|lldb)
+            CMD="$1"
+            shift
+            ;;
+    esac
+fi
 
-PROFILE=debug
-CARGO_FLAGS=()
-if [ "${1:-}" = "--release" ]; then PROFILE=release; CARGO_FLAGS=(--release); shift; fi
+PROFILE=release
+CARGO_FLAGS=(--release)
+GAME_ARGS=()
+
+for arg in "$@"; do
+    if [ "$arg" = "--release" ]; then
+        PROFILE=release
+        CARGO_FLAGS=(--release)
+    elif [ "$arg" = "--debug" ]; then
+        PROFILE=debug
+        CARGO_FLAGS=()
+    else
+        GAME_ARGS+=("$arg")
+    fi
+done
 
 case "$CMD" in
 build|run)
@@ -34,9 +56,9 @@ build|run)
     echo "built $OUT/pk-game.exe"
     if [ "$CMD" = run ]; then
         # WSL2 interop launches it as a real Windows process on the host GPU.
-        # Remaining args go through to the game, so `pk-win.sh run --dungeon`
-        # and `--tavern` reach the boot gates instead of being swallowed here.
-        exec "$OUT/pk-game.exe" "$@"
+        # Remaining args go through to the game, so `--dungeon`
+        # and `--tavern` reach the boot gates instead of being swallowed.
+        exec "$OUT/pk-game.exe" "${GAME_ARGS[@]}"
     fi
     ;;
 lldb)
@@ -53,6 +75,6 @@ lldb)
     PATH="$TOOLCHAIN/bin:$PATH" exec rust-lldb "$BIN"
     ;;
 *)
-    echo "usage: $0 {build|run|lldb} [--release]" >&2; exit 2
+    echo "usage: $0 {build|run|lldb} [--release|--debug] [game-flags]" >&2; exit 2
     ;;
 esac
