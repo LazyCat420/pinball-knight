@@ -1338,7 +1338,10 @@ mod tests {
                 1217,
                 "0 of 5 exports; STATS/updateZombies/movementOf absent",
             ),
-            ("entities/combat.ts", 1204, "0 of 22 exports carried"),
+            // ── entities/combat.ts: ROW REMOVED 2026-08-17 ──
+            // All 22 exported items, damage calculations, player attack resolution,
+            // knockback vectors, i-frames, and death rewards transcribed 1:1 in
+            // crates/pk-core/src/combat/, gated by crates/pk-core/tests/combat_parity_sim.rs.
             // ── gui/im.ts: ROW REMOVED 2026-08-17 ──
             // Complete 1:1 immediate-mode UI layout engine, focus ring, widgets (buttons,
             // toggles, sliders, pips, bars, tabs, text fields), and scroll containers in

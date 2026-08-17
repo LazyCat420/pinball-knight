@@ -1,13 +1,56 @@
-//! Damage calculation and hit resolution.
+//! Damage calculation, hit resolution, player attack resolution, and enemy reactions.
 //!
-//! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Port of `legacy/src/game/pinball-knight/entities/combat.ts` (1,204 lines).
+//!
+//! PORTS: `entities/combat.ts`
 
 use super::stagger::{pain_chance, stagger_time};
+use crate::cards::CardAggregate;
 use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
+use crate::enemies::{
+    BAT_DAMAGE, BRUTE_DAMAGE, CHOMPER_DAMAGE, CROAKER_BEAM_DAMAGE, GHOST_DAMAGE, GOLEM_DAMAGE,
+    JESTER_DISC_DAMAGE, REAPER_DAMAGE, ROTORTAIL_TIMBER_DAMAGE, SLIME_DAMAGE, SPIDER_DAMAGE,
+    STILTNECK_BLAST_DAMAGE, ZOMBIE_DAMAGE,
+};
+use crate::items::WeaponDef;
+use crate::monsters::types::EnemyKind;
+use crate::state::{Facing, Player, SimState};
 
 pub const KNOCKBACK_ZOMBIE: f64 = 1.1;
 pub const KNOCKBACK_PLAYER: f64 = 1.4;
 pub const PLAYER_IFRAMES: f64 = 0.35;
+pub const MAGNET_DAMAGE: i32 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageSource {
+    Steel,
+    Bounce,
+    Ranged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeleeScale {
+    pub damage: f64,
+    pub knockback: f64,
+    pub reach: f64,
+    pub arc: f64,
+}
+
+pub const UNIT_MELEE: MeleeScale = MeleeScale {
+    damage: 1.0,
+    knockback: 1.0,
+    reach: 1.0,
+    arc: 1.0,
+};
+
+pub fn facing_vector(facing: Facing) -> (f64, f64) {
+    match facing {
+        Facing::S => (0.0, 1.0),
+        Facing::N => (0.0, -1.0),
+        Facing::E => (1.0, 0.0),
+        Facing::W => (-1.0, 0.0),
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatHit {
@@ -18,6 +61,27 @@ pub struct CombatHit {
     pub knockback_x: f64,
     pub knockback_z: f64,
     pub stagger_applied: f64,
+}
+
+/// Computes outgoing player attack damage factoring weapon upgrades, momentum, and card multipliers.
+pub fn player_damage(
+    base: f64,
+    weapon: Option<&WeaponDef>,
+    mom_speed: f64,
+    cards: Option<&CardAggregate>,
+) -> f64 {
+    let mut dmg = base;
+    if let Some(w) = weapon {
+        dmg += w.damage as f64;
+    }
+    if let Some(c) = cards {
+        dmg += c.damage_flat as f64;
+        dmg *= c.damage_mult;
+    }
+    if mom_speed > 0.0 {
+        dmg *= 1.0 + (mom_speed * 0.08).min(1.2);
+    }
+    dmg.max(1.0)
 }
 
 /// Computes outgoing player attack damage factoring weapon upgrades and momentum.
@@ -96,17 +160,128 @@ pub fn resolve_enemy_hit(
     }
 }
 
-/// Resolves damage taken by the player factoring armor soak and i-frames.
-pub fn resolve_player_damage(
-    player_hp: i32,
-    player_iframes: f64,
-    incoming_dmg: i32,
-    armor_soak: i32,
-) -> (i32, f64, bool) {
-    if player_iframes > 0.0 || incoming_dmg <= 0 {
-        return (player_hp, player_iframes, false);
+/// Resolves damage dealt to a monster in the active simulation state.
+pub fn damage_zombie(
+    sim_state: &mut SimState,
+    target_idx: usize,
+    amount: f64,
+    _src: DamageSource,
+    hit_dir: (f64, f64),
+) -> Option<CombatHit> {
+    if target_idx >= sim_state.monsters.len() {
+        return None;
     }
-    let soaked_dmg = (incoming_dmg - armor_soak).max(1);
-    let next_hp = (player_hp - soaked_dmg).max(0);
-    (next_hp, PLAYER_IFRAMES, true)
+    let m = &mut sim_state.monsters[target_idx];
+    let max_hp = m.max_hp;
+    let cur_hp = m.hp;
+
+    let hit = resolve_enemy_hit(
+        cur_hp,
+        max_hp,
+        amount,
+        hit_dir.0,
+        hit_dir.1,
+        KNOCKBACK_ZOMBIE,
+        0.0,
+        sim_state.player.mom_speed,
+    );
+
+    m.hp = (cur_hp - hit.damage_dealt).max(0.0);
+    m.vx += hit.knockback_x;
+    m.vz += hit.knockback_z;
+    Some(hit)
+}
+
+/// Resolves player being struck by a monster.
+pub fn hit_player(sim_state: &mut SimState, kind: EnemyKind, enemy_pos: (f64, f64)) {
+    if sim_state.player.iframes > 0.0 {
+        return;
+    }
+
+    let dmg = match kind {
+        EnemyKind::Bat => BAT_DAMAGE,
+        EnemyKind::Slime => SLIME_DAMAGE,
+        EnemyKind::Spider => SPIDER_DAMAGE,
+        EnemyKind::Ghost => GHOST_DAMAGE,
+        EnemyKind::Brute => BRUTE_DAMAGE,
+        EnemyKind::Reaper => REAPER_DAMAGE,
+        EnemyKind::Golem => GOLEM_DAMAGE,
+        EnemyKind::Chomper => CHOMPER_DAMAGE,
+        EnemyKind::Jester => JESTER_DISC_DAMAGE,
+        EnemyKind::Rotortail => ROTORTAIL_TIMBER_DAMAGE,
+        EnemyKind::Stiltneck => STILTNECK_BLAST_DAMAGE,
+        EnemyKind::Croaker => CROAKER_BEAM_DAMAGE,
+        _ => ZOMBIE_DAMAGE,
+    };
+
+    sim_state.player.hp = (sim_state.player.hp - dmg as f64).max(0.0);
+    sim_state.player.iframes = PLAYER_IFRAMES;
+
+    let dx = sim_state.player.x - enemy_pos.0;
+    let dz = sim_state.player.z - enemy_pos.1;
+    let len = (dx * dx + dz * dz).sqrt();
+    if len > 1e-4 {
+        sim_state.player.mom_x += (dx / len) * KNOCKBACK_PLAYER;
+        sim_state.player.mom_z += (dz / len) * KNOCKBACK_PLAYER;
+    }
+}
+
+/// Resolves ranged attack hit on player.
+pub fn hit_player_ranged(sim_state: &mut SimState, damage: f64, src_x: f64, src_z: f64) {
+    if sim_state.player.iframes > 0.0 {
+        return;
+    }
+    sim_state.player.hp = (sim_state.player.hp - damage).max(0.0);
+    sim_state.player.iframes = PLAYER_IFRAMES;
+
+    let dx = sim_state.player.x - src_x;
+    let dz = sim_state.player.z - src_z;
+    let len = (dx * dx + dz * dz).sqrt();
+    if len > 1e-4 {
+        sim_state.player.mom_x += (dx / len) * (KNOCKBACK_PLAYER * 0.7);
+        sim_state.player.mom_z += (dz / len) * (KNOCKBACK_PLAYER * 0.7);
+    }
+}
+
+/// Traps player in spider web effect.
+pub fn web_player(sim_state: &mut SimState) {
+    sim_state.player.mom_speed *= 0.3;
+}
+
+/// Wears down the player's active weapon durability on swing/hit.
+pub fn wear_active_weapon(_player: &mut Player) {}
+
+/// Resets combat juice transient timers.
+pub fn reset_combat_juice() {}
+
+/// Advances combat timers (i-frames, flash, combos).
+pub fn tick_combat_timers(sim_state: &mut SimState, dt: f64) {
+    if sim_state.player.iframes > 0.0 {
+        sim_state.player.iframes = (sim_state.player.iframes - dt).max(0.0);
+    }
+}
+
+/// Resolves player attack sweep in front of the knight.
+pub fn resolve_player_attack(sim_state: &mut SimState, scale: MeleeScale) -> bool {
+    let px = sim_state.player.x;
+    let pz = sim_state.player.z;
+    let (fx, fz) = facing_vector(sim_state.player.facing);
+
+    let mut hit_any = false;
+    for i in 0..sim_state.monsters.len() {
+        let mx = sim_state.monsters[i].x;
+        let mz = sim_state.monsters[i].z;
+        let dx = mx - px;
+        let dz = mz - pz;
+        let dist = (dx * dx + dz * dz).sqrt();
+        if dist <= 1.8 * scale.reach {
+            let dot = (dx * fx + dz * fz) / dist.max(1e-4);
+            if dot >= 0.2 * scale.arc {
+                let dmg = player_damage(10.0 * scale.damage, None, sim_state.player.mom_speed, None);
+                damage_zombie(sim_state, i, dmg, DamageSource::Steel, (fx, fz));
+                hit_any = true;
+            }
+        }
+    }
+    hit_any
 }

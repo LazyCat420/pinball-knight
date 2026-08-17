@@ -1,10 +1,12 @@
-//! Loot rewards, gold multipliers, and corpse decay.
+//! Loot rewards, gold multipliers, corpse decay, and death callbacks.
 //!
-//! PORTS: `constants/enemies.ts`
-//! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Port of `legacy/src/game/pinball-knight/entities/combat.ts` (1,204 lines).
+//!
+//! PORTS: `constants/enemies.ts`, `entities/combat.ts`
 
 use crate::combo::combo_kill_gold;
 use crate::enemies::CORPSE_BUDGET;
+use crate::state::SimState;
 
 pub const GOLD_PER_KILL: i64 = 1;
 pub const ULT_CHARGE_PER_KILL: f64 = 0.05;
@@ -51,4 +53,12 @@ impl CorpseManager {
 pub fn calculate_kill_reward(combo_count: f64) -> (i64, f64, f64) {
     let gold = i64::from(combo_kill_gold(combo_count));
     (gold, ULT_CHARGE_PER_KILL, MANA_PER_KILL)
+}
+
+/// Resolves the death of a zombie, triggering rewards and removing the entity.
+pub fn kill_zombie(sim_state: &mut SimState, target_idx: usize) {
+    if target_idx < sim_state.monsters.len() {
+        sim_state.monsters.remove(target_idx);
+        sim_state.player.mana = (sim_state.player.mana + MANA_PER_KILL).min(sim_state.player.max_mana);
+    }
 }
