@@ -4,6 +4,7 @@
 //!
 //! PORTS-NOTHING — workspace chores
 
+mod audit;
 mod coverage;
 
 use std::env;
@@ -20,8 +21,12 @@ fn main() -> ExitCode {
             let args: Vec<String> = env::args().skip(2).collect();
             coverage::run(&workspace_root(), &args)
         }
+        "audit" => {
+            let args: Vec<String> = env::args().skip(2).collect();
+            audit::run(&workspace_root(), &args)
+        }
         _ => {
-            eprintln!("usage: cargo xtask <docs|bake|dist|coverage>");
+            eprintln!("usage: cargo xtask <docs|bake|dist|coverage|audit>");
             eprintln!("  docs           build + serve the mdbook at docs/");
             eprintln!(
                 "  bake           run the legacy painter/crush export into assets/sprites/ (M0+)"
@@ -34,7 +39,9 @@ fn main() -> ExitCode {
                 "  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)"
             );
             eprintln!("  coverage       the provenance ledger: which legacy files are converted");
-            eprintln!("                 --todo | --undeclared | --verbose");
+            eprintln!("                 --todo | --undeclared | --verbose | --strict-depth");
+            eprintln!("  audit          symbol carryover: does the Rust behind a claim resemble");
+            eprintln!("                 the legacy file at all?  --verbose | --json | --min <f>");
             ExitCode::FAILURE
         }
     }

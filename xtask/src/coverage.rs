@@ -107,6 +107,72 @@ struct Ledger {
     nothing: Vec<String>,
     /// Rust files with no declaration at all — the work list for this tool.
     undeclared: Vec<String>,
+    /// rust file -> its CODE lines (no comments, no blanks).
+    ///
+    /// The ledger's credit is denominated in the legacy file's size and never
+    /// looked at the claiming module at all, so a one-line module could bank a
+    /// three-thousand-line file. This is the other half of the comparison.
+    rust_code: BTreeMap<String, usize>,
+}
+
+/// A full claim's DEPTH: how much Rust actually stands behind the credit.
+#[derive(Debug, Clone, Copy, Default)]
+struct Depth {
+    /// Rust code lines attributed to this legacy file (see `depth_of`).
+    rust: usize,
+    /// The legacy file's own code lines — code compared with code.
+    legacy: usize,
+}
+
+impl Depth {
+    fn ratio(&self) -> f64 {
+        if self.legacy == 0 {
+            return 1.0;
+        }
+        self.rust as f64 / self.legacy as f64
+    }
+}
+
+/// A full claim below this ratio is not a port; it is a placeholder wearing a
+/// provenance tag.
+///
+/// Rust is normally LONGER than the TypeScript it replaces (explicit types,
+/// no closures over ambient state), so a genuine port lands near or above 1.0.
+/// Measured on this tree 2026-08-16: the honest pre-08-13 ports sit at 0.6–2.4,
+/// and every module in the 08-14 declaration burst that this catches is under
+/// 0.15. The threshold is deliberately far below the honest floor — it is a
+/// fraud detector, not a style rule.
+const DEPTH_MIN_RATIO: f64 = 0.30;
+
+/// Lines of actual code — comments and blanks removed.
+///
+/// Both languages, one function: `//`, `/* */` and `*` continuation lines cover
+/// TS and Rust alike, and `//!`/`///` are just `//`. Crude on purpose — it is a
+/// size comparison, not a parser, and it must not disagree with itself between
+/// the two sides of the ratio.
+fn code_lines(text: &str) -> usize {
+    let mut n = 0;
+    let mut in_block = false;
+    for raw in text.lines() {
+        let t = raw.trim();
+        if in_block {
+            if t.contains("*/") {
+                in_block = false;
+            }
+            continue;
+        }
+        if t.is_empty() || t.starts_with("//") || t.starts_with('*') {
+            continue;
+        }
+        if t.starts_with("/*") {
+            if !t.contains("*/") {
+                in_block = true;
+            }
+            continue;
+        }
+        n += 1;
+    }
+    n
 }
 
 /// Pull every backtick-quoted `*.ts` path out of a `PORTS`/`PORTS-PARTIAL` line.
@@ -165,14 +231,14 @@ fn normalise(raw: &str) -> Option<String> {
     Some(p.to_string())
 }
 
-fn is_excluded(path: &str) -> Option<&'static str> {
+pub fn is_excluded(path: &str) -> Option<&'static str> {
     EXCLUSIONS
         .iter()
         .find(|(prefix, _)| path.starts_with(prefix))
         .map(|(_, why)| *why)
 }
 
-fn is_deferred(path: &str) -> Option<&'static str> {
+pub fn is_deferred(path: &str) -> Option<&'static str> {
     DEFERRED
         .iter()
         .find(|(prefix, _)| path.starts_with(prefix))
@@ -235,6 +301,7 @@ fn scan_rust(root: &Path) -> Ledger {
         let Ok(text) = std::fs::read_to_string(&f) else {
             continue;
         };
+        led.rust_code.insert(rel.clone(), code_lines(&text));
         let mut declared = false;
         // A declaration may WRAP: the continuation lines are `//!` comments that
         // carry only more backticked paths. Joining the header into one blob per
@@ -377,6 +444,89 @@ fn scan_siblings(root: &Path) -> BTreeMap<String, usize> {
     out
 }
 
+/// Every legacy file's CODE lines, keyed exactly as the two scanners key them.
+///
+/// Separate from `scan_legacy`/`scan_siblings` on purpose: those return TOTAL
+/// lines and the headline denominators (104,309 / 88,312 / 15,430) are recorded
+/// against them. Changing what they count would move every number ever recorded
+/// and make the ratchet incomparable with its own history — a different ruler.
+/// The depth ratio needs code-to-code, so it gets its own map and the credit
+/// accounting is left alone.
+fn legacy_code_lines(root: &Path) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    let pk_base = root.join("legacy/src/game/pinball-knight");
+    let mut files = Vec::new();
+    collect_ts(&pk_base, &mut files);
+    for f in &files {
+        let rel = f
+            .strip_prefix(&pk_base)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .to_string();
+        if rel.ends_with(".test.ts") || rel.ends_with(".d.ts") {
+            continue;
+        }
+        if let Ok(s) = std::fs::read_to_string(f) {
+            out.insert(rel, code_lines(&s));
+        }
+    }
+    let base = root.join("legacy/src");
+    let pk = base.join("game");
+    let mut sibs = Vec::new();
+    collect_ts(&base, &mut sibs);
+    for f in &sibs {
+        if f.starts_with(&pk) {
+            continue;
+        }
+        let rel = f.strip_prefix(root).unwrap_or(f).to_string_lossy().to_string();
+        if rel.ends_with(".test.ts") || rel.ends_with(".d.ts") {
+            continue;
+        }
+        if let Ok(s) = std::fs::read_to_string(f) {
+            out.insert(rel, code_lines(&s));
+        }
+    }
+    out
+}
+
+/// How much Rust stands behind every FULL claim, apportioned honestly.
+///
+/// A module that claims three legacy files does not port all three with the same
+/// lines, so its code is split across the files it claims IN PROPORTION to their
+/// sizes — the neutral assumption when the module does not say. Several modules
+/// claiming one file SUM, which is the common and legitimate shape
+/// (`economy/tavern-shop.ts` is split across five modules by design).
+///
+/// PARTIAL claims are deliberately excluded from the numerator: a partial file
+/// is already scored as not-done, so its depth is not a question anyone asks.
+fn depth_map(led: &Ledger, code: &BTreeMap<String, usize>) -> BTreeMap<String, Depth> {
+    // rust module -> the full claims it makes, so a multi-file claim can split.
+    let mut by_module: BTreeMap<&String, Vec<&String>> = BTreeMap::new();
+    for (path, claims) in &led.claims {
+        for (module, claim) in claims {
+            if *claim == Claim::Ports {
+                by_module.entry(module).or_default().push(path);
+            }
+        }
+    }
+    let mut out: BTreeMap<String, Depth> = BTreeMap::new();
+    for (module, paths) in &by_module {
+        let rust = *led.rust_code.get(*module).unwrap_or(&0);
+        let total: usize = paths.iter().map(|p| *code.get(*p).unwrap_or(&0)).sum();
+        for p in paths {
+            let share = if total == 0 {
+                rust as f64 / paths.len() as f64
+            } else {
+                rust as f64 * (*code.get(*p).unwrap_or(&0) as f64 / total as f64)
+            };
+            let e = out.entry((*p).clone()).or_default();
+            e.rust += share.round() as usize;
+            e.legacy = *code.get(*p).unwrap_or(&0);
+        }
+    }
+    out
+}
+
 fn collect_ts(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -403,6 +553,14 @@ struct Tier<'a> {
     todo: Vec<(&'a String, usize)>,
     /// Subtracted from the target, with the decision that subtracted it.
     subtracted: Vec<(&'a String, usize, &'static str)>,
+    /// Full claims demoted by the depth gate: (path, lines, rust, legacy code).
+    ///
+    /// Reported as its own section rather than folded into `partial`, because
+    /// "somebody wrote down what is missing" and "the tool caught a claim that
+    /// nothing stands behind" are different facts and must not print the same.
+    shallow: Vec<(&'a String, usize, usize, usize)>,
+    /// Files carrying BOTH a full and a partial claim — two modules disagree.
+    conflicted: Vec<(&'a String, usize)>,
 }
 
 impl Tier<'_> {
@@ -441,6 +599,7 @@ fn classify<'a>(
     legacy: &'a BTreeMap<String, usize>,
     led: &Ledger,
     subtract: fn(&str) -> Option<&'static str>,
+    depth: &BTreeMap<String, Depth>,
 ) -> Tier<'a> {
     let mut t = Tier::default();
     for (path, lines) in legacy {
@@ -448,28 +607,131 @@ fn classify<'a>(
             t.subtracted.push((path, *lines, why));
             continue;
         }
-        match led.claims.get(path) {
-            None => t.todo.push((path, *lines)),
-            Some(claims) => {
-                // A file is PARTIAL if any module says so and none says whole.
-                let whole = claims.iter().any(|(_, c)| *c == Claim::Ports);
-                if whole {
-                    t.ported.push((path, *lines));
-                } else {
-                    let why = claims
-                        .iter()
-                        .filter_map(|(_, c)| match c {
-                            Claim::Partial(w) => Some(w.clone()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("; ");
-                    t.partial.push((path, *lines, why));
-                }
+        let Some(claims) = led.claims.get(path) else {
+            t.todo.push((path, *lines));
+            continue;
+        };
+        let any_whole = claims.iter().any(|(_, c)| *c == Claim::Ports);
+        let any_partial = claims.iter().any(|(_, c)| matches!(c, Claim::Partial(_)));
+        let reasons = |claims: &Vec<(String, Claim)>| {
+            claims
+                .iter()
+                .filter_map(|(_, c)| match c {
+                    Claim::Partial(w) => Some(w.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+
+        // ⚠️ THE HOLE THIS USED TO HAVE — measured 2026-08-16.
+        //
+        // The rule was `whole = claims.iter().any(is Ports)`: ONE full claim
+        // outvoted every honest `PORTS-PARTIAL` on the same file. So a module
+        // that ported ten lines of a 3,169-line file and said so was silently
+        // overruled by a sibling that claimed the file whole, and the file was
+        // credited in full. A remainder someone took the trouble to write down
+        // is evidence; a claim is an assertion. Evidence wins: ALL claimants
+        // must say whole, or the file is partial.
+        if any_partial {
+            if any_whole {
+                t.conflicted.push((path, *lines));
             }
+            t.partial.push((path, *lines, reasons(claims)));
+            continue;
         }
+
+        // THE DEPTH GATE. Credit is denominated in the LEGACY file's size, and
+        // until today nothing looked at the module doing the claiming — so a
+        // 49-line stub banked a 906-line file, and 67,370 lines were credited
+        // to modules that do not implement them. A claim now has to be big
+        // enough to plausibly BE the thing it claims.
+        let d = depth.get(path).copied().unwrap_or_default();
+        if d.ratio() < DEPTH_MIN_RATIO {
+            t.shallow.push((path, *lines, d.rust, d.legacy));
+            t.partial.push((
+                path,
+                *lines,
+                format!(
+                    "shallow claim: {} rust code lines against {} legacy code lines \
+                     ({:.0}% — the gate is {:.0}%); nothing this small ports that file",
+                    d.rust,
+                    d.legacy,
+                    d.ratio() * 100.0,
+                    DEPTH_MIN_RATIO * 100.0
+                ),
+            ));
+            continue;
+        }
+        t.ported.push((path, *lines));
     }
     t
+}
+
+/// Every legacy file carrying a FULL `PORTS:` claim, and the modules claiming it.
+///
+/// The seam `cargo xtask audit` reads. Kept here rather than re-scanning there,
+/// so the two instruments cannot disagree about what was claimed — they must
+/// only disagree about whether the claim is any good.
+pub fn full_claims(root: &Path) -> BTreeMap<String, Vec<String>> {
+    let led = scan_rust(root);
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, claims) in &led.claims {
+        let mods: Vec<String> = claims
+            .iter()
+            .filter(|(_, c)| *c == Claim::Ports)
+            .map(|(m, _)| m.clone())
+            .collect();
+        if !mods.is_empty() {
+            out.insert(path.clone(), mods);
+        }
+    }
+    out
+}
+
+/// The files the ledger STILL CREDITS after the depth gate, and who claims them.
+///
+/// `full_claims` is the declaration view — what modules assert. This is the
+/// scored view — what the ledger actually pays for. The audit reads this one, so
+/// the two instruments compose instead of double-counting: a file the depth gate
+/// already demoted is already scored as not-done, and reporting it a second time
+/// as "credit at risk" would inflate the alarm the same way the credit was
+/// inflated.
+pub fn credited(root: &Path) -> BTreeMap<String, Vec<String>> {
+    let led = scan_rust(root);
+    let legacy = scan_legacy(root);
+    let siblings = scan_siblings(root);
+    let code = legacy_code_lines(root);
+    let depth = depth_map(&led, &code);
+    let t1 = classify(&legacy, &led, is_excluded, &depth);
+    let t2 = classify(&siblings, &led, is_deferred, &depth);
+    let mut out = BTreeMap::new();
+    for (path, _) in t1.ported.iter().chain(t2.ported.iter()) {
+        let mods: Vec<String> = led
+            .claims
+            .get(*path)
+            .map(|cs| cs.iter().map(|(m, _)| m.clone()).collect())
+            .unwrap_or_default();
+        out.insert((*path).clone(), mods);
+    }
+    out
+}
+
+/// Resolve a normalised citation back to a file on disk.
+///
+/// Tier-1 paths are PK-tree-relative (`constants/render.ts`); tier-2 paths carry
+/// their `legacy/src/` prefix. `normalise` produced both spellings, so undoing
+/// it needs both.
+pub fn legacy_abs(root: &Path, path: &str) -> Option<PathBuf> {
+    let direct = root.join(path);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let pk = root.join("legacy/src/game/pinball-knight").join(path);
+    if pk.is_file() {
+        return Some(pk);
+    }
+    None
 }
 
 /// Every citation that resolves to no legacy file, in any tier.
@@ -589,10 +851,34 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     let led = scan_rust(root);
     let legacy = scan_legacy(root);
     let siblings = scan_siblings(root);
+    let code = legacy_code_lines(root);
+    let depth = depth_map(&led, &code);
 
-    let t1 = classify(&legacy, &led, is_excluded);
-    let t2 = classify(&siblings, &led, is_deferred);
+    let t1 = classify(&legacy, &led, is_excluded, &depth);
+    let t2 = classify(&siblings, &led, is_deferred, &depth);
     let dangling = dangling_in(&led, &legacy, &siblings);
+
+    // The shallow list as data, for the declaration sweep to act on. Kept apart
+    // from `--json` because that one is the RATCHET's artifact and its shape is
+    // a contract with `pk-baseline.mjs`; this is a work list.
+    if args.iter().any(|a| a == "--shallow-json") {
+        let mut all: Vec<(&String, usize, usize, usize)> = t1
+            .shallow
+            .iter()
+            .chain(t2.shallow.iter())
+            .copied()
+            .collect();
+        all.sort_by_key(|(_, n, _, _)| std::cmp::Reverse(*n));
+        println!("[");
+        for (i, (p, n, rust, legacy_code)) in all.iter().enumerate() {
+            println!(
+                "  {{\"path\":\"{p}\",\"lines\":{n},\"rust\":{rust},\"legacy\":{legacy_code}}}{}",
+                if i + 1 == all.len() { "" } else { "," }
+            );
+        }
+        println!("]");
+        return std::process::ExitCode::SUCCESS;
+    }
 
     if args.iter().any(|a| a == "--json") {
         // stdout is the artifact here, so the human report must not share it.
@@ -792,11 +1078,70 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     // it must appear in SOME tier, or be excluded, or be deferred. Nothing gets
     // a pass for its prefix. Computed by `dangling_in` so this leg and `--json`
     // cannot disagree about whether the run was clean.
+    // SHALLOW CLAIMS — a full claim with nothing behind it. Always printed (it
+    // is never noise: a shallow claim is either fraud or an unfinished module
+    // that forgot to say PARTIAL), and fatal under `--strict-depth`, which CI
+    // always passes.
+    let mut shallow: Vec<(&String, usize, usize, usize)> = t1
+        .shallow
+        .iter()
+        .chain(t2.shallow.iter())
+        .copied()
+        .collect();
+    if !shallow.is_empty() {
+        shallow.sort_by_key(|(_, n, _, _)| std::cmp::Reverse(*n));
+        let credit: usize = shallow.iter().map(|(_, n, _, _)| n).sum();
+        println!(
+            "\n⚠️  SHALLOW CLAIMS — {} file(s), {credit} lines that a full `PORTS:` claimed and\n\
+             the depth gate refused (rust code vs legacy code, gate {:.0}%):",
+            shallow.len(),
+            DEPTH_MIN_RATIO * 100.0
+        );
+        for (p, n, rust, legacy_code) in shallow.iter().take(40) {
+            let pct = if *legacy_code == 0 {
+                0.0
+            } else {
+                100.0 * *rust as f64 / *legacy_code as f64
+            };
+            println!("  {n:>6}  {p}\n          {rust} rust vs {legacy_code} legacy code lines ({pct:.0}%)");
+        }
+        if shallow.len() > 40 {
+            println!("  … and {} more", shallow.len() - 40);
+        }
+    }
+
+    let mut conflicted: Vec<(&String, usize)> = t1
+        .conflicted
+        .iter()
+        .chain(t2.conflicted.iter())
+        .copied()
+        .collect();
+    if !conflicted.is_empty() {
+        conflicted.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        println!(
+            "\n⚠️  CONFLICTED — {} file(s) carry BOTH a full and a partial claim.\n\
+             Two modules disagree about whether it is done; scored PARTIAL until they agree:",
+            conflicted.len()
+        );
+        for (p, n) in &conflicted {
+            println!("  {n:>6}  {p}");
+        }
+    }
+
     if !dangling.is_empty() {
         println!("\n⚠️  {} citation(s) name no legacy file:", dangling.len());
         for d in &dangling {
             println!("  {d}");
         }
+        return std::process::ExitCode::FAILURE;
+    }
+
+    if !shallow.is_empty() && args.iter().any(|a| a == "--strict-depth") {
+        eprintln!(
+            "\n--strict-depth: {} shallow claim(s) above. Either finish the port or\n\
+             downgrade the declaration to `PORTS-PARTIAL: <path> — <what is missing>`.",
+            shallow.len()
+        );
         return std::process::ExitCode::FAILURE;
     }
 
