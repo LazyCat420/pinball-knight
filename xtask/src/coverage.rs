@@ -1332,7 +1332,10 @@ mod tests {
                 "the post chain: SSAO, bloom, outline, dither, palette",
             ),
             ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
-            ("hud-face.ts", 1330, "the animated portrait"),
+            // ── hud-face.ts: ROW REMOVED 2026-08-17 ──
+            // All 10 exported items, procedural face canvas, expressions, health tiers,
+            // damage/heal/special triggers, dead portrait, and contact sheet transcribed 1:1
+            // in crates/pk-gui/src/hud_face.rs, gated by crates/pk-gui/tests/hud_face_sim.rs.
             // ── entities/zombie.ts: ROW REMOVED 2026-08-17 ──
             // All 5 exported items, STATS table, movementOf dispatch, facingFromWorld,
             // and updateZombies simulation transcribed 1:1 in crates/pk-core/src/zombie_ai.rs,
