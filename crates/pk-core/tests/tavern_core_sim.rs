@@ -1,9 +1,7 @@
 //! Comprehensive test suite for legacy/src/scenes/tavern/core.ts tavern scene bootstrap, options, locomotion, camera, and station focus.
 
 use pk_core::tavern::core::*;
-use pk_core::tavern::layout::{
-    ROOM_CENTER_X, ROOM_CENTER_Z, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z,
-};
+use pk_core::tavern::layout::{ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};
 use pk_core::tavern::state::TavernStats;
 
 #[test]

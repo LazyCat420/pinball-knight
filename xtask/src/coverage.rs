@@ -1343,7 +1343,10 @@ mod tests {
             // Complete 1:1 immediate-mode UI layout engine, focus ring, widgets (buttons,
             // toggles, sliders, pips, bars, tabs, text fields), and scroll containers in
             // crates/pk-gui/src/im.rs, gated by crates/pk-gui/tests/im_layout_sim.rs.
-            ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
+            // ── dev/window-hooks.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 dev/QA window hook inspection surface, telemetry queries,
+            // entity spawners, and test harness verbs in crates/pk-core/src/dev/window_hooks.rs,
+            // gated by crates/pk-core/tests/window_hooks_sim.rs.
             // ── entities/marble.ts: ROW REMOVED 2026-08-17 ──
             // All 45 exported constants, types, physics multipliers, fusion mechanics,
             // emitters (emitMaterialOnBounce, materialSlam), and environmental reactions

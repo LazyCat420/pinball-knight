@@ -8,10 +8,9 @@
 //!
 //! PORTS: `legacy/src/scenes/tavern/core.ts`
 
-pub use super::camera::{CAM_LEAN, CAM_LERP};
+pub use super::camera::{CAM_LEAN, CAM_LERP, ROOM_CENTER_X, ROOM_CENTER_Z};
 use super::layout::{
-    station_at, Station, ROOM_CENTER_X, ROOM_CENTER_Z, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X,
-    ROOM_MIN_Z,
+    station_at, Station, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z,
 };
 use super::state::TavernStats;
 
