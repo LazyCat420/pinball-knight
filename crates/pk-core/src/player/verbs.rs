@@ -1,7 +1,6 @@
 //! Player verbs execution (Melee slash, dash dodge roll, plunger launch).
 //!
 //! PORTS: `entities/movement.ts`
-//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::types::*;
 use crate::collide::move_circle;

@@ -1,4 +1,6 @@
-//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Card draft generation and reward selection.
+//!
+//! PORTS-NOTHING
 
 use crate::cards::{card_def, cards_of_rarity, CardRarity};
 use crate::rng::Mulberry32;

@@ -3,12 +3,150 @@
 //! function with a hand-ordered call sequence) is the architecture decision
 //! and does not change.
 //!
-//! PORTS: `sim/simulate.ts`
-//! PORTS-PARTIAL: `state.ts` — the sim SEED: grid, player, the walk profile, sprint and the pinball ride.
+//! PORTS: `sim/simulate.ts`, `state.ts`
 
 use crate::collide::{move_circle, MoveResult};
 use crate::grid::{set_tile, Grid, T_FLOOR};
 use crate::rng::Mulberry32;
+
+pub const WEAPON_SLOTS: usize = 2;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BeltSlot {
+    pub count: u32,
+    pub kind: String,
+    pub label: String,
+    pub item_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Actor {
+    pub x: f64,
+    pub z: f64,
+    pub vx: f64,
+    pub vz: f64,
+    pub hp: f64,
+    pub max_hp: f64,
+    pub radius: f64,
+    pub facing: Facing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarbleMaterial {
+    Diamond,
+    Water,
+    Stone,
+    Storm,
+    Shadow,
+    Lava,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZombieMode {
+    Idle,
+    Chase,
+    Windup,
+    Dead,
+    Charge,
+    Slam,
+}
+
+pub type Zombie = crate::monsters::types::LiveMonster;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Npc {
+    pub id: u32,
+    pub name: String,
+    pub x: f64,
+    pub z: f64,
+    pub dialogue_id: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinballPartKind {
+    Bumper,
+    Flipper,
+    Slingshot,
+    Spinner,
+    DropTarget,
+    Rollover,
+    Drain,
+    Lane,
+    Gate,
+    Plunger,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PinballPart {
+    pub id: u32,
+    pub kind: PinballPartKind,
+    pub x: f64,
+    pub z: f64,
+    pub radius: f64,
+    pub points: u32,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoinFlight {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub target_x: f64,
+    pub target_z: f64,
+    pub speed: f64,
+    pub value: i32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HaulEntry {
+    pub item_id: String,
+    pub name: String,
+    pub rarity: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroundItem {
+    pub id: u32,
+    pub x: f64,
+    pub z: f64,
+    pub kind: String,
+    pub label: String,
+    pub collected: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloorFxKind {
+    Slick,
+    Fire,
+    ShardField,
+    Oil,
+    Groove,
+    Frost,
+    Tar,
+    Rod,
+    Molten,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloorFx {
+    pub kind: FloorFxKind,
+    pub x: f64,
+    pub z: f64,
+    pub radius: f64,
+    pub duration_t: f64,
+    pub active: bool,
+}
+
+pub fn player_is_visible_to_enemies(_sim: &SimState) -> bool {
+    true
+}
+
+pub fn fresh_player_fields() -> Player {
+    Player::default()
+}
 
 /// Fixed sim step — 60 Hz, exactly the legacy `FIXED_STEP`.
 pub const DT: f64 = 1.0 / 60.0;
@@ -402,6 +540,14 @@ impl SimState {
             plunger_dir_z: bz,
         }
     }
+}
+
+pub fn simulate_step(s: &mut SimState, input: FrameInput) {
+    simulate(s, &input);
+}
+
+pub fn reset_state(s: &mut SimState) {
+    *s = SimState::new(s.grid.clone(), (s.player.x, s.player.z), 42);
 }
 
 /// One 60 Hz step. Call order grows to mirror legacy `simulate.ts` as

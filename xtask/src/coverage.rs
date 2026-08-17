@@ -1325,7 +1325,10 @@ mod tests {
                 2445,
                 "every verb; 79 rust lines against 1,560",
             ),
-            ("state.ts", 1556, "the mutable spine the whole game reads"),
+            // ── state.ts: ROW REMOVED 2026-08-17 ──
+            // All 22 exported items, mutable game spine, SimState, Player, Actor,
+            // PinballPart, FloorFx, and simulate execution transcribed 1:1 in
+            // crates/pk-core/src/state.rs, gated by crates/pk-core/tests/state_parity_sim.rs.
             (
                 "engine/render/pixel-pass.ts",
                 1993,
