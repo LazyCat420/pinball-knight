@@ -41,6 +41,41 @@ as the change it records.** Newest entries first within each section.
   5 fps → 29 fps. Still above the 2.64× recorded on 08-13, so the regression is
   not fully accounted for — the remainder is open (item 3-3's dungeon twin).
 
+- **2026-08-16 — `constants/render.ts` IS CONVERTED, and this is what a
+  finished file looks like.** All **77** exported values transcribed and gated
+  BOTH ways: `every_transcribed_constant_equals_the_oracle` (a wrong value
+  fails — verified by moving `PPU` 56→57) and
+  `no_constant_in_the_oracle_is_left_untranscribed` (a missing one fails —
+  verified by dropping `FOG_FAR`). The oracle writes
+  `assets/fixtures/constants-render.json` from its own module, so neither side
+  can drift alone. Guard row deleted in the same commit, per the rule.
+  Ledger 42.8% → **43.6%**.
+
+  The module it replaced was **invented**: `DESIGN_VIEWPORT_W`, an eleven-rung
+  `RUNG_*` ladder, `LIGHT_FALLOFF_*` and `calculate_light_attenuation()` — none
+  in the oracle — plus `tests/render_constants_sim.rs`, three green tests
+  asserting the invention back to the inventor. Both deleted.
+
+- **2026-08-16 — A THIRD DECLARATION KIND: `PORTS-FABRICATED`.** `PORTS-PARTIAL`
+  says "some of it is done" and `PORTS-NOTHING` says "deliberately original";
+  neither describes a module that invented content and attributed it to an
+  oracle file. The new kind claims nothing, so the legacy file reads NOT
+  STARTED — the true statement — while the invention stays greppable. Two files
+  carry it so far, and both would have shipped WRONG MECHANICS if wired:
+
+  | module | what it invented | what the oracle says |
+  |---|---|---|
+  | `constants/level.rs` | `BOSS_FLOORS = [5,10,15]` | **every** floor is boss-gated (`spawn/floor-populate.ts:159`) |
+  | `constants/level.rs` | fixed 24/28/32/36 grids | `cellsW = min(34+ceil(l*2.8), 96)` — already ported at `maze/archetypes.rs:519` |
+  | `run/death.rs` | "tombstones", a "souls" currency | gold + corpse piles; neither word appears in the oracle |
+
+- **2026-08-16 — THE LEDGER NOW PRINTS ITS OWN ERROR BAR.** Every run ends with
+  a note that the figure is an UPPER BOUND and names the two instruments that
+  narrow it. Measured today: of the credited lines, **4,637 sit in modules the
+  game never calls** and **7,086 carry none of their oracle file's exported
+  names** (too few symbols each to judge alone). A headline without an error
+  bar is how 97.9% came to be believed.
+
 ## Broken
 
 - **2026-08-16 — THE SIX MARBLE MATERIALS DO NOT AFFECT PHYSICS.**
@@ -1395,6 +1430,41 @@ as the change it records.** Newest entries first within each section.
   pk-game / xtask compile; `Mulberry32` ported and pinned bit-exact against the
   JS oracle (5 seeds × 5 draws); `pk-assets` parses all 19+ published sprite
   manifests.
+
+- **2026-08-16 — `constants/render.ts` IS CONVERTED, and this is what a
+  finished file looks like.** All **77** exported values transcribed and gated
+  BOTH ways: `every_transcribed_constant_equals_the_oracle` (a wrong value
+  fails — verified by moving `PPU` 56→57) and
+  `no_constant_in_the_oracle_is_left_untranscribed` (a missing one fails —
+  verified by dropping `FOG_FAR`). The oracle writes
+  `assets/fixtures/constants-render.json` from its own module, so neither side
+  can drift alone. Guard row deleted in the same commit, per the rule.
+  Ledger 42.8% → **43.6%**.
+
+  The module it replaced was **invented**: `DESIGN_VIEWPORT_W`, an eleven-rung
+  `RUNG_*` ladder, `LIGHT_FALLOFF_*` and `calculate_light_attenuation()` — none
+  in the oracle — plus `tests/render_constants_sim.rs`, three green tests
+  asserting the invention back to the inventor. Both deleted.
+
+- **2026-08-16 — A THIRD DECLARATION KIND: `PORTS-FABRICATED`.** `PORTS-PARTIAL`
+  says "some of it is done" and `PORTS-NOTHING` says "deliberately original";
+  neither describes a module that invented content and attributed it to an
+  oracle file. The new kind claims nothing, so the legacy file reads NOT
+  STARTED — the true statement — while the invention stays greppable. Two files
+  carry it so far, and both would have shipped WRONG MECHANICS if wired:
+
+  | module | what it invented | what the oracle says |
+  |---|---|---|
+  | `constants/level.rs` | `BOSS_FLOORS = [5,10,15]` | **every** floor is boss-gated (`spawn/floor-populate.ts:159`) |
+  | `constants/level.rs` | fixed 24/28/32/36 grids | `cellsW = min(34+ceil(l*2.8), 96)` — already ported at `maze/archetypes.rs:519` |
+  | `run/death.rs` | "tombstones", a "souls" currency | gold + corpse piles; neither word appears in the oracle |
+
+- **2026-08-16 — THE LEDGER NOW PRINTS ITS OWN ERROR BAR.** Every run ends with
+  a note that the figure is an UPPER BOUND and names the two instruments that
+  narrow it. Measured today: of the credited lines, **4,637 sit in modules the
+  game never calls** and **7,086 carry none of their oracle file's exported
+  names** (too few symbols each to judge alone). A headline without an error
+  bar is how 97.9% came to be believed.
 
 ## Broken / not started
 

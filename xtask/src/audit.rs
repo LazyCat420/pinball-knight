@@ -268,11 +268,17 @@ fn wiring_report(root: &Path, claims: &std::collections::BTreeMap<String, Vec<St
 }
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         let p = e.path();
         if p.is_dir() {
-            let n = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let n = p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             if n == "target" {
                 continue;
             }
@@ -291,8 +297,7 @@ fn contains_word(hay: &str, needle: &str) -> bool {
         let s = from + i;
         let e = s + needle.len();
         let before_ok = s == 0 || !(bytes[s - 1].is_ascii_alphanumeric() || bytes[s - 1] == b'_');
-        let after_ok =
-            e >= bytes.len() || !(bytes[e].is_ascii_alphanumeric() || bytes[e] == b'_');
+        let after_ok = e >= bytes.len() || !(bytes[e].is_ascii_alphanumeric() || bytes[e] == b'_');
         if before_ok && after_ok {
             return true;
         }
@@ -379,9 +384,7 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     rows.sort_by(|a, b| {
         let fa = a.matched as f64 / a.total as f64;
         let fb = b.matched as f64 / b.total as f64;
-        fa.partial_cmp(&fb)
-            .unwrap()
-            .then(b.lines.cmp(&a.lines))
+        fa.partial_cmp(&fb).unwrap().then(b.lines.cmp(&a.lines))
     });
 
     if json {
@@ -402,7 +405,9 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     }
 
     println!("SYMBOL CARRYOVER — of each legacy file's exported names, how many appear");
-    println!("in the Rust the ledger still CREDITS for it. Low = the claim is about another thing.");
+    println!(
+        "in the Rust the ledger still CREDITS for it. Low = the claim is about another thing."
+    );
     println!("High is not a pass: copied names over stubbed bodies also score high.\n");
 
     let zero: Vec<&Row> = rows.iter().filter(|r| r.matched == 0).collect();
@@ -444,8 +449,7 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
             let show: Vec<&String> = r.missing.iter().take(12).collect();
             println!(
                 "          missing: {}{}",
-                show
-                    .iter()
+                show.iter()
                     .map(|s| s.as_str())
                     .collect::<Vec<_>>()
                     .join(", "),

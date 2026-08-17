@@ -1,6 +1,27 @@
 //! Dungeon floor progression budgets and difficulty metrics.
 //!
-//! PORTS-PARTIAL: `constants/level.ts` - NOT a finished port - 0 of 15 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-FABRICATED: `constants/level.ts` — every name below is INVENTED.
+//!
+//! Verified against the oracle 2026-08-16. `constants/level.ts` exports
+//! `STYLE_KILL_*`, `GRADE_*`, `WINDINESS_CYCLE`, `floorBudgets` and
+//! `levelConfig`; not one appears here. What is here is worse than absent, it
+//! CONTRADICTS the game:
+//!
+//! - `BOSS_FLOORS = [5, 10, 15]` — the oracle boss-gates **every** floor
+//!   (`spawn/floor-populate.ts:159`: *"EVERY floor's exit is boss-gated: the
+//!   REAPER KING guards the stairs"*). Wiring this up would delete the boss
+//!   from 80% of the game.
+//! - `level_grid_size` returns fixed 24/28/32/36 buckets; the oracle ramps
+//!   `cellsW = min(34 + ceil(l*2.8), 96)`, `cellsH = min(24 + 2l, 72)` — and
+//!   that ramp IS genuinely ported, at `maze/archetypes.rs:519`. So this is
+//!   also a second, contradictory copy of a solved problem.
+//! - `level_theme` invents "ROYAL CRYPT (BOSS)" / "SEWERS & PIPES"; the game
+//!   has four biomes (Cold Crypt, Rotting Warren, Bloodworks, Arcane Deep).
+//!
+//! Kept, not deleted, so the invention stays on the record and greppable — but
+//! it claims nothing, so `constants/level.ts` reads NOT STARTED, which is true.
+//! Nothing in the game calls any of it (`xtask audit --wiring`); its only
+//! callers were tests asserting the invented values back.
 
 pub const FLOOR_BUDGET_BASE: usize = 14;
 pub const FLOOR_BUDGET_STEP: usize = 3;

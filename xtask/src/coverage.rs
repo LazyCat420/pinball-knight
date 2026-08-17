@@ -97,6 +97,20 @@ enum Claim {
     Ports,
     /// Partly ported here, with the stated remainder.
     Partial(String),
+    /// This module INVENTED content and attributed it to that legacy file.
+    ///
+    /// A third kind, added 2026-08-16, because the other two both lie about
+    /// this case. `PORTS-PARTIAL` says "some of it is done"; nothing is done —
+    /// `constants/level.rs` invented `BOSS_FLOORS = [5,10,15]` where the oracle
+    /// boss-gates EVERY floor, and `run/death.rs` invented a "souls" currency
+    /// and "tombstones" for a game that has gold and corpse piles.
+    /// `PORTS-NOTHING` says "deliberately original", which is what honest Bevy
+    /// glue is and this is not.
+    ///
+    /// It claims NOTHING, so the legacy file reads NOT STARTED — the true
+    /// statement, and the one that puts it back on the work list — while the
+    /// module stays declared, greppable, and carrying what it made up.
+    Fabricated(String),
 }
 
 #[derive(Debug, Default)]
@@ -325,7 +339,22 @@ fn scan_rust(root: &Path) -> Ledger {
                 continue;
             }
             let body = t.trim_start_matches("//!").trim_start_matches("//").trim();
-            if let Some(rest) = body.strip_prefix("PORTS-PARTIAL:") {
+            if let Some(rest) = body.strip_prefix("PORTS-FABRICATED:") {
+                declared = true;
+                let why = rest
+                    .split('—')
+                    .nth(1)
+                    .or_else(|| rest.split(" - ").nth(1))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                for p in paths_in(rest) {
+                    led.claims
+                        .entry(p)
+                        .or_default()
+                        .push((rel.clone(), Claim::Fabricated(why.clone())));
+                }
+            } else if let Some(rest) = body.strip_prefix("PORTS-PARTIAL:") {
                 declared = true;
                 let why = rest
                     .split('—')
@@ -478,7 +507,11 @@ fn legacy_code_lines(root: &Path) -> BTreeMap<String, usize> {
         if f.starts_with(&pk) {
             continue;
         }
-        let rel = f.strip_prefix(root).unwrap_or(f).to_string_lossy().to_string();
+        let rel = f
+            .strip_prefix(root)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .to_string();
         if rel.ends_with(".test.ts") || rel.ends_with(".d.ts") {
             continue;
         }
@@ -561,6 +594,8 @@ struct Tier<'a> {
     shallow: Vec<(&'a String, usize, usize, usize)>,
     /// Files carrying BOTH a full and a partial claim — two modules disagree.
     conflicted: Vec<(&'a String, usize)>,
+    /// Files whose only claimants declared themselves fabrications.
+    fabricated: Vec<(&'a String, usize)>,
 }
 
 impl Tier<'_> {
@@ -611,6 +646,17 @@ fn classify<'a>(
             t.todo.push((path, *lines));
             continue;
         };
+        // A fabrication contributes nothing in either direction. If EVERY
+        // claimant invented, the file has not been started.
+        let real: Vec<&(String, Claim)> = claims
+            .iter()
+            .filter(|(_, c)| !matches!(c, Claim::Fabricated(_)))
+            .collect();
+        if real.is_empty() {
+            t.fabricated.push((path, *lines));
+            t.todo.push((path, *lines));
+            continue;
+        }
         let any_whole = claims.iter().any(|(_, c)| *c == Claim::Ports);
         let any_partial = claims.iter().any(|(_, c)| matches!(c, Claim::Partial(_)));
         let reasons = |claims: &Vec<(String, Claim)>| {
@@ -954,6 +1000,22 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
         t1.todo_lines() + t1.partial_lines() + t2.todo_lines() + t2.partial_lines()
     );
 
+    // ── What this number still cannot see ──────────────────────────────────
+    //
+    // The percentage above is an UPPER BOUND and always was. It counts a file
+    // as converted when a deep-enough module declares it, which is evidence
+    // that someone WROTE the port — not that the port is right, and not that
+    // the game ever calls it. `cargo xtask audit` measures those separately,
+    // and a headline that does not carry its own error bar is how 97.9% came
+    // to be believed. Printed every run, deliberately un-suppressable.
+    println!(
+        "\n  ⓘ  UPPER BOUND. A file counts as converted when a deep-enough module\n\
+           declares it. Two things that reads as done and is not:\n\
+           · a port the game never calls  → `cargo xtask audit --wiring`\n\
+           · a port that carries none of the oracle's names → `cargo xtask audit`\n\
+           Run both before quoting the number."
+    );
+
     // From here the detail sections report the two tiers together: the work list
     // is one work list, whichever tree a file happens to live in.
     let mut todo: Vec<(&String, usize)> = t1.todo.iter().chain(t2.todo.iter()).copied().collect();
@@ -1086,6 +1148,25 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
         }
         if shallow.len() > 40 {
             println!("  … and {} more", shallow.len() - 40);
+        }
+    }
+
+    let mut fab: Vec<(&String, usize)> = t1
+        .fabricated
+        .iter()
+        .chain(t2.fabricated.iter())
+        .copied()
+        .collect();
+    if !fab.is_empty() {
+        fab.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let n: usize = fab.iter().map(|(_, l)| l).sum();
+        println!(
+            "\n⚠️  FABRICATED — {} file(s), {n} lines whose only Rust claimant declares it\n\
+             INVENTED the content rather than porting it. Scored NOT STARTED:",
+            fab.len()
+        );
+        for (p, l) in &fab {
+            println!("  {l:>6}  {p}");
         }
     }
 
@@ -1229,25 +1310,73 @@ mod tests {
     fn the_biggest_gaps_are_reported_as_gaps() {
         // (legacy path, its line count when pinned, what is still missing)
         const UNFINISHED: &[(&str, usize, &str)] = &[
-            ("maze/build.ts", 1898, "arches, banners, stairs marker, cracked bands"),
-            ("maze/decorate.ts", 3169, "the whole decoration pass — 21 exports, 5 carried"),
-            ("entities/player.ts", 2445, "every verb; 79 rust lines against 1,560"),
+            (
+                "maze/build.ts",
+                1898,
+                "arches, banners, stairs marker, cracked bands",
+            ),
+            (
+                "maze/decorate.ts",
+                3169,
+                "the whole decoration pass — 21 exports, 5 carried",
+            ),
+            (
+                "entities/player.ts",
+                2445,
+                "every verb; 79 rust lines against 1,560",
+            ),
             ("state.ts", 1556, "the mutable spine the whole game reads"),
-            ("engine/render/pixel-pass.ts", 1993, "the post chain: SSAO, bloom, outline, dither, palette"),
+            (
+                "engine/render/pixel-pass.ts",
+                1993,
+                "the post chain: SSAO, bloom, outline, dither, palette",
+            ),
             ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
             ("hud-face.ts", 1330, "the animated portrait"),
-            ("entities/zombie.ts", 1217, "0 of 5 exports; STATS/updateZombies/movementOf absent"),
+            (
+                "entities/zombie.ts",
+                1217,
+                "0 of 5 exports; STATS/updateZombies/movementOf absent",
+            ),
             ("entities/combat.ts", 1204, "0 of 22 exports carried"),
-            ("gui/im.ts", 1052, "the immediate-mode kit every screen stands on"),
+            (
+                "gui/im.ts",
+                1052,
+                "the immediate-mode kit every screen stands on",
+            ),
             ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
-            ("entities/marble.ts", 1005, "12 of 45 exports; the physics accessors are UNWIRED"),
+            (
+                "entities/marble.ts",
+                1005,
+                "12 of 45 exports; the physics accessors are UNWIRED",
+            ),
             ("abilities.ts", 916, "6 abilities, ranks, mana, Blood Price"),
-            ("legacy/src/scenes/tavern/core.ts", 906, "46 rust lines against 536"),
-            ("cards.ts", 885, "rarities, levels, shiny, aggregation — blocks two vendors"),
-            ("boss.ts", 772, "the KING: slam, bone throw, home tiles, bar"),
+            (
+                "legacy/src/scenes/tavern/core.ts",
+                906,
+                "46 rust lines against 536",
+            ),
+            (
+                "cards.ts",
+                885,
+                "rarities, levels, shiny, aggregation — blocks two vendors",
+            ),
+            (
+                "boss.ts",
+                772,
+                "the KING: slam, bone throw, home tiles, bar",
+            ),
             ("gui/screens/debug.ts", 717, "the backtick console"),
             ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
-            ("constants/render.ts", 671, "0 of 69 exports — the module is INVENTED, not transcribed"),
+            // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
+            // All 77 exported values transcribed and gated both ways by
+            // `crates/pk-core/tests/constants_render.rs` against
+            // `assets/fixtures/constants-render.json`, which the oracle writes
+            // from its own module. Sabotage-verified: changing PPU 56→57 fails
+            // `every_transcribed_constant_equals_the_oracle`, and dropping one
+            // name fails `no_constant_in_the_oracle_is_left_untranscribed`.
+            // The invented `DESIGN_VIEWPORT_W`/`RUNG_*`/`LIGHT_FALLOFF_*` and
+            // the test that asserted them back are deleted.
             ("boot/sheets.ts", 586, "27 rust lines against 234"),
         ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1398,7 +1527,11 @@ mod tests {
         led.claims.remove("c.ts");
         let depth = depth_map(&led, &code);
         let t = classify(&legacy, &led, |_| None, &depth);
-        assert_eq!(t.ported_lines(), 900, "600 rust lines do port one 800-line file");
+        assert_eq!(
+            t.ported_lines(),
+            900,
+            "600 rust lines do port one 800-line file"
+        );
     }
 
     /// An `include!`d file cannot carry `//!` — rustc rejects it outright — so

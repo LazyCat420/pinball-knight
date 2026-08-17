@@ -1,6 +1,13 @@
 //! Player Death & Tombstone Soul Recovery Subsystem.
 //!
-//! PORTS-PARTIAL: `run/death.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-FABRICATED: `run/death.ts` — "tombstones" and a "souls" currency are
+//! INVENTED; neither word appears anywhere in the oracle.
+//!
+//! `run/death.ts` exports `spawnCorpsePiles`, `collectCorpseItems`,
+//! `onPlayerDeath` and `returnToTavern`. Pinball Knight's death economy is GOLD
+//! and CORPSE PILES (max 12 per floor, ownership-gated looting) — there is no
+//! soul currency in the game. Verified 2026-08-16; claims nothing, so
+//! `run/death.ts` reads NOT STARTED.
 
 pub const DEATH_GOLD_LOSS_PERCENT: f64 = 0.50;
 pub const TOMBSTONE_CLAIM_RADIUS: f64 = 1.2;

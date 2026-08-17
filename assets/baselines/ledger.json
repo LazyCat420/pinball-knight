@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "instrument": "ledger",
-  "producerSha256": "a5a4f19e1cd6fd6f9f809f5d96bfda9028b8ca65866c909fb61c09644fd68158",
+  "producerSha256": "303beddefe40a00a047107ebce2cbf17bc8184b7f9d48dc9e3566e2335a39f4d",
   "metrics": {
     "ledger.tier1.converted_pct": {
       "unit": "%",
       "dir": "higher-better",
-      "value": 42.8,
+      "value": 43.6,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -25,21 +25,26 @@
           "at": "2026-08-17T05:15:46.233Z",
           "value": 42.8,
           "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
+          "value": 42.8,
+          "commit": "01e045a"
         }
       ]
     },
     "ledger.tier1.ported_lines": {
       "unit": "lines",
       "dir": "higher-better",
-      "value": 37840,
+      "value": 38511,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -50,21 +55,26 @@
           "at": "2026-08-17T05:15:46.233Z",
           "value": 37840,
           "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
+          "value": 37840,
+          "commit": "01e045a"
         }
       ]
     },
     "ledger.tier1.not_started_lines": {
       "unit": "lines",
       "dir": "lower-better",
-      "value": 0,
+      "value": 498,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -73,6 +83,11 @@
         },
         {
           "at": "2026-08-17T05:15:46.233Z",
+          "value": 0,
+          "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
           "value": 0,
           "commit": "01e045a"
         }
@@ -88,8 +103,8 @@
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -98,6 +113,11 @@
         },
         {
           "at": "2026-08-17T05:15:46.233Z",
+          "value": 56.1,
+          "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
           "value": 56.1,
           "commit": "01e045a"
         }
@@ -113,8 +133,8 @@
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -123,6 +143,11 @@
         },
         {
           "at": "2026-08-17T05:15:46.233Z",
+          "value": 8090,
+          "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
           "value": 8090,
           "commit": "01e045a"
         }
@@ -138,8 +163,8 @@
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -150,21 +175,26 @@
           "at": "2026-08-17T05:15:46.233Z",
           "value": 0,
           "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
+          "value": 0,
+          "commit": "01e045a"
         }
       ]
     },
     "ledger.remaining_lines": {
       "unit": "lines",
       "dir": "lower-better",
-      "value": 56798,
+      "value": 56127,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -173,6 +203,11 @@
         },
         {
           "at": "2026-08-17T05:15:46.233Z",
+          "value": 56798,
+          "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
           "value": 56798,
           "commit": "01e045a"
         }
@@ -188,8 +223,8 @@
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-17T05:16:18.458Z",
-      "commit": "01e045a",
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
       "history": [
         {
           "at": "2026-08-12T23:48:14.810Z",
@@ -200,10 +235,24 @@
           "at": "2026-08-17T05:15:46.233Z",
           "value": 0,
           "commit": "01e045a"
+        },
+        {
+          "at": "2026-08-17T05:16:18.458Z",
+          "value": 0,
+          "commit": "01e045a"
         }
       ]
     }
   },
-  "regressions": [],
+  "regressions": [
+    {
+      "id": "ledger.tier1.not_started_lines",
+      "from": 0,
+      "to": 498,
+      "at": "2026-08-17T05:40:25.797Z",
+      "commit": "7f97572",
+      "reason": "constants/render.ts genuinely transcribed (+671 lines); two fabrications reclassified"
+    }
+  ],
   "deterministic": true
 }
