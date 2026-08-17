@@ -1366,8 +1366,10 @@ mod tests {
             // Complete 1:1 Reaper King boss mechanics, body collision radius, anchor
             // leash, orbiting skulls, bone projectile barrage, tentacle slam, and network
             // aux serialization in crates/pk-core/src/boss.rs, gated by
-            // crates/pk-core/tests/boss_sim.rs.
-            ("gui/screens/debug.ts", 717, "the backtick console"),
+            // ── gui/screens/debug.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 debug panel layout constants, chip formatters, section
+            // definitions, action traits, and immediate-mode docked panel UI in
+            // crates/pk-gui/src/screens/debug.rs, gated by crates/pk-gui/tests/debug_screen_sim.rs.
             ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
             // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
             // All 77 exported values transcribed and gated both ways by

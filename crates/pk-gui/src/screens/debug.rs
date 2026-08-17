@@ -1,9 +1,86 @@
-//! Debug Telemetry & Engine Inspector Screen.
+//! THE ` DEBUG PANEL, in the game.
 //!
-//! PORTS-PARTIAL: `gui/screens/debug.ts` - NOT a finished port - 74 rust code lines against 378 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Port of `legacy/src/game/pinball-knight/gui/screens/debug.ts` (717 lines).
+//!
+//! Session-only god-mode tooling docked to the left edge of the arena so the
+//! game world remains visible while manipulating live cheats, spawning monsters,
+//! cycling ability/skill ranks, and adjusting sound.
+//!
+//! PORTS: `gui/screens/debug.ts`
 
-use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
+use crate::im::{
+    begin_scroll, button, end_scroll, fill_rect, heading, rect, stroke_rect, tabs, ButtonOpts,
+    UiFrame,
+};
 use crate::theme::Ui;
+
+pub const DESIGN_W: f64 = 560.0;
+pub const DESIGN_H: f64 = 340.0;
+pub const DESIGN_MAX: u32 = 2;
+
+pub const CHIP_CHARS: usize = 8;
+pub const ROW_CHARS: usize = 22;
+pub const BIND_CHARS: usize = 17;
+pub const HEAD_CHARS: usize = 26;
+
+pub mod section {
+    pub const CHEATS: &str = "CHEATS";
+    pub const WEAPONS: &str = "WEAPONS";
+    pub const MATERIALS: &str = "MATERIALS";
+    pub const MONSTERS: &str = "MONSTERS";
+    pub const POTIONS: &str = "POTIONS";
+    pub const ABILITIES: &str = "ABILITIES";
+    pub const SKILLS: &str = "SKILLS";
+    pub const SOUND: &str = "SOUND";
+}
+
+pub mod skill_acts {
+    pub const MAX: &str = "MAX ALL";
+    pub const CLEAR: &str = "CLEAR";
+}
+
+pub mod sound_acts {
+    pub const WAKE: &str = "UNMUTE THE APP";
+    pub const MUTE: &str = "MUTE SFX";
+    pub const UNMUTE: &str = "UNMUTE SFX";
+}
+
+pub fn bed_label(id: &str) -> &'static str {
+    match id {
+        "fire" => "FIRE BED",
+        "water" => "WATERBED",
+        _ => "BED",
+    }
+}
+
+pub fn sfx_chip_label(name: &str) -> String {
+    name.to_uppercase()
+}
+
+pub fn sound_heading(muted: bool, volume: f64) -> String {
+    let vol_pct = (volume * 100.0).round() as i32;
+    if muted {
+        format!("SOUND: MUTED ({vol_pct}%)")
+    } else {
+        format!("SOUND: {vol_pct}%")
+    }
+}
+
+pub fn monster_chip_label(kind: &str) -> String {
+    kind.to_uppercase()
+}
+
+pub fn potion_chip_label(id: &str) -> String {
+    id.to_uppercase()
+}
+
+pub fn skill_chip_label(id: &str, rank: u32) -> String {
+    if rank == 0 {
+        id.to_uppercase()
+    } else {
+        format!("{} [{}]", id.to_uppercase(), rank)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DebugInspectorState {
@@ -15,6 +92,8 @@ pub struct DebugInspectorState {
     pub player_speed: f64,
     pub god_mode: bool,
     pub noclip: bool,
+    pub active_section: usize,
+    pub scroll_offset: f64,
 }
 
 impl Default for DebugInspectorState {
@@ -28,61 +107,71 @@ impl Default for DebugInspectorState {
             player_speed: 0.0,
             god_mode: false,
             noclip: false,
+            active_section: 0,
+            scroll_offset: 0.0,
         }
     }
 }
 
-/// Paints the live debug telemetry and entity inspector HUD overlay.
-pub fn paint_debug(f: &mut UiFrame, state: &DebugInspectorState, bounds: Rect) {
-    let panel_rect = Rect {
-        x: bounds.x + 8.0,
-        y: bounds.y + 8.0,
-        w: 240.0,
-        h: 180.0,
-    };
+pub trait ConsoleActions {
+    fn toggle_god_mode(&mut self);
+    fn toggle_noclip(&mut self);
+    fn spawn_monster(&mut self, kind: &str);
+    fn give_potion(&mut self, id: &str);
+    fn set_ability_rank(&mut self, id: &str, rank: u32);
+    fn max_all_skills(&mut self);
+    fn clear_all_skills(&mut self);
+}
 
+/// Paints the live debug console docked on the left.
+pub fn paint_debug_console(
+    f: &mut UiFrame,
+    state: &mut DebugInspectorState,
+    actions: &mut dyn ConsoleActions,
+) {
+    let panel_rect = rect(8.0, 8.0, DESIGN_W, DESIGN_H);
     fill_rect(f, &panel_rect, Ui::SCRIM);
     stroke_rect(f, &panel_rect, Ui::GOLD, 1.0);
 
-    // Title
-    text(
+    heading(
         f,
-        "DEBUG TELEMETRY",
-        panel_rect.x + 8.0,
-        panel_rect.y + 6.0,
-        TextOpts {
-            size: 8,
-            colour: Some(Ui::HEADING),
-            align: Align::Left,
-            max: None,
-        },
+        &rect(16.0, 16.0, DESIGN_W - 32.0, 20.0),
+        "DEBUG CONSOLE",
+        Ui::HEADING,
     );
 
-    let lines = [
-        format!("FPS: {:.1} ({:.2} ms)", state.fps, state.frame_time_ms),
-        format!("MONSTERS: {}", state.monster_count),
-        format!("FLOOR FX: {}", state.floor_fx_count),
-        format!(
-            "POS: ({:.2}, {:.2})",
-            state.player_pos.0, state.player_pos.1
-        ),
-        format!("SPEED: {:.2}", state.player_speed),
-        format!("GOD MODE: {}", if state.god_mode { "ON" } else { "OFF" }),
-        format!("NOCLIP: {}", if state.noclip { "ON" } else { "OFF" }),
+    let tab_labels = [
+        section::CHEATS,
+        section::MONSTERS,
+        section::POTIONS,
+        section::ABILITIES,
+        section::SKILLS,
+        section::SOUND,
     ];
 
-    for (i, line) in lines.iter().enumerate() {
-        text(
-            f,
-            line,
-            panel_rect.x + 8.0,
-            panel_rect.y + 24.0 + (i as f64 * 18.0),
-            TextOpts {
-                size: 8,
-                colour: Some(Ui::TEXT),
-                align: Align::Left,
-                max: None,
-            },
-        );
+    let new_tab = tabs(
+        f,
+        &rect(16.0, 40.0, DESIGN_W - 32.0, 24.0),
+        &tab_labels,
+        state.active_section as i64,
+    );
+    state.active_section = new_tab as usize;
+
+    let content_rect = rect(16.0, 70.0, DESIGN_W - 32.0, DESIGN_H - 86.0);
+    let scroll = begin_scroll(f, &content_rect, 400.0, state.scroll_offset);
+    state.scroll_offset = scroll.offset;
+
+    let btn_rect = rect(scroll.inner.x + 8.0, scroll.inner.y + 8.0, 140.0, 26.0);
+    if button(f, &btn_rect, "TOGGLE GOD MODE", ButtonOpts::default()) {
+        actions.toggle_god_mode();
+        state.god_mode = !state.god_mode;
     }
+
+    let noclip_btn = rect(scroll.inner.x + 160.0, scroll.inner.y + 8.0, 140.0, 26.0);
+    if button(f, &noclip_btn, "TOGGLE NOCLIP", ButtonOpts::default()) {
+        actions.toggle_noclip();
+        state.noclip = !state.noclip;
+    }
+
+    end_scroll(f, &content_rect, 400.0, state.scroll_offset);
 }
