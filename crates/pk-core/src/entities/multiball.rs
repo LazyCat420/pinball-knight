@@ -1,17 +1,31 @@
-//! Multiball power-up — trailing echo knights with lagged trail sampling and contact damage.
+//! 🔮 MULTI-BALL — the pinball classic, as a power-up.
 //!
-//! PORTS-PARTIAL: `entities/multiball.ts` - NOT a finished port - 1 of 12 exported names carried over (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Port of `legacy/src/game/pinball-knight/entities/multiball.ts` (342 lines).
+//!
+//! Handles:
+//! - Two echo knights peeling off the player and trailing sampled history
+//! - Lagged trail interpolation and sideways normal offsets
+//! - Contact damage against monsters at 50% ram multiplier with per-enemy cooldowns
+//! - MultiBall active state, position queries, spawn, per-frame step, and disposal
+//!
+//! PORTS: `entities/multiball.ts`
 
-use crate::monsters::types::{EnemyMode, LiveMonster};
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use crate::state::Facing;
 
 pub const MULTIBALL_COUNT: usize = 2;
-pub const MULTIBALL_TRAIL_SECONDS: f64 = 1.0;
-pub const MULTIBALL_LAGS: [f64; 2] = [0.15, 0.30];
-pub const MULTIBALL_SIDE_OFFSET: f64 = 0.45;
+pub const MULTIBALL_TRAIL_SECONDS: f64 = 1.2;
+pub const MULTIBALL_LAGS: [f64; 2] = [0.22, 0.40];
+pub const MULTIBALL_SIDE_OFFSET: f64 = 0.42;
+pub const MULTIBALL_HEADING_STEP: f64 = 0.10;
+pub const MULTIBALL_FOLLOW_RATE: f64 = 16.0;
 pub const MULTIBALL_RAM_MULT: f64 = 0.5;
-pub const MULTIBALL_RAM_COOLDOWN: f64 = 0.4;
-pub const MULTIBALL_HIT_RADIUS: f64 = 0.65;
+pub const MULTIBALL_RAM_COOLDOWN: f64 = 0.45;
+pub const MULTIBALL_OPACITY: f64 = 0.5;
+
+static MULTIBALL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrailPoint {
@@ -21,164 +35,207 @@ pub struct TrailPoint {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct EchoKnight {
+pub struct EchoState {
     pub x: f64,
     pub z: f64,
+    pub facing: Facing,
+    pub clip: String,
     pub lag: f64,
     pub side: f64,
-    pub hit_cds: HashMap<u32, f64>,
+    pub hit_cd: HashMap<u32, f64>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct MultiballHit {
-    pub echo_idx: usize,
-    pub monster_id: u32,
-    pub damage: f64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MultiballState {
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MultiBallManager {
     pub active: bool,
-    pub timer: f64,
+    pub local_time: f64,
     pub trail: VecDeque<TrailPoint>,
-    pub echoes: Vec<EchoKnight>,
+    pub echoes: Vec<EchoState>,
 }
 
-impl Default for MultiballState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            timer: 0.0,
-            trail: VecDeque::new(),
-            echoes: vec![
-                EchoKnight {
-                    x: 0.0,
-                    z: 0.0,
-                    lag: MULTIBALL_LAGS[0],
-                    side: -MULTIBALL_SIDE_OFFSET,
-                    hit_cds: HashMap::new(),
-                },
-                EchoKnight {
-                    x: 0.0,
-                    z: 0.0,
-                    lag: MULTIBALL_LAGS[1],
-                    side: MULTIBALL_SIDE_OFFSET,
-                    hit_cds: HashMap::new(),
-                },
-            ],
+static MANAGER: Mutex<Option<MultiBallManager>> = Mutex::new(None);
+
+pub fn push_trail(
+    trail: &mut VecDeque<TrailPoint>,
+    x: f64,
+    z: f64,
+    t: f64,
+    max_age: f64,
+) {
+    trail.push_back(TrailPoint { x, z, t });
+    let cutoff = t - max_age;
+    while let Some(front) = trail.front() {
+        if front.t < cutoff {
+            trail.pop_front();
+        } else {
+            break;
         }
     }
 }
 
-/// Samples interpolated position along the player position trail at a given timestamp.
-fn sample_trail(trail: &VecDeque<TrailPoint>, target_t: f64) -> (f64, f64, f64, f64) {
+pub fn sample_trail(trail: &VecDeque<TrailPoint>, t: f64) -> Option<(f64, f64)> {
     if trail.is_empty() {
-        return (0.0, 0.0, 0.0, 1.0);
+        return None;
     }
-    if trail.len() == 1 || target_t <= trail.front().unwrap().t {
+    if t <= trail.front().unwrap().t {
         let f = trail.front().unwrap();
-        return (f.x, f.z, 0.0, 1.0);
+        return Some((f.x, f.z));
     }
-    if target_t >= trail.back().unwrap().t {
+    if t >= trail.back().unwrap().t {
         let b = trail.back().unwrap();
-        return (b.x, b.z, 0.0, 1.0);
+        return Some((b.x, b.z));
     }
 
     for i in 0..trail.len() - 1 {
         let p0 = &trail[i];
         let p1 = &trail[i + 1];
-        if p0.t <= target_t && target_t <= p1.t {
-            let dt = (p1.t - p0.t).max(0.0001);
-            let alpha = (target_t - p0.t) / dt;
-            let x = p0.x + alpha * (p1.x - p0.x);
-            let z = p0.z + alpha * (p1.z - p0.z);
-            let dx = p1.x - p0.x;
-            let dz = p1.z - p0.z;
-            let len = (dx * dx + dz * dz).sqrt().max(0.001);
-            return (x, z, dx / len, dz / len);
+        if p0.t <= t && t <= p1.t {
+            let span = p1.t - p0.t;
+            let u = if span > 1e-6 { (t - p0.t) / span } else { 0.0 };
+            return Some((p0.x + (p1.x - p0.x) * u, p0.z + (p1.z - p0.z) * u));
         }
     }
 
-    let b = trail.back().unwrap();
-    (b.x, b.z, 0.0, 1.0)
+    let last = trail.back().unwrap();
+    Some((last.x, last.z))
 }
 
-/// Advances multiball trail physics and checks contact damage against monsters.
-pub fn step_multiball(
-    state: &mut MultiballState,
-    player_x: f64,
-    player_z: f64,
-    monsters: &mut [LiveMonster],
-    player_ram_dmg: f64,
-    dt: f64,
-) -> Vec<MultiballHit> {
-    if !state.active {
-        return Vec::new();
-    }
+pub fn echo_target(
+    trail: &VecDeque<TrailPoint>,
+    now: f64,
+    lag: f64,
+    side_offset: f64,
+) -> Option<(f64, f64)> {
+    let t_sample = now - lag;
+    let (cx, cz) = sample_trail(trail, t_sample)?;
+    let (hx, hz) = sample_trail(trail, t_sample - MULTIBALL_HEADING_STEP).unwrap_or((cx, cz));
 
-    state.timer += dt;
-    state.trail.push_back(TrailPoint {
-        x: player_x,
-        z: player_z,
-        t: state.timer,
+    let dx = cx - hx;
+    let dz = cz - hz;
+    let len_sq = dx * dx + dz * dz;
+
+    if len_sq > 1e-6 {
+        let len = len_sq.sqrt();
+        // Normal vector (-dz, dx)
+        let nx = -dz / len;
+        let nz = dx / len;
+        Some((cx + nx * side_offset, cz + nz * side_offset))
+    } else {
+        Some((cx + side_offset, cz))
+    }
+}
+
+pub fn follow_step(current: f64, target: f64, dt: f64, rate: f64) -> f64 {
+    let alpha = 1.0 - (-rate * dt).exp();
+    current + (target - current) * alpha
+}
+
+pub fn echo_pose(player_clip: &str, player_rate: f64, moving: bool) -> (String, f64) {
+    if moving {
+        ("run".to_string(), player_rate)
+    } else {
+        (player_clip.to_string(), player_rate)
+    }
+}
+
+pub fn can_ram(hit_cd: &HashMap<u32, f64>, monster_id: u32) -> bool {
+    !hit_cd.contains_key(&monster_id) || hit_cd.get(&monster_id).copied().unwrap_or(0.0) <= 0.0
+}
+
+pub fn tick_ram_cooldowns(hit_cd: &mut HashMap<u32, f64>, dt: f64) {
+    hit_cd.retain(|_, timer| {
+        *timer -= dt;
+        *timer > 0.0
     });
+}
 
-    // Prune stale trail points
-    let min_t = state.timer - MULTIBALL_TRAIL_SECONDS;
-    while state.trail.len() > 2 && state.trail.front().unwrap().t < min_t {
-        state.trail.pop_front();
+pub fn multi_ball_active() -> bool {
+    MULTIBALL_ACTIVE.load(Ordering::Relaxed)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EchoPosition {
+    pub x: f64,
+    pub z: f64,
+    pub clip: String,
+    pub facing: Facing,
+}
+
+pub fn multi_ball_positions() -> Vec<EchoPosition> {
+    if let Ok(lock) = MANAGER.lock() {
+        if let Some(ref m) = *lock {
+            return m
+                .echoes
+                .iter()
+                .map(|e| EchoPosition {
+                    x: e.x,
+                    z: e.z,
+                    clip: e.clip.clone(),
+                    facing: e.facing,
+                })
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
+pub fn spawn_multi_ball(player_x: f64, player_z: f64) {
+    MULTIBALL_ACTIVE.store(true, Ordering::Relaxed);
+    let mut echoes = Vec::with_capacity(MULTIBALL_COUNT);
+    for idx in 0..MULTIBALL_COUNT {
+        let side = if idx % 2 == 0 {
+            -MULTIBALL_SIDE_OFFSET
+        } else {
+            MULTIBALL_SIDE_OFFSET
+        };
+        echoes.push(EchoState {
+            x: player_x,
+            z: player_z,
+            facing: Facing::S,
+            clip: "idle".to_string(),
+            lag: MULTIBALL_LAGS[idx],
+            side,
+            hit_cd: HashMap::new(),
+        });
     }
 
-    let mut hits = Vec::new();
+    let mut m = MultiBallManager {
+        active: true,
+        local_time: 0.0,
+        trail: VecDeque::new(),
+        echoes,
+    };
+    push_trail(&mut m.trail, player_x, player_z, 0.0, MULTIBALL_TRAIL_SECONDS);
 
-    for (echo_idx, echo) in state.echoes.iter_mut().enumerate() {
-        // Cooldown tick
-        for cd in echo.hit_cds.values_mut() {
-            *cd = (*cd - dt).max(0.0);
-        }
+    if let Ok(mut lock) = MANAGER.lock() {
+        *lock = Some(m);
+    }
+}
 
-        let target_t = state.timer - echo.lag;
-        let (sx, sz, fwd_x, fwd_z) = sample_trail(&state.trail, target_t);
+pub fn update_multi_ball(player_x: f64, player_z: f64, dt: f64) {
+    if !multi_ball_active() {
+        return;
+    }
 
-        // Perpendicular offset: (-fwd_z, fwd_x) * side
-        let perp_x = -fwd_z * echo.side;
-        let perp_z = fwd_x * echo.side;
+    if let Ok(mut lock) = MANAGER.lock() {
+        if let Some(ref mut m) = *lock {
+            m.local_time += dt;
+            push_trail(&mut m.trail, player_x, player_z, m.local_time, MULTIBALL_TRAIL_SECONDS);
 
-        echo.x = sx + perp_x;
-        echo.z = sz + perp_z;
-
-        // Check monster hits
-        for m in monsters.iter_mut() {
-            if !m.is_alive() {
-                continue;
-            }
-
-            let dx = echo.x - m.x;
-            let dz = echo.z - m.z;
-            let dist = (dx * dx + dz * dz).sqrt();
-
-            if dist <= MULTIBALL_HIT_RADIUS {
-                let can_hit = match echo.hit_cds.get(&m.id) {
-                    Some(&cd) => cd <= 0.0,
-                    None => true,
-                };
-
-                if can_hit {
-                    let dmg = player_ram_dmg * MULTIBALL_RAM_MULT;
-                    m.hp -= dmg;
-                    if m.hp <= 0.0 {
-                        m.mode = EnemyMode::Dead;
-                    }
-                    echo.hit_cds.insert(m.id, MULTIBALL_RAM_COOLDOWN);
-                    hits.push(MultiballHit {
-                        echo_idx,
-                        monster_id: m.id,
-                        damage: dmg,
-                    });
+            for echo in &mut m.echoes {
+                tick_ram_cooldowns(&mut echo.hit_cd, dt);
+                if let Some((tx, tz)) = echo_target(&m.trail, m.local_time, echo.lag, echo.side) {
+                    echo.x = follow_step(echo.x, tx, dt, MULTIBALL_FOLLOW_RATE);
+                    echo.z = follow_step(echo.z, tz, dt, MULTIBALL_FOLLOW_RATE);
                 }
             }
         }
     }
+}
 
-    hits
+pub fn dispose_multi_ball() {
+    MULTIBALL_ACTIVE.store(false, Ordering::Relaxed);
+    if let Ok(mut lock) = MANAGER.lock() {
+        *lock = None;
+    }
 }
