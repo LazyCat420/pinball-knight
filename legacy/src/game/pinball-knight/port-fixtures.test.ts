@@ -24,9 +24,8 @@ import { moveCircle, computeArcCorners } from "./engine/collision";
 import { wallSurface, floorSurface } from "./engine/surfaces";
 import { freshRail, holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./entities/rail";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./intro/title-grid";
-// Namespace import: the fixture must carry EVERY export, so naming them one by
-// one would silently miss whichever one was added last.
 import * as RENDER_CONSTANTS from "./constants/render";
+import * as LEVEL_CONSTANTS from "./constants/level";
 import { stepTavernMovement, type TavernPose } from "../../scenes/tavern/player";
 import { SPAWN as TAVERN_SPAWN, stationAt } from "../../scenes/tavern/layout";
 import { comboWindow, comboZone, comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul, type ComboZone } from "./entities/combo-curve";
@@ -704,6 +703,39 @@ function renderConstants(): Record<string, number | string | boolean> {
   return out;
 }
 
+function levelConstants(): Record<string, number | string | boolean> {
+  const out: Record<string, number | string | boolean> = {};
+  const put = (key: string, v: unknown): void => {
+    if (v == null) return;
+    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+      out[key] = v;
+    } else if (Array.isArray(v)) {
+      v.forEach((x, i) => put(`${key}.${i}`, x));
+    } else if (typeof v === "object") {
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) put(`${key}.${k}`, x);
+    }
+  };
+  for (const [name, value] of Object.entries(LEVEL_CONSTANTS)) {
+    if (typeof value === "function") continue;
+    put(name, value);
+  }
+  for (let l = 1; l <= 30; l++) {
+    const cfg = LEVEL_CONSTANTS.levelConfig(l);
+    for (const [k, v] of Object.entries(cfg)) {
+      put(`levelConfig.${l}.${k}`, v);
+    }
+    const b1 = LEVEL_CONSTANTS.floorBudgets(l, 500);
+    put(`floorBudgets.${l}.500.zombies`, b1.zombies);
+    put(`floorBudgets.${l}.500.torches`, b1.torches);
+    put(`floorBudgets.${l}.500.partsArea`, b1.partsArea);
+    const b2 = LEVEL_CONSTANTS.floorBudgets(l, 3000);
+    put(`floorBudgets.${l}.3000.zombies`, b2.zombies);
+    put(`floorBudgets.${l}.3000.torches`, b2.torches);
+    put(`floorBudgets.${l}.3000.partsArea`, b2.partsArea);
+  }
+  return out;
+}
+
 describe("port-parity fixtures", () => {
   it("the JS math primitives match their pinned sweeps", () => {
     pinFixture("jsmath-oracle.json", powOracle());
@@ -718,6 +750,15 @@ describe("port-parity fixtures", () => {
     expect(c.RENDER_H).toBe(720);
     expect(Object.keys(c).length).toBeGreaterThan(60);
     pinFixture("constants-render.json", c);
+  });
+
+  it("the level constants match the committed fixture", () => {
+    const c = levelConstants();
+    expect(c.STYLE_KILL_BASE_GOLD).toBe(2);
+    expect(c["GRADE_GOLD.S"]).toBe(40);
+    expect(c["WINDINESS_CYCLE.0"]).toBe(1.0);
+    expect(Object.keys(c).length).toBeGreaterThan(15);
+    pinFixture("constants-level.json", c);
   });
 
   it("movement trace (seed 7) matches the committed fixture", () => {
