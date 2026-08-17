@@ -1320,11 +1320,11 @@ mod tests {
                 3169,
                 "the whole decoration pass — 21 exports, 5 carried",
             ),
-            (
-                "entities/player.ts",
-                2445,
-                "every verb; 79 rust lines against 1,560",
-            ),
+            // ── entities/player.ts: ROW REMOVED 2026-08-17 ──
+            // All 5 exported items, resetPlayerMotion, debugCurSpeed, debugWallNormal,
+            // updatePlunger, updatePlayer, dodge roll kinematics, and ricochet mechanics
+            // transcribed 1:1 in crates/pk-core/src/entities/player.rs, gated by
+            // crates/pk-core/tests/player_entities_parity_sim.rs.
             // ── state.ts: ROW REMOVED 2026-08-17 ──
             // All 22 exported items, mutable game spine, SimState, Player, Actor,
             // PinballPart, FloorFx, and simulate execution transcribed 1:1 in
