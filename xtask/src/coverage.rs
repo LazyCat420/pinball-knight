@@ -1353,11 +1353,10 @@ mod tests {
             // Time Crawl, Blade Storm, Slick Field), ranks, mana pool, Blood Price,
             // and cast pipeline in crates/pk-core/src/abilities.rs, gated by
             // crates/pk-core/tests/abilities_sim.rs.
-            (
-                "legacy/src/scenes/tavern/core.ts",
-                906,
-                "46 rust lines against 536",
-            ),
+            // ── legacy/src/scenes/tavern/core.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 tavern scene bootstrap, options, locomotion bounds,
+            // camera tracking lerp, and station interaction in crates/pk-core/src/tavern/core.rs,
+            // gated by crates/pk-core/tests/tavern_core_sim.rs.
             // ── cards.ts: ROW REMOVED 2026-08-17 ──
             // Complete 1:1 card catalogue, rarities, levels, shiny scaling, drop rolling,
             // weapon socketing, and card aggregation engine in crates/pk-core/src/cards.rs,

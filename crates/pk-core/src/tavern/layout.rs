@@ -63,6 +63,9 @@ pub const ROOM_MAX_X: f64 = 9.0;
 pub const ROOM_MIN_Z: f64 = -7.0;
 pub const ROOM_MAX_Z: f64 = 7.0;
 
+pub const ROOM_CENTER_X: f64 = (ROOM_MIN_X + ROOM_MAX_X) / 2.0;
+pub const ROOM_CENTER_Z: f64 = (ROOM_MIN_Z + ROOM_MAX_Z) / 2.0;
+
 pub const ROOM_W: f64 = ROOM_MAX_X - ROOM_MIN_X;
 pub const ROOM_D: f64 = ROOM_MAX_Z - ROOM_MIN_Z;
 

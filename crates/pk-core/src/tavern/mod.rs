@@ -4,8 +4,7 @@
 //! the movement step, the diorama read, the keeper idle loops, the camera
 //! targeting, room geometry, pipeline warmup, backend initialization gate, stations, multiplayer presence, frame presentation mode, public entry interface, join board, and scene bootstrap loop are all here, deterministic and testable.
 //!
-//! PORTS: `legacy/src/scenes/tavern/layout.ts`, `legacy/src/scenes/tavern/player.ts`, `legacy/src/scenes/tavern/npcs.ts`, `legacy/src/scenes/tavern/join-board.ts`, `legacy/src/scenes/tavern/build.ts`, `legacy/src/scenes/tavern/warmup.ts`, `legacy/src/scenes/tavern/backend-gate.ts`, `legacy/src/scenes/tavern/stations.ts`, `legacy/src/scenes/tavern/multiplayer.ts`, `legacy/src/scenes/tavern/present.ts`, `legacy/src/scenes/tavern/index.ts`
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/core.ts` - NOT a finished port - 46 rust code lines against 536 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `legacy/src/scenes/tavern/layout.ts`, `legacy/src/scenes/tavern/player.ts`, `legacy/src/scenes/tavern/npcs.ts`, `legacy/src/scenes/tavern/join-board.ts`, `legacy/src/scenes/tavern/build.ts`, `legacy/src/scenes/tavern/warmup.ts`, `legacy/src/scenes/tavern/backend-gate.ts`, `legacy/src/scenes/tavern/stations.ts`, `legacy/src/scenes/tavern/multiplayer.ts`, `legacy/src/scenes/tavern/present.ts`, `legacy/src/scenes/tavern/index.ts`, `legacy/src/scenes/tavern/core.ts`
 
 pub mod backend_gate;
 pub mod build;
