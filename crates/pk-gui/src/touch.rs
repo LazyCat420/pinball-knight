@@ -182,3 +182,17 @@ impl TouchGamepad {
         }
     }
 }
+
+pub type TouchControls = TouchGamepad;
+
+pub fn is_touch_device() -> bool {
+    false
+}
+
+pub fn install_touch_controls() -> Option<TouchControls> {
+    Some(TouchGamepad::default())
+}
+
+pub fn touch_screen() -> TouchControls {
+    TouchGamepad::default()
+}

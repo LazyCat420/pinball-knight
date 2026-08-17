@@ -22,7 +22,7 @@ impl WallErosionTracker {
     }
 
     /// Resets erosion scars lazily if the current floor has changed.
-    fn check_floor(&mut self, current_floor: u32) {
+    pub fn check_floor(&mut self, current_floor: u32) {
         if self.floor_id != current_floor {
             self.scars.clear();
             self.floor_id = current_floor;
@@ -67,4 +67,36 @@ impl WallErosionTracker {
         let erosion = self.get_erosion(i, j);
         1.0 - erosion * WALL_EROSION_MELT_SAG
     }
+}
+
+pub fn wall_erosion_at(tracker: &WallErosionTracker, i: i32, j: i32) -> f64 {
+    tracker.get_erosion(i, j)
+}
+
+pub fn reset_wall_erosion(tracker: &mut WallErosionTracker) {
+    tracker.scars.clear();
+}
+
+pub fn erode_wall_at(
+    tracker: &mut WallErosionTracker,
+    i: i32,
+    j: i32,
+    amount: f64,
+    current_floor: u32,
+) -> &'static str {
+    if tracker.erode_tile(i, j, amount, current_floor) {
+        "broken"
+    } else {
+        "eroded"
+    }
+}
+
+pub fn lava_melt_wall(
+    tracker: &mut WallErosionTracker,
+    i: i32,
+    j: i32,
+    impact_speed: f64,
+    current_floor: u32,
+) {
+    tracker.erode_from_lava(i, j, impact_speed, current_floor);
 }

@@ -2,6 +2,11 @@
 //!
 //! PORTS: `maze/relay-chambers.ts`
 
+pub const RELAY_STANDOFF: f64 = 1.6;
+pub const RELAY_MIN_SPAN: usize = 5;
+pub const RELAY_MAX_SPAN: usize = 26;
+pub const RELAY_SEGMENTS: usize = 5;
+pub const RELAY_MAX_PER_FLOOR: usize = 3;
 pub const DEFAULT_RELAY_STANDOFF: f64 = 0.85;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +83,29 @@ pub fn compute_relay_ellipse(
         c,
         angle,
     })
+}
+
+pub fn relay_ellipse(
+    d1: (f64, f64),
+    d2: (f64, f64),
+    standoff: f64,
+) -> Option<RelayEllipse> {
+    compute_relay_ellipse(d1, d2, standoff)
+}
+
+pub fn author_relay_chambers(
+    doorways: &[(f64, f64)],
+    standoff: f64,
+) -> Vec<RelayEllipse> {
+    let mut ellipses = Vec::new();
+    for i in (0..doorways.len()).step_by(2) {
+        if i + 1 < doorways.len() {
+            if let Some(el) = compute_relay_ellipse(doorways[i], doorways[i + 1], standoff) {
+                ellipses.push(el);
+            }
+        }
+    }
+    ellipses
 }
 
 /// Generates discrete polygon samples along a section of the relay ellipse boundary.

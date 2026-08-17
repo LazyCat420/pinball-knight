@@ -121,6 +121,10 @@ impl UiInputManager {
         self.wheel_delta += delta_y;
     }
 
+    pub fn ui_key_held(&self, key: &str) -> bool {
+        self.held.contains(&norm_key(key))
+    }
+
     /// Consumes the accumulated input edges and returns the normalized `UiInput` for one painted frame.
     pub fn take_frame(&mut self, zoom: u32, offset_x: f64, offset_y: f64) -> UiInput {
         let z = zoom as f64;
@@ -187,4 +191,20 @@ impl UiInputManager {
 
         input
     }
+}
+
+pub fn set_ui_input_live(manager: &mut UiInputManager, on: bool) {
+    manager.set_live(on);
+}
+
+pub fn install_ui_input() -> UiInputManager {
+    UiInputManager::new()
+}
+
+pub fn ui_key_held(manager: &UiInputManager, key: &str) -> bool {
+    manager.ui_key_held(key)
+}
+
+pub fn take_frame(manager: &mut UiInputManager, zoom: u32, offset_x: f64, offset_y: f64) -> UiInput {
+    manager.take_frame(zoom, offset_x, offset_y)
 }
