@@ -1,5 +1,4 @@
 //! PORTS: `entities/marble.ts`
-//! PORTS-PARTIAL: `constants/pinball.ts` - NOT a finished port - 116 of 454 exported names carried over (26%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const SQUASH_RECOVER: f64 = 0.18;
 pub const SQUASH_DEPTH: f64 = 0.30;

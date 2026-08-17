@@ -15,9 +15,7 @@
 //! Marble materials (marble.ts) are not ported yet: every `material*()` hook
 //! reads through `MarbleHooks::default()`, whose values are the legacy
 //! no-material fallbacks. When marble.ts ports, the hooks get a real source.
-//!
 //! PORTS: `entities/pinball-collide.ts`, `shots.ts`
-//! PORTS-PARTIAL: `constants/pinball.ts` - NOT a finished port - 116 of 454 exported names carried over (26%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod shots;
 pub use shots::*;
