@@ -119,6 +119,8 @@ pub struct Player {
     // ── Combat & Inventory ──
     pub slash: crate::player::MeleeSlash,
     pub inventory: crate::player::PlayerInventory,
+    // ── Active Marble Material State ──
+    pub marble: crate::marble::MarbleState,
 }
 
 pub const ROLL_DURATION: f64 = 0.42;
@@ -167,6 +169,7 @@ impl Default for Player {
             squash_nz: 0.0,
             slash: crate::player::MeleeSlash::default(),
             inventory: crate::player::PlayerInventory::default(),
+            marble: crate::marble::MarbleState::default(),
         }
     }
 }
@@ -352,6 +355,7 @@ impl SimState {
                 squash_nz: 0.0,
                 slash: crate::player::MeleeSlash::default(),
                 inventory: crate::player::PlayerInventory::default(),
+                marble: crate::marble::MarbleState::default(),
             },
             monsters: Vec::new(),
             abilities: crate::abilities::PlayerAbilities::default(),
@@ -397,6 +401,9 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     if s.player.squash_t > 0.0 {
         s.player.squash_t = 0.0_f64.max(s.player.squash_t - DT);
     }
+
+    // Tick active marble material and fusion timers
+    s.player.marble.update(DT);
 
     // Tick abilities
     s.abilities.tick(DT);

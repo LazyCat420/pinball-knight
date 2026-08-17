@@ -269,10 +269,12 @@ pub fn touch_pinball_parts(s: &mut SimState, in_momentum: bool, cur_speed: f64, 
                     continue;
                 }
                 // `Math.sqrt(d2) || 1` — dead-centre contact degrades to 1.
-                let d = if d2 == 0.0 { 1.0 } else { d2.sqrt() };
-                let scatter = (s.rng.next_f64() * 2.0 - 1.0) * BUMPER_SCATTER;
+                let scatter = (s.rng.next_f64() * 2.0 - 1.0)
+                    * BUMPER_SCATTER
+                    * s.player.marble.bumper_scatter_mult();
                 let cs = libm::cos(scatter);
                 let sn = libm::sin(scatter);
+                let d = if d2 == 0.0 { 1.0 } else { d2.sqrt() };
                 let nx = dx / d;
                 let nz = dz / d;
                 s.player.mom_x = nx * cs - nz * sn;
@@ -280,8 +282,9 @@ pub fn touch_pinball_parts(s: &mut SimState, in_momentum: bool, cur_speed: f64, 
                 s.parts[idx].hits += 1;
                 let lit = s.parts[idx].hits >= BUMPER_LIT_HITS;
                 let now_lit = s.parts[idx].hits == BUMPER_LIT_HITS;
-                s.player.mom_speed = PINBALL_MAX_SPEED.min(
-                    (s.player.mom_speed * BUMPER_KICK_MULT
+                let bumper_mult = BUMPER_KICK_MULT * s.player.marble.bumper_kick_mult();
+                s.player.mom_speed = s.player.marble.max_speed().min(
+                    (s.player.mom_speed * bumper_mult
                         + if lit {
                             BUMPER_KICK_LIT
                         } else {
@@ -710,7 +713,8 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
         TURBO_STEER_MULT
     } else {
         1.0
-    }) * steer_surf.steer_mult;
+    }) * steer_surf.steer_mult
+        * s.player.marble.steer_mult();
     let (mut steer_x, mut steer_z) = (0.0, 0.0);
     {
         let (ax, az) = steer_in;
@@ -734,11 +738,12 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
     let step = s.player.mom_speed * speed_mul * dt;
     let want_x = s.player.x + s.player.mom_x * step;
     let want_z = s.player.z + s.player.mom_z * step;
+    let player_r = s.player.marble.player_radius(PLAYER_R);
     let res = move_circle(
         &s.grid,
         s.player.x,
         s.player.z,
-        PLAYER_R,
+        player_r,
         s.player.mom_x * step,
         s.player.mom_z * step,
     );
@@ -759,12 +764,13 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
             let steering = steer_x != 0.0 || steer_z != 0.0;
             let strength = if steering { 0.45 } else { 1.0 };
             let dir = imbalance.signum();
-            let nudge = (imbalance.abs() * 0.5).min(LANE_CENTER_PULL * dt) * strength;
+            let pull_rate = LANE_CENTER_PULL * s.player.marble.lane_pull_mult();
+            let nudge = (imbalance.abs() * 0.5).min(pull_rate * dt) * strength;
             let r2 = move_circle(
                 &s.grid,
                 s.player.x,
                 s.player.z,
-                PLAYER_R,
+                player_r,
                 perp_x * dir * nudge,
                 perp_z * dir * nudge,
             );
@@ -843,13 +849,17 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
             } else {
                 // SURFACE — what this slant is made of scales the reflection.
                 let surf = wall_surface(res.hit_surface);
-                let rest = (if s.player.spring_t > 0.0 {
-                    SPRINGLEGS_RESTITUTION
-                } else {
-                    PINBALL_WALL_RESTITUTION
-                }) * surf.flat_rest_mult;
+                let base_rest = s.player.marble.flat_restitution().unwrap_or_else(|| {
+                    if s.player.spring_t > 0.0 {
+                        SPRINGLEGS_RESTITUTION
+                    } else {
+                        PINBALL_WALL_RESTITUTION
+                    }
+                });
+                let rest = base_rest * surf.flat_rest_mult;
+                let max_speed = s.player.marble.max_speed();
                 s.player.mom_speed =
-                    PINBALL_MAX_SPEED.min(s.player.mom_speed * rest + surf.bounce_add);
+                    max_speed.min(s.player.mom_speed * rest + surf.bounce_add);
                 apply_surface_combo(
                     &mut s.player,
                     f64::from(surf.combo_ticks),
@@ -882,24 +892,28 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
         }
         let corner = blocked_x && blocked_z;
         let surf = wall_surface(res.hit_surface);
-        let flat_rest = (if s.player.spring_t > 0.0 {
-            SPRINGLEGS_RESTITUTION
-        } else {
-            PINBALL_WALL_RESTITUTION
-        }) * surf.flat_rest_mult;
+        let base_rest = s.player.marble.flat_restitution().unwrap_or_else(|| {
+            if s.player.spring_t > 0.0 {
+                SPRINGLEGS_RESTITUTION
+            } else {
+                PINBALL_WALL_RESTITUTION
+            }
+        });
+        let flat_rest = base_rest * surf.flat_rest_mult;
+        let max_speed = s.player.marble.max_speed();
         if corner {
             let gain = (s.player.mom_speed * combo_corner_restitution(s.player.bounce_combo)
-                + combo_corner_add(s.player.bounce_combo))
+                + combo_corner_add(s.player.bounce_combo) * s.player.marble.corner_add_mult())
             .min(combo_speed_ceil(s.player.bounce_combo));
             let next = if surf.corner_mult >= 1.0 {
                 s.player.mom_speed.max(gain * surf.corner_mult)
             } else {
                 gain * surf.corner_mult
             };
-            s.player.mom_speed = PINBALL_MAX_SPEED.min(next);
+            s.player.mom_speed = max_speed.min(next);
         } else {
             s.player.mom_speed =
-                PINBALL_MAX_SPEED.min(s.player.mom_speed * flat_rest + surf.bounce_add);
+                max_speed.min(s.player.mom_speed * flat_rest + surf.bounce_add);
         }
         apply_surface_combo(
             &mut s.player,
@@ -966,7 +980,10 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
     let friction = if s.player.oil_t > 0.0 || s.player.turbo_t > 0.0 {
         0.0
     } else {
-        PINBALL_FRICTION * surf_mul * combo_friction_mul(s.player.bounce_combo)
+        PINBALL_FRICTION
+            * surf_mul
+            * combo_friction_mul(s.player.bounce_combo)
+            * s.player.marble.friction_mult()
     };
     s.player.mom_speed = (s.player.mom_speed - friction * dt).max(0.0);
     s.player.bounce_combo_t = (s.player.bounce_combo_t - dt).max(0.0);
