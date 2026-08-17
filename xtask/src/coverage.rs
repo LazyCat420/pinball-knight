@@ -1348,18 +1348,20 @@ mod tests {
             // All 45 exported constants, types, physics multipliers, fusion mechanics,
             // emitters (emitMaterialOnBounce, materialSlam), and environmental reactions
             // transcribed 1:1 in crates/pk-core/src/marble.rs and gated by
-            // crates/pk-core/tests/marble_sim.rs and marble_physics_sim.rs.
-            ("abilities.ts", 916, "6 abilities, ranks, mana, Blood Price"),
+            // ── abilities.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 active skills (Flipper Charge, Arcane Pulse, Magnet Aura,
+            // Time Crawl, Blade Storm, Slick Field), ranks, mana pool, Blood Price,
+            // and cast pipeline in crates/pk-core/src/abilities.rs, gated by
+            // crates/pk-core/tests/abilities_sim.rs.
             (
                 "legacy/src/scenes/tavern/core.ts",
                 906,
                 "46 rust lines against 536",
             ),
-            (
-                "cards.ts",
-                885,
-                "rarities, levels, shiny, aggregation — blocks two vendors",
-            ),
+            // ── cards.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 card catalogue, rarities, levels, shiny scaling, drop rolling,
+            // weapon socketing, and card aggregation engine in crates/pk-core/src/cards.rs,
+            // gated by crates/pk-core/tests/cards_aggregation_sim.rs and card_socket_sim.rs.
             (
                 "boss.ts",
                 772,

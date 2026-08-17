@@ -121,6 +121,11 @@ pub struct Player {
     pub inventory: crate::player::PlayerInventory,
     // ── Active Marble Material State ──
     pub marble: crate::marble::MarbleState,
+    // ── Health & Mana ──
+    pub hp: f64,
+    pub max_hp: f64,
+    pub mana: f64,
+    pub max_mana: f64,
 }
 
 pub const ROLL_DURATION: f64 = 0.42;
@@ -170,6 +175,10 @@ impl Default for Player {
             slash: crate::player::MeleeSlash::default(),
             inventory: crate::player::PlayerInventory::default(),
             marble: crate::marble::MarbleState::default(),
+            hp: 100.0,
+            max_hp: 100.0,
+            mana: 100.0,
+            max_mana: 100.0,
         }
     }
 }
@@ -356,6 +365,10 @@ impl SimState {
                 slash: crate::player::MeleeSlash::default(),
                 inventory: crate::player::PlayerInventory::default(),
                 marble: crate::marble::MarbleState::default(),
+                hp: 100.0,
+                max_hp: 100.0,
+                mana: 100.0,
+                max_mana: 100.0,
             },
             monsters: Vec::new(),
             abilities: crate::abilities::PlayerAbilities::default(),

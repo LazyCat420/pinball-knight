@@ -9,8 +9,7 @@
 // material -> crystalshard + golemcore; crit -> goblintooth, flailerjaw,
 // bloodpact; pierce -> venomgland + webspinnersilk; lifesteal ->
 // ectoplasmcore, grimscythe, bloodpact; pinball -> runnersinew + timeripper.
-//
-// PORTS-PARTIAL: `cards.ts` - NOT a finished port - 36 of 36 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+// PORTS: `cards.ts`
 
 pub static CARDS: [CardDef; 25] = [
     CardDef {
