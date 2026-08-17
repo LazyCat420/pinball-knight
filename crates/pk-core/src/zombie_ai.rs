@@ -8,13 +8,196 @@
 //! - Pairwise enemy separation forces
 //! - Attack windup, strike, and cooldown cycles
 //! - Stagger and pain interruptions
+//! - Movement policy lookup per enemy kind / zombie sub-type
+//! - World velocity to screen facing resolution
 //!
-//! PORTS-PARTIAL: `entities/zombie.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `entities/zombie.ts`
 
 use crate::collide::move_circle;
 use crate::enemies::*;
 use crate::flow_field::flow_step;
 use crate::grid::{tile_center, world_to_tile, Grid};
+use crate::monsters::types::EnemyKind;
+use crate::state::{Facing, SimState};
+use crate::zombie_types::ZombieType;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EnemyStats {
+    pub body_r: f64,
+    pub contact_range: f64,
+    pub windup: f64,
+    pub cooldown: f64,
+    pub ranged: bool,
+}
+
+pub fn stats_for_kind(kind: EnemyKind) -> EnemyStats {
+    match kind {
+        EnemyKind::Zombie => EnemyStats {
+            body_r: ZOMBIE_R,
+            contact_range: ZOMBIE_CONTACT_RANGE,
+            windup: ZOMBIE_ATTACK_WINDUP,
+            cooldown: ZOMBIE_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Spider => EnemyStats {
+            body_r: SPIDER_R,
+            contact_range: SPIDER_CONTACT_RANGE,
+            windup: SPIDER_ATTACK_WINDUP,
+            cooldown: SPIDER_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Brute => EnemyStats {
+            body_r: BRUTE_R,
+            contact_range: BRUTE_CONTACT_RANGE,
+            windup: BRUTE_ATTACK_WINDUP,
+            cooldown: BRUTE_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Croaker => EnemyStats {
+            body_r: CROAKER_R,
+            contact_range: CROAKER_FIRE_RANGE,
+            windup: CROAKER_WINDUP,
+            cooldown: CROAKER_COOLDOWN,
+            ranged: true,
+        },
+        EnemyKind::Bat => EnemyStats {
+            body_r: BAT_R,
+            contact_range: BAT_CONTACT_RANGE,
+            windup: BAT_ATTACK_WINDUP,
+            cooldown: BAT_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Slime => EnemyStats {
+            body_r: SLIME_R,
+            contact_range: SLIME_CONTACT_RANGE,
+            windup: SLIME_ATTACK_WINDUP,
+            cooldown: SLIME_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Ghost => EnemyStats {
+            body_r: GHOST_R,
+            contact_range: GHOST_CONTACT_RANGE,
+            windup: GHOST_ATTACK_WINDUP,
+            cooldown: GHOST_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Reaper => EnemyStats {
+            body_r: GHOST_R,
+            contact_range: REAPER_CONTACT_RANGE,
+            windup: REAPER_ATTACK_WINDUP,
+            cooldown: REAPER_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Golem => EnemyStats {
+            body_r: GOLEM_R,
+            contact_range: GOLEM_CONTACT_RANGE,
+            windup: GOLEM_ATTACK_WINDUP,
+            cooldown: GOLEM_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Chomper => EnemyStats {
+            body_r: CHOMPER_R,
+            contact_range: CHOMPER_CONTACT_RANGE,
+            windup: CHOMPER_ATTACK_WINDUP,
+            cooldown: CHOMPER_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+        EnemyKind::Jester => EnemyStats {
+            body_r: JESTER_R,
+            contact_range: JESTER_FIRE_RANGE,
+            windup: JESTER_WINDUP,
+            cooldown: JESTER_COOLDOWN,
+            ranged: true,
+        },
+        EnemyKind::Rotortail => EnemyStats {
+            body_r: ROTORTAIL_R,
+            contact_range: ROTORTAIL_FIRE_RANGE,
+            windup: ROTORTAIL_WINDUP,
+            cooldown: ROTORTAIL_COOLDOWN,
+            ranged: true,
+        },
+        EnemyKind::Stiltneck => EnemyStats {
+            body_r: STILTNECK_R,
+            contact_range: STILTNECK_FIRE_RANGE,
+            windup: STILTNECK_WINDUP,
+            cooldown: STILTNECK_COOLDOWN,
+            ranged: true,
+        },
+        _ => EnemyStats {
+            body_r: ZOMBIE_R,
+            contact_range: ZOMBIE_CONTACT_RANGE,
+            windup: ZOMBIE_ATTACK_WINDUP,
+            cooldown: ZOMBIE_ATTACK_COOLDOWN,
+            ranged: false,
+        },
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MovementKind {
+    Direct,
+    Flank,
+    Ambush,
+    Leap,
+    Swarm,
+    Hover,
+    Stationary,
+}
+
+/// Resolves the movement steering policy for an enemy actor.
+pub fn movement_of(kind: EnemyKind, ztype: Option<ZombieType>) -> MovementKind {
+    if let Some(zt) = ztype {
+        match zt {
+            ZombieType::Runner => MovementKind::Flank,
+            ZombieType::Crawler => MovementKind::Ambush,
+            ZombieType::Flailer => MovementKind::Leap,
+            ZombieType::Midget => MovementKind::Swarm,
+            _ => MovementKind::Direct,
+        }
+    } else {
+        match kind {
+            EnemyKind::Ghost | EnemyKind::Bat | EnemyKind::Rotortail => MovementKind::Hover,
+            EnemyKind::Jester | EnemyKind::Croaker => MovementKind::Leap,
+            _ => MovementKind::Direct,
+        }
+    }
+}
+
+pub const ISO_COS: f64 = 0.7071067811865476;
+
+/// Converts world direction vector into screen-relative facing matching isometric projection.
+pub fn facing_from_world(wx: f64, wz: f64, fallback: Facing) -> Facing {
+    let sx = wx * ISO_COS - wz * ISO_COS;
+    let sz = -(wx * ISO_COS + wz * ISO_COS);
+    facing_from_velocity(sx, sz, fallback)
+}
+
+pub fn facing_from_velocity(vx: f64, vz: f64, fallback: Facing) -> Facing {
+    let ax = vx.abs();
+    let az = vz.abs();
+    if ax < 1e-4 && az < 1e-4 {
+        return fallback;
+    }
+    let vertical = matches!(fallback, Facing::S | Facing::N);
+    let margin = 1.25;
+    if vertical && az * margin >= ax && az >= 1e-4 {
+        return if vz > 0.0 { Facing::S } else { Facing::N };
+    }
+    if !vertical && ax * margin >= az && ax >= 1e-4 {
+        return if vx > 0.0 { Facing::E } else { Facing::W };
+    }
+    if az >= ax {
+        if vz > 0.0 {
+            Facing::S
+        } else {
+            Facing::N
+        }
+    } else if vx > 0.0 {
+        Facing::E
+    } else {
+        Facing::W
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnemyMode {
@@ -95,288 +278,114 @@ impl LiveEnemy {
         }
     }
 
-    pub fn new_frog(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "frog".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.35,
-            hp: 45.0,
-            max_hp: 45.0,
-            speed: 2.2,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.6,
-            windup_duration: 0.25,
-            cooldown_duration: 0.8,
-            damage: 14,
-        }
-    }
-
-    pub fn new_goblin(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "goblin".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.28,
-            hp: 35.0,
-            max_hp: 35.0,
-            speed: 2.6,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.55,
-            windup_duration: 0.2,
-            cooldown_duration: 0.6,
-            damage: 10,
-        }
-    }
-
-    pub fn new_jester(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "jester".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.32,
-            hp: 60.0,
-            max_hp: 60.0,
-            speed: 2.1,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.7,
-            windup_duration: 0.3,
-            cooldown_duration: 0.9,
-            damage: 16,
-        }
-    }
-
-    pub fn new_reaper(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "reaper".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.45,
-            hp: 120.0,
-            max_hp: 120.0,
-            speed: 1.8,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 1.1,
-            windup_duration: 0.45,
-            cooldown_duration: 1.2,
-            damage: 28,
-        }
-    }
-
-    pub fn new_slime(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "slime".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.38,
-            hp: 50.0,
-            max_hp: 50.0,
-            speed: 1.2,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.6,
-            windup_duration: 0.35,
-            cooldown_duration: 0.7,
-            damage: 12,
-        }
-    }
-
-    pub fn new_spider(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "spider".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.32,
-            hp: 40.0,
-            max_hp: 40.0,
-            speed: 2.4,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.6,
-            windup_duration: 0.22,
-            cooldown_duration: 0.65,
-            damage: 13,
-        }
-    }
-
-    pub fn new_stiltneck(id: u32, x: f64, z: f64) -> Self {
-        Self {
-            id,
-            kind_str: "stiltneck".to_string(),
-            x,
-            z,
-            vx: 0.0,
-            vz: 0.0,
-            radius: 0.4,
-            hp: 75.0,
-            max_hp: 75.0,
-            speed: 1.4,
-            mode: EnemyMode::Chase,
-            windup_t: 0.0,
-            attack_cd: 0.0,
-            stagger_t: 0.0,
-            contact_range: 0.8,
-            windup_duration: 0.4,
-            cooldown_duration: 1.1,
-            damage: 20,
-        }
-    }
-
-    pub fn new_by_index(id: u32, index: usize, x: f64, z: f64) -> Self {
-        match index % 9 {
-            0 => Self::new_zombie(id, x, z),
-            1 => Self::new_brute(id, x, z),
-            2 => Self::new_frog(id, x, z),
-            3 => Self::new_goblin(id, x, z),
-            4 => Self::new_jester(id, x, z),
-            5 => Self::new_reaper(id, x, z),
-            6 => Self::new_slime(id, x, z),
-            7 => Self::new_spider(id, x, z),
-            _ => Self::new_stiltneck(id, x, z),
-        }
-    }
-
     pub fn update(
         &mut self,
         dt: f64,
-        player_x: f64,
-        player_z: f64,
+        px: f64,
+        pz: f64,
         flow_distances: &[i32],
         grid: &Grid,
     ) {
-        if self.mode == EnemyMode::Dead {
+        if self.hp <= 0.0 {
+            self.mode = EnemyMode::Dead;
             return;
         }
 
-        // 1. Tick timers
+        if self.stagger_t > 0.0 {
+            self.stagger_t -= dt;
+            self.mode = EnemyMode::Stagger;
+            let m_res = move_circle(grid, self.x, self.z, self.radius, self.vx * dt, self.vz * dt);
+            self.x = m_res.x;
+            self.z = m_res.z;
+            self.vx *= 0.85;
+            self.vz *= 0.85;
+            return;
+        }
+
+        let dx = px - self.x;
+        let dz = pz - self.z;
+        let dist = (dx * dx + dz * dz).sqrt();
+
         if self.attack_cd > 0.0 {
             self.attack_cd = (self.attack_cd - dt).max(0.0);
         }
-        if self.stagger_t > 0.0 {
-            self.stagger_t = (self.stagger_t - dt).max(0.0);
-            if self.stagger_t == 0.0 && self.mode == EnemyMode::Stagger {
-                self.mode = EnemyMode::Chase;
-            }
-            return; // Stagger freezes motion
-        }
 
-        let dx = player_x - self.x;
-        let dz = player_z - self.z;
-        let dist = (dx * dx + dz * dz).sqrt();
-
-        // 2. Attack State Machine
         match self.mode {
             EnemyMode::Windup => {
-                self.windup_t -= dt;
-                if self.windup_t <= 0.0 {
+                self.windup_t += dt;
+                if self.windup_t >= self.windup_duration {
                     self.mode = EnemyMode::Attack;
+                    self.windup_t = 0.0;
                 }
             }
             EnemyMode::Attack => {
-                // Strike executes
                 self.attack_cd = self.cooldown_duration;
                 self.mode = EnemyMode::Chase;
             }
             EnemyMode::Chase | EnemyMode::Wander => {
                 if dist <= self.contact_range && self.attack_cd <= 0.0 {
                     self.mode = EnemyMode::Windup;
-                    self.windup_t = self.windup_duration;
+                    self.windup_t = 0.0;
                     return;
                 }
 
-                // 3. Movement Steering
-                let (dir_x, dir_z) = if dist < DIRECT_STEER_RANGE {
-                    // Direct vector steering
-                    if dist > 1e-4 {
-                        (dx / dist, dz / dist)
-                    } else {
-                        (0.0, 0.0)
-                    }
+                let (tx, tz) = if dist < 2.0 {
+                    (dx / dist.max(1e-4), dz / dist.max(1e-4))
                 } else {
-                    // Flow field downhill step
-                    let (ti, tj) = world_to_tile(grid, self.x, self.z);
-                    if let Some((next_i, next_j)) = flow_step(grid, flow_distances, ti, tj) {
-                        let (tc_x, tc_z) = tile_center(grid, next_i, next_j);
-                        let tdx = tc_x - self.x;
-                        let tdz = tc_z - self.z;
-                        let tlen = (tdx * tdx + tdz * tdz).sqrt();
-                        if tlen > 1e-4 {
-                            (tdx / tlen, tdz / tlen)
+                    let tile = world_to_tile(grid, self.x, self.z);
+                    if let Some((next_x, next_z)) = flow_step(grid, flow_distances, tile.0, tile.1) {
+                        let center = tile_center(grid, next_x, next_z);
+                        let fdx = center.0 - self.x;
+                        let fdz = center.1 - self.z;
+                        let flen = (fdx * fdx + fdz * fdz).sqrt();
+                        if flen > 1e-4 {
+                            (fdx / flen, fdz / flen)
                         } else {
-                            (0.0, 0.0)
+                            (dx / dist.max(1e-4), dz / dist.max(1e-4))
                         }
-                    } else if dist > 1e-4 {
-                        (dx / dist, dz / dist)
                     } else {
-                        (0.0, 0.0)
+                        (dx / dist.max(1e-4), dz / dist.max(1e-4))
                     }
                 };
 
-                let target_vx = dir_x * self.speed;
-                let target_vz = dir_z * self.speed;
+                let target_vx = tx * self.speed;
+                let target_vz = tz * self.speed;
+                let blend = (dt * 10.0).min(1.0);
+                self.vx += (target_vx - self.vx) * blend;
+                self.vz += (target_vz - self.vz) * blend;
 
-                // Smooth steering acceleration
-                let blend = 8.0 * dt;
-                self.vx += (target_vx - self.vx) * blend.min(1.0);
-                self.vz += (target_vz - self.vz) * blend.min(1.0);
-
-                // Circle collision step
-                let res = move_circle(
-                    grid,
-                    self.x,
-                    self.z,
-                    self.radius,
-                    self.vx * dt,
-                    self.vz * dt,
-                );
-                self.x = res.x;
-                self.z = res.z;
+                let m_res = move_circle(grid, self.x, self.z, self.radius, self.vx * dt, self.vz * dt);
+                self.x = m_res.x;
+                self.z = m_res.z;
             }
             _ => {}
         }
     }
 }
 
-/// Applies pairwise separation force to prevent horde stacking.
-pub fn apply_enemy_separation(enemies: &mut [LiveEnemy], dt: f64) {
-    let len = enemies.len();
-    let separation_radius = 0.65;
-    let push_strength = 2.5;
+/// Advances all live zombies in the simulation state by dt.
+pub fn update_zombies(sim_state: &mut SimState, dt: f64) {
+    let px = sim_state.player.x;
+    let pz = sim_state.player.z;
+    let grid = &sim_state.grid;
 
+    for m in sim_state.monsters.iter_mut() {
+        let dx = px - m.x;
+        let dz = pz - m.z;
+        let dist = (dx * dx + dz * dz).sqrt();
+        if dist > 1e-4 {
+            let speed = m.speed;
+            m.vx = (dx / dist) * speed;
+            m.vz = (dz / dist) * speed;
+            let m_res = move_circle(grid, m.x, m.z, m.radius, m.vx * dt, m.vz * dt);
+            m.x = m_res.x;
+            m.z = m_res.z;
+        }
+    }
+}
+
+pub fn apply_enemy_separation(enemies: &mut [LiveEnemy], separation_radius: f64, push_strength: f64, dt: f64) {
+    let len = enemies.len();
     for i in 0..len {
         for j in (i + 1)..len {
             let dx = enemies[j].x - enemies[i].x;

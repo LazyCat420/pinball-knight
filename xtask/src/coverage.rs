@@ -1333,11 +1333,10 @@ mod tests {
             ),
             ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
             ("hud-face.ts", 1330, "the animated portrait"),
-            (
-                "entities/zombie.ts",
-                1217,
-                "0 of 5 exports; STATS/updateZombies/movementOf absent",
-            ),
+            // ── entities/zombie.ts: ROW REMOVED 2026-08-17 ──
+            // All 5 exported items, STATS table, movementOf dispatch, facingFromWorld,
+            // and updateZombies simulation transcribed 1:1 in crates/pk-core/src/zombie_ai.rs,
+            // gated by crates/pk-core/tests/zombie_parity_sim.rs.
             // ── entities/combat.ts: ROW REMOVED 2026-08-17 ──
             // All 22 exported items, damage calculations, player attack resolution,
             // knockback vectors, i-frames, and death rewards transcribed 1:1 in
