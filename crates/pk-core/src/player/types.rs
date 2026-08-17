@@ -55,6 +55,7 @@ pub struct MeleeSlash {
     pub base_damage: f64,
     pub dir_x: f64,
     pub dir_z: f64,
+    pub hit_entities: Vec<u32>,
 }
 
 impl Default for MeleeSlash {
@@ -67,6 +68,7 @@ impl Default for MeleeSlash {
             base_damage: MELEE_DAMAGE_BASE,
             dir_x: 0.0,
             dir_z: 1.0,
+            hit_entities: Vec::new(),
         }
     }
 }

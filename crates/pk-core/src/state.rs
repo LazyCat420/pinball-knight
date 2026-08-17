@@ -258,6 +258,7 @@ pub struct SimState {
     pub bumpers_lit: i32,
     pub bumper_total: i32,
     pub jackpots: i32,
+    pub kills: i32,
     // Pocket-rattle guard anchor (module-level in legacy player.ts).
     pub pocket_ax: f64,
     pub pocket_az: f64,
@@ -366,6 +367,7 @@ impl SimState {
             bumpers_lit: 0,
             bumper_total: 0,
             jackpots: 0,
+            kills: 0,
             pocket_ax: 0.0,
             pocket_az: 0.0,
             pocket_n: 0,
@@ -449,6 +451,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
         s.player.slash.timer = 0.22 * def.heft;
         s.player.slash.reach = def.range;
         s.player.slash.base_damage = def.damage as f64;
+        s.player.slash.hit_entities.clear();
         let (fx, fz) = match s.player.facing {
             Facing::S => (0.0, 1.0),
             Facing::N => (0.0, -1.0),
@@ -465,10 +468,63 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
         let px = s.player.x;
         let pz = s.player.z;
         let reach = s.player.slash.reach;
-        let dmg = s.player.slash.base_damage;
+        let base_dmg = s.player.slash.base_damage;
         let sx = s.player.slash.dir_x;
         let sz = s.player.slash.dir_z;
+        let mom_speed = s.player.mom_speed;
+        let combo = s.player.bounce_combo;
 
+        for m in &mut s.monsters {
+            if m.mode == crate::monsters::types::EnemyMode::Dead || s.player.slash.hit_entities.contains(&m.id) {
+                continue;
+            }
+            let dx = m.x - px;
+            let dz = m.z - pz;
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist <= reach + m.radius {
+                let dot = if dist > 0.001 { (dx * sx + dz * sz) / dist } else { 1.0 };
+                if dot > 0.15 {
+                    s.player.slash.hit_entities.push(m.id);
+                    let (incoming_dmg, _is_crit) = crate::combat::damage::calculate_player_damage(
+                        base_dmg,
+                        0,
+                        1.0,
+                        mom_speed,
+                        0.15,
+                        1.5,
+                        false,
+                    );
+                    let hit = crate::combat::damage::resolve_enemy_hit(
+                        m.hp,
+                        m.max_hp,
+                        incoming_dmg,
+                        dx,
+                        dz,
+                        crate::combat::damage::KNOCKBACK_ZOMBIE * 3.0,
+                        combo,
+                        mom_speed,
+                    );
+                    m.hp = (m.hp - hit.damage_dealt).max(0.0);
+                    m.stagger_t = 0.35;
+                    m.kbx = hit.knockback_x;
+                    m.kbz = hit.knockback_z;
+                    if hit.is_kill {
+                        m.mode = crate::monsters::types::EnemyMode::Dead;
+                        s.gold_run += (m.damage as i64) * 2 + hit.gold_awarded;
+                        s.jackpots += 1;
+                        s.kills += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Ball form / pinball momentum ramming monsters
+    if s.player.is_ball() || s.player.mom_speed >= 4.5 {
+        let px = s.player.x;
+        let pz = s.player.z;
+        let mom_speed = s.player.mom_speed;
+        let combo = s.player.bounce_combo;
         for m in &mut s.monsters {
             if m.mode == crate::monsters::types::EnemyMode::Dead {
                 continue;
@@ -476,18 +532,27 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             let dx = m.x - px;
             let dz = m.z - pz;
             let dist = (dx * dx + dz * dz).sqrt();
-            if dist <= reach + m.radius {
-                let dot = (dx * sx + dz * sz) / dist.max(0.001);
-                if dot > 0.25 {
-                    m.hp -= dmg;
-                    m.stagger_t = 0.35;
-                    m.kbx = dx / dist.max(0.001) * 3.5;
-                    m.kbz = dz / dist.max(0.001) * 3.5;
-                    if m.hp <= 0.0 {
-                        m.mode = crate::monsters::types::EnemyMode::Dead;
-                        s.gold_run += (m.damage as i64) * 2;
-                        s.jackpots += 1;
-                    }
+            if dist <= (PLAYER_R + m.radius + 0.15) {
+                let ram_base = (mom_speed * 1.6).max(6.0);
+                let hit = crate::combat::damage::resolve_enemy_hit(
+                    m.hp,
+                    m.max_hp,
+                    ram_base,
+                    if mom_speed > 0.1 { s.player.mom_x } else { dx },
+                    if mom_speed > 0.1 { s.player.mom_z } else { dz },
+                    crate::combat::damage::KNOCKBACK_ZOMBIE * 4.5,
+                    combo,
+                    mom_speed,
+                );
+                m.hp = (m.hp - hit.damage_dealt).max(0.0);
+                m.stagger_t = 0.45;
+                m.kbx = hit.knockback_x;
+                m.kbz = hit.knockback_z;
+                if hit.is_kill {
+                    m.mode = crate::monsters::types::EnemyMode::Dead;
+                    s.gold_run += (m.damage as i64) * 3 + hit.gold_awarded;
+                    s.jackpots += 1;
+                    s.kills += 1;
                 }
             }
         }
@@ -582,7 +647,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
 
     // ── Dodge Roll (Space while moving) ──
-    if input.dodge && s.player.roll_t < 0.0 && s.cur_speed >= ROLL_MIN_SPEED {
+    if input.dodge && s.player.roll_t < 0.0 && (s.player.moving || s.cur_speed >= 0.2 || len > 1e-4) {
         let (rx, rz) = if len > 1e-4 {
             (input.move_x / len, input.move_z / len)
         } else {

@@ -799,36 +799,36 @@ pub struct StandingMonster;
 
 #[derive(Component)]
 pub struct LiveMonster {
-    pub monster: pk_core::monsters::LiveMonster,
+    pub id: u32,
     pub kind_index: usize,
+    pub last_hp: f64,
+    pub flash_t: f32,
 }
 
-/// Spawns live dynamic monsters across all authored spawn points with flow-field AI.
+/// Spawns live dynamic monsters from the sim's active monster list.
 pub fn spawn_live_horde(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
     art: &MonsterArt,
-    floor: &AuthoredFloor,
+    monsters: &[pk_core::monsters::LiveMonster],
 ) -> Vec<Entity> {
     let mut spawned = Vec::new();
     let rot = billboard(0.0);
     let quad_h = 1.15f32;
 
-    for (n, s) in floor.plan.spawns.iter().enumerate() {
-        let (cx, cz) = tile_center(&floor.grid, s.i, s.j);
-        let kind_index = n % 9;
-        let kind = match kind_index {
-            1 => pk_core::monsters::EnemyKind::Brute,
-            2 => pk_core::monsters::EnemyKind::Croaker,
-            3 => pk_core::monsters::EnemyKind::Goblin,
-            4 => pk_core::monsters::EnemyKind::Jester,
-            5 => pk_core::monsters::EnemyKind::Reaper,
-            6 => pk_core::monsters::EnemyKind::Slime,
-            7 => pk_core::monsters::EnemyKind::Spider,
-            8 => pk_core::monsters::EnemyKind::Stiltneck,
-            _ => pk_core::monsters::EnemyKind::Zombie,
+    for m in monsters {
+        let kind_index = match m.kind {
+            pk_core::monsters::EnemyKind::Brute => 1,
+            pk_core::monsters::EnemyKind::Croaker => 2,
+            pk_core::monsters::EnemyKind::Goblin => 3,
+            pk_core::monsters::EnemyKind::Jester => 4,
+            pk_core::monsters::EnemyKind::Reaper => 5,
+            pk_core::monsters::EnemyKind::Slime => 6,
+            pk_core::monsters::EnemyKind::Spider => 7,
+            pk_core::monsters::EnemyKind::Stiltneck => 8,
+            _ => 0,
         };
-        let monster = pk_core::monsters::LiveMonster::new((n + 1) as u32, kind, cx, cz);
 
         let clips = match kind_index {
             1 => art.brute.as_ref().unwrap_or(&art.zombie),
@@ -842,16 +842,24 @@ pub fn spawn_live_horde(
             _ => &art.zombie,
         };
 
+        let base_mat = materials.get(&clips.material).cloned().unwrap_or_default();
+        let monster_mat = materials.add(base_mat);
+
         let quad_w = quad_h * clips.aspect;
         let mesh = Mesh::from(bevy::math::primitives::Rectangle::new(quad_w, quad_h));
 
         let ent = commands
             .spawn((
                 AuthoredDecor,
-                LiveMonster { monster, kind_index },
+                LiveMonster {
+                    id: m.id,
+                    kind_index,
+                    last_hp: m.hp,
+                    flash_t: 0.0,
+                },
                 Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(clips.material.clone()),
-                Transform::from_translation(Vec3::new(cx as f32, quad_h * 0.5, cz as f32))
+                MeshMaterial3d(monster_mat),
+                Transform::from_translation(Vec3::new(m.x as f32, quad_h * 0.5, m.z as f32))
                     .with_rotation(rot),
             ))
             .id();

@@ -37,8 +37,8 @@ pub mod tavern_fx;
 use crate::post::sizing::PPU;
 use crate::AppState;
 use material::{particle_mesh, ParticleInstance, ParticleMaterial};
-use pool::{Particles, CAP, MAX_DT};
-
+use pool::{CAP, MAX_DT};
+pub use pool::Particles;
 pub use tavern_fx::SparkBurst;
 
 /// Handles for the single entity everything renders through.
@@ -60,19 +60,22 @@ impl Plugin for FxPlugin {
         app.add_plugins(MaterialPlugin::<ParticleMaterial>::default())
             .init_resource::<Particles>()
             .init_resource::<tavern_fx::AmbientTimer>()
+            .init_resource::<tavern_fx::DungeonAmbientTimer>()
             .add_message::<SparkBurst>()
             .add_systems(Startup, setup_particle_render)
             .add_systems(
                 Update,
                 (
                     tavern_fx::tavern_ambient.run_if(in_state(AppState::Tavern)),
+                    tavern_fx::dungeon_ambient.run_if(in_state(AppState::Dungeon)),
                     tavern_fx::drain_spark_bursts,
                     step_pool,
                     upload_pool,
                 )
                     .chain(),
             )
-            .add_systems(OnExit(AppState::Tavern), tavern_fx::clear_on_exit);
+            .add_systems(OnExit(AppState::Tavern), tavern_fx::clear_on_exit)
+            .add_systems(OnExit(AppState::Dungeon), tavern_fx::clear_on_exit);
     }
 }
 

@@ -475,7 +475,15 @@ fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
     })
 }
 
-fn exit_floor_loading(mut commands: Commands, q: Query<Entity, With<FloorLoadingScene>>) {
+fn exit_floor_loading(
+    mut commands: Commands,
+    q: Query<Entity, With<FloorLoadingScene>>,
+    gui: Option<crate::gui::Gui>,
+) {
+    if let Some(mut gui) = gui {
+        gui.layer.clear();
+        *gui.views = crate::gui::GuiViews::default();
+    }
     for e in &q {
         commands.entity(e).despawn();
     }

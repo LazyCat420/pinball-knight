@@ -1034,7 +1034,11 @@ fn setup_dungeon(
     mut prepared: ResMut<PreparedFloor>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
     mut ambient: ResMut<AmbientLight>,
+    mut gui: gui::Gui,
 ) {
+    gui.layer.clear();
+    *gui.views = gui::GuiViews::default();
+
     // The intro's black hold ends the moment the dungeon exists (legacy
     // setIntroFade(0) right after onDone()).
     for mut bg in &mut fade_q {
@@ -1101,11 +1105,16 @@ fn setup_dungeon(
         sim.bumpers_lit = 0;
         // Populate live monster entities in the core simulation
         for (idx, spawn_tile) in f.plan.spawns.iter().enumerate() {
-            let kind = match idx % 4 {
-                0 => pk_core::monsters::types::EnemyKind::Zombie,
+            let kind = match idx % 9 {
                 1 => pk_core::monsters::types::EnemyKind::Brute,
-                2 => pk_core::monsters::types::EnemyKind::Jester,
-                _ => pk_core::monsters::types::EnemyKind::Goblin,
+                2 => pk_core::monsters::types::EnemyKind::Croaker,
+                3 => pk_core::monsters::types::EnemyKind::Goblin,
+                4 => pk_core::monsters::types::EnemyKind::Jester,
+                5 => pk_core::monsters::types::EnemyKind::Reaper,
+                6 => pk_core::monsters::types::EnemyKind::Slime,
+                7 => pk_core::monsters::types::EnemyKind::Spider,
+                8 => pk_core::monsters::types::EnemyKind::Stiltneck,
+                _ => pk_core::monsters::types::EnemyKind::Zombie,
             };
             let (sx, sz) = (spawn_tile.i as f64 + 0.5, spawn_tile.j as f64 + 0.5);
             sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
@@ -1196,9 +1205,13 @@ fn setup_dungeon(
         }
         commands.insert_resource(anchors);
         // The floor's active live monsters with flow-field AI and directional rigs.
-        for e in
-            authored_render::spawn_live_horde(&mut commands, &mut meshes, &monster_art, f)
-        {
+        for e in authored_render::spawn_live_horde(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &monster_art,
+            &sim.monsters,
+        ) {
             commands.entity(e).insert(DungeonScene);
         }
         commands.spawn((
@@ -1448,6 +1461,8 @@ fn sync_knight(
     mut spin_tracker: ResMut<ball_anim::MarbleSpinTracker>,
     mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
+    mut bursts: MessageWriter<fx::SparkBurst>,
+    mut fx: ResMut<fx::Particles>,
     mut ghost_timer: Local<f32>,
     mut last_slash_active: Local<bool>,
     mut last_squash_active: Local<bool>,
@@ -1496,12 +1511,17 @@ fn sync_knight(
             spark_color,
             6,
         );
+        bursts.write(fx::SparkBurst {
+            pos: tf.translation,
+            dir: Vec2::new(normal.x, normal.z),
+            count: 12,
+        });
     }
     *last_squash_active = sim.0.player.squash_t > 0.0;
 
     // Spawn slash trail on attack swing start
     if is_attacking && !*last_slash_active {
-        let (fx, fz) = match sim.0.player.facing {
+        let (fx_dir, fz_dir) = match sim.0.player.facing {
             Facing::S => (0.0, 1.0),
             Facing::N => (0.0, -1.0),
             Facing::E => (1.0, 0.0),
@@ -1513,11 +1533,21 @@ fn sync_knight(
             &mut meshes,
             &mut materials,
             tf.translation,
-            Vec2::new(fx as f32, fz as f32),
+            Vec2::new(fx_dir as f32, fz_dir as f32),
             slash_color,
         );
+        bursts.write(fx::SparkBurst {
+            pos: tf.translation + Vec3::new(fx_dir as f32 * 0.6, 0.4, fz_dir as f32 * 0.6),
+            dir: Vec2::new(fx_dir as f32, fz_dir as f32),
+            count: 6,
+        });
     }
     *last_slash_active = is_attacking;
+
+    // Dust particles when rolling or sprinting
+    if (is_rolling || sim.0.player.sprint_charge > 0.6) && fx.rng.unit() < 0.3 {
+        fx.mote(tf.translation.x, 0.2, tf.translation.z);
+    }
 
     // Billboard / Roll Rotation
     if let Ok(cam_tf) = cam.single() {
@@ -1657,9 +1687,11 @@ fn sync_knight(
 }
 
 fn step_live_monsters(
+    mut commands: Commands,
     time: Res<Time>,
     sim: Res<Sim>,
     mut monster_q: Query<(
+        Entity,
         &mut Transform,
         &mut authored_render::LiveMonster,
         &MeshMaterial3d<StandardMaterial>,
@@ -1667,67 +1699,117 @@ fn step_live_monsters(
     mut materials: ResMut<Assets<StandardMaterial>>,
     monster_art: Res<authored_render::MonsterArt>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<authored_render::LiveMonster>)>,
+    mut coin_pool: ResMut<coins_render::DungeonCoinPool>,
+    mut bursts: MessageWriter<fx::SparkBurst>,
 ) {
-    let dt = (time.delta_secs_f64()).min(0.05);
-    if dt <= 0.0 {
-        return;
-    }
-    let px = sim.0.player.x;
-    let pz = sim.0.player.z;
-    let (pi, pj) = pk_core::grid::world_to_tile(&sim.0.grid, px, pz);
-    let flow_dist = pk_core::flow_field::bfs_distances(&sim.0.grid, pi, pj);
-
-    let mut live_monsters: Vec<pk_core::monsters::LiveMonster> = monster_q
-        .iter()
-        .map(|(_, m, _)| m.monster.clone())
-        .collect();
-
-    pk_core::monsters::update_monsters_horde(&mut live_monsters, &sim.0.grid, px, pz, &flow_dist, dt);
-
     let Ok(cam_tf) = cam.single() else {
         return;
     };
+    let dt = time.delta_secs();
 
-    for (i, (mut tf, mut m, mat_handle)) in monster_q.iter_mut().enumerate() {
-        if i < live_monsters.len() {
-            m.monster = live_monsters[i].clone();
-            tf.translation.x = m.monster.x as f32;
-            tf.translation.z = m.monster.z as f32;
-            tf.rotation = cam_tf.rotation;
+    let sim_map: std::collections::HashMap<u32, &pk_core::monsters::LiveMonster> = sim
+        .0
+        .monsters
+        .iter()
+        .map(|m| (m.id, m))
+        .collect();
 
-            let clips = match m.kind_index {
-                1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
-                2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
-                3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
-                4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
-                5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
-                6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
-                7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
-                8 => monster_art.stiltneck.as_ref().unwrap_or(&monster_art.zombie),
-                _ => &monster_art.zombie,
-            };
+    for (entity, mut tf, mut comp, mat_handle) in monster_q.iter_mut() {
+        let Some(sm) = sim_map.get(&comp.id) else {
+            continue;
+        };
 
-            let is_moving = m.monster.vx.abs() > 0.05 || m.monster.vz.abs() > 0.05;
-            let cells = if is_moving {
-                if !clips.walk.is_empty() {
-                    &clips.walk
-                } else {
-                    &clips.idle
-                }
+        // If dead, despawn entity and spawn death gore + coins
+        if !sm.is_alive() {
+            bursts.write(fx::SparkBurst {
+                pos: tf.translation,
+                dir: Vec2::new(0.0, 1.0),
+                count: 16,
+            });
+            coins_render::spawn_coin_burst(
+                &mut coin_pool,
+                sm.x,
+                sm.z,
+                (sm.damage as i64 * 3).max(5),
+                sm.id,
+            );
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        // Damage reaction: took damage
+        if sm.hp < comp.last_hp {
+            let dmg = (comp.last_hp - sm.hp).round() as i32;
+            comp.last_hp = sm.hp;
+            comp.flash_t = 0.12;
+
+            // Spawn floating damage number
+            combat_feedback::spawn_floating_damage(
+                &mut commands,
+                tf.translation,
+                dmg,
+                false,
+                Color::srgb(1.0, 0.3, 0.2),
+            );
+
+            // Spawn hit sparks
+            bursts.write(fx::SparkBurst {
+                pos: tf.translation + Vec3::new(0.0, 0.4, 0.0),
+                dir: Vec2::new(
+                    (sm.kbx as f32).clamp(-1.0, 1.0),
+                    (sm.kbz as f32).clamp(-1.0, 1.0),
+                ),
+                count: 8,
+            });
+        }
+
+        // Hurt flash
+        if comp.flash_t > 0.0 {
+            comp.flash_t -= dt;
+            if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                mat.base_color = Color::srgb(2.5, 2.5, 2.5); // Bright white hurt flash
+            }
+        } else if let Some(mat) = materials.get_mut(&mat_handle.0) {
+            mat.base_color = Color::WHITE;
+        }
+
+        // Update position from sim
+        tf.translation.x = sm.x as f32;
+        tf.translation.z = sm.z as f32;
+        tf.rotation = cam_tf.rotation;
+
+        let clips = match comp.kind_index {
+            1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
+            2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
+            3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
+            4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
+            5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
+            6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
+            7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
+            8 => monster_art.stiltneck.as_ref().unwrap_or(&monster_art.zombie),
+            _ => &monster_art.zombie,
+        };
+
+        let is_moving = sm.kbx.abs() > 0.05 || sm.kbz.abs() > 0.05 || sm.stagger_t > 0.0;
+        let cells = if is_moving {
+            if !clips.walk.is_empty() {
+                &clips.walk
             } else {
                 &clips.idle
-            };
+            }
+        } else {
+            &clips.idle
+        };
 
-            if !cells.is_empty() {
-                let fps = if is_moving { 8 } else { 4 };
-                let frame = ((sim.0.tick + i as u64 * 7) * fps / 60) as usize % cells.len();
-                let [u, v, uw, vh] = cells[frame];
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    mat.uv_transform = Affine2 {
-                        matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
-                        translation: Vec2::new(u, v),
-                    };
-                }
+        if !cells.is_empty() {
+            let fps = if is_moving { 8 } else { 4 };
+            let frame = ((sim.0.tick + comp.id as u64 * 7) * fps / 60) as usize % cells.len();
+            let [u, v, uw, vh] = cells[frame];
+            if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                mat.uv_transform = Affine2 {
+                    matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
+                    translation: Vec2::new(u, v),
+                };
             }
         }
     }
