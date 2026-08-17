@@ -285,79 +285,102 @@ fn spawn_part(
 
     match p.kind.as_str() {
         "bumper" => {
-            // Metallic chrome base ring
+            // Dark steel base cylinder (legacy C_STEEL_DK 0x544e63)
             entities.push(
                 commands
                     .spawn((
                         AuthoredDecor,
-                        Mesh3d(meshes.add(Cylinder::new(0.38, 0.08))),
+                        Mesh3d(meshes.add(Cylinder::new(0.34, 0.16))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.75, 0.78, 0.82),
-                            metallic: 0.9,
-                            perceptual_roughness: 0.2,
-                            ..default()
-                        })),
-                        Transform::from_xyz(x as f32, 0.04, z as f32),
-                    ))
-                    .id(),
-            );
-            // Glowing neon mushroom cap
-            entities.push(
-                commands
-                    .spawn((
-                        AuthoredDecor,
-                        Mesh3d(meshes.add(Cylinder::new(0.32, 0.22))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xff3366),
-                            emissive: LinearRgba::from(c(0xff1744)) * 1.5,
-                            metallic: 0.4,
+                            base_color: c(0x544e63),
+                            metallic: 0.7,
                             perceptual_roughness: 0.3,
                             ..default()
                         })),
-                        Transform::from_xyz(x as f32, 0.18, z as f32),
+                        Transform::from_xyz(x as f32, 0.08, z as f32),
                     ))
                     .id(),
             );
-            // Top jewel cap
+            // Golden accent torus ring (legacy C_GOLD 0xf0a63c)
             entities.push(
                 commands
                     .spawn((
                         AuthoredDecor,
-                        Mesh3d(meshes.add(Sphere::new(0.12))),
+                        Mesh3d(meshes.add(Torus::new(0.045, 0.30))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(1.0, 0.9, 0.4),
-                            emissive: LinearRgba::from(Color::srgb(1.0, 0.8, 0.0)) * 2.0,
+                            base_color: c(0xf0a63c),
+                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.8,
+                            metallic: 0.8,
+                            perceptual_roughness: 0.2,
                             ..default()
                         })),
-                        Transform::from_xyz(x as f32, 0.30, z as f32),
+                        Transform::from_xyz(x as f32, 0.17, z as f32)
+                            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                    ))
+                    .id(),
+            );
+            // Glowing arcane dome (legacy C_ARCANE 0x6fd0e8)
+            entities.push(
+                commands
+                    .spawn((
+                        AuthoredDecor,
+                        Mesh3d(meshes.add(Sphere::new(0.26))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: c(0x6fd0e8),
+                            emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
+                            perceptual_roughness: 0.2,
+                            metallic: 0.1,
+                            ..default()
+                        })),
+                        Transform::from_xyz(x as f32, 0.16, z as f32),
                     ))
                     .id(),
             );
         }
         "booster" | "boostcorner" | "boostcurve" => {
-            // Dark steel runway base plate
+            // Dark base plate
             entities.push(
                 commands
                     .spawn((
                         AuthoredDecor,
-                        Mesh3d(meshes.add(Cuboid::new(0.72, 0.02, 0.72))),
+                        Mesh3d(meshes.add(Cuboid::new(0.72, 0.04, 0.56))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.08, 0.10, 0.14),
-                            metallic: 0.9,
-                            perceptual_roughness: 0.3,
+                            base_color: c(0x1a1f2b),
+                            metallic: 0.8,
+                            perceptual_roughness: 0.4,
                             ..default()
                         })),
-                        xf.with_translation(Vec3::new(x as f32, 0.01, z as f32)),
+                        xf.with_translation(Vec3::new(x as f32, 0.02, z as f32)),
                     ))
                     .id(),
             );
-            // 3 Forward-Pointing Chevron Arrows (> > >)
-            let chevron_color = c(0x00e5ff);
+            // 2 Glowing arcane guide strips down each side
+            let strip_mat = materials.add(StandardMaterial {
+                base_color: c(0x6fd0e8),
+                emissive: LinearRgba::from(c(0x6fd0e8)) * 1.5,
+                unlit: true,
+                ..default()
+            });
+            let strip_mesh = meshes.add(Cuboid::new(0.72, 0.05, 0.05));
+            for zside in [-0.25f32, 0.25f32] {
+                entities.push(
+                    commands
+                        .spawn((
+                            AuthoredDecor,
+                            Mesh3d(strip_mesh.clone()),
+                            MeshMaterial3d(strip_mat.clone()),
+                            xf * Transform::from_xyz(0.0, 0.04, zside),
+                        ))
+                        .id(),
+                );
+            }
+            // 3 Forward-pointing golden chevron arrows
+            let chevron_color = c(0xf0a63c);
             let chevron_emissive = LinearRgba::from(chevron_color);
             let arrow_mesh = meshes.add(Cuboid::new(0.36, 0.04, 0.09));
             for k in 0..3 {
                 let offset = -0.18 + (k as f32) * 0.18;
-                let chevron_tf = xf * Transform::from_xyz(0.0, 0.03, offset);
+                let chevron_tf = xf * Transform::from_xyz(0.0, 0.04, offset);
                 entities.push(
                     commands
                         .spawn((
@@ -369,7 +392,7 @@ fn spawn_part(
                             Mesh3d(arrow_mesh.clone()),
                             MeshMaterial3d(materials.add(StandardMaterial {
                                 base_color: chevron_color,
-                                emissive: chevron_emissive * 1.5,
+                                emissive: chevron_emissive * 1.8,
                                 unlit: true,
                                 ..default()
                             })),
@@ -386,10 +409,10 @@ fn spawn_part(
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.64, 0.28, 0.24))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xe8556d),
-                            emissive: LinearRgba::from(c(0xe8556d)) * 0.8,
+                            base_color: c(0x544e63),
+                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.4,
                             metallic: 0.6,
-                            perceptual_roughness: 0.3,
+                            perceptual_roughness: 0.4,
                             ..default()
                         })),
                         xf.with_translation(Vec3::new(x as f32, 0.14, z as f32)),
@@ -404,8 +427,8 @@ fn spawn_part(
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cylinder::new(0.32, 0.06))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0x9d7bea),
-                            emissive: LinearRgba::from(c(0x9d7bea)) * 1.8,
+                            base_color: c(0x6fd0e8),
+                            emissive: LinearRgba::from(c(0x6fd0e8)) * 1.8,
                             metallic: 0.7,
                             perceptual_roughness: 0.3,
                             ..default()
@@ -422,10 +445,10 @@ fn spawn_part(
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.55, 0.36, 0.16))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xf0a63c),
-                            emissive: LinearRgba::from(c(0xf0a63c)) * 0.5,
-                            metallic: 0.5,
-                            perceptual_roughness: 0.4,
+                            base_color: c(0x544e63),
+                            emissive: LinearRgba::from(c(0x6fd0e8)) * 0.6,
+                            metallic: 0.7,
+                            perceptual_roughness: 0.3,
                             ..default()
                         })),
                         xf.with_translation(Vec3::new(x as f32, 0.18, z as f32)),
@@ -440,8 +463,8 @@ fn spawn_part(
                         AuthoredDecor,
                         Mesh3d(meshes.add(Cuboid::new(0.36, 0.38, 0.14))),
                         MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: c(0xffd54f),
-                            emissive: LinearRgba::from(c(0xffd54f)) * 1.2,
+                            base_color: c(0xf0a63c),
+                            emissive: LinearRgba::from(c(0xf0a63c)) * 1.2,
                             metallic: 0.8,
                             perceptual_roughness: 0.2,
                             ..default()

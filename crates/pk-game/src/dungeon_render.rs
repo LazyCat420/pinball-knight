@@ -772,12 +772,11 @@ pub(crate) fn spawn_grid_meshes(
         }
     }
 
-    let arc_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
-        perceptual_roughness: 0.5,
-        metallic: 0.4,
-        ..default()
-    });
+    let arc_mat = materials.add(face(
+        &tex.wall,
+        &tex.wall_normal,
+        wall_tint(pk_core::surfaces::WALL_STONE),
+    ));
     if !plan.arcs.is_empty() {
         out.push(
             commands
@@ -806,22 +805,59 @@ pub(crate) fn spawn_grid_meshes(
     }
 
     if !plan.banners.is_empty() {
-        let banner_geo = Mesh::from(Cuboid::new(0.46, 0.78, 0.02));
-        let banner_mat = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.82, 0.18, 0.22),
-            perceptual_roughness: 0.9,
+        let banner_geo = Mesh::from(bevy::math::primitives::Rectangle::new(0.46, 0.78));
+        let blood_tex = images.add(crate::maze_art::make_banner_image(false));
+        let arcane_tex = images.add(crate::maze_art::make_banner_image(true));
+
+        let blood_mat = materials.add(StandardMaterial {
+            base_color_texture: Some(blood_tex),
+            alpha_mode: AlphaMode::Mask(0.5),
+            cull_mode: None,
+            perceptual_roughness: 0.92,
             metallic: 0.0,
             ..default()
         });
-        out.push(
-            commands
-                .spawn((
-                    Mesh3d(meshes.add(merge(&banner_geo, &plan.banners))),
-                    MeshMaterial3d(banner_mat),
-                    Transform::IDENTITY,
-                ))
-                .id(),
-        );
+        let arcane_mat = materials.add(StandardMaterial {
+            base_color_texture: Some(arcane_tex),
+            alpha_mode: AlphaMode::Mask(0.5),
+            cull_mode: None,
+            perceptual_roughness: 0.92,
+            metallic: 0.0,
+            ..default()
+        });
+
+        let mut blood_placements = Vec::new();
+        let mut arcane_placements = Vec::new();
+        for b in &plan.banners {
+            if ((b.pos.x.round() as i32 + b.pos.z.round() as i32) % 2) == 0 {
+                arcane_placements.push(*b);
+            } else {
+                blood_placements.push(*b);
+            }
+        }
+
+        if !blood_placements.is_empty() {
+            out.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(merge(&banner_geo, &blood_placements))),
+                        MeshMaterial3d(blood_mat),
+                        Transform::IDENTITY,
+                    ))
+                    .id(),
+            );
+        }
+        if !arcane_placements.is_empty() {
+            out.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(merge(&banner_geo, &arcane_placements))),
+                        MeshMaterial3d(arcane_mat),
+                        Transform::IDENTITY,
+                    ))
+                    .id(),
+            );
+        }
     }
 
     if !plan.crates.is_empty() {
