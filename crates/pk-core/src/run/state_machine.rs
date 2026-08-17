@@ -1,6 +1,6 @@
 //! Run progression state machine and floor lifecycle.
 //!
-//! PORTS: `state.ts`
+//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::draft::{generate_draft_offer, DraftOffer};
 use super::types::{FloorPhase, RunSummary};

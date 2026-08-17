@@ -7,7 +7,11 @@
 //! knockback, speed ceiling, wall breaking), plus triggers emitters on fast
 //! wall bounces and slam impacts.
 //!
-//! PORTS: `entities/marble.ts`, `entities/floor-fx.ts`, `fx/puffs.ts`, `fx/pools/trail-ribbon.ts`, `fx/floor/decals.ts`, `fx/elements/water.ts`, `fx/pools/laser-mark-field.ts`, `fx/elements/fire.ts`, `fx/elements/molten.ts`
+//! PORTS: `fx/pools/trail-ribbon.ts`, `fx/elements/water.ts`, `fx/pools/laser-mark-field.ts`, `fx/elements/fire.ts`, `fx/elements/molten.ts`
+//! PORTS-PARTIAL: `entities/marble.ts` - NOT a finished port - 12 of 45 exported names carried over (27%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `entities/floor-fx.ts` - NOT a finished port - 3 of 9 exported names carried over (33%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `fx/puffs.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `fx/floor/decals.ts` - NOT a finished port - 0 of 16 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod decals;
 pub mod fire_fx;

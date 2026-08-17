@@ -2,7 +2,7 @@
 //!
 //! Measures local 5x5 tile neighborhood diversity folded under the eight symmetries of the square (D4).
 //!
-//! PORTS: `dev/pattern-census.ts`
+//! PORTS-PARTIAL: `dev/pattern-census.ts` - NOT a finished port - 71 rust code lines against 699 legacy (10%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::grid::{at, Grid, T_FLOOR};
 use std::collections::HashMap;

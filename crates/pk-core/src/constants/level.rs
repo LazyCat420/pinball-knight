@@ -1,6 +1,6 @@
 //! Dungeon floor progression budgets and difficulty metrics.
 //!
-//! PORTS: `constants/level.ts`
+//! PORTS-PARTIAL: `constants/level.ts` - NOT a finished port - 0 of 15 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const FLOOR_BUDGET_BASE: usize = 14;
 pub const FLOOR_BUDGET_STEP: usize = 3;

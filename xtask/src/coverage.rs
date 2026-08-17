@@ -668,27 +668,6 @@ fn classify<'a>(
     t
 }
 
-/// Every legacy file carrying a FULL `PORTS:` claim, and the modules claiming it.
-///
-/// The seam `cargo xtask audit` reads. Kept here rather than re-scanning there,
-/// so the two instruments cannot disagree about what was claimed — they must
-/// only disagree about whether the claim is any good.
-pub fn full_claims(root: &Path) -> BTreeMap<String, Vec<String>> {
-    let led = scan_rust(root);
-    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (path, claims) in &led.claims {
-        let mods: Vec<String> = claims
-            .iter()
-            .filter(|(_, c)| *c == Claim::Ports)
-            .map(|(m, _)| m.clone())
-            .collect();
-        if !mods.is_empty() {
-            out.insert(path.clone(), mods);
-        }
-    }
-    out
-}
-
 /// The files the ledger STILL CREDITS after the depth gate, and who claims them.
 ///
 /// `full_claims` is the declaration view — what modules assert. This is the
@@ -1224,30 +1203,202 @@ mod tests {
         );
     }
 
-    /// THE THREE FILES THE HEURISTIC GOT WRONG, pinned against the real tree.
+    /// THE FILES NOBODY MAY DECLARE FINISHED YET, pinned against the real tree.
     ///
-    /// `scripts/pk-coverage.sh` scores all three as covered. This asserts the
-    /// ledger does not — and it reads the actual workspace, so it fails the day
-    /// someone writes a `PORTS:` claim for a file that is not really ported.
+    /// ## Why this list exists, and why deleting a row is the sign-off
+    ///
+    /// This test was built with three rows and the docstring *"it fails the day
+    /// someone writes a `PORTS:` claim for a file that is not really ported"*.
+    /// Between 2026-08-13 and 08-14 its rows were deleted one at a time —
+    /// `maze/decorate.ts` in 5b8a9c6, `entities/player.ts` in 6fad5ae, whose
+    /// commit message read *"completing 100% of Tier 1 files"* — and with the
+    /// guard gone, 67,370 legacy lines were credited to modules that do not
+    /// implement them. Only `maze/build.ts` survived, which is the entire reason
+    /// it was the last remaining "partial" on a ledger reading 97.9%.
+    ///
+    /// So the rule is now explicit: **a row leaves this list only in the commit
+    /// that finishes that file, and the stage gate proving it must be named in
+    /// the commit message.** Deleting a row IS the sign-off artifact. If that
+    /// feels like an obstacle, it is working.
+    ///
+    /// The assertion is "no claimant may say WHOLE", not "no claim may exist" —
+    /// several of these now have genuine partial ports, and an honest
+    /// `PORTS-PARTIAL` with its remainder written down is exactly what we want
+    /// to encourage.
     #[test]
     fn the_biggest_gaps_are_reported_as_gaps() {
+        // (legacy path, its line count when pinned, what is still missing)
+        const UNFINISHED: &[(&str, usize, &str)] = &[
+            ("maze/build.ts", 1898, "arches, banners, stairs marker, cracked bands"),
+            ("maze/decorate.ts", 3169, "the whole decoration pass — 21 exports, 5 carried"),
+            ("entities/player.ts", 2445, "every verb; 79 rust lines against 1,560"),
+            ("state.ts", 1556, "the mutable spine the whole game reads"),
+            ("engine/render/pixel-pass.ts", 1993, "the post chain: SSAO, bloom, outline, dither, palette"),
+            ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
+            ("hud-face.ts", 1330, "the animated portrait"),
+            ("entities/zombie.ts", 1217, "0 of 5 exports; STATS/updateZombies/movementOf absent"),
+            ("entities/combat.ts", 1204, "0 of 22 exports carried"),
+            ("gui/im.ts", 1052, "the immediate-mode kit every screen stands on"),
+            ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
+            ("entities/marble.ts", 1005, "12 of 45 exports; the physics accessors are UNWIRED"),
+            ("abilities.ts", 916, "6 abilities, ranks, mana, Blood Price"),
+            ("legacy/src/scenes/tavern/core.ts", 906, "46 rust lines against 536"),
+            ("cards.ts", 885, "rarities, levels, shiny, aggregation — blocks two vendors"),
+            ("boss.ts", 772, "the KING: slam, bone throw, home tiles, bar"),
+            ("gui/screens/debug.ts", 717, "the backtick console"),
+            ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
+            ("constants/render.ts", 671, "0 of 69 exports — the module is INVENTED, not transcribed"),
+            ("boot/sheets.ts", 586, "27 rust lines against 234"),
+        ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("workspace root");
         let led = scan_rust(root);
-        // `maze/build.ts` IS partly ported (textures + geometry) and must be
-        // declared PARTIAL by every claimant — never whole.
-        let build = led
-            .claims
-            .get("maze/build.ts")
-            .expect("build.ts is claimed");
-        for (module, claim) in build {
+        let legacy = scan_legacy(root);
+        let siblings = scan_siblings(root);
+        for (path, pinned, missing) in UNFINISHED {
+            let size = legacy.get(*path).or_else(|| siblings.get(*path));
             assert!(
-                matches!(claim, Claim::Partial(_)),
-                "{module} claims maze/build.ts WHOLE; ~700 of its 1,834 lines are \
-                 excluded painters and the architecture pass is unported"
+                size.is_some(),
+                "{path} is on the unfinished list but is not in the legacy tree — \
+                 if the oracle moved it, move this row, do not delete it"
             );
+            // The pin is a courtesy to the reader, not an assertion: legacy is
+            // frozen, but a rounding of what counts as a line must not turn this
+            // guard red for the wrong reason.
+            let _ = pinned;
+            let Some(claims) = led.claims.get(*path) else {
+                continue;
+            };
+            for (module, claim) in claims {
+                assert!(
+                    matches!(claim, Claim::Partial(_)),
+                    "{module} declares `PORTS: {path}` — WHOLE. Still missing: {missing}.\n\
+                     If it is genuinely finished, delete its row from UNFINISHED in the \
+                     same commit, and name the gate that proved it."
+                );
+            }
         }
+    }
+
+    /// A remainder someone wrote down outranks a claim someone asserted.
+    ///
+    /// The live defect this pins: `classify` used `any(Ports)`, so ONE module
+    /// claiming a file whole silently overruled every honest `PORTS-PARTIAL` on
+    /// the same file, and the file was credited in full.
+    #[test]
+    fn a_partial_claim_is_never_overridden_by_a_full_claim() {
+        let legacy = BTreeMap::from([("x.ts".to_string(), 1000usize)]);
+        let mut led = Ledger::default();
+        led.claims.insert(
+            "x.ts".to_string(),
+            vec![
+                ("a.rs".into(), Claim::Ports),
+                ("b.rs".into(), Claim::Partial("the other half".into())),
+            ],
+        );
+        // Deep enough that only the partial rule can demote it.
+        led.rust_code.insert("a.rs".to_string(), 5000);
+        let code = BTreeMap::from([("x.ts".to_string(), 900usize)]);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "a contested file is not ported");
+        assert_eq!(t.partial_lines(), 1000);
+        assert_eq!(t.conflicted.len(), 1, "and the disagreement is reported");
+    }
+
+    /// A claim too small to be the file it names cannot bank the file's lines.
+    ///
+    /// The live case: a 49-line `tavern/core.rs` credited all 906 lines of
+    /// `scenes/tavern/core.ts`.
+    #[test]
+    fn a_shallow_full_claim_is_scored_partial() {
+        let legacy = BTreeMap::from([("big.ts".to_string(), 906usize)]);
+        let code = BTreeMap::from([("big.ts".to_string(), 536usize)]);
+        let mut led = Ledger::default();
+        led.claims
+            .insert("big.ts".to_string(), vec![("stub.rs".into(), Claim::Ports)]);
+        led.rust_code.insert("stub.rs".to_string(), 46);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "46 rust lines do not port 536");
+        assert_eq!(t.shallow.len(), 1);
+
+        // The positive control: the SAME claim, deep enough, is credited. A gate
+        // that refuses everything is not a gate.
+        led.rust_code.insert("stub.rs".to_string(), 600);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 906, "a real port still passes");
+        assert!(t.shallow.is_empty());
+    }
+
+    /// Several modules splitting one file SUM — the legitimate shape.
+    ///
+    /// `economy/tavern-shop.ts` is deliberately split across five Rust modules;
+    /// if depth were per-module rather than per-file, the depth gate would
+    /// condemn the project's own recommended decomposition.
+    #[test]
+    fn modules_that_split_one_file_are_measured_together() {
+        let legacy = BTreeMap::from([("split.ts".to_string(), 500usize)]);
+        let code = BTreeMap::from([("split.ts".to_string(), 400usize)]);
+        let mut led = Ledger::default();
+        led.claims.insert(
+            "split.ts".to_string(),
+            vec![
+                ("one.rs".into(), Claim::Ports),
+                ("two.rs".into(), Claim::Ports),
+                ("three.rs".into(), Claim::Ports),
+            ],
+        );
+        for m in ["one.rs", "two.rs", "three.rs"] {
+            led.rust_code.insert(m.to_string(), 90);
+        }
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(
+            t.ported_lines(),
+            500,
+            "270 rust lines across three modules port a 400-line file"
+        );
+    }
+
+    /// A module claiming several files splits its lines across them, so one big
+    /// module cannot certify a shelf of files it merely mentions.
+    #[test]
+    fn one_module_cannot_bank_many_files_at_once() {
+        let legacy = BTreeMap::from([
+            ("a.ts".to_string(), 900usize),
+            ("b.ts".to_string(), 900usize),
+            ("c.ts".to_string(), 900usize),
+        ]);
+        let code = BTreeMap::from([
+            ("a.ts".to_string(), 800usize),
+            ("b.ts".to_string(), 800usize),
+            ("c.ts".to_string(), 800usize),
+        ]);
+        let mut led = Ledger::default();
+        for f in ["a.ts", "b.ts", "c.ts"] {
+            led.claims
+                .insert(f.to_string(), vec![("greedy.rs".into(), Claim::Ports)]);
+        }
+        // 600 lines is a credible port of ONE 800-line file (75%). Spread over
+        // three, it is 200 each (25%) and the gate refuses all three — which is
+        // the property: claiming more files DILUTES the evidence rather than
+        // multiplying the credit.
+        led.rust_code.insert("greedy.rs".to_string(), 600);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "200 lines each is not a port of 800");
+        assert_eq!(t.shallow.len(), 3);
+
+        // The contrast that makes it a measurement: the same module, claiming
+        // only one file, IS credited for it.
+        led.claims.remove("b.ts");
+        led.claims.remove("c.ts");
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 900, "600 rust lines do port one 800-line file");
     }
 
     /// An `include!`d file cannot carry `//!` — rustc rejects it outright — so

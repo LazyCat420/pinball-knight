@@ -1,6 +1,6 @@
 //! Debug Telemetry & Engine Inspector Screen.
 //!
-//! PORTS: `gui/screens/debug.ts`
+//! PORTS-PARTIAL: `gui/screens/debug.ts` - NOT a finished port - 74 rust code lines against 378 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::im::{
     fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,

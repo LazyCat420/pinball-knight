@@ -1,6 +1,7 @@
 //! Loot rewards, gold multipliers, and corpse decay.
 //!
-//! PORTS: `entities/combat.ts`, `constants/enemies.ts`
+//! PORTS: `constants/enemies.ts`
+//! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::combo::combo_kill_gold;
 use crate::enemies::CORPSE_BUDGET;

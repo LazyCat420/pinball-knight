@@ -1,6 +1,6 @@
 //! Open space metrics — geodesic barrenness fields and unfurnished dead plaza analysis.
 //!
-//! PORTS: `maze/open-space.ts`
+//! PORTS-PARTIAL: `maze/open-space.ts` - NOT a finished port - 1 of 9 exported names carried over (11%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;

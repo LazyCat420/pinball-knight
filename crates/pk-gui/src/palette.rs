@@ -5,7 +5,7 @@
 //! palette snap and picking off-palette colours meant the shader silently
 //! decided what the UI looked like.
 //!
-//! PORTS: `render/palette.ts`
+//! PORTS-PARTIAL: `render/palette.ts` - NOT a finished port - 2 of 9 exported names carried over (22%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::painter::Rgba;
 

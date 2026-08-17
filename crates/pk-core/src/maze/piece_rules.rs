@@ -1,6 +1,6 @@
 //! Piece rules — correctness validation for arc feature backing, launcher runways, and socket contracts.
 //!
-//! PORTS: `maze/piece-rules.ts`
+//! PORTS-PARTIAL: `maze/piece-rules.ts` - NOT a finished port - 74 rust code lines against 260 legacy (28%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::arc_sweeps::{has_clear_rail_runway, rail_exit, RAIL_MIN_RUNWAY};
 use super::flow_loops::{exit_ray, FlowPart};

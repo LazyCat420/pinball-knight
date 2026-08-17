@@ -1,6 +1,8 @@
 //! Enemy types, stats table, and live monster runtime data.
 //!
-//! PORTS: `constants/enemies.ts`, `bestiary.ts`, `entities/enemy-rules.ts`, `spawn/factory.ts`
+//! PORTS: `constants/enemies.ts`, `entities/enemy-rules.ts`
+//! PORTS-PARTIAL: `bestiary.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `spawn/factory.ts` - NOT a finished port - 0 of 14 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::enemies::*;
 

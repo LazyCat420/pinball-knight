@@ -2,7 +2,7 @@
 //!
 //! Port of `legacy/src/game/pinball-knight/maze/floor-rules.ts` (430 lines).
 //!
-//! PORTS: `maze/floor-rules.ts`
+//! PORTS-PARTIAL: `maze/floor-rules.ts` - NOT a finished port - 0 of 8 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 
 #[derive(Clone, Debug, PartialEq)]

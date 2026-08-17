@@ -1,6 +1,9 @@
 //! Player state, verbs, and movement physics data structures.
 //!
-//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`, `constants/player.ts`
+//! PORTS: `entities/movement.ts`
+//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `constants/player.ts` - NOT a finished port - 5 rust code lines against 77 legacy (6%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const PLAYER_RADIUS: f64 = 0.28;
 pub const PLAYER_WALK_SPEED: f64 = 4.2;

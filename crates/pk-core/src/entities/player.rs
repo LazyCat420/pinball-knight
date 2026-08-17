@@ -1,6 +1,6 @@
 //! PLAYER CONTINUOUS LOCOMOTION & COMBAT — Grid-free hero movement, sprint curves, and weapon actions.
 //!
-//! PORTS: `entities/player.ts`
+//! PORTS-PARTIAL: `entities/player.ts` - NOT a finished port - 79 rust code lines against 1560 legacy (5%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::state::{PLAYER_R, PLAYER_SPEED, SPRINT_SPEED_MULT};
 

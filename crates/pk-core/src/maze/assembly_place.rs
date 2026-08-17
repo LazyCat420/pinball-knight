@@ -1,6 +1,6 @@
 //! Assembly placer — footprint clearance checking and spatial stamping onto the maze grid.
 //!
-//! PORTS: `maze/assembly-place.ts`
+//! PORTS-PARTIAL: `maze/assembly-place.ts` - NOT a finished port - 37 rust code lines against 201 legacy (18%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::assembly::Assembly;
 use super::flow_loops::FlowPart;

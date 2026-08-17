@@ -1,6 +1,6 @@
 //! Particle puff bursts pool — deterministic high-throughput particle emitter.
 //!
-//! PORTS: `fx/puffs.ts`
+//! PORTS-PARTIAL: `fx/puffs.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const MAX_PUFFS: usize = 256;
 

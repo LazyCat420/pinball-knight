@@ -1,6 +1,8 @@
 //! Visual melee slash arc trail renderer.
 //!
-//! PORTS: `fx/system.ts`, `fx/pools/slash-pool.ts`, `render/pinball-parts.ts`
+//! PORTS: `fx/system.ts`
+//! PORTS-PARTIAL: `render/pinball-parts.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `fx/pools/slash-pool.ts` - NOT a finished port - 4 rust code lines against 109 legacy (4%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use bevy::prelude::*;
 

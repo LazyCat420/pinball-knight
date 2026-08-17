@@ -1,6 +1,6 @@
 //! Ghost Maze Workbench Console Interface — Deterministic seed progression and status descriptions.
 //!
-//! PORTS: `dev/ghost-command.ts`
+//! PORTS-PARTIAL: `dev/ghost-command.ts` - NOT a finished port - 11 rust code lines against 53 legacy (21%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::ghost_maze::GHOST_MAZE_NAME;
 

@@ -1,6 +1,6 @@
 //! BLACKJACK AUDIO SYNTHESIS — Information-dense tactile cues and table bus control.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/blackjack-audio.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/blackjack-audio.ts` - NOT a finished port - 52 rust code lines against 211 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub struct BlackjackAudioSynth;
 

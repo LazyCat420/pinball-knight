@@ -1,6 +1,6 @@
 //! Corpse run persistence — player loot recovery and multi-death pile accumulation.
 //!
-//! PORTS: `corpse-run.ts`
+//! PORTS-PARTIAL: `corpse-run.ts` - NOT a finished port - 1 of 11 exported names carried over (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CorpseItem {

@@ -1,6 +1,6 @@
 //! Floor FX — persistent ground scars and material hazard discs.
 //!
-//! PORTS: `entities/floor-fx.ts`
+//! PORTS-PARTIAL: `entities/floor-fx.ts` - NOT a finished port - 3 of 9 exported names carried over (33%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::monsters::types::{EnemyMode, LiveMonster};
 

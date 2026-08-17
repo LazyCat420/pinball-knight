@@ -1,6 +1,7 @@
 //! Projectile data structures and stats definitions.
 //!
-//! PORTS: `entities/projectiles.ts`, `constants/enemies.ts`
+//! PORTS: `constants/enemies.ts`
+//! PORTS-PARTIAL: `entities/projectiles.ts` - NOT a finished port - 1 of 13 exported names carried over (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const PROJECTILE_Y: f64 = 0.42;
 pub const MUZZLE_OFFSET: f64 = 0.35;

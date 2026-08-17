@@ -1,6 +1,6 @@
 //! Centralized Input Ownership Manager — Focus arbitrator suppressing background room interactions.
 //!
-//! PORTS: `legacy/src/utils/input-manager.ts`
+//! PORTS-PARTIAL: `legacy/src/utils/input-manager.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct InputOwnerState {

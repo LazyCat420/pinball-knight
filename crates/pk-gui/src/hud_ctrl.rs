@@ -1,6 +1,6 @@
 //! HUD Controller Shim — Immediate-mode HUD screen coordinator and layout switcher.
 //!
-//! PORTS: `hud.ts`
+//! PORTS-PARTIAL: `hud.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HudMode {

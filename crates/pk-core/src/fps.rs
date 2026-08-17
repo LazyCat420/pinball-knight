@@ -1,6 +1,6 @@
 //! FPS and Frame Cadence Tracker.
 //!
-//! PORTS: `fps.ts`
+//! PORTS-PARTIAL: `fps.ts` - NOT a finished port - 54 rust code lines against 184 legacy (29%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::collections::VecDeque;
 

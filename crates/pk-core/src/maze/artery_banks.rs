@@ -4,7 +4,7 @@
 //!
 //! Fits long arcs to the outside perimeter of corridor bends along the main artery.
 //!
-//! PORTS: `maze/artery-banks.ts`
+//! PORTS-PARTIAL: `maze/artery-banks.ts` - NOT a finished port - 1 of 16 exported names carried over (6%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::grid::{is_walkable, Grid};
 

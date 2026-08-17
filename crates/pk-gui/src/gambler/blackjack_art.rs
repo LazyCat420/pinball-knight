@@ -1,6 +1,6 @@
 //! BLACKJACK TABLE FURNITURE — Casino chip stacks, betting circle rasteriser, and chip denominations.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/blackjack-art.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/blackjack-art.ts` - NOT a finished port - 3 of 12 exported names carried over (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const MAX_STACK: usize = 8;
 

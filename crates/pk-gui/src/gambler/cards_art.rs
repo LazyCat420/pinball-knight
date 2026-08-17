@@ -1,6 +1,6 @@
 //! PIXEL PLAYING CARDS ART — Font-free pixel playing cards with inverted indices and hand-authored suit pips.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/cards-art.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/cards-art.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 /// Returns a 3x5 bitmap for card ranks (A, 2-10, J, Q, K).
 pub fn rank_bitmap_3x5(rank: &str) -> [u8; 15] {

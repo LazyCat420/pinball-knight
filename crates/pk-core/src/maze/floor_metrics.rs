@@ -1,6 +1,6 @@
 //! Floor navigation metrics — topological depth, critical path, and dead-end analysis.
 //!
-//! PORTS: `maze/floor-metrics.ts`
+//! PORTS-PARTIAL: `maze/floor-metrics.ts` - NOT a finished port - 67 rust code lines against 256 legacy (26%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::flow_field::bfs_distances;
 use crate::grid::{at, idx, Grid, T_FLOOR};

@@ -37,7 +37,8 @@
 //! it, byte-identical to the oracle's grid at the `plan-doorways` boundary on
 //! all ten corpus floors.
 //!
-//! PORTS: `maze/floor-rules.ts`, `maze/modifiers.ts`
+//! PORTS: `maze/modifiers.ts`
+//! PORTS-PARTIAL: `maze/floor-rules.ts` - NOT a finished port - 0 of 8 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::archetypes::{archetype_for, level_cells, windiness_for, FloorArchetype};
 use super::modifiers::{roll_modifier, ModifierId};

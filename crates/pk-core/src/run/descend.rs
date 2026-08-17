@@ -1,6 +1,6 @@
 //! Descent reward calculation and floor completion grading.
 //!
-//! PORTS: `run/descend.ts`
+//! PORTS-PARTIAL: `run/descend.ts` - NOT a finished port - 45 rust code lines against 151 legacy (30%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const GOLD_PER_DESCENT: u32 = 25;
 pub const BOSS_GOLD: u32 = 150;

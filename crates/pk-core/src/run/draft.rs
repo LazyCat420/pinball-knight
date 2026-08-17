@@ -1,6 +1,7 @@
 //! Card drafting rewards upon floor clear.
 //!
-//! PORTS: `cards.ts`, `state.ts`
+//! PORTS-PARTIAL: `cards.ts` - NOT a finished port - 36 of 36 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::cards::{card_def, cards_of_rarity, CardRarity};
 use crate::rng::Mulberry32;

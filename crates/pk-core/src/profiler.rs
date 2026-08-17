@@ -1,4 +1,5 @@
-//! PORTS: `engine/profiler.ts`, `dev/draw-census.ts`, `engine/gpu-adapter.ts`
+//! PORTS: `dev/draw-census.ts`, `engine/gpu-adapter.ts`
+//! PORTS-PARTIAL: `engine/profiler.ts` - NOT a finished port - 18 rust code lines against 169 legacy (11%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod draw_census;
 pub mod gpu_adapter;

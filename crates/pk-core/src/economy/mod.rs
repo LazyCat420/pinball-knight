@@ -1,6 +1,7 @@
 //! THE ECONOMY — the tavern's rules, as pure data and pure functions.
 //!
-//! PORTS: `economy/tavern-shop.ts`, `items.ts` (gear), `armor-styles.ts`,
+//! PORTS: `economy/tavern-shop.ts`, `items.ts`
+//! PORTS-PARTIAL: `armor-styles.ts` - NOT a finished port - 6 rust code lines against 76 legacy (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! `legacy/src/utils/gold-wallet.ts`, `economy/shop.ts`, `economy/ground-items.ts`.
 //!
 //! Track T in `docs/src/status/one-to-one.md` — 1,845 lines and, until this

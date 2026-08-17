@@ -1,6 +1,15 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
-//! PORTS: `gui/im.ts`, `gui/input.ts`, `gui/touch.ts`, `gui/layer.ts`, `legacy/src/pixel/pixel-canvas.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `legacy/src/pixel/pixel-icon.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `ui.ts`, `legacy/src/pixel/pixel-font.ts`, `hud.ts`, `map-overlay.ts`, `hud-meter.ts`, `gui/apply-settings.ts`, `pickup-toast.ts`, `gui/globe-ripple.ts`, `floor-loading.ts`, `pixel-fonts.ts`, `dev/gui-hooks.ts`, `engine/render/sprite.ts`, `legacy/src/render/backend.ts`, `legacy/src/scenes/tavern/gambler/roulette-art.ts`
+//! PORTS: `gui/input.ts`, `gui/touch.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `legacy/src/pixel/pixel-font.ts`, `map-overlay.ts`, `hud-meter.ts`, `gui/apply-settings.ts`, `pickup-toast.ts`, `gui/globe-ripple.ts`, `floor-loading.ts`, `pixel-fonts.ts`, `dev/gui-hooks.ts`
+//! PORTS-PARTIAL: `gui/im.ts` - NOT a finished port - 37 of 37 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `gui/layer.ts` - NOT a finished port - 0 of 12 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `legacy/src/pixel/pixel-canvas.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `legacy/src/pixel/pixel-icon.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `ui.ts` - NOT a finished port - 0 of 16 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `hud.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `engine/render/sprite.ts` - NOT a finished port - 66 rust code lines against 757 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `legacy/src/render/backend.ts` - NOT a finished port - 18 rust code lines against 93 legacy (19%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/roulette-art.ts` - NOT a finished port - 54 rust code lines against 423 legacy (13%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod apply_settings;
 pub mod boot;

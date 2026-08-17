@@ -2,7 +2,7 @@
 //!
 //! Rebuilds player sheets when composite weapon, worn gear look, or character choices change.
 //!
-//! PORTS: `boot/sheets.ts`
+//! PORTS-PARTIAL: `boot/sheets.ts` - NOT a finished port - 27 rust code lines against 234 legacy (12%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const DIRS: [&str; 3] = ["S", "N", "E"];
 pub const WEAPON_ART_SLICE_MS: f64 = 2.0;

@@ -1,6 +1,6 @@
 //! Pinball assemblies — authored multi-part machines with relative facings and boundary ports.
 //!
-//! PORTS: `maze/assembly.ts`
+//! PORTS-PARTIAL: `maze/assembly.ts` - NOT a finished port - 2 of 9 exported names carried over (22%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Dir {

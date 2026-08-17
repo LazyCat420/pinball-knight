@@ -2,7 +2,7 @@
 //!
 //! Measures capture rate, bounce penalties, and rejection ratios across floor doorway openings.
 //!
-//! PORTS: `dev/funnel-census.ts`
+//! PORTS-PARTIAL: `dev/funnel-census.ts` - NOT a finished port - 41 rust code lines against 326 legacy (13%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::headless_floor::build_headless_floor;
 

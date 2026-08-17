@@ -1,6 +1,6 @@
 //! ROULETTE AUDIO SYNTHESIS — Bearing hum, velocity-coupled track ticks, and deflector impact physics.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/roulette-audio.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/roulette-audio.ts` - NOT a finished port - 50 rust code lines against 222 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub struct RouletteAudioSynth;
 

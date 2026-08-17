@@ -1,6 +1,6 @@
 //! CO-OP DUNGEON LAYER — Multi-peer floor authority election, entity replication, and marble interaction.
 //!
-//! PORTS: `coop.ts`
+//! PORTS-PARTIAL: `coop.ts` - NOT a finished port - 85 rust code lines against 336 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const SNAP_INTERVAL: f64 = 0.1; // 10Hz snapshot broadcast
 pub const GHOST_LERP: f64 = 10.0;

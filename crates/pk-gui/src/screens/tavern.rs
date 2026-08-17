@@ -7,7 +7,7 @@
 //! P4's economy, but their CHROME (sheet, heading, footer) is the legacy
 //! vocabulary already, so the placeholder wears it instead of a flat rect.
 //!
-//! PORTS: `legacy/src/scenes/tavern/scene-screens.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/scene-screens.ts` - NOT a finished port - 0 of 7 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::im::{
     button, cut_top, fill_rect, rect, scrim, sheet, stroke_rect, text, wrap, Align, ButtonOpts,

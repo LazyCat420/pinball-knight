@@ -2,7 +2,7 @@
 //!
 //! Generates procedural noise buffers (crack, hiss, land) and controls global test silence.
 //!
-//! PORTS: `legacy/src/utils/audio-manager.ts`
+//! PORTS-PARTIAL: `legacy/src/utils/audio-manager.ts` - NOT a finished port - 147 rust code lines against 634 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlobalAudioManager {

@@ -9,7 +9,7 @@
 //! - Attack windup, strike, and cooldown cycles
 //! - Stagger and pain interruptions
 //!
-//! PORTS: `entities/zombie.ts`
+//! PORTS-PARTIAL: `entities/zombie.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::collide::move_circle;
 use crate::enemies::*;

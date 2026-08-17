@@ -2,7 +2,7 @@
 //!
 //! Renders clean unit-space polygons without system emoji font dependencies.
 //!
-//! PORTS: `render/card-glyphs.ts`
+//! PORTS-PARTIAL: `render/card-glyphs.ts` - NOT a finished port - 77 rust code lines against 351 legacy (22%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub fn poly_points(pts: &[f64]) -> Vec<(f64, f64)> {
     let mut out = Vec::with_capacity(pts.len() / 2);

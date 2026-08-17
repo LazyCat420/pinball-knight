@@ -28,7 +28,8 @@
 //! the weapons vendor (36px) have the same hole, so the whole item set is baked
 //! rather than the three pieces one counter happens to need.
 //!
-//! PORTS: `gui/icons.ts`, `render/cel-painter.ts`
+//! PORTS: `render/cel-painter.ts`
+//! PORTS-PARTIAL: `gui/icons.ts` - NOT a finished port - 14 rust code lines against 376 legacy (4%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

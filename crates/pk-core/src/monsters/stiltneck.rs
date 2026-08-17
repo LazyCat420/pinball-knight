@@ -1,6 +1,7 @@
 //! Stiltneck explosive bomb mechanics and blast physics.
 //!
-//! PORTS: `entities/projectiles.ts`, `render/monsters/stiltneck.ts`
+//! PORTS: `render/monsters/stiltneck.ts`
+//! PORTS-PARTIAL: `entities/projectiles.ts` - NOT a finished port - 1 of 13 exported names carried over (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::types::{EnemyKind, LiveMonster};
 use crate::enemies::*;

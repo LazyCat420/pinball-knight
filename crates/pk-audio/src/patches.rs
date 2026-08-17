@@ -20,7 +20,10 @@
 //! burn through the budget while nothing is audible, and the gate and the
 //! scheduling share one timeline.
 //!
-//! PORTS: `sfx/pinball.ts`, `sfx/combat.ts`, `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `sfx/weapons.ts`, `sfx/monsters.ts`, `legacy/src/scenes/tavern/audio.ts`
+//! PORTS: `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `sfx/monsters.ts`, `legacy/src/scenes/tavern/audio.ts`
+//! PORTS-PARTIAL: `sfx/pinball.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `sfx/combat.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `sfx/weapons.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::sync::{Mutex, MutexGuard};
 

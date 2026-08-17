@@ -2,7 +2,7 @@
 //!
 //! Manages dungeon enter/exit states, fixed 60Hz step coordination, and weapon inventory swapping and in-place exchange.
 //!
-//! PORTS: `core.ts`
+//! PORTS-PARTIAL: `core.ts` - NOT a finished port - 72 rust code lines against 352 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DungeonSessionState {

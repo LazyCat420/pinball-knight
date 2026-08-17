@@ -2,7 +2,7 @@
 //!
 //! Provides spawning, inventory injection, floor descend commands, and simulation state telemetry.
 //!
-//! PORTS: `dev/window-hooks.ts`
+//! PORTS-PARTIAL: `dev/window-hooks.ts` - NOT a finished port - 56 rust code lines against 631 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DungeonStats {

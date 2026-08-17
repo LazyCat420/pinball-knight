@@ -1,6 +1,6 @@
 //! Unified render pipeline constants, sorting rungs, and lighting parameters.
 //!
-//! PORTS: `constants/render.ts`
+//! PORTS-PARTIAL: `constants/render.ts` - NOT a finished port - 0 of 69 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const DESIGN_VIEWPORT_W: f64 = 640.0;
 pub const DESIGN_VIEWPORT_H: f64 = 360.0;

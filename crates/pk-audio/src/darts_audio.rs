@@ -1,6 +1,6 @@
 //! DARTS PROCEDURAL AUDIO — Reticle graduation metronome and 3-layer sisal impact acoustics.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/darts-audio.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/darts-audio.ts` - NOT a finished port - 41 rust code lines against 161 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub struct DartsAudioSynth;
 

@@ -2,7 +2,7 @@
 //!
 //! Drives inputs through the real gamepad layer rather than teleporting to stress physics, collision, and combo chains.
 //!
-//! PORTS: `playtest-bot.ts`
+//! PORTS-PARTIAL: `playtest-bot.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaytestBotConfig {

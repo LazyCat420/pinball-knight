@@ -2,7 +2,7 @@
 //!
 //! Enforces pure WebGPU initialization without silent legacy WebGL fallbacks.
 //!
-//! PORTS: `legacy/src/render/backend.ts`
+//! PORTS-PARTIAL: `legacy/src/render/backend.ts` - NOT a finished port - 18 rust code lines against 93 legacy (19%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BackendSelection {

@@ -1,6 +1,6 @@
 //! Debug ACTIONS — Shared implementations for developer verbs and god-mode panels.
 //!
-//! PORTS: `dev/debug-actions.ts`
+//! PORTS-PARTIAL: `dev/debug-actions.ts` - NOT a finished port - 46 rust code lines against 200 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DebugActionsState {

@@ -2,7 +2,7 @@
 //!
 //! Replaces soft path anti-aliasing with integer scanlines and axonometric foreshortening.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/roulette-art.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/roulette-art.ts` - NOT a finished port - 54 rust code lines against 423 legacy (13%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const DEFAULT_FLAT: f32 = 0.46; // Vertical axonometric foreshortening
 

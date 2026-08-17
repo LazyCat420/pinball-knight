@@ -1,6 +1,6 @@
 //! Pixel Icons — Turn raster graphics into quantized, Bayer-dithered pixel-art bitmaps.
 //!
-//! PORTS: `legacy/src/pixel/pixel-icon.ts`
+//! PORTS-PARTIAL: `legacy/src/pixel/pixel-icon.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const BAYER4: [[i32; 4]; 4] = [
     [0, 8, 2, 10],

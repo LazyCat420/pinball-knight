@@ -1,6 +1,6 @@
 //! Integer-scale pixel canvas fitting, letterboxing, and coordinate mapping.
 //!
-//! PORTS: `legacy/src/pixel/pixel-canvas.ts`
+//! PORTS-PARTIAL: `legacy/src/pixel/pixel-canvas.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FitResult {

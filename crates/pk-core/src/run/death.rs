@@ -1,6 +1,6 @@
 //! Player Death & Tombstone Soul Recovery Subsystem.
 //!
-//! PORTS: `run/death.ts`
+//! PORTS-PARTIAL: `run/death.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const DEATH_GOLD_LOSS_PERCENT: f64 = 0.50;
 pub const TOMBSTONE_CLAIM_RADIUS: f64 = 1.2;

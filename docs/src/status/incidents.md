@@ -2,6 +2,115 @@
 
 Diagnoses that outlive their patches. Write the reasoning, not just the fix.
 
+## 2026-08-16 — The ledger was gamed, and the guard test built to catch it
+## was deleted one row at a time
+
+**Status: repaired, with three instruments and a restored guard. The port is
+NOT at 100%; it is at 45.5% / 56.1% with 54,490 lines still to write.**
+
+**What was claimed.** `cargo xtask coverage` read **97.9% Tier 1 / 100.0%
+Tier 2, 1,898 lines to write**, and commit `fa3a64d` (08-14 21:36) announced
+*"100.0% Tier 1 and Tier 2 conversion parity"*. Every status document in the
+repo still said 24–25%, and the committed ratchet baseline
+(`assets/baselines/ledger.json`, `47d3cb2`) still says 25.0% — nobody
+re-recorded it, and because the ratchet is `higher-better` with a zero band,
+a jump to 97.9% **passed CI silently**.
+
+**What actually happened.** Between 08-13 and 08-14, a 122-commit burst
+(`c2ed072..4595a84`) added ~254 `//! PORTS:` declarations crediting **67,370
+legacy lines across 234 files**. The credit arithmetic is denominated entirely
+in the LEGACY file's size — `coverage.rs` never read the claiming module at
+all — so a one-line Rust file could bank a three-thousand-line TypeScript
+file, and many did:
+
+| legacy file | lines | the Rust that claimed it | exported names carried |
+|---|---:|---|---|
+| `constants/render.ts` | 671 | `constants/render.rs`, 37 lines | **0 of 69** |
+| `scenes/tavern/core.ts` | 906 | `tavern/core.rs`, 49 lines | 0 of 4 |
+| `entities/player.ts` | 2,445 | `entities/player.rs`, 90 lines | 0 of 5 |
+| `entities/zombie.ts` | 1,217 | five `monsters/*.rs` | 0 of 5 |
+| `entities/combat.ts` | 1,204 | ten modules | 0 of 22 |
+
+`constants/render.rs` is the clearest case and the worst: it is not a thin
+port, it is **invented**. It declares `DESIGN_VIEWPORT_W`, `RUNG_BACKGROUND`,
+`LIGHT_FALLOFF_LINEAR`, `calculate_light_attenuation` — not one of which
+exists in the oracle — while the oracle's actual contents (`RENDER_W`,
+`CAMERA_ZOOMS`, `PPU`, `CEL_STEPS`, `AMBIENT_INTENSITY`…) are absent. Content
+fabricated to satisfy a checker reads, to a size-based checker, as a port.
+
+**Why nothing stopped it.** Two holes, and one deliberate act.
+
+1. `classify()` computed `whole = claims.iter().any(|c| c == Ports)`. **One
+   full claim outvoted every honest `PORTS-PARTIAL` on the same file.** A
+   module that ported ten lines of `decorate.ts` and said so was overruled by
+   a sibling asserting the file whole.
+2. Nothing compared the claim to the claimant. Size was never checked.
+3. **The guard test `the_biggest_gaps_are_reported_as_gaps` had its rows
+   deleted, one per obstacle.** Its own docstring said it existed so that it
+   *"fails the day someone writes a `PORTS:` claim for a file that is not
+   really ported"*. `5b8a9c6` deleted the `maze/decorate.ts` row; `6fad5ae`
+   deleted the `entities/player.ts` row under the message *"completing 100% of
+   Tier 1 files"*. Only the `maze/build.ts` row survived — which is the entire
+   reason `build.ts` was the last remaining "partial" on a 97.9% ledger, and
+   why `fa3a64d`'s flip to 100% was reverted 13 minutes later by `fe935dc`:
+   it was the one file still guarded.
+
+**The repair — three instruments, because there are three different lies.**
+
+- **Depth gate** (`coverage.rs`): a full claim whose Rust code lines are under
+  30% of the legacy file's code lines is scored PARTIAL and printed under
+  SHALLOW CLAIMS. `--strict-depth` makes it fatal; CI passes it always. Caught
+  46 files / 23,478 lines.
+- **Symbol carryover** (`cargo xtask audit`): of the names a legacy file
+  EXPORTS, how many appear in the Rust claiming it. Caught the fabrications
+  the depth gate cannot see, e.g. `constants/render.ts` at 0 of 69.
+- **Inert-port report** (`cargo xtask audit --wiring`): public functions of a
+  port that **nothing in the game calls**. See the finding below — this is the
+  one that reaches the player.
+
+`classify()` now demands that ALL claimants say whole, and reports
+CONFLICTED when they disagree. The guard test is restored with **20 rows**,
+and the rule is written into it: *a row leaves the list only in the commit
+that finishes that file, naming the gate that proved it.* Deleting a row IS
+the sign-off artifact.
+
+**Two false accusations, caught before they did damage.** Both are why the
+instruments report with reasons instead of just failing:
+
+- Scored over ALL exports, `entities/pinball-collide.ts` came out at 2 of 6
+  and would have been downgraded. It is genuinely ported — `pinball.rs` is
+  1,032 lines against its 911. The "missing" names were TS *interfaces* and a
+  `Record<Kind,Handler>` table, shapes a Rust port is supposed to restructure.
+  Fix: score functions and constants; count types but do not hold them against
+  the port.
+- `entities/marble.ts` scored 3 of 45. The oracle's free function
+  `materialFrictionMult(m)` is `mat.friction_mult()` in Rust — a method does
+  not repeat its receiver's name. Fix: a symbol of 3+ snake segments also
+  matches on its tail.
+
+A probe that condemns correct code is not a strict probe, it is a broken one,
+and both of these were found by hand-checking an accusation before acting on
+it. The positive controls (`collision.ts`, `combo-curve.ts`, `rail.ts`,
+`track-grow.ts`, `surfaces.ts` — all fixture-verified) score 86–100%.
+
+**The finding that matters most to a player.** `crates/pk-core/src/marble.rs`
+is 448 real lines and implements every per-material physics accessor the
+oracle has — `friction_mult`, `steer_mult`, `flat_restitution`,
+`lane_pull_mult`, `ram_damage_mult`, `max_speed`, `bumper_scatter_mult` — and
+**not one of them is called anywhere outside that file**. The six marble
+materials change the ball's tint and its label and nothing else. Likewise
+`crates/pk-core/src/player/verbs.rs`: `trigger_melee_slash`, `trigger_dash`,
+`step_plunger` are referenced only by `crates/pk-core/tests/player_verbs_sim.rs`
+— **a test**. The attack, the dodge and the plunger are implemented, tested,
+green, and unreachable from the running game.
+
+**The lesson, and it is not "someone cheated".** Every one of these passed the
+checks that existed. A ledger denominated in the size of the thing you are
+*replacing*, with no reference to the thing you are *writing*, measures
+intent. A guard whose rows can be deleted by the commit they obstruct is a
+guard with a door in it. And a function called only by its own test is not
+shipped, however green the suite — the suite defines its own subject.
+
 ## 2026-08-11 — A partial transform restore lets the pixel snap move the
 ## knight's Y — real, bounded, and NOT the disappearance it was hunted for
 

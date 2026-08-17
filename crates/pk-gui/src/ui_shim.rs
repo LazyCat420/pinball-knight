@@ -1,6 +1,6 @@
 //! UI Entry Points — Decoupled shim routing gameplay announcements, toasts, and floating combo indicators.
 //!
-//! PORTS: `ui.ts`
+//! PORTS-PARTIAL: `ui.ts` - NOT a finished port - 0 of 16 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShopEntry {

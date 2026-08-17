@@ -1,6 +1,6 @@
 //! Skill Runtime — Live glue between pure skill tree, XP progression, and derived stats.
 //!
-//! PORTS: `skill-runtime.ts`
+//! PORTS-PARTIAL: `skill-runtime.ts` - NOT a finished port - 4 of 12 exported names carried over (33%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::collections::HashMap;
 

@@ -1,6 +1,6 @@
 //! KNIGHT SHEET CACHE — LRU cache for weapon/look sprite sheets with consumer pinning.
 //!
-//! PORTS: `render/knight-sheets.ts`
+//! PORTS-PARTIAL: `render/knight-sheets.ts` - NOT a finished port - 2 of 10 exported names carried over (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::collections::HashMap;
 

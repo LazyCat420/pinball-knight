@@ -5,7 +5,7 @@
 //! Shared by the Storm marble special ("Lightning Bolt") and the Laser Potion ("Laser Beam").
 //! Player is invulnerable, inputs are ignored, and collisions deflect with random jitter.
 //!
-//! PORTS: `entities/ricochet-form.ts`
+//! PORTS-PARTIAL: `entities/ricochet-form.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::rng::Mulberry32;
 

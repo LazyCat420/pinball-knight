@@ -1,6 +1,6 @@
 //! Arc wall sweeps — tangent vectors, rail curves, and wallride trajectories.
 //!
-//! PORTS: `maze/arc-sweeps.ts`
+//! PORTS-PARTIAL: `maze/arc-sweeps.ts` - NOT a finished port - 54 rust code lines against 341 legacy (16%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::grid::{is_walkable, Grid};
 use crate::tile_shape::ArcFeature;

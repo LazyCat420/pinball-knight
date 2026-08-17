@@ -1,6 +1,6 @@
 //! Isometric orthographic camera projections, coordinate transforms, and tracking math.
 //!
-//! PORTS: `engine/camera.ts`
+//! PORTS-PARTIAL: `engine/camera.ts` - NOT a finished port - 3 of 10 exported names carried over (30%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use std::f64::consts::FRAC_PI_4;
 

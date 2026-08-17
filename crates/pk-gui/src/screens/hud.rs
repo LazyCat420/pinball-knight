@@ -12,7 +12,9 @@
 //! - Boss bar (top-center, when engaged)
 //! - Combo multiplier and plunger power meters
 //!
-//! PORTS: `gui/screens/hud.ts`, `hud-face.ts`, `hud-minimap.ts`, `map-render.ts`
+//! PORTS: `gui/screens/hud.ts`, `hud-minimap.ts`
+//! PORTS-PARTIAL: `hud-face.ts` - NOT a finished port - 1 of 10 exported names carried over (10%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `map-render.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::im::{
     bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,

@@ -1,6 +1,6 @@
 //! Engine Configuration & Global Settings.
 //!
-//! PORTS: `engine/config.ts`
+//! PORTS-PARTIAL: `engine/config.ts` - NOT a finished port - 24 rust code lines against 147 legacy (16%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineConfig {

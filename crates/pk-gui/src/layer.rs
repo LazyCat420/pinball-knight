@@ -1,6 +1,6 @@
 //! GUI and World Multi-Layer Compositing Pipeline.
 //!
-//! PORTS: `gui/layer.ts`
+//! PORTS-PARTIAL: `gui/layer.ts` - NOT a finished port - 0 of 12 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RenderPassKind {

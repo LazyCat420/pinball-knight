@@ -1,4 +1,6 @@
-//! PORTS: `engine/input.ts`, `input/keymap.ts`, `engine/virtual-pad.ts`, `legacy/src/utils/input-manager.ts`
+//! PORTS: `input/keymap.ts`, `engine/virtual-pad.ts`
+//! PORTS-PARTIAL: `engine/input.ts` - NOT a finished port - 59 rust code lines against 214 legacy (28%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-PARTIAL: `legacy/src/utils/input-manager.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod input_manager;
 pub mod keymap;

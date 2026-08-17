@@ -484,7 +484,7 @@ mod tests {
                    export class SpriteSheet {}\n\
                    const private_thing = 1;\n\
                    export default foo;\n";
-        let got = exported_symbols(src);
+        let got: Vec<String> = exported_symbols(src).into_iter().map(|(n, _)| n).collect();
         assert!(got.contains(&"RENDER_W".to_string()));
         assert!(got.contains(&"stepTavernMovement".to_string()));
         assert!(got.contains(&"CameraZoom".to_string()));

@@ -2,7 +2,7 @@
 //!
 //! Stamping, pruning, and revolving door physics for cracked secret wall bands.
 //!
-//! PORTS: `secrets.ts`
+//! PORTS-PARTIAL: `secrets.ts` - NOT a finished port - 2 of 8 exported names carried over (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::grid::{at, is_walkable, set_tile, shape_at, Grid, SHAPE_FULL, T_CRACKED, T_FLOOR, T_WALL};
 

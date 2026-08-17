@@ -1,6 +1,6 @@
 //! TAVERN SCENE BOOTSTRAP & LIFECYCLE ORCHESTRATOR — Walkable hub loop, camera tracking, and station triggers.
 //!
-//! PORTS: `legacy/src/scenes/tavern/core.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/core.ts` - NOT a finished port - 46 rust code lines against 536 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::layout::{station_at, Station, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};
 

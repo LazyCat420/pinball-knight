@@ -1,6 +1,6 @@
 //! ☠ THE REAPER KING — the end-of-run boss that gates the exit portal.
 //!
-//! PORTS: `boss.ts`
+//! PORTS-PARTIAL: `boss.ts` - NOT a finished port - 3 of 13 exported names carried over (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const REAPER_SCALE: f64 = 1.35;
 pub const BRUTE_R: f64 = 0.42;

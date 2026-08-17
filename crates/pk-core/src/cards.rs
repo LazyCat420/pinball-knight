@@ -30,7 +30,8 @@
 //! value [`crate::economy::forge`] takes: these functions make a VARIABLE
 //! number of draws, and the count and order is the thing the tests pin.
 //!
-//! PORTS: `cards.ts`, `card-reader.ts`
+//! PORTS: `card-reader.ts`
+//! PORTS-PARTIAL: `cards.ts` - NOT a finished port - 36 of 36 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod reader;
 pub use reader::*;

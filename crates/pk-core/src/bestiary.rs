@@ -2,7 +2,7 @@
 //!
 //! Derived from ENEMY_DROPS (reagents.ts) and ZOMBIE_TYPES (zombie-types.ts).
 //!
-//! PORTS: `bestiary.ts`
+//! PORTS-PARTIAL: `bestiary.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::reagents::{drops_for_kind, ReagentDef};
 

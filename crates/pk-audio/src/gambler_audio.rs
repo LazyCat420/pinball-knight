@@ -1,6 +1,6 @@
 //! GAMBLER SLOT AUDIO SYNTHESIS — Procedural slot machine tone sequencing and suspense choreography.
 //!
-//! PORTS: `legacy/src/scenes/tavern/gambler/audio.ts`
+//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/audio.ts` - NOT a finished port - 61 rust code lines against 290 legacy (21%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub struct GamblerAudioSynth;
 

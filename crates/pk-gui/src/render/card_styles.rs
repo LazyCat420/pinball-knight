@@ -3,7 +3,7 @@
 //! Replaces arbitrary stat gradients with monster material families: bone (undead), ink (incorporeal),
 //! stone (rooted), chitin (arthropods), iron (wrought), and void (chase relics).
 //!
-//! PORTS: `render/card-styles.ts`
+//! PORTS-PARTIAL: `render/card-styles.ts` - NOT a finished port - 103 rust code lines against 371 legacy (28%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::painter::Rgba;
 

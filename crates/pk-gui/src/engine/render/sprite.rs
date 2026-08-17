@@ -2,7 +2,7 @@
 //!
 //! Billboards sprites around bottom-center foot origins with fixed isometric camera tilt or dynamic FPS yaw tracking.
 //!
-//! PORTS: `engine/render/sprite.ts`
+//! PORTS-PARTIAL: `engine/render/sprite.ts` - NOT a finished port - 66 rust code lines against 757 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpriteQuad {
