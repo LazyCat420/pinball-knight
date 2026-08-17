@@ -60,7 +60,9 @@ pub fn enforce_pile_cap(piles: &mut Vec<CorpsePile>, floor: u32) {
         let next_idx = on_floor_indices[1];
 
         let oldest_items = piles[oldest_idx].items.clone();
-        piles[next_idx].items.extend(oldest_items);
+        let mut merged = oldest_items;
+        merged.extend(piles[next_idx].items.drain(..));
+        piles[next_idx].items = merged;
         piles.remove(oldest_idx);
     }
 }

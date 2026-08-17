@@ -98,8 +98,7 @@
 //! cannot tell the two hypots apart — the argmin does not move. The primitive
 //! guarantees live in `jsmath_oracle.rs`; ten green floors are not a licence to
 //! skip them.
-//!
-//! PORTS: `maze/track-floor.ts`
+//! PORTS-PARTIAL: `maze/track-floor.ts` — passes 1-9 of 23 landed bit-exact
 
 use super::archetypes::TrackProfile;
 use super::track_carve::carve_chamber;

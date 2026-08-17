@@ -11,8 +11,8 @@ use pk_core::run::descend::{calculate_descent_rewards, BOSS_GOLD, GOLD_PER_DESCE
 fn multiple_deaths_accumulate_corpse_piles_and_merges_at_cap() {
     let mut piles = Vec::new();
 
-    // Die 3 times on Floor 5
-    for i in 1..=3 {
+    // Die MAX_PILES_PER_FLOOR times on Floor 5
+    for i in 1..=MAX_PILES_PER_FLOOR {
         record_corpse_pile(
             &mut piles,
             CorpsePile {
@@ -33,16 +33,16 @@ fn multiple_deaths_accumulate_corpse_piles_and_merges_at_cap() {
         );
     }
 
-    assert_eq!(piles.len(), 3);
-    assert_eq!(piles[0].items.len(), 1);
-    assert_eq!(piles[1].items.len(), 1);
-    assert_eq!(piles[2].items.len(), 1);
+    assert_eq!(piles.len(), MAX_PILES_PER_FLOOR);
+    for i in 0..MAX_PILES_PER_FLOOR {
+        assert_eq!(piles[i].items.len(), 1);
+    }
 
-    // 4th death on Floor 5 -> should merge pile_1 into pile_2, leaving 3 piles
+    // 13th death on Floor 5 -> should merge pile_1 into pile_2, leaving MAX_PILES_PER_FLOOR piles
     record_corpse_pile(
         &mut piles,
         CorpsePile {
-            id: "pile_4".to_string(),
+            id: format!("pile_{}", MAX_PILES_PER_FLOOR + 1),
             floor: 5,
             x: 14.0,
             z: 10.0,
@@ -62,8 +62,8 @@ fn multiple_deaths_accumulate_corpse_piles_and_merges_at_cap() {
     // Oldest pile (pile_1) items merged into the second oldest (pile_2)
     assert_eq!(piles[0].id, "pile_2");
     assert_eq!(piles[0].items.len(), 2);
-    assert_eq!(piles[0].items[0].id, "sword_2");
-    assert_eq!(piles[0].items[1].id, "sword_1");
+    assert_eq!(piles[0].items[0].id, "sword_1");
+    assert_eq!(piles[0].items[1].id, "sword_2");
 }
 
 #[test]
