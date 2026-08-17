@@ -1315,11 +1315,11 @@ mod tests {
             // banners, stairs marker, and cracked bands transcribed 1:1 across
             // crates/pk-game/src/dungeon_render.rs and maze_art.rs, gated by
             // crates/pk-game/tests/maze_build_parity_sim.rs.
-            (
-                "maze/decorate.ts",
-                3169,
-                "the whole decoration pass — 21 exports, 5 carried",
-            ),
+            // ── maze/decorate.ts: ROW REMOVED 2026-08-17 ──
+            // All 21 exported items, LevelPlan, Endpoints, traceArtery, pickEndpoints,
+            // widenMainArtery, openLaunchTargets, breakLaunchDuels, and decorateMaze
+            // transcribed 1:1 in crates/pk-core/src/maze/decorate.rs, gated by
+            // crates/pk-core/tests/maze_decorate_parity_sim.rs.
             // ── entities/player.ts: ROW REMOVED 2026-08-17 ──
             // All 5 exported items, resetPlayerMotion, debugCurSpeed, debugWallNormal,
             // updatePlunger, updatePlayer, dodge roll kinematics, and ricochet mechanics

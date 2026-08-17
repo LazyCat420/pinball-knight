@@ -1,4 +1,6 @@
-//! PORTS-PARTIAL: `maze/decorate.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Interactive dungeon elements and ground pickups.
+//!
+//! PORTS-NOTHING
 
 use crate::grid::{set_tile, Grid, T_CRACKED, T_FLOOR};
 
