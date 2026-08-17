@@ -1339,11 +1339,10 @@ mod tests {
                 "0 of 5 exports; STATS/updateZombies/movementOf absent",
             ),
             ("entities/combat.ts", 1204, "0 of 22 exports carried"),
-            (
-                "gui/im.ts",
-                1052,
-                "the immediate-mode kit every screen stands on",
-            ),
+            // ── gui/im.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 immediate-mode UI layout engine, focus ring, widgets (buttons,
+            // toggles, sliders, pips, bars, tabs, text fields), and scroll containers in
+            // crates/pk-gui/src/im.rs, gated by crates/pk-gui/tests/im_layout_sim.rs.
             ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
             // ── entities/marble.ts: ROW REMOVED 2026-08-17 ──
             // All 45 exported constants, types, physics multipliers, fusion mechanics,

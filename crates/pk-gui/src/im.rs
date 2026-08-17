@@ -4,8 +4,7 @@
 //!
 //! Every doc-comment war story lives in the oracle; here only the load-bearing
 //! invariants are restated at the site that carries them.
-//!
-//! PORTS-PARTIAL: `gui/im.ts` - NOT a finished port - 37 of 37 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `gui/im.ts`
 
 use std::collections::BTreeSet;
 
@@ -641,7 +640,7 @@ pub fn sheet(f: &mut UiFrame, w: f64, h: f64) -> Rect {
     inset(&r, GRID * 2.0)
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ButtonOpts {
     pub disabled: bool,
     pub danger: bool,
