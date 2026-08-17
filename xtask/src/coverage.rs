@@ -1334,7 +1334,10 @@ mod tests {
                 1993,
                 "the post chain: SSAO, bloom, outline, dither, palette",
             ),
-            ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
+            // ── render/pinball-parts.ts: ROW REMOVED 2026-08-17 ──
+            // All 23 part kinds, builders, hit lifetimes, animators, and plunger rig
+            // transcribed 1:1 in crates/pk-game/src/pinball_parts_render.rs, gated by
+            // crates/pk-game/tests/pinball_parts_sim.rs.
             // ── hud-face.ts: ROW REMOVED 2026-08-17 ──
             // All 10 exported items, procedural face canvas, expressions, health tiers,
             // damage/heal/special triggers, dead portrait, and contact sheet transcribed 1:1
