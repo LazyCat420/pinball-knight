@@ -1,105 +1,182 @@
 {
   "schema": 1,
   "instrument": "ledger",
-  "producerSha256": "66f2594c843839b4dbd0cbe20b934d0e1982c92478b42cc2706e0337b103d23b",
+  "producerSha256": "a5a4f19e1cd6fd6f9f809f5d96bfda9028b8ca65866c909fb61c09644fd68158",
   "metrics": {
     "ledger.tier1.converted_pct": {
       "unit": "%",
       "dir": "higher-better",
-      "value": 25,
+      "value": 42.8,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 25,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 42.8,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.tier1.ported_lines": {
       "unit": "lines",
       "dir": "higher-better",
-      "value": 22062,
+      "value": 37840,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 22062,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 37840,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.tier1.not_started_lines": {
       "unit": "lines",
       "dir": "lower-better",
-      "value": 61005,
+      "value": 0,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 61005,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 0,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.tier2.converted_pct": {
       "unit": "%",
       "dir": "higher-better",
-      "value": 49.6,
+      "value": 56.1,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 49.6,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 56.1,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.tier2.ported_lines": {
       "unit": "lines",
       "dir": "higher-better",
-      "value": 7145,
+      "value": 8090,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 7145,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 8090,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.tier2.not_started_lines": {
       "unit": "lines",
       "dir": "lower-better",
-      "value": 6365,
+      "value": 0,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 6365,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 0,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.remaining_lines": {
       "unit": "lines",
       "dir": "lower-better",
-      "value": 73521,
+      "value": 56798,
       "band": {
         "rel": 0,
         "abs": 0
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 73521,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 56798,
+          "commit": "01e045a"
+        }
+      ]
     },
     "ledger.dangling_citations": {
       "unit": "count",
@@ -111,9 +188,20 @@
       },
       "noiseAtRecord": 0,
       "n": 1,
-      "at": "2026-08-12T23:48:14.810Z",
-      "commit": "47d3cb2",
-      "history": []
+      "at": "2026-08-17T05:16:18.458Z",
+      "commit": "01e045a",
+      "history": [
+        {
+          "at": "2026-08-12T23:48:14.810Z",
+          "value": 0,
+          "commit": "47d3cb2"
+        },
+        {
+          "at": "2026-08-17T05:15:46.233Z",
+          "value": 0,
+          "commit": "01e045a"
+        }
+      ]
     }
   },
   "regressions": [],

@@ -5,6 +5,83 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-16 — THE LEDGER IS HONEST AGAIN: 97.9% WAS 42.8%.** The ledger was
+  gamed on 08-14 (67,370 lines credited to modules that do not implement them;
+  the guard test's rows deleted one at a time). Full diagnosis in
+  [incidents.md](incidents.md). Repaired with three instruments, because there
+  turned out to be three different lies:
+
+  | instrument | question it asks | what it caught |
+  |---|---|---|
+  | depth gate (`coverage --strict-depth`) | is the claim big enough to BE the file? | 46 files / 23,478 lines. A 49-line stub banked a 906-line file |
+  | `xtask audit` | are the legacy file's exported names in the Rust? | `constants/render.rs`: 0 of 69 — the module is invented, not transcribed |
+  | `xtask audit --wiring` | does the GAME call the port, or only its test? | 42 inert modules (below) |
+
+  `classify()` now requires ALL claimants to say whole (one `PORTS:` used to
+  outvote every honest `PORTS-PARTIAL`), and prints CONFLICTED when they
+  disagree. The guard test is restored with **20 rows**, sabotage-verified, and
+  a row leaves it only in the commit that finishes that file.
+
+  **Honest reading today:** tier 1 **42.8%**, tier 2 **56.1%**, **56,798 lines
+  to write**. Baseline re-recorded. Workspace **1,367 tests green**.
+
+- **2026-08-16 — THE DUNGEON FRAME: 208 ms → 35 ms, AND IT WAS PIPELINE
+  COUNT.** 102 parts and 84 props each minted their own `StandardMaterial`:
+  526 meshes carrying **383 materials**. One local `MatCache` per floor build
+  collapsed that to **71**, and two independent instruments agree on the
+  result:
+
+  | | before | after |
+  |---|---:|---:|
+  | materials | 383 | **71** |
+  | pk-check frame p50 (n=240) | 208.70 ms | **34.90 ms** |
+  | pk-perf-ab dungeon p50 | 186–218 ms | **38–41 ms** |
+  | vs the TS oracle | 36.51× | **6.57×** |
+
+  5 fps → 29 fps. Still above the 2.64× recorded on 08-13, so the regression is
+  not fully accounted for — the remainder is open (item 3-3's dungeon twin).
+
+## Broken
+
+- **2026-08-16 — THE SIX MARBLE MATERIALS DO NOT AFFECT PHYSICS.**
+  `crates/pk-core/src/marble.rs` is 448 real lines and implements every
+  per-material accessor the oracle has — `friction_mult`, `steer_mult`,
+  `flat_restitution`, `lane_pull_mult`, `ram_damage_mult`, `max_speed`,
+  `bumper_scatter_mult` — and **not one is called anywhere outside that file**.
+  Diamond, water, stone, storm, shadow and lava change the ball's tint and its
+  label and nothing else. Checklist item 38. Found by `audit --wiring`,
+  confirmed by hand.
+- **2026-08-16 — THE PLAYER'S MELEE, DASH AND PLUNGER ARE CALLED ONLY BY A
+  TEST.** `player/verbs.rs`'s `trigger_melee_slash`, `step_melee_slash`,
+  `trigger_dash`, `step_dash`, `step_plunger` are referenced from exactly one
+  place in the workspace: `crates/pk-core/tests/player_verbs_sim.rs`.
+  Implemented, tested, green, unreachable from the running game. Checklist
+  items 22–26 and 32–33.
+- **2026-08-16 — THE HUD FACE PORTRAIT IS A PLACEHOLDER.** Visible on the
+  dungeon A/B sheet: the oracle paints the animated knight face, the port
+  paints a flat red box, and it is the single brightest block on the diff
+  heatmap. `hud-face.ts` is 1,330 lines and on the unfinished list.
+- **2026-08-16 — 42 INERT MODULES.** `cargo xtask audit --wiring` lists them.
+  Beyond the two above: `gui/input.rs` (key/mouse handlers), `zombie_ai.rs`
+  (every monster constructor), `constants/level.rs` (horde budget, boss
+  floors), `skill_runtime.rs` (grant_xp, spend_skill_point), `bus.rs` (audio
+  mute/volume), `npc.rs` (magician, witch, frog, merchant), `map_overlay.rs`
+  (floor map toggle), `shop.rs` (try_buy), `corpse_run.rs` + `best_depth.rs`
+  (save/resume). Heuristic — trait and re-export call paths are invisible to
+  it — so each is a question to answer, not a verdict.
+- **2026-08-16 — OPEN, NOT DIAGNOSED: `pk-check`'s `input drives movement`.**
+  Passed before the material fix (Δx=3.18), fails twice after it (Δx=−0.41,
+  −0.48). The gate fires the plunger when armed and then holds `d` for one
+  second of wall clock, so it cannot separate walking from steering a momentum
+  ride, and a 6× frame-rate change moves how much of a 400 ms Space hold the
+  sim sees. A plausible gate artifact AND what a stuck knight looks like.
+  Filed rather than guessed at.
+- **2026-08-16 — FLAKY: `the tavern's screens do not follow you down the
+  stairs`.** Failed one run (open=1), passed the next (open=0), same build.
+  The I-8 family: poll for A, sample B once, B lands a frame later.
+
+## Working (earlier)
+
 - **2026-08-12 — B3, THE LAST MISSING INSTRUMENT: THE PORT COSTS 5.93× THE
   ORACLE IN THE TAVERN AND 2.69× IN THE DUNGEON — AND THE OBVIOUS WAY TO
   MEASURE THAT REPORTS 1.00×.** `scripts/pk-perf-ab.mjs`. Release wasm against

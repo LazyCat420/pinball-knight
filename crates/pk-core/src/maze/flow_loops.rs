@@ -1,6 +1,6 @@
 //! Flow loops — track circuit raycasts and directional flow part trajectories.
 //!
-//! PORTS: `maze/flow-loops.ts`
+//! PORTS-PARTIAL: `maze/flow-loops.ts` - NOT a finished port - 49 rust code lines against 174 legacy (28%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::grid::{is_walkable, Grid};
 
