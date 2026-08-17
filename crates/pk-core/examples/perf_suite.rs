@@ -195,6 +195,7 @@ fn main() {
     }
     {
         let mut s = SimState::new(grid.clone(), spawn, 1);
+        s.plunger_armed = false;
         rows.push(bench("simulate_walk", "tick", reps, 20_000, || {
             simulate(&mut s, &walking);
         }));
@@ -207,6 +208,7 @@ fn main() {
         // `update_pinball` gates on `mom_speed > 0` — the direction is a unit
         // vector and the speed is the scalar the ride runs on.
         let mut s = SimState::new(grid.clone(), spawn, 1);
+        s.plunger_armed = false;
         s.player.mom_x = 0.929;
         s.player.mom_z = 0.371;
         s.player.mom_speed = 18.0;
@@ -237,6 +239,7 @@ fn main() {
                 s.player.mom_x = 0.929;
                 s.player.mom_z = 0.371;
                 s.player.mom_speed = 18.0;
+                s.plunger_armed = false;
             }
             simulate(&mut s, &idle);
         }));
