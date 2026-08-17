@@ -1362,11 +1362,11 @@ mod tests {
             // Complete 1:1 card catalogue, rarities, levels, shiny scaling, drop rolling,
             // weapon socketing, and card aggregation engine in crates/pk-core/src/cards.rs,
             // gated by crates/pk-core/tests/cards_aggregation_sim.rs and card_socket_sim.rs.
-            (
-                "boss.ts",
-                772,
-                "the KING: slam, bone throw, home tiles, bar",
-            ),
+            // ── boss.ts: ROW REMOVED 2026-08-17 ──
+            // Complete 1:1 Reaper King boss mechanics, body collision radius, anchor
+            // leash, orbiting skulls, bone projectile barrage, tentacle slam, and network
+            // aux serialization in crates/pk-core/src/boss.rs, gated by
+            // crates/pk-core/tests/boss_sim.rs.
             ("gui/screens/debug.ts", 717, "the backtick console"),
             ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
             // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
