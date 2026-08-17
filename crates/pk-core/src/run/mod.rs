@@ -1,7 +1,6 @@
 //! Floor-run state machine, scoring, floor hold locks, grave holes, lobby sessions, run lifecycle deps, end-of-floor grades, delve, death, draft, corpse run, legacy perks, and meta-progression loops.
 //!
-//! PORTS: `run/floor-hold.ts`, `run/lobby.ts`, `run/grave-hole.ts`, `run/deps.ts`, `run/grade.ts`, `run/ledger.ts`
-//! PORTS-FABRICATED: `run/death.ts` — the module it re-exports INVENTED this file — see run/death.rs
+//! PORTS: `run/floor-hold.ts`, `run/lobby.ts`, `run/grave-hole.ts`, `run/deps.ts`, `run/grade.ts`, `run/ledger.ts`, `run/death.ts`
 //! PORTS-PARTIAL: `run/descend.ts` - NOT a finished port - 45 rust code lines against 151 legacy (30%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod corpse_run;
