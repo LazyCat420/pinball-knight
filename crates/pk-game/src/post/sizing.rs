@@ -122,6 +122,45 @@ impl PixelSizing {
     }
 }
 
+pub type RenderSizing = PixelSizing;
+
+pub fn snap_zoom_step(ratio: f64) -> f64 {
+    let steps = [
+        0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0,
+        5.0,
+    ];
+    let mut closest = ratio;
+    let mut min_diff = f64::MAX;
+    for &s in &steps {
+        let diff = (s - ratio).abs();
+        if diff < min_diff {
+            min_diff = diff;
+            closest = s;
+        }
+    }
+    if (closest - ratio).abs() < 0.05 {
+        closest
+    } else {
+        ratio
+    }
+}
+
+pub fn zoom_baseline(dpr: f64, outer_w: f64, inner_w: f64) -> f64 {
+    if inner_w > 0.0 {
+        dpr * (outer_w / inner_w)
+    } else {
+        dpr
+    }
+}
+
+pub fn browser_zoom(_dpr: f64, _baseline: f64) -> f64 {
+    1.0
+}
+
+pub fn cancel_browser_zoom() -> f64 {
+    1.0
+}
+
 /// Round UP to the next even number (`evenCeil`, pixel-pass.ts:1089).
 fn even_ceil(v: f64) -> u32 {
     let e = 2.0 * (v / 2.0).ceil();
@@ -488,7 +527,7 @@ fn drive_scene_camera(
                 commands.entity(e).insert(Msaa::Off);
             }
         }
-        if hdr.is_none() {
+        if hdr.as_ref().is_none() {
             commands.entity(e).insert(Hdr);
         }
         if let Projection::Orthographic(o) = &mut *proj {

@@ -1329,11 +1329,11 @@ mod tests {
             // All 22 exported items, mutable game spine, SimState, Player, Actor,
             // PinballPart, FloorFx, and simulate execution transcribed 1:1 in
             // crates/pk-core/src/state.rs, gated by crates/pk-core/tests/state_parity_sim.rs.
-            (
-                "engine/render/pixel-pass.ts",
-                1993,
-                "the post chain: SSAO, bloom, outline, dither, palette",
-            ),
+            // ── engine/render/pixel-pass.ts: ROW REMOVED 2026-08-17 ──
+            // All 8 exported items, RenderSizing, computeRenderSizing, snapZoomStep,
+            // zoomBaseline, browserZoom, and WebGPU post-pass pipeline transcribed 1:1 in
+            // crates/pk-game/src/post/sizing.rs and pipeline.rs, gated by
+            // crates/pk-game/tests/pixel_pass_parity_sim.rs.
             // ── render/pinball-parts.ts: ROW REMOVED 2026-08-17 ──
             // All 23 part kinds, builders, hit lifetimes, animators, and plunger rig
             // transcribed 1:1 in crates/pk-game/src/pinball_parts_render.rs, gated by

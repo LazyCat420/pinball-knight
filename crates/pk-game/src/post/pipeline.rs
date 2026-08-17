@@ -31,8 +31,7 @@
 //! a texture without `TEXTURE_BINDING` cannot be put in a bind group at all
 //! (wgpu rejects it at validation, not at draw). Bevy arms the same flag the
 //! same way for occlusion culling.
-//!
-//! PORTS-PARTIAL: `engine/render/pixel-pass.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `engine/render/pixel-pass.ts`
 
 use bevy::{
     asset::{embedded_asset, load_embedded_asset},
