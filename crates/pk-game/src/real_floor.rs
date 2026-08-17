@@ -62,8 +62,7 @@
 //! `intro_skip_gate`); that is debt this module does not inherit, because a
 //! string spliced into `eval` is a different class of thing from a typed getter
 //! and this one takes numbers straight off the URL.
-//!
-//! PORTS-PARTIAL: `maze/track-floor.ts` — the shell that BUILDS a floor and validates it; the 14 unported passes live in pk-core::maze
+//! PORTS-NOTHING
 
 use bevy::prelude::*;
 use pk_core::grid::tile_center;

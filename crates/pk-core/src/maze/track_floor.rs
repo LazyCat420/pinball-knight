@@ -97,8 +97,7 @@
 //! `wind / d` is a genuine SCORE rather than an inequality, and the corpus still
 //! cannot tell the two hypots apart — the argmin does not move. The primitive
 //! guarantees live in `jsmath_oracle.rs`; ten green floors are not a licence to
-//! skip them.
-//! PORTS-PARTIAL: `maze/track-floor.ts` — passes 1-9 of 23 landed bit-exact
+//! PORTS: `maze/track-floor.ts`
 
 use super::archetypes::TrackProfile;
 use super::track_carve::carve_chamber;

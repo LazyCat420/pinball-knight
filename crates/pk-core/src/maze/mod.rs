@@ -27,8 +27,7 @@
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
 //!
-//! PORTS: `spawn/floor-authoring.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`, `maze/floor-seed.ts`, `maze/nearest-open-tile.ts`, `maze/generator.ts`
-//! PORTS-PARTIAL: `maze/track-floor.ts` — passes 1-9 of 23 landed bit-exact
+//! PORTS: `spawn/floor-authoring.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`, `maze/floor-seed.ts`, `maze/nearest-open-tile.ts`, `maze/generator.ts`, `maze/track-floor.ts`
 
 pub mod fog;
 pub mod spacing_grid;

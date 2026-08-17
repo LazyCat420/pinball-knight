@@ -70,6 +70,7 @@ fn speed_witch_touch_activates_and_consumes() {
         z: 10.0,
         revealed: false,
         used: false,
+        interacted: false,
     };
 
     // Not revealed -> cannot touch
@@ -95,6 +96,7 @@ fn oracle_frog_pathfinds_to_stairs() {
         x: fx,
         z: fz,
         cooldown: 0.0,
+        active: true,
     };
 
     let stairs = (12, 12);

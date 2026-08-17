@@ -87,6 +87,10 @@ pub const MONSTER_INFOS: &[MonsterInfo] = &[
     MonsterInfo { kind: "mimic", label: "Mimic", icon: "📦", blurb: "looks like a chest until you reach for it" },
 ];
 
+pub fn info_for_kind(kind: &str) -> Option<&'static MonsterInfo> {
+    MONSTER_INFOS.iter().find(|info| info.kind == kind)
+}
+
 pub const KIND_IDS: &[&str] = &[
     "zombie", "spider", "brute", "spitter", "ghost", "bat", "slime",
     "sporeling", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",

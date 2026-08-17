@@ -123,6 +123,14 @@ pub fn end_coop() {
     COOP_SEED.store(0, Ordering::Relaxed);
 }
 
+pub struct CoopAuthority;
+
+impl CoopAuthority {
+    pub fn elect_authority(peer_ids: &[&str]) -> Option<String> {
+        peer_ids.iter().min().map(|s| s.to_string())
+    }
+}
+
 pub fn elect_authority<'a>(my_id: &'a str, peers: &[&'a str]) -> &'a str {
     let mut all = Vec::with_capacity(peers.len() + 1);
     all.push(my_id);

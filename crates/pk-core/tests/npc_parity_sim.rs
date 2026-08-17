@@ -44,6 +44,8 @@ fn witch_interaction_and_merchant_flee() {
     let mut witch = WitchActor {
         x: 3.0,
         z: 3.0,
+        revealed: true,
+        used: false,
         interacted: false,
     };
     assert!(touch_witch(&mut witch, 3.2, 3.2));

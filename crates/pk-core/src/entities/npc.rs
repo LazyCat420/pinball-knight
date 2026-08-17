@@ -86,6 +86,8 @@ pub fn spawn_witch(x: f64, z: f64) {
         mgr.witch = Some(WitchActor {
             x,
             z,
+            revealed: true,
+            used: false,
             interacted: false,
         });
     }
@@ -142,7 +144,63 @@ impl Default for MagicianActor {
     }
 }
 
+pub type SpeedWitchActor = WitchActor;
+pub type OracleFrogActor = FrogActor;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WitchActor {
+    pub x: f64,
+    pub z: f64,
+    pub revealed: bool,
+    pub used: bool,
+    pub interacted: bool,
+}
+
+pub fn touch_witch(witch: &mut WitchActor, player_x: f64, player_z: f64) -> bool {
+    if witch.interacted || witch.used {
+        return false;
+    }
+    let dx = witch.x - player_x;
+    let dz = witch.z - player_z;
+    if dx * dx + dz * dz <= 1.0 {
+        witch.interacted = true;
+        witch.used = true;
+        true
+    } else {
+        false
+    }
+}
+
+pub fn check_witch_touch(witch: &mut WitchActor, player_x: f64, player_z: f64) -> bool {
+    if !witch.revealed {
+        return false;
+    }
+    touch_witch(witch, player_x, player_z)
+}
+
+pub fn step_oracle_frog(
+    frog: &mut FrogActor,
+    grid: &Grid,
+    stairs: (i32, i32),
+    player_x: f64,
+    player_z: f64,
+    _dt: f64,
+) -> Option<Vec<(i32, i32)>> {
+    touch_frog(frog, grid, player_x, player_z, stairs.0, stairs.1)
+}
+
 pub fn step_magician(
+    magician: &mut MagicianActor,
+    parts: &mut [FlowPart],
+    player_x: f64,
+    player_z: f64,
+    dt: f64,
+) -> bool {
+    let mut rng = Mulberry32::new(42);
+    step_magician_with_rng(magician, parts, player_x, player_z, dt, &mut rng)
+}
+
+pub fn step_magician_with_rng(
     magician: &mut MagicianActor,
     parts: &mut [FlowPart],
     player_x: f64,
@@ -215,26 +273,7 @@ pub fn step_magician(
     false
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct WitchActor {
-    pub x: f64,
-    pub z: f64,
-    pub interacted: bool,
-}
 
-pub fn touch_witch(witch: &mut WitchActor, player_x: f64, player_z: f64) -> bool {
-    if witch.interacted {
-        return false;
-    }
-    let dx = witch.x - player_x;
-    let dz = witch.z - player_z;
-    if dx * dx + dz * dz <= 1.0 {
-        witch.interacted = true;
-        true
-    } else {
-        false
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrogActor {
@@ -267,7 +306,7 @@ pub fn touch_frog(
         let mut cur_z = start_tile.1;
 
         let mut path = Vec::new();
-        for _ in 0..16 {
+        for _ in 0..100 {
             path.push((cur_x, cur_z));
             if (cur_x, cur_z) == (stairs_x, stairs_z) {
                 break;

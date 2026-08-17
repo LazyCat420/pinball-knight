@@ -45,12 +45,92 @@ pub struct EchoState {
     pub hit_cd: HashMap<u32, f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiballHit {
+    pub echo_idx: usize,
+    pub monster_id: u32,
+    pub damage: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct MultiBallManager {
     pub active: bool,
     pub local_time: f64,
     pub trail: VecDeque<TrailPoint>,
     pub echoes: Vec<EchoState>,
+}
+
+impl Default for MultiBallManager {
+    fn default() -> Self {
+        Self {
+            active: false,
+            local_time: 0.0,
+            trail: VecDeque::new(),
+            echoes: vec![
+                EchoState {
+                    x: 0.0,
+                    z: 0.0,
+                    facing: Facing::S,
+                    clip: "idle".to_string(),
+                    lag: MULTIBALL_LAGS[0],
+                    side: -MULTIBALL_SIDE_OFFSET,
+                    hit_cd: HashMap::new(),
+                },
+                EchoState {
+                    x: 0.0,
+                    z: 0.0,
+                    facing: Facing::S,
+                    clip: "idle".to_string(),
+                    lag: MULTIBALL_LAGS[1],
+                    side: MULTIBALL_SIDE_OFFSET,
+                    hit_cd: HashMap::new(),
+                },
+            ],
+        }
+    }
+}
+
+pub type MultiballState = MultiBallManager;
+
+pub fn step_multiball(
+    state: &mut MultiballState,
+    player_x: f64,
+    player_z: f64,
+    monsters: &mut [crate::monsters::types::LiveMonster],
+    ram_damage: f64,
+    dt: f64,
+) -> Vec<MultiballHit> {
+    let mut hits = Vec::new();
+    if !state.active {
+        return hits;
+    }
+
+    state.local_time += dt;
+    push_trail(&mut state.trail, player_x, player_z, state.local_time, MULTIBALL_TRAIL_SECONDS);
+
+    for (echo_idx, echo) in state.echoes.iter_mut().enumerate() {
+        tick_ram_cooldowns(&mut echo.hit_cd, dt);
+        if let Some((tx, tz)) = echo_target(&state.trail, state.local_time, echo.lag, echo.side) {
+            echo.x = follow_step(echo.x, tx, dt, MULTIBALL_FOLLOW_RATE);
+            echo.z = follow_step(echo.z, tz, dt, MULTIBALL_FOLLOW_RATE);
+        }
+
+        for m in monsters.iter_mut() {
+            let dx = echo.x - m.x;
+            let dz = echo.z - m.z;
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist <= 0.65 && can_ram(&echo.hit_cd, m.id) {
+                echo.hit_cd.insert(m.id, MULTIBALL_RAM_COOLDOWN);
+                hits.push(MultiballHit {
+                    echo_idx,
+                    monster_id: m.id,
+                    damage: ram_damage * MULTIBALL_RAM_MULT,
+                });
+            }
+        }
+    }
+
+    hits
 }
 
 static MANAGER: Mutex<Option<MultiBallManager>> = Mutex::new(None);
