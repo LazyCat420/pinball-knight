@@ -1,8 +1,5 @@
-//! Pinball Knight ball transformation and 3D rolling physics controller.
-//!
 //! PORTS-PARTIAL: `engine/render/animator.ts` - NOT a finished port - 15 rust code lines against 176 legacy (9%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `engine/render/figure.ts` - NOT a finished port - 25 rust code lines against 301 legacy (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `entities/marble.ts` - NOT a finished port - 12 of 45 exported names carried over (27%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use bevy::prelude::*;
 

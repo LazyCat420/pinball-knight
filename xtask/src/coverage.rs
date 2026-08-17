@@ -1345,11 +1345,11 @@ mod tests {
                 "the immediate-mode kit every screen stands on",
             ),
             ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
-            (
-                "entities/marble.ts",
-                1005,
-                "12 of 45 exports; the physics accessors are UNWIRED",
-            ),
+            // ── entities/marble.ts: ROW REMOVED 2026-08-17 ──
+            // All 45 exported constants, types, physics multipliers, fusion mechanics,
+            // emitters (emitMaterialOnBounce, materialSlam), and environmental reactions
+            // transcribed 1:1 in crates/pk-core/src/marble.rs and gated by
+            // crates/pk-core/tests/marble_sim.rs and marble_physics_sim.rs.
             ("abilities.ts", 916, "6 abilities, ranks, mana, Blood Price"),
             (
                 "legacy/src/scenes/tavern/core.ts",
