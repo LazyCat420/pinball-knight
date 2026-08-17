@@ -1310,11 +1310,11 @@ mod tests {
     fn the_biggest_gaps_are_reported_as_gaps() {
         // (legacy path, its line count when pinned, what is still missing)
         const UNFINISHED: &[(&str, usize, &str)] = &[
-            (
-                "maze/build.ts",
-                1898,
-                "arches, banners, stairs marker, cracked bands",
-            ),
+            // ── maze/build.ts: ROW REMOVED 2026-08-17 ──
+            // Wall/floor/cap geometry, biome stone palettes, baked surfaces, arches,
+            // banners, stairs marker, and cracked bands transcribed 1:1 across
+            // crates/pk-game/src/dungeon_render.rs and maze_art.rs, gated by
+            // crates/pk-game/tests/maze_build_parity_sim.rs.
             (
                 "maze/decorate.ts",
                 3169,
