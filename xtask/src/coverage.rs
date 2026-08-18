@@ -1361,11 +1361,11 @@ mod tests {
                 885,
                 "rarities, levels, shiny, aggregation — blocks two vendors",
             ),
-            (
-                "boss.ts",
-                772,
-                "the KING: slam, bone throw, home tiles, bar",
-            ),
+            // ── boss.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/boss.rs` with all 773 lines:
+            // The Reaper King leash, aggro, home anchor, orbiting bone skulls,
+            // skull barrage, tentacle slam telegraph & impact, fairness scaling,
+            // and exit portal unlocking. Gated by `crates/pk-core/tests/boss_sim.rs`.
             ("gui/screens/debug.ts", 717, "the backtick console"),
             // ── maze/arc-sweeps.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/maze/arc_sweeps.rs` and verified

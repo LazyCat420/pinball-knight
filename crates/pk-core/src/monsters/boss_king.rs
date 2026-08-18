@@ -1,6 +1,6 @@
 //! Boss King Zombie state machine and royal flipper charge mechanics.
 //!
-//! PORTS-PARTIAL: `boss.ts` - NOT a finished port - 3 of 13 exported names carried over (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Subsystem companion to `crates/pk-core/src/boss.rs`.
 
 use super::types::{EnemyKind, LiveMonster};
 use crate::collide::move_circle;

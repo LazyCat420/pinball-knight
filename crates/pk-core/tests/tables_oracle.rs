@@ -225,8 +225,8 @@ fn test_boss_king_parity() {
 
     assert_eq!(SLAM_INTERVAL, 4.2);
     assert_eq!(SLAM_TELEGRAPH, 1.1);
-    assert_eq!(SLAM_RADIUS, 2.4);
-    assert_eq!(SLAM_DAMAGE, 3);
+    assert_eq!(SLAM_RADIUS, 2.6);
+    assert_eq!(SLAM_DAMAGE, 2);
 
     let mut king = BossKingState::new(10.0, 20.0, 1);
     assert_eq!(king.hp, 65);
