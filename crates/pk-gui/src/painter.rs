@@ -63,11 +63,17 @@ pub struct Painter {
 
 impl Painter {
     pub fn new(w: u32, h: u32) -> Self {
+        crate::pixel_fonts::ensure_pixel_fonts();
         Self {
             w,
             h,
             buf: vec![0; (w * h * 4) as usize],
         }
+    }
+
+    /// Thresholds straight alpha buffer to eliminate translucent AA fringes.
+    pub fn threshold_alpha(&mut self) {
+        crate::pixel_text::threshold_alpha_buffer(&mut self.buf);
     }
 
     /// Match the layer to a new render grid. Contents are undefined after —

@@ -177,6 +177,9 @@ impl std::error::Error for FloorBuildError {}
 /// either as ignorable cost the port 548 extra draws on L1 s1 the first time it
 /// was tried (see `tests/maze_pass_digests.rs`).
 pub fn derive_floor_spec(level: i32, run_seed: u32) -> FloorSpec {
+    let _cfg = crate::constants::level_config(level as i64);
+    let _budgets = crate::constants::floor_budgets(level as i64, 500.0);
+    let _s_gold = crate::constants::grade_gold("S");
     let archetype = archetype_for(level);
     let (cells_w, cells_h) = level_cells(level);
     let mut rng = floor_rng(run_seed, level);

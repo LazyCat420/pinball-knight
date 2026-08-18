@@ -35,3 +35,11 @@ pub const fn get_element_config(kind: ElementKind) -> ElementMaterialConfig {
         depth_write: false,
     }
 }
+
+pub const fn element_material(additive: bool) -> ElementMaterialConfig {
+    ElementMaterialConfig {
+        additive,
+        transparent: true,
+        depth_write: false,
+    }
+}

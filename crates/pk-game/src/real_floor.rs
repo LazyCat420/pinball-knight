@@ -373,7 +373,10 @@ impl FloorPlan {
     /// that silently starts generating floors.
     pub fn advance(&mut self) {
         if let Some(Ok(r)) = &mut self.next {
-            r.level += 1;
+            let next_target = (r.level + 1) as u32;
+            let dev_lock = pk_core::dev::floor_lock::DevFloorLock::default();
+            let (target, _) = dev_lock.apply_floor_lock(next_target);
+            r.level = target as i32;
         }
     }
 

@@ -420,9 +420,15 @@ fn advance_floor_loading(
 /// standable floor or returns the reason — see `real_floor`'s "it does not fall
 /// back".
 fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
+    let mut coordinator = pk_core::run::floor_hold::FloorHoldCoordinator::new();
+    let lvl = plan.next.as_ref().and_then(|r| r.as_ref().ok()).map(|r| r.level as u32).unwrap_or(1);
+    let token = coordinator.hold_for_floor_load(lvl);
+    let _held = coordinator.is_render_held();
+
     if plan.source == FloorSource::Authored {
         if let Some(Ok(req)) = &plan.next {
             let f = authored_floor::load(req.level, req.run_seed).map_err(|e| e.to_string())?;
+            coordinator.release_floor_load(Some(token));
             return Ok(PreparedFloor {
                 grid: f.grid.clone(),
                 spawn: f.info.start_world,
@@ -452,6 +458,7 @@ fn prepare_floor(plan: &FloorPlan) -> Result<PreparedFloor, String> {
             Some(f)
         }
     };
+    coordinator.release_floor_load(Some(token));
     Ok(match real {
         Some(f) => PreparedFloor {
             grid: f.track.grid.clone(),

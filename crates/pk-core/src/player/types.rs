@@ -1,9 +1,6 @@
-//! Player state, verbs, and movement physics data structures.
-//!
 //! PORTS: `entities/movement.ts`
 //! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `constants/player.ts` - NOT a finished port - 5 rust code lines against 77 legacy (6%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const PLAYER_RADIUS: f64 = 0.28;
 pub const PLAYER_WALK_SPEED: f64 = 4.2;
@@ -122,6 +119,7 @@ pub struct PlayerCoreState {
     pub dash: DashState,
     pub plunger: PlungerState,
     pub inventory: super::inventory::PlayerInventory,
+    pub legacy: crate::run::legacy::LegacyStore,
 }
 
 impl Default for PlayerCoreState {
@@ -143,6 +141,21 @@ impl Default for PlayerCoreState {
             dash: DashState::default(),
             plunger: PlungerState::default(),
             inventory: super::inventory::PlayerInventory::default(),
+            legacy: crate::run::legacy::LegacyStore::default(),
         }
+    }
+}
+
+impl PlayerCoreState {
+    pub fn perk_rank(&self, id: &str) -> u32 {
+        self.legacy.perk_rank(id)
+    }
+
+    pub fn add_perk_rank(&mut self, id: &str) -> u32 {
+        self.legacy.add_perk_rank(id)
+    }
+
+    pub fn has_start_card_perk(&self) -> bool {
+        self.legacy.has_start_card_perk()
     }
 }

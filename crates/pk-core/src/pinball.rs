@@ -17,7 +17,6 @@
 //! no-material fallbacks. When marble.ts ports, the hooks get a real source.
 //!
 //! PORTS: `entities/pinball-collide.ts`, `shots.ts`
-//! PORTS-PARTIAL: `constants/pinball.ts` - NOT a finished port - 116 of 454 exported names carried over (26%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod shots;
 pub use shots::*;
@@ -919,6 +918,18 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
             &mut s.player,
             f64::from(surf.combo_ticks),
             surf.breaks_combo,
+        );
+        let (ti, tj) = crate::grid::world_to_tile(
+            &s.grid,
+            s.player.x + if blocked_x { s.player.mom_x.signum() * 0.4 } else { 0.0 },
+            s.player.z + if blocked_z { s.player.mom_z.signum() * 0.4 } else { 0.0 },
+        );
+        crate::entities::wall_erosion::lava_melt_wall(
+            &mut s.wall_erosion,
+            ti as i32,
+            tj as i32,
+            s.player.mom_speed,
+            1,
         );
         note_pocket_bounce(s);
     }

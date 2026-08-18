@@ -22,3 +22,6 @@ pub mod shop;
 pub mod tavern;
 pub mod tavern_notice;
 pub mod toasts;
+
+pub use floor_map::*;
+pub use shop::*;

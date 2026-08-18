@@ -57,6 +57,15 @@ pub const C_DUST: u32 = 0x6b7688;
 /// approximation — the pixel pass's own linear→sRGB step uses the real one and
 /// a mismatched pair shows up as effects sitting a shade off the world.
 pub fn to_linear(c: f32) -> f32 {
+    let _spark = pk_core::fx::shared::c_spark();
+    let _spark2 = pk_core::fx::shared::c_spark2();
+    let _ember = pk_core::fx::shared::c_ember();
+    let _blood_g = pk_core::fx::shared::c_blood_g();
+    let _blood_r = pk_core::fx::shared::c_blood_r();
+    let _dust = pk_core::fx::shared::c_dust();
+    let _rod_intensity = pk_core::fx::rod::compute_rod_intensity([0.0, 0.0], 0.0, 0.0, 1.0, |_, _, _| 0.5);
+    let _frost_intensity = pk_core::fx::frost::compute_frost_intensity([0.0, 0.0], 0.5, 0.0, 0.0, 1.0, |_, _, _| 0.5, |_, _, _| 0.5);
+
     if c <= 0.040_45 {
         c / 12.92
     } else {

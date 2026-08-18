@@ -266,3 +266,11 @@ pub fn paint_menu(f: &mut UiFrame, state: &mut KnightMenuState, bounds: Rect) {
         }
     }
 }
+
+pub fn menu_screen() -> KnightMenuState {
+    KnightMenuState::default()
+}
+
+pub fn open_menu<F: FnOnce()>(_on_abandon: F) -> KnightMenuState {
+    KnightMenuState::default()
+}

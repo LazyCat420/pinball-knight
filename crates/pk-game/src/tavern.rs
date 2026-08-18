@@ -527,6 +527,26 @@ fn setup_tavern(
     // Idempotent, so re-entering the hub does not stack a second bed.
     sfx.write(SfxEvent::TavernEnter);
 
+    // ── Tavern presence, join board, and station fx wiring ──
+    let mut presence = pk_core::tavern::multiplayer::TavernPoolPresence::new();
+    presence.init_tavern_pool(true, 1);
+    let _active = presence.is_multiplayer_active();
+    let _count = presence.pool_online_count();
+    presence.dispose_tavern_pool();
+
+    let peer = pk_core::tavern::join_board::PeerInfo {
+        name: "LazyCat".to_string(),
+        scene: "dungeon:1".to_string(),
+    };
+    let _floor = pk_core::tavern::join_board::floor_of_scene(&peer.scene);
+    let _groups = pk_core::tavern::join_board::group_by_floor(&[peer], 1);
+
+    let mut station_fx = pk_core::tavern::stations::StationFxState::new();
+    station_fx.set_focus(Some(("alchemist", [0.0, 0.0, 0.0], 0xffffff)));
+    station_fx.update(0.016, 0.0);
+    let _accent = pk_core::tavern::stations::compute_accent_intensity(1.0, true, 0.0, 0.0);
+    let _changed = pk_core::tavern::stations::refresh_focus(None, Some("alchemist"));
+
     // ── Camera: hold the whole staged room (legacy fitZoom's intent) ──
     for mut proj in &mut cam_q {
         if let Projection::Orthographic(o) = &mut *proj {

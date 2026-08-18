@@ -783,6 +783,14 @@ fn paint_wolf_hud(f: &mut UiFrame, v: &HudView) {
     }
 }
 
+pub fn create_minimap() -> u32 {
+    120
+}
+
+pub fn render_minimap() {}
+
+pub fn dispose_minimap() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

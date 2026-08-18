@@ -43,3 +43,11 @@ impl GlobeRippleStore {
         }
     }
 }
+
+pub fn ripple_globe(store: &mut GlobeRippleStore, globe: GlobeType, now_ms: f64) {
+    store.trigger(globe, now_ms);
+}
+
+pub fn ripple_amount(store: &GlobeRippleStore, globe: GlobeType, now_ms: f64) -> f32 {
+    store.amount(globe, now_ms)
+}

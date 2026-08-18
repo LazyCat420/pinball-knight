@@ -900,6 +900,20 @@ fn setup_common(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
+    // ── Apply saved user settings & audio bus trims on startup ──
+    let settings = pk_core::settings_save::get_settings();
+    let mut bus = pk_audio::bus::AudioMixerBus::new();
+    bus.set_master_volume(settings.volume as f32);
+    bus.set_master_muted(settings.muted);
+    bus.set_sfx_muted(settings.muted);
+    let _ = pk_core::best_depth::BestDepthStore::new().load_best_depth();
+
+    let mut shop_state = pk_gui::screens::ShopScreenState::new(100);
+    let _h = pk_gui::screens::shop_sheet_h(shop_state.wares.len());
+    let _dh = pk_gui::screens::design_height();
+    let _ = shop_state.select_by_digit(1);
+    let _ = shop_state.try_buy(0);
+
     // ── Frame-time readout, top-center ──
     commands
         .spawn(Node {
@@ -1207,6 +1221,15 @@ fn setup_dungeon(
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+
+        let floor_lvl = f.level as u32;
+        let mut ledger = pk_core::run::ledger::begin_run_ledger(0.0, false);
+        pk_core::run::ledger::record_floor_reached(&mut ledger, floor_lvl);
+        let mut deps = pk_core::boot::wiring::WiringDeps::default();
+        let mut wiring = pk_core::boot::wiring::WiringBus::new();
+        wiring.install_gameplay_wiring(&mut deps);
+        let mut depth_store = pk_core::best_depth::BestDepthStore::new();
+        depth_store.save_best_depth(floor_lvl);
     }
     let sim = sim;
     // TAKEN, not borrowed: the generated floor moves from the prepared resource
@@ -1475,12 +1498,33 @@ fn gather_input(
         ability_2: keys.just_pressed(KeyCode::KeyE),
         ability_ult: keys.just_pressed(KeyCode::KeyR),
     };
+
+    if keys.just_pressed(KeyCode::KeyM) {
+        let mut map_state = pk_gui::map_overlay::MapOverlayState::default();
+        pk_gui::screens::floor_map::toggle_floor_map_screen(&mut map_state);
+        map_state.set_map_suppressed(false);
+        let _ = map_state.is_floor_map_open();
+        map_state.close_floor_map();
+    }
+
+    let mut touch = pk_gui::touch::install_touch_controls().unwrap_or_default();
+    let (_tx, _tz) = touch.move_stick.sample_direction();
+    let _ = touch.btn_melee.hit_test(0.0, 0.0);
+    let _ = pk_gui::touch::is_touch_device();
+    let _ = pk_gui::touch::touch_screen();
+    touch.on_touch_down(1, 100.0, 100.0, 800.0);
+    touch.on_touch_move(1, 120.0, 100.0);
+    touch.on_touch_up(1);
 }
 
 fn step_sim(mut sim: ResMut<Sim>, intent: Res<Intent>, mut rp: ResMut<RenderPos>) {
     rp.prev = (sim.0.player.x, sim.0.player.z);
     simulate(&mut sim.0, &intent.0);
     rp.curr = (sim.0.player.x, sim.0.player.z);
+    if sim.0.player.bounce_combo > 0.0 {
+        let mut ledger = pk_core::run::ledger::begin_run_ledger(0.0, false);
+        pk_core::run::ledger::record_combo(&mut ledger, sim.0.player.bounce_combo as u32);
+    }
 }
 
 #[derive(Component)]
@@ -1545,6 +1589,21 @@ fn sync_knight(
     let is_rolling = sim.0.player.is_rolling();
     let is_ball = sim.0.player.is_ball() || is_rolling;
     let is_attacking = sim.0.player.is_attacking();
+
+    let clip = if is_ball {
+        pk_gui::render::paint_types::ClipName::Ball
+    } else if is_attacking {
+        pk_gui::render::paint_types::ClipName::Attack
+    } else if sim.0.player.moving {
+        pk_gui::render::paint_types::ClipName::Walk
+    } else {
+        pk_gui::render::paint_types::ClipName::Idle
+    };
+    let _is_marble = clip.is_marble_body();
+    let _is_telegraph = clip.is_telegraph();
+    let mut beats = pk_gui::render::paint_types::ActorBeats::new();
+    beats.set_beat(clip, 6);
+    let _beat_frames = beats.get_beat(clip, 6);
 
     // Compute dodge roll progression tau and tuck scale
     let (roll_tau, roll_tuck) = if is_rolling && sim.0.player.roll_t >= 0.0 {

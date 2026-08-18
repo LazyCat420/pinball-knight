@@ -90,4 +90,16 @@ impl PaletteSource {
         let hex = self.colors_hex.get(index).copied().unwrap_or(0);
         format!("#{:06x}", hex)
     }
+
+    pub fn shade_by(&self, idx: usize, n: i32) -> u8 {
+        super::palette_shading::shade_by(idx, n)
+    }
+
+    pub fn shade_table(&self, steps: usize) -> Vec<u8> {
+        super::palette_shading::shade_table(steps)
+    }
+
+    pub fn family_of(&self, idx: usize) -> Option<usize> {
+        super::palette_shading::family_index_of(idx)
+    }
 }

@@ -1,8 +1,5 @@
-//! ACTIVE SKILLS — the abilities the Diablo HUD hangs off.
-//!
 //! PORTS-PARTIAL: `abilities.ts` - NOT a finished port - 128 rust code lines against 524 legacy (24%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `skills.ts` - NOT a finished port - 38 rust code lines against 154 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `constants/skills.ts` - NOT a finished port - 29 rust code lines against 117 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbilityId {

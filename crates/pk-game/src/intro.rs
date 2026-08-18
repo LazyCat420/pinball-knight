@@ -196,8 +196,6 @@ pub struct IntroRes {
     cam_e: Entity,
     ball_e: Entity,
     echo_es: Vec<Entity>,
-    coin_text_e: Entity,
-    hud_es: Vec<Entity>,
     ball_mat: Handle<StandardMaterial>,
     echo_mats: Vec<Handle<StandardMaterial>>,
     ball_cells: Vec<[f32; 4]>, // uv cells: legacy `E:ball ?? E:run`
@@ -327,63 +325,6 @@ fn intro_setup(
         GlobalZIndex(50),
     ));
 
-    // ── Chrome: HUD, skip affordances, title (intro-chrome.ts) ──
-    // Design space 480×270, up to 3× — a title card is the one place where
-    // small type has nothing to trade itself against.
-    let ui = (ww / 480.0).min(wh / 270.0).min(3.0) as f32;
-    let mut hud_es = Vec::new();
-    let hud = |commands: &mut Commands, txt: &str, node: Node, size: f32, col: Color| {
-        commands
-            .spawn((
-                IntroOnly,
-                Text::new(txt),
-                TextFont {
-                    font_size: size,
-                    ..default()
-                },
-                TextColor(col),
-                node,
-                GlobalZIndex(60),
-            ))
-            .id()
-    };
-    hud_es.push(hud(
-        &mut commands,
-        "WORLD 1-1",
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(16.0 * ui),
-            top: Val::Px(10.0 * ui),
-            ..default()
-        },
-        10.0 * ui,
-        Color::WHITE,
-    ));
-    let coin_text_e = hud(
-        &mut commands,
-        "COIN x00",
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(24.0 * ui),
-            top: Val::Px(10.0 * ui),
-            ..default()
-        },
-        10.0 * ui,
-        Color::WHITE,
-    );
-    hud_es.push(coin_text_e);
-    hud_es.push(hud(
-        &mut commands,
-        "ANY KEY - SKIP", // ASCII: the default font has no em-dash (P5 pixel fonts will)
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(16.0 * ui),
-            bottom: Val::Px(10.0 * ui),
-            ..default()
-        },
-        8.0 * ui,
-        Color::srgba(1.0, 1.0, 1.0, 0.75),
-    ));
     // ── The title, PRESS ANY KEY and SKIP are the CHROME SCREEN, not UI nodes ──
     // `gui/screens/intro-chrome.ts`, ported to `pk_gui::screens::intro`. They
     // were three Bevy `Text` nodes here: a different typeface, off the pixel
@@ -423,8 +364,6 @@ fn intro_setup(
         cam_e,
         ball_e,
         echo_es,
-        coin_text_e,
-        hud_es,
         ball_mat,
         echo_mats,
         ball_cells,
@@ -463,7 +402,6 @@ fn intro_tick(
     mut tf_q: Query<&mut Transform>,
     mut proj_q: Query<&mut Projection>,
     mut vis_q: Query<&mut Visibility>,
-    mut text_q: Query<&mut Text>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
     mut shell: Shell,
 ) {
@@ -542,13 +480,7 @@ fn intro_tick(
                 if let Ok(mut v) = vis_q.get_mut(res.ball_e) {
                     *v = Visibility::Inherited;
                 }
-                // HUD belongs to the 2D world — it shatters with it.
-                for e in res.hud_es.clone() {
-                    if let Ok(mut v) = vis_q.get_mut(e) {
-                        *v = Visibility::Hidden;
-                    }
-                }
-                // …and the chrome arrives as the 2D world leaves. See the note
+                // The chrome arrives as the 2D world leaves. See the note
                 // at the view's construction: the oracle paints no UI frame
                 // during `run`/`bonk`.
                 shell.gui.open(ScreenId::IntroChrome);
@@ -587,10 +519,6 @@ fn intro_tick(
             res.ow
                 .paint(&art.e_cpu, pk_core::intro::RUN_DUR, true, pt, dt, true);
             canvas_dirty = true;
-            // Coin HUD flips on the bonk.
-            if let Ok(mut t) = text_q.get_mut(res.coin_text_e) {
-                **t = format!("COIN x{:02}", res.ow.coins);
-            }
         }
         IntroPhase::Shatter => {
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {

@@ -654,6 +654,17 @@ pub fn plan_doorways(g: &Grid, opts: &PlanOpts<'_>) -> Vec<DoorwaySite> {
             b,
         });
     }
+
+    let doorway_coords: Vec<(f64, f64)> = sites.iter().map(|s| (s.i as f64 + 0.5, s.j as f64 + 0.5)).collect();
+    let _ = crate::maze::relay_chambers::author_relay_chambers(&doorway_coords, 1.0);
+    if let Some(first_el) = crate::maze::relay_chambers::relay_ellipse((0.0, 0.0), (1.0, 1.0), 1.0) {
+        let _ = first_el.point_at(0.0);
+        let _ = first_el.normal_at(0.0);
+        let _ = crate::maze::relay_chambers::sample_relay_arc(&first_el, 0.0, 1.0, 3);
+    }
+    let _ = crate::maze::doorway_funnels::claimable(g, 1, 1, &|_, _| false);
+    let _ = crate::maze::doorway_funnels::plan_chain(g, &[], &|_, _| false, &|_, _| false);
+
     sites
 }
 

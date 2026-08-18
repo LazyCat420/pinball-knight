@@ -215,6 +215,47 @@ impl Player {
             (bulge, flat)
         }
     }
+
+    pub fn to_core(&self) -> crate::player::PlayerCoreState {
+        crate::player::PlayerCoreState {
+            x: self.x,
+            z: self.z,
+            vx: self.mom_x * self.mom_speed,
+            vz: self.mom_z * self.mom_speed,
+            hp: 6,
+            max_hp: 6,
+            mana: 100.0,
+            max_mana: 100.0,
+            iframes: self.iframes,
+            facing: match self.facing {
+                Facing::S => crate::player::PlayerFacing::South,
+                Facing::N => crate::player::PlayerFacing::North,
+                Facing::E => crate::player::PlayerFacing::East,
+                Facing::W => crate::player::PlayerFacing::West,
+            },
+            mom_speed: self.mom_speed,
+            pinball_mode: self.is_ball(),
+            slash: self.slash.clone(),
+            dash: crate::player::DashState {
+                active: self.is_rolling(),
+                timer: self.roll_t,
+                cooldown: 0.0,
+                dir_x: self.roll_dir_x,
+                dir_z: self.roll_dir_z,
+            },
+            plunger: crate::player::PlungerState::default(),
+            inventory: self.inventory.clone(),
+            legacy: crate::run::legacy::LegacyStore::default(),
+        }
+    }
+
+    pub fn apply_core(&mut self, core: &crate::player::PlayerCoreState) {
+        self.x = core.x;
+        self.z = core.z;
+        self.slash = core.slash.clone();
+        self.iframes = core.iframes;
+        self.inventory = core.inventory.clone();
+    }
 }
 
 /// Per-tick input intent, already normalized by the shell.
@@ -246,6 +287,9 @@ pub struct SimState {
     pub grid: Grid,
     pub player: Player,
     pub monsters: Vec<crate::monsters::types::LiveMonster>,
+    pub items: Vec<crate::maze::interactive::GroundItem>,
+    pub wall_erosion: crate::entities::wall_erosion::WallErosionTracker,
+    pub hazards: crate::hazards::HazardState,
     pub abilities: crate::abilities::PlayerAbilities,
     pub rng: Mulberry32,
     pub tick: u64,
@@ -358,6 +402,9 @@ impl SimState {
                 marble: crate::marble::MarbleState::default(),
             },
             monsters: Vec::new(),
+            items: Vec::new(),
+            wall_erosion: crate::entities::wall_erosion::WallErosionTracker::new(),
+            hazards: crate::hazards::HazardState::default(),
             abilities: crate::abilities::PlayerAbilities::default(),
             rng: Mulberry32::new(seed),
             tick: 0,
@@ -396,6 +443,8 @@ impl SimState {
 pub fn simulate(s: &mut SimState, input: &FrameInput) {
     s.tick += 1;
     s.elapsed += DT;
+    crate::hazards::simulate_hazards(&mut s.hazards, DT);
+    let (prev_px, prev_pz) = (s.player.x, s.player.z);
 
     // Tick squash spring recovery
     if s.player.squash_t > 0.0 {
@@ -452,26 +501,24 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
 
     // Melee attack trigger
     if input.attack && !s.player.slash.active && !s.player.is_ball() && !s.player.is_rolling() {
-        let active_weapon = s.player.inventory.active_weapon();
-        let def = active_weapon.def();
-        s.player.slash.active = true;
-        s.player.slash.timer = 0.22 * def.heft;
-        s.player.slash.reach = def.range;
-        s.player.slash.base_damage = def.damage as f64;
-        s.player.slash.hit_entities.clear();
-        let (fx, fz) = match s.player.facing {
-            Facing::S => (0.0, 1.0),
-            Facing::N => (0.0, -1.0),
-            Facing::E => (1.0, 0.0),
-            Facing::W => (-1.0, 0.0),
-        };
-        s.player.slash.dir_x = fx;
-        s.player.slash.dir_z = fz;
-        s.player.inventory.decrement_active_durability();
+        let mut core = s.player.to_core();
+        if crate::player::verbs::trigger_melee_slash(&mut core) {
+            let active_weapon = s.player.inventory.active_weapon();
+            let def = active_weapon.def();
+            core.slash.timer = 0.22 * def.heft;
+            core.slash.reach = def.range;
+            core.slash.base_damage = def.damage as f64;
+            s.player.apply_core(&core);
+            s.player.inventory.decrement_active_durability();
+        }
     }
 
     // Combat resolution: player slash hitting monsters
     if s.player.slash.active {
+        let mut core = s.player.to_core();
+        let _ = crate::player::verbs::step_melee_slash(&mut core, &mut s.monsters, DT);
+        s.player.apply_core(&core);
+
         let px = s.player.x;
         let pz = s.player.z;
         let reach = s.player.slash.reach;
@@ -657,6 +704,19 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     // The momentum ride owns the player while it lasts.
     if crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z)) {
         s.player.moving = s.player.mom_speed > 0.0;
+        let collected = crate::economy::pickups::check_pickups(
+            &mut s.items,
+            prev_px,
+            prev_pz,
+            s.player.x,
+            s.player.z,
+            &mut s.player.inventory,
+        );
+        for it in collected {
+            if let crate::maze::interactive::GroundItemKind::Coins(amt) = it.kind {
+                s.gold_run += amt as i64;
+            }
+        }
         return;
     }
 
@@ -714,6 +774,19 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             cur,
             (s.player.roll_dir_x, s.player.roll_dir_z),
         );
+        let collected = crate::economy::pickups::check_pickups(
+            &mut s.items,
+            prev_px,
+            prev_pz,
+            s.player.x,
+            s.player.z,
+            &mut s.player.inventory,
+        );
+        for it in collected {
+            if let crate::maze::interactive::GroundItemKind::Coins(amt) = it.kind {
+                s.gold_run += amt as i64;
+            }
+        }
         return;
     }
 
@@ -826,6 +899,20 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     // the full player port (it only changes the oil slick's launch strength).
     let cur = s.cur_speed;
     crate::pinball::touch_pinball_parts(s, false, cur, (input.move_x, input.move_z));
+
+    let collected = crate::economy::pickups::check_pickups(
+        &mut s.items,
+        prev_px,
+        prev_pz,
+        s.player.x,
+        s.player.z,
+        &mut s.player.inventory,
+    );
+    for it in collected {
+        if let crate::maze::interactive::GroundItemKind::Coins(amt) = it.kind {
+            s.gold_run += amt as i64;
+        }
+    }
 }
 
 /// A deterministic demo floor for the vertical slice: bordered room, carved

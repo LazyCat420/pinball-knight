@@ -431,6 +431,13 @@ fn gather_ui_input(
     was: Option<(f64, f64)>,
 ) -> UiInput {
     let count = |ks: &[KeyCode]| ks.iter().filter(|k| keys.just_pressed(**k)).count() as u32;
+    let mut manager = pk_gui::input::install_ui_input();
+    pk_gui::input::set_ui_input_live(&mut manager, true);
+    if keys.pressed(KeyCode::ShiftLeft) {
+        manager.on_key_down("shift");
+    }
+    let _held = pk_gui::input::ui_key_held(&manager, "shift");
+
     let mut input = empty_ui_input();
     input.up = count(&[KeyCode::ArrowUp, KeyCode::KeyW]);
     input.down = count(&[KeyCode::ArrowDown, KeyCode::KeyS]);

@@ -11,3 +11,7 @@ pub fn allocate_canvas_backing(width: u32, height: u32) -> Vec<u8> {
         .saturating_mul(4);
     vec![0u8; size]
 }
+
+pub fn force_backing_store(width: u32, height: u32) -> Vec<u8> {
+    allocate_canvas_backing(width, height)
+}

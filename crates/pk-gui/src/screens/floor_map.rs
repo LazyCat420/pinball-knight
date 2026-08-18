@@ -37,3 +37,17 @@ pub fn compute_map_viewport(
         h: avail_h,
     }
 }
+
+/// Toggles floor map overlay state.
+pub fn toggle_floor_map_screen(overlay: &mut crate::map_overlay::MapOverlayState) -> bool {
+    overlay.toggle_floor_map()
+}
+
+/// Closes the floor map screen if currently open.
+pub fn close_floor_map_screen(overlay: &mut crate::map_overlay::MapOverlayState) {
+    overlay.close_floor_map();
+}
+
+pub fn floor_map_screen() -> crate::map_overlay::MapOverlayState {
+    crate::map_overlay::MapOverlayState::default()
+}

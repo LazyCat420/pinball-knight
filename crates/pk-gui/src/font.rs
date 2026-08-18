@@ -81,8 +81,8 @@ pub struct Atlas {
     pub pad: u32,
     pub cols: u32,
     /// Coverage only — glyphs were baked white, so alpha IS the raster.
-    alpha: Vec<u8>,
-    width: u32,
+    pub alpha: Vec<u8>,
+    pub width: u32,
     glyphs: HashMap<char, Glyph>,
 }
 
@@ -202,7 +202,7 @@ impl Atlas {
         }
     }
 
-    fn cell_origin(&self, index: u32) -> (u32, u32) {
+    pub fn cell_origin(&self, index: u32) -> (u32, u32) {
         (
             (index % self.cols) * self.cell_w,
             (index / self.cols) * self.cell_h,

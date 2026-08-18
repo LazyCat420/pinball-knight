@@ -72,3 +72,7 @@ pub fn compute_haul_summary(floor: u32, entries: &[HaulCardEntry]) -> HaulScreen
         stacks,
     }
 }
+
+pub fn haul_screen<F: FnOnce()>(entries: &[HaulCardEntry], floor: u32, _on_done: F) -> HaulScreenSummary {
+    compute_haul_summary(floor, entries)
+}

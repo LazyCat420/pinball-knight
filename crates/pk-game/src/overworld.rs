@@ -17,6 +17,7 @@
 
 use pk_core::intro::{BONK_DUR, JUMP_T, RUN_DUR, SHATTER_DUR};
 use pk_core::rng::Mulberry32;
+use pk_gui::Fonts;
 
 // Choreography-fixed layout (intro/index.ts).
 pub const BW: i32 = 480;
@@ -98,10 +99,27 @@ pub struct Overworld {
     snap: Option<Vec<u8>>,
     /// Coin HUD flips 00 → 01 on the bonk; the UI system reads it.
     pub coins: u32,
+    fonts: Fonts,
 }
 
 fn hex(c: u32) -> [u8; 4] {
     [(c >> 16) as u8, (c >> 8) as u8, c as u8, 255]
+}
+
+fn plot_pixel(buf: &mut [u8], h: i32, x: i32, y: i32, c: [u8; 4], a: f64) {
+    if x < 0 || y < 0 || x >= BW || y >= h {
+        return;
+    }
+    let i = ((y * BW + x) * 4) as usize;
+    let a = (a * f64::from(c[3]) / 255.0).clamp(0.0, 1.0);
+    if a <= 0.0 {
+        return;
+    }
+    for (dst, src) in buf[i..i + 3].iter_mut().zip(c) {
+        *dst = (f64::from(src) * a + f64::from(*dst) * (1.0 - a)).round() as u8;
+    }
+    let da = f64::from(buf[i + 3]) / 255.0;
+    buf[i + 3] = ((a + da * (1.0 - a)) * 255.0).round() as u8;
 }
 
 impl Overworld {
@@ -121,6 +139,7 @@ impl Overworld {
             pieces: Vec::new(),
             snap: None,
             coins: 0,
+            fonts: Fonts::load_embedded(),
         }
     }
 
@@ -135,19 +154,7 @@ impl Overworld {
     }
 
     fn plot(&mut self, x: i32, y: i32, c: [u8; 4], a: f64) {
-        if x < 0 || y < 0 || x >= BW || y >= self.h {
-            return;
-        }
-        let i = ((y * BW + x) * 4) as usize;
-        let a = (a * f64::from(c[3]) / 255.0).clamp(0.0, 1.0);
-        if a <= 0.0 {
-            return;
-        }
-        for (dst, src) in self.buf[i..i + 3].iter_mut().zip(c) {
-            *dst = (f64::from(src) * a + f64::from(*dst) * (1.0 - a)).round() as u8;
-        }
-        let da = f64::from(self.buf[i + 3]) / 255.0;
-        self.buf[i + 3] = ((a + da * (1.0 - a)) * 255.0).round() as u8;
+        plot_pixel(&mut self.buf, self.h, x, y, c, a);
     }
 
     fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, c: [u8; 4], a: f64) {
@@ -614,6 +621,96 @@ impl Overworld {
                 );
             }
         }
+
+        // ── Overworld HUD (intro/index.ts:662-680) ──
+        // Baked directly into the 2D canvas buffer so the text shatters with
+        // the world at begin_shatter().
+        let hud_stroke = hex(0x1c2a38);
+        let hud_fill = [255, 255, 255, 255];
+        self.draw_text("WORLD 1-1", 8, 16, 24, hud_fill, hud_stroke, 1, 1.0);
+        let coin_str = format!("COIN x{:02}", self.coins);
+        self.draw_text(&coin_str, 8, BW - 110, 24, hud_fill, hud_stroke, 1, 1.0);
+        self.draw_text(
+            "ANY KEY - SKIP",
+            8,
+            16,
+            bh - 14,
+            hud_fill,
+            hud_stroke,
+            1,
+            0.75,
+        );
+    }
+
+    /// Draws outlined pixel font text onto the overworld canvas.
+    ///
+    /// Matches legacy `intro/index.ts:662-680`:
+    /// White fill with a 3px `#1c2a38` stroke in Press Start 2P.
+    pub fn draw_text(
+        &mut self,
+        text: &str,
+        size: u32,
+        x: i32,
+        y: i32,
+        fill: [u8; 4],
+        stroke: [u8; 4],
+        stroke_radius: i32,
+        alpha: f64,
+    ) {
+        let Some(atlas) = self.fonts.atlas(size) else {
+            return;
+        };
+        let mut pen = x;
+        let pad = atlas.pad as i32;
+        let cw = atlas.cell_w;
+        let ch_h = atlas.cell_h;
+
+        let h = self.h;
+        for ch in text.chars() {
+            let ch = if ch == '—' || ch == '\u{2014}' { '-' } else { ch };
+            let Some(g) = atlas.glyph(ch) else {
+                pen += atlas.px as i32;
+                continue;
+            };
+            let (sx0, sy0) = atlas.cell_origin(g.index);
+
+            // Draw stroke outline if radius > 0
+            if stroke_radius > 0 {
+                for dy in -stroke_radius..=stroke_radius {
+                    for dx in -stroke_radius..=stroke_radius {
+                        if dx * dx + dy * dy > stroke_radius * stroke_radius {
+                            continue;
+                        }
+                        for cy in 0..ch_h {
+                            for cx in 0..cw {
+                                let si = ((sy0 + cy) * atlas.width + sx0 + cx) as usize;
+                                let a = atlas.alpha[si];
+                                if a > 0 {
+                                    let px = pen + cx as i32 - pad + dx;
+                                    let py = y + cy as i32 - pad + dy;
+                                    plot_pixel(&mut self.buf, h, px, py, stroke, alpha * (f64::from(a) / 255.0));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Draw text fill
+            for cy in 0..ch_h {
+                for cx in 0..cw {
+                    let si = ((sy0 + cy) * atlas.width + sx0 + cx) as usize;
+                    let a = atlas.alpha[si];
+                    if a > 0 {
+                        let px = pen + cx as i32 - pad;
+                        let py = y + cy as i32 - pad;
+                        plot_pixel(&mut self.buf, h, px, py, fill, alpha * (f64::from(a) / 255.0));
+                    }
+                }
+            }
+
+            pen += g.advance as i32;
+        }
     }
 
     // ── The shatter (beginShatter / paintShatter) ──
@@ -771,5 +868,38 @@ mod tests {
             (in_one_go - legacy).abs() < 1e-12,
             "the fixed step must be deterministic: {in_one_go} vs {legacy}",
         );
+    }
+
+    #[test]
+    fn hud_text_is_rasterized_into_canvas_and_captured_by_shatter() {
+        let mut ow = Overworld::new(1920.0, 1080.0);
+        let sheet = CpuSheet {
+            w: 8,
+            h: 8,
+            px: vec![255; 8 * 8 * 4],
+            run: vec![[0, 0, 8, 8]],
+            roll: vec![[0, 0, 8, 8]],
+        };
+        ow.paint(&sheet, 0.5, false, 0.0, 0.016, true);
+
+        // Verify top-left "WORLD 1-1" area has painted non-transparent pixels
+        let mut world_pixels = 0;
+        for y in 20..35 {
+            for x in 16..100 {
+                let idx = ((y * BW + x) * 4) as usize;
+                if ow.buf[idx + 3] > 0 {
+                    world_pixels += 1;
+                }
+            }
+        }
+        assert!(
+            world_pixels > 50,
+            "expected 'WORLD 1-1' to paint into canvas buffer, found {world_pixels} pixels"
+        );
+
+        // Snapshot through begin_shatter
+        ow.begin_shatter();
+        assert!(ow.snap.is_some(), "shatter must take a snapshot of the painted canvas");
+        assert_eq!(ow.pieces.len() > 0, true, "shatter must generate shard pieces");
     }
 }

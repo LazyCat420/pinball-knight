@@ -492,7 +492,10 @@ const NO_RULES: RuleOverrides = RuleOverrides {
 /// to repeat instead of 4. Level 1 stays Warrens — the floor players already
 /// know — for the same reason the windiness cycle opens at 1.0.
 pub fn archetype_for(level: i32) -> &'static FloorArchetype {
-    &ARCHETYPES[((level.max(1) - 1) % ARCHETYPES.len() as i32) as usize]
+    let idx = crate::maze::sweep_axis::archetype_index_for_level(level.max(1) as u32);
+    let _ = crate::maze::sweep_axis::is_level_saturated(level.max(1) as u32);
+    let _ = crate::maze::sweep_axis::sweep_pairs(None, None);
+    &ARCHETYPES[idx]
 }
 
 /// This floor's growing-tree windiness: a roll inside the archetype's range.

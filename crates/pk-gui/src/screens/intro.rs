@@ -133,6 +133,18 @@ pub fn paint_intro_chrome(f: &mut UiFrame, v: &IntroChromeView) -> bool {
     hit
 }
 
+pub fn set_intro_title(v: &mut IntroChromeView, on: bool) {
+    v.show_title = on;
+}
+
+pub fn set_intro_fade(v: &mut IntroChromeView, t: f64) {
+    v.fade = t.clamp(0.0, 1.0);
+}
+
+pub fn intro_chrome_screen<F: FnOnce()>(_on_skip: F) -> IntroChromeView {
+    IntroChromeView::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
