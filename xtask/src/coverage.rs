@@ -1367,7 +1367,10 @@ mod tests {
                 "the KING: slam, bone throw, home tiles, bar",
             ),
             ("gui/screens/debug.ts", 717, "the backtick console"),
-            ("maze/arc-sweeps.ts", 694, "54 rust lines against 341"),
+            // ── maze/arc-sweeps.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/maze/arc_sweeps.rs` and verified
+            // bit-exact across all 10 corpus floors at passes 10, 11, 12, 20, 22
+            // by `crates/pk-core/tests/maze_pass_digests.rs`.
             // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
             // All 77 exported values transcribed and gated both ways by
             // `crates/pk-core/tests/constants_render.rs` against

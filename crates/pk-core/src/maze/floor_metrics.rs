@@ -5,6 +5,29 @@
 use crate::flow_field::bfs_distances;
 use crate::grid::{at, idx, Grid, T_FLOOR};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloorConstraints {
+    pub min_reach_share: f64,
+    pub min_region_reach_share: f64,
+    pub min_path_span: f64,
+    pub max_directness: f64,
+    pub max_dead_ends_per_1k: f64,
+    pub min_open_share: f64,
+    pub max_open_share: f64,
+    pub min_choice_share: f64,
+}
+
+pub const DEFAULT_CONSTRAINTS: FloorConstraints = FloorConstraints {
+    min_reach_share: 1.0,
+    min_region_reach_share: 1.0,
+    min_path_span: 0.2,
+    max_directness: 0.85,
+    max_dead_ends_per_1k: 2.5,
+    min_open_share: 0.35,
+    max_open_share: 0.8,
+    min_choice_share: 0.2,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloorMetrics {
     pub total_floor_tiles: usize,

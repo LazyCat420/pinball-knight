@@ -53,15 +53,25 @@ pub fn validate_piece_rules(g: &Grid, parts: &[FlowPart]) -> Vec<PieceViolation>
 
     // 2. Validate Rail Exits for curved arcs
     for feature in &g.arcs {
-        let (ex, ez, dx, dz) = rail_exit(feature);
-        if !has_clear_rail_runway(g, ex, ez, dx, dz, RAIL_MIN_RUNWAY) {
-            violations.push(PieceViolation {
-                kind: PieceViolationKind::BlockedRailExit,
-                tile: (ex, ez),
-                description: format!(
-                    "Arc rail exit at ({ex}, {ez}) is blocked ahead along heading ({dx:.2}, {dz:.2})"
-                ),
-            });
+        for lane in &feature.lanes {
+            if let Some(x) = rail_exit(g, feature, lane, lane.cw) {
+                if !has_clear_rail_runway(g, x.i, x.j, x.di, x.dj, RAIL_MIN_RUNWAY) {
+                    violations.push(PieceViolation {
+                        kind: PieceViolationKind::BlockedRailExit,
+                        tile: (x.i, x.j),
+                        description: format!(
+                            "Arc rail exit at ({}, {}) is blocked ahead along heading ({}, {})",
+                            x.i, x.j, x.di, x.dj
+                        ),
+                    });
+                }
+            } else {
+                violations.push(PieceViolation {
+                    kind: PieceViolationKind::BlockedRailExit,
+                    tile: (feature.cx as i32, feature.cz as i32),
+                    description: "Arc rail exit cannot be resolved".to_string(),
+                });
+            }
         }
     }
 

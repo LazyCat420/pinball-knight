@@ -63,9 +63,9 @@ pub fn compute_corpse_pile_spawns(
     for pile in piles_on_floor(piles, level) {
         let (mut ti, mut tj) = world_to_tile(grid, pile.x, pile.z);
         if !is_walkable(grid, ti, tj) {
-            if let Some((oi, oj)) = nearest_open_tile(ti, tj, 1, 1, |i, j| is_walkable(grid, i, j)) {
-                ti = oi;
-                tj = oj;
+            if let Some(pos) = nearest_open_tile(grid, ti, tj, 1, 1) {
+                ti = pos.i;
+                tj = pos.j;
             } else {
                 continue;
             }

@@ -1287,6 +1287,76 @@ fn pass9_plan_doorways_replays_the_oracle() {
     replay_through(8);
 }
 
+#[test]
+fn pass10_publish_arcs_replays_the_oracle() {
+    replay_through(9);
+}
+
+#[test]
+fn pass11_orbit_island_replays_the_oracle() {
+    replay_through(10);
+}
+
+#[test]
+fn pass12_arc_sweeps_replays_the_oracle() {
+    replay_through(11);
+}
+
+#[test]
+fn pass13_repair_2_replays_the_oracle() {
+    replay_through(12);
+}
+
+#[test]
+fn pass14_endpoints_final_replays_the_oracle() {
+    replay_through(13);
+}
+
+#[test]
+fn pass15_boss_chamber_replays_the_oracle() {
+    replay_through(14);
+}
+
+#[test]
+fn pass16_artery_banks_replays_the_oracle() {
+    replay_through(15);
+}
+
+#[test]
+fn pass17_reseal_chute_replays_the_oracle() {
+    replay_through(16);
+}
+
+#[test]
+fn pass18_carve_doorways_replays_the_oracle() {
+    replay_through(17);
+}
+
+#[test]
+fn pass19_funnels_relays_replays_the_oracle() {
+    replay_through(18);
+}
+
+#[test]
+fn pass20_compact_fixed_point_replays_the_oracle() {
+    replay_through(19);
+}
+
+#[test]
+fn pass21_stairs_replays_the_oracle() {
+    replay_through(20);
+}
+
+#[test]
+fn pass22_arc_rails_replays_the_oracle() {
+    replay_through(21);
+}
+
+#[test]
+fn pass23_done_replays_the_oracle() {
+    replay_through(22);
+}
+
 /// The companion to pass 9's replay: the pass is inert on the grid, ASSERTED.
 ///
 /// `plan-doorways` earns its place by what it decides, not by what it writes,

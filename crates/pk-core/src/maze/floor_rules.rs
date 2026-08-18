@@ -12,14 +12,19 @@ pub struct FloorRuleWeights {
     pub min_doorway_clearance: f64,
 }
 
+pub const BOSS_ARENA_R: f64 = 7.0;
+pub const BOSS_ARENA_MIN_WIDTH: i32 = 9;
+
+pub const DEFAULT_RULE_WEIGHTS: FloorRuleWeights = FloorRuleWeights {
+    perimeter_bias: 0.75,
+    min_boss_tiles: 30,
+    min_boss_euclid: 20.0,
+    min_doorway_clearance: 2.0,
+};
+
 impl Default for FloorRuleWeights {
     fn default() -> Self {
-        Self {
-            perimeter_bias: 0.85,
-            min_boss_tiles: 35,
-            min_boss_euclid: 18.0,
-            min_doorway_clearance: 2.0,
-        }
+        DEFAULT_RULE_WEIGHTS
     }
 }
 

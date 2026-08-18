@@ -8,11 +8,7 @@ pub const CARDS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
 pub const UNREACHED: i32 = 0x3fffffff;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TilePos {
-    pub i: i32,
-    pub j: i32,
-}
+pub use crate::maze::track_launch::TilePos;
 
 pub fn build_flow_field(g: &Grid, stairs: TilePos) -> Vec<i32> {
     let size = (g.w * g.h) as usize;
