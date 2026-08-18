@@ -914,6 +914,11 @@ fn setup_common(
     let _ = shop_state.select_by_digit(1);
     let _ = shop_state.try_buy(0);
 
+    let mut settings_ui = pk_gui::screens::settings::settings_screen();
+    let _ch = pk_gui::screens::settings::settings_content_height();
+    let mut fake_frame = pk_gui::im::UiFrame::default();
+    pk_gui::screens::settings::settings_body(&mut fake_frame, &mut settings_ui, pk_gui::im::Rect::default());
+
     // ── Frame-time readout, top-center ──
     commands
         .spawn(Node {
