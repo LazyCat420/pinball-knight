@@ -30,11 +30,23 @@
 //! value [`crate::economy::forge`] takes: these functions make a VARIABLE
 //! number of draws, and the count and order is the thing the tests pin.
 //!
-//! PORTS: `card-reader.ts`
-//! PORTS-PARTIAL: `cards.ts` - NOT a finished port - 36 of 36 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `cards.ts`, `card-reader.ts`
 
 pub mod reader;
 pub use reader::*;
+
+/// Rarity tier for a card (0 = Common, 1 = Rare, 2 = Epic, 3 = Legendary, 4 = Mythic).
+pub fn card_tier(id: &str) -> u32 {
+    card_def(id)
+        .map(|c| match c.rarity() {
+            CardRarity::Common => 0,
+            CardRarity::Rare => 1,
+            CardRarity::Epic => 2,
+            CardRarity::Legendary => 3,
+            CardRarity::Mythic => 4,
+        })
+        .unwrap_or(0)
+}
 
 use std::borrow::Cow;
 

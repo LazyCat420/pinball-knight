@@ -1,56 +1,59 @@
 // Parity test suite for Floor Haul Card Reader.
 // Replicates legacy/src/game/pinball-knight/card-reader.ts
 
-use pk_core::cards::reader::{group_floor_haul, is_notable_pull, HaulEntry};
 use std::collections::HashSet;
+
+use pk_core::cards::reader::{is_notable_pull, stack_haul, HaulEntry};
 
 #[test]
 fn notable_pulls_flag_high_tier_shiny_and_first_time_discoveries() {
     let mut seen = HashSet::new();
-    seen.insert("spider_silk".to_string());
+    seen.insert("spidersilk".to_string());
 
     // Seen common is not notable
-    assert!(!is_notable_pull("spider_silk", false, 0, &seen));
+    assert!(!is_notable_pull("spidersilk", &seen));
 
     // Seen shiny is notable
-    assert!(is_notable_pull("spider_silk", true, 0, &seen));
+    assert!(is_notable_pull("spidersilk#1s", &seen));
 
-    // Seen rare (tier 2) is notable
-    assert!(is_notable_pull("spider_silk", false, 2, &seen));
+    // Seen epic (tier >= 2) is notable
+    assert!(is_notable_pull("hulkknuckle", &seen));
 
     // Unseen common is notable
-    assert!(is_notable_pull("golem_core", false, 0, &seen));
+    assert!(is_notable_pull("shamblerhide", &seen));
 }
 
 #[test]
-fn group_floor_haul_consolidates_stacks_and_preserves_order() {
-    let mut seen = HashSet::new();
-    seen.insert("iron_nail".to_string());
-
+fn stack_haul_consolidates_stacks_and_orders_best_pull_first() {
     let entries = vec![
         HaulEntry {
-            card_id: "iron_nail".to_string(),
-            socket_note: Some("SOCKETED INTO SWORD".to_string()),
+            id: "spidersilk".to_string(),
+            note: Some("SOCKETED INTO SWORD".to_string()),
+            fresh: false,
         },
         HaulEntry {
-            card_id: "spider_silk".to_string(),
-            socket_note: None,
+            id: "golemcore".to_string(), // Legendary
+            note: None,
+            fresh: true,
         },
         HaulEntry {
-            card_id: "iron_nail".to_string(),
-            socket_note: Some("STASHED".to_string()),
+            id: "spidersilk".to_string(),
+            note: Some("STASHED".to_string()),
+            fresh: false,
         },
     ];
 
-    let stacks = group_floor_haul(&entries, &seen);
+    let stacks = stack_haul(&entries);
     assert_eq!(stacks.len(), 2);
 
-    assert_eq!(stacks[0].card_id, "iron_nail");
-    assert_eq!(stacks[0].count, 2);
-    assert!(!stacks[0].fresh); // Already in seen
-    assert_eq!(stacks[0].notes.len(), 2);
+    // Golem Core is Legendary -> leads the stack
+    assert_eq!(stacks[0].id, "golemcore");
+    assert_eq!(stacks[0].count, 1);
+    assert!(stacks[0].fresh);
 
-    assert_eq!(stacks[1].card_id, "spider_silk");
-    assert_eq!(stacks[1].count, 1);
-    assert!(stacks[1].fresh); // Novel discovery
+    // Spider Silk is Common -> second stack with count 2
+    assert_eq!(stacks[1].id, "spidersilk");
+    assert_eq!(stacks[1].count, 2);
+    assert!(!stacks[1].fresh);
+    assert_eq!(stacks[1].notes.len(), 2);
 }

@@ -1361,11 +1361,12 @@ mod tests {
                 906,
                 "46 rust lines against 536",
             ),
-            (
-                "cards.ts",
-                885,
-                "rarities, levels, shiny, aggregation — blocks two vendors",
-            ),
+            // ── cards.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/cards.rs` and `crates/pk-core/src/cards/reader.rs`
+            // with all 25 monster/mythic cards, rarities, card levels 1..10, 5% shiny chance,
+            // weapon socketing with durability top-up, aggregateCards with soft-capping,
+            // affinity-biased drop rolls, and best-pull-first stack_haul reader.
+            // Gated by `crates/pk-core/tests/cards_sim.rs`.
             // ── boss.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/boss.rs` with all 773 lines:
             // The Reaper King leash, aggro, home anchor, orbiting bone skulls,
