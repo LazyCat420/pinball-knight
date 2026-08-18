@@ -1338,7 +1338,12 @@ mod tests {
                 1217,
                 "0 of 5 exports; STATS/updateZombies/movementOf absent",
             ),
-            ("entities/combat.ts", 1204, "0 of 22 exports carried"),
+            // ── entities/combat.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/combat/mod.rs` with all 1,205 lines:
+            // player damage pipeline, upgrade scaling, card synergies, momentum scaling,
+            // combo multipliers, gate immunities (Reaper, Ghost), armor durability absorption,
+            // Stoneskin reduction, iframes, kill sequences, style kills, and line-AoE thunderbolt.
+            // Gated by `crates/pk-core/tests/combat_sim.rs`.
             (
                 "gui/im.ts",
                 1052,

@@ -2,7 +2,6 @@
 //!
 //! PORTS-PARTIAL: `engine/render/damage-text.ts` - NOT a finished port - 13 rust code lines against 185 legacy (7%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `engine/juice.ts` - NOT a finished port - 3 rust code lines against 44 legacy (7%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `entities/combat.ts` - NOT a finished port - 0 of 22 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use bevy::prelude::*;
 
