@@ -30,14 +30,20 @@ fn magician_lifecycle_and_trick_furniture_swap() {
 
     let mut parts = vec![
         FlowPart {
+            i: 3,
+            j: 3,
             kind: "bumper".to_string(),
             pos: (3, 3),
             dir: (0.0, 0.0),
+            ..Default::default()
         },
         FlowPart {
+            i: 4,
+            j: 4,
             kind: "slingshot".to_string(),
             pos: (4, 4),
             dir: (0.0, 0.0),
+            ..Default::default()
         },
     ];
 

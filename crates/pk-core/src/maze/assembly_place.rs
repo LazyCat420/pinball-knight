@@ -42,9 +42,14 @@ pub fn stamp_assembly(g: &mut Grid, a: &Assembly, ox: i32, oy: i32) -> Vec<FlowP
         };
 
         placed.push(FlowPart {
+            i: px,
+            j: py,
             kind: p.kind.clone(),
+            dir_i: dir_vec.0.round() as i32,
+            dir_j: dir_vec.1.round() as i32,
             pos: (px, py),
             dir: dir_vec,
+            ..Default::default()
         });
     }
 
