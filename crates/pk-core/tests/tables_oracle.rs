@@ -196,8 +196,8 @@ fn test_items_weapons_parity() {
 #[test]
 fn test_abilities_parity() {
     assert_eq!(AbilityId::ALL.len(), 6);
-    assert_eq!(ABILITY_RANK_MAX, 5);
-    assert_eq!(ABILITY_RANK_STEP, 0.15);
+    assert_eq!(ABILITY_RANK_MAX, 3);
+    assert_eq!(ABILITY_RANK_STEP, 0.25);
 
     let fc = AbilityId::Flippercharge.def();
     assert_eq!(fc.cost, 20);

@@ -1350,7 +1350,12 @@ mod tests {
                 1005,
                 "12 of 45 exports; the physics accessors are UNWIRED",
             ),
-            ("abilities.ts", 916, "6 abilities, ranks, mana, Blood Price"),
+            // ── abilities.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/abilities.rs`, `crates/pk-core/src/skills.rs`,
+            // `crates/pk-core/src/constants/skills.rs`, and `crates/pk-core/src/player/skill_runtime.rs`
+            // with all 6 active skills, cast anticipation & impact frames, Blood Price, table mana
+            // battery with Dynamo, rank 2 extra rules, and full skill aggregation.
+            // Gated by `crates/pk-core/tests/abilities_sim.rs`.
             (
                 "legacy/src/scenes/tavern/core.ts",
                 906,

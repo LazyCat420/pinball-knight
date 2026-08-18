@@ -93,6 +93,7 @@ pub mod run;
 pub mod secrets;
 pub mod settings_save;
 pub mod sim;
+pub mod skills;
 pub mod spawn;
 pub mod stagger;
 pub mod state;

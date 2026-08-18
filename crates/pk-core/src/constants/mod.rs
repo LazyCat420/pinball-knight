@@ -8,6 +8,7 @@ pub mod economy;
 pub mod level;
 pub mod maze;
 pub mod render;
+pub mod skills;
 pub mod world;
 
 pub use audio::*;
@@ -15,4 +16,5 @@ pub use economy::*;
 pub use level::*;
 pub use maze::*;
 pub use render::*;
+pub use skills::*;
 pub use world::*;

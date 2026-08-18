@@ -406,7 +406,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     s.player.marble.update(DT);
 
     // Tick abilities
-    s.abilities.tick(DT);
+    s.abilities.tick_simple(DT);
 
     // Ability triggers
     if input.ability_1 && s.abilities.slot_1.trigger() {
