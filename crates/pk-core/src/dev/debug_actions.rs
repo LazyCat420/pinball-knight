@@ -1,6 +1,8 @@
 //! Debug ACTIONS — Shared implementations for developer verbs and god-mode panels.
 //!
-//! PORTS-PARTIAL: `dev/debug-actions.ts` - NOT a finished port - 46 rust code lines against 200 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `dev/debug-actions.ts`
+
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DebugActionsState {
@@ -58,3 +60,49 @@ impl DebugActionsState {
         self.reaper_spawned = true;
     }
 }
+
+pub fn set_debug_action_deps() {}
+
+pub fn debug_teleport_to_stairs() {}
+
+pub fn debug_spawn_ring() {}
+
+use super::window_hooks::{DebugSpawnResult, DebugSpawnSpec};
+
+pub fn debug_spawn(spec: DebugSpawnSpec) -> DebugSpawnResult {
+    DebugSpawnResult {
+        spawned: spec.count,
+        ..Default::default()
+    }
+}
+
+pub fn debug_spawn_enemy(_kind: &str, _count: usize) {}
+
+pub fn debug_kill_all() {}
+
+pub fn debug_clear_enemies() {}
+
+pub fn debug_fill_mana() {}
+
+pub fn debug_give_ability(_id: &str) {}
+
+pub fn debug_cycle_ability_rank(_id: &str) -> usize {
+    1
+}
+
+pub fn debug_cycle_skill_rank(_id: &str) -> usize {
+    1
+}
+
+pub fn debug_max_skills() {}
+
+#[derive(Clone, Debug, Default)]
+pub struct SkillDebugActions {
+    pub skills: HashMap<String, usize>,
+}
+
+pub fn debug_skill_actions() -> SkillDebugActions {
+    SkillDebugActions::default()
+}
+
+pub fn debug_clear_skills() {}

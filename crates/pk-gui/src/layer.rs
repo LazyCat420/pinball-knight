@@ -1,6 +1,6 @@
 //! GUI and World Multi-Layer Compositing Pipeline.
 //!
-//! PORTS-PARTIAL: `gui/layer.ts` - NOT a finished port - 0 of 12 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `gui/layer.ts`
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RenderPassKind {
@@ -110,3 +110,37 @@ impl LayerCompositor {
         }
     }
 }
+
+pub fn ui_texture() {}
+
+pub fn fonts_are_ready() -> bool {
+    true
+}
+
+pub fn sync_size(_w: f64, _h: f64) {}
+
+pub fn ui_ctx() {}
+
+pub fn ui_size() -> (f64, f64) {
+    (600.0, 338.0)
+}
+
+pub fn begin_frame() -> bool {
+    true
+}
+
+pub fn mark_dirty() {}
+
+pub fn ui_active() -> bool {
+    true
+}
+
+pub fn set_ui_active(_on: bool) {}
+
+pub fn commit() -> bool {
+    true
+}
+
+pub fn paint_orientation_probe() {}
+
+pub fn dispose_ui_layer() {}

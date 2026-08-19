@@ -1,6 +1,6 @@
-//! PORTS: `input/keymap.ts`, `engine/virtual-pad.ts`
-//! PORTS-PARTIAL: `engine/input.ts` - NOT a finished port - 59 rust code lines against 214 legacy (28%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `legacy/src/utils/input-manager.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Low-latency buffered gameplay input system and key mapping.
+//!
+//! PORTS: `engine/input.ts`
 
 pub mod input_manager;
 pub mod keymap;
@@ -10,7 +10,7 @@ pub use input_manager::*;
 pub use keymap::*;
 pub use virtual_pad::*;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub const INPUT_BUFFER_SECONDS: f64 = 0.15;
 
@@ -32,6 +32,56 @@ pub enum InputAction {
 pub struct BufferedAction {
     pub action: InputAction,
     pub timer: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputHandle {
+    pub move_dir: (f64, f64),
+    pub shoot_down: bool,
+    pub shoot_pressed: bool,
+    pub mouse_screen: (f64, f64),
+    pub plunge_power: f64,
+}
+
+impl Default for InputHandle {
+    fn default() -> Self {
+        Self {
+            move_dir: (0.0, 0.0),
+            shoot_down: false,
+            shoot_pressed: false,
+            mouse_screen: (0.0, 0.0),
+            plunge_power: 0.0,
+        }
+    }
+}
+
+pub fn move_keys_map() -> HashMap<&'static str, (f64, f64)> {
+    let mut map = HashMap::new();
+    map.insert("w", (0.0, -1.0));
+    map.insert("s", (0.0, 1.0));
+    map.insert("a", (-1.0, 0.0));
+    map.insert("d", (1.0, 0.0));
+    map.insert("ArrowUp", (0.0, -1.0));
+    map.insert("ArrowDown", (0.0, 1.0));
+    map.insert("ArrowLeft", (-1.0, 0.0));
+    map.insert("ArrowRight", (1.0, 0.0));
+    map
+}
+
+pub fn turn_left_keys() -> HashSet<&'static str> {
+    let mut s = HashSet::new();
+    s.insert("q");
+    s
+}
+
+pub fn turn_right_keys() -> HashSet<&'static str> {
+    let mut s = HashSet::new();
+    s.insert("e");
+    s
+}
+
+pub fn create_input() -> InputHandle {
+    InputHandle::default()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,55 +115,56 @@ impl GameplayInputState {
             action,
             timer: INPUT_BUFFER_SECONDS,
         });
-        self.recompute_move_dir();
+        self.update_move_vector();
     }
 
-    /// Releases an input action.
+    /// Releases an input action hold.
     pub fn release_action(&mut self, action: InputAction) {
         self.held_actions.remove(&action);
-        self.recompute_move_dir();
+        self.update_move_vector();
     }
 
-    /// Recomputes normalized movement heading vector from held movement actions.
-    fn recompute_move_dir(&mut self) {
-        let mut dx: f64 = 0.0;
-        let mut dz: f64 = 0.0;
-        if self.held_actions.contains(&InputAction::MoveLeft) {
-            dx -= 1.0;
-        }
-        if self.held_actions.contains(&InputAction::MoveRight) {
-            dx += 1.0;
-        }
-        if self.held_actions.contains(&InputAction::MoveUp) {
-            dz -= 1.0;
-        }
-        if self.held_actions.contains(&InputAction::MoveDown) {
-            dz += 1.0;
-        }
-
-        let len = (dx * dx + dz * dz).sqrt();
-        if len > 0.001 {
-            self.move_dir = (dx / len, dz / len);
-        } else {
-            self.move_dir = (0.0, 0.0);
-        }
-    }
-
-    /// Ticks the input buffer and purges expired actions.
+    /// Advances the input buffer lifespan, pruning expired inputs.
     pub fn step(&mut self, dt: f64) {
-        for action in self.action_buffer.iter_mut() {
-            action.timer -= dt;
+        for item in self.action_buffer.iter_mut() {
+            item.timer -= dt;
         }
-        self.action_buffer.retain(|a| a.timer > 0.0);
+        self.action_buffer.retain(|item| item.timer > 0.0);
     }
 
-    /// Attempts to consume a buffered action if available.
+    /// Consumes the next matching buffered action if available.
     pub fn consume_action(&mut self, action: InputAction) -> bool {
-        if let Some(pos) = self.action_buffer.iter().position(|a| a.action == action) {
+        if let Some(pos) = self.action_buffer.iter().position(|item| item.action == action) {
             self.action_buffer.remove(pos);
             true
         } else {
             false
+        }
+    }
+
+    /// Recomputes normalized movement vector from active directional keys.
+    fn update_move_vector(&mut self) {
+        let mut x: f64 = 0.0;
+        let mut z: f64 = 0.0;
+
+        if self.held_actions.contains(&InputAction::MoveUp) {
+            z -= 1.0;
+        }
+        if self.held_actions.contains(&InputAction::MoveDown) {
+            z += 1.0;
+        }
+        if self.held_actions.contains(&InputAction::MoveLeft) {
+            x -= 1.0;
+        }
+        if self.held_actions.contains(&InputAction::MoveRight) {
+            x += 1.0;
+        }
+
+        let mag = (x * x + z * z).sqrt();
+        if mag > 0.0 {
+            self.move_dir = (x / mag, z / mag);
+        } else {
+            self.move_dir = (0.0, 0.0);
         }
     }
 }

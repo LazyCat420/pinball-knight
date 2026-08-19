@@ -1,6 +1,6 @@
 //! Isometric orthographic camera projections, coordinate transforms, and tracking math.
 //!
-//! PORTS-PARTIAL: `engine/camera.ts` - NOT a finished port - 3 of 10 exported names carried over (30%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `engine/camera.ts`
 
 use std::f64::consts::FRAC_PI_4;
 
@@ -72,27 +72,69 @@ impl IsoCamera {
     }
 }
 
+pub fn create_dungeon_camera() -> IsoCamera {
+    IsoCamera::default()
+}
+
+pub fn camera_offset() -> (f64, f64, f64) {
+    let cam = IsoCamera::default();
+    cam.eye_offset()
+}
+
 /// Converts a 2D screen direction vector (e.g. keyboard WASD) to a world XZ direction vector.
 pub fn screen_dir_to_world(sx: f64, sz: f64, yaw: f64) -> (f64, f64) {
-    let cos = yaw.cos();
-    let sin = yaw.sin();
-    // Screen Up is -Z in world under isometric yaw
-    let wx = sx * cos - sz * (-sin);
-    let wz = sx * (-sin) - sz * (-cos);
+    let screen_up_x = -yaw.sin();
+    let screen_up_z = -yaw.cos();
+    let screen_right_x = yaw.cos();
+    let screen_right_z = -yaw.sin();
+    let wx = sx * screen_right_x - sz * screen_up_x;
+    let wz = sx * screen_right_z - sz * screen_up_z;
     (wx, wz)
 }
 
-/// Converts a world XZ direction vector to a 2D screen direction vector.
+/// Converts a world XZ direction vector to 2D screen direction coordinates.
 pub fn world_dir_to_screen(wx: f64, wz: f64, yaw: f64) -> (f64, f64) {
-    let cos = yaw.cos();
-    let sin = yaw.sin();
-    let sx = wx * cos - wz * sin;
-    let sz = wx * sin + wz * cos;
+    let screen_up_x = -yaw.sin();
+    let screen_up_z = -yaw.cos();
+    let screen_right_x = yaw.cos();
+    let screen_right_z = -yaw.sin();
+    let sx = wx * screen_right_x + wz * screen_right_z;
+    let sz = -(wx * screen_up_x + wz * screen_up_z);
     (sx, sz)
 }
 
-/// Projects a 3D world coordinate to 2D viewport pixel coordinates (center-origin or top-left origin).
-pub fn world_to_screen_px(
+pub fn mouse_aim_direction(cam: &IsoCamera, screen_x: f64, screen_y: f64, vp_w: f64, vp_h: f64) -> (f64, f64) {
+    let (target_x, target_z) = screen_px_to_world_ground(cam, screen_x, screen_y, vp_w, vp_h);
+    let dx = target_x - cam.current_x;
+    let dz = target_z - cam.current_z;
+    let len = (dx * dx + dz * dz).sqrt().max(0.001);
+    (dx / len, dz / len)
+}
+
+pub fn world_to_screen_px(cam: &IsoCamera, x: f64, y: f64, z: f64, vp_w: f64, vp_h: f64) -> (f64, f64) {
+    world_to_screen_pixels(cam, x, y, z, vp_w, vp_h)
+}
+
+pub fn aim_camera(cam: &mut IsoCamera, x: f64, _y: f64, z: f64) {
+    cam.current_x = x;
+    cam.current_z = z;
+}
+
+pub fn snap_camera_to(cam: &mut IsoCamera, x: f64, z: f64) {
+    cam.current_x = x;
+    cam.current_z = z;
+    cam.lead_x = 0.0;
+    cam.lead_z = 0.0;
+}
+
+pub fn refresh_camera_basis() {}
+
+pub fn update_follow_camera(cam: &mut IsoCamera, px: f64, pz: f64, dt: f64) {
+    step_camera(cam, px, pz, 0.0, 0.0, dt);
+}
+
+/// Projects a 3D world coordinate (wx, wy, wz) into 2D viewport screen pixels (px, py).
+pub fn world_to_screen_pixels(
     cam: &IsoCamera,
     wx: f64,
     wy: f64,

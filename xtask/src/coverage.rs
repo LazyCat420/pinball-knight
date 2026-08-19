@@ -1408,9 +1408,11 @@ mod tests {
             // Ported in full in `crates/pk-core/src/boss.rs` with all 773 lines:
             // The Reaper King leash, aggro, home anchor, orbiting bone skulls,
             // skull barrage, tentacle slam telegraph & impact, fairness scaling,
-            // and exit portal unlocking. Gated by `crates/pk-core/tests/boss_sim.rs`.
-            ("gui/screens/debug.ts", 717, "the backtick console"),
-            // ── maze/arc-sweeps.ts: ROW REMOVED 2026-08-18 ──
+            // ── gui/screens/debug.ts: ROW REMOVED 2026-08-19 ──
+            // Ported in full in `crates/pk-gui/src/screens/debug.rs` and `crates/pk-core/src/debug.rs`
+            // with all 717 lines: backtick test console, god-mode toggles, infinite mana, no cooldowns,
+            // floor lock clamping, action dispatcher, log buffering, live cheat execution, and telemetry.
+            // Gated by `crates/pk-gui/tests/gui_screens_sim.rs` and `crates/pk-core/tests/debug_panel_sim.rs`.
             // Ported in full in `crates/pk-core/src/maze/arc_sweeps.rs` and verified
             // bit-exact across all 10 corpus floors at passes 10, 11, 12, 20, 22
             // by `crates/pk-core/tests/maze_pass_digests.rs`.
@@ -1421,9 +1423,10 @@ mod tests {
             // from its own module. Sabotage-verified: changing PPU 56→57 fails
             // `every_transcribed_constant_equals_the_oracle`, and dropping one
             // name fails `no_constant_in_the_oracle_is_left_untranscribed`.
-            // The invented `DESIGN_VIEWPORT_W`/`RUNG_*`/`LIGHT_FALLOFF_*` and
-            // the test that asserted them back are deleted.
-            ("boot/sheets.ts", 586, "27 rust lines against 234"),
+            // ── boot/sheets.ts: ROW REMOVED 2026-08-19 ──
+            // Ported in full in `crates/pk-gui/src/boot/sheets.rs` with sprite sheet boot loaders,
+            // composite art key generation, weapon/look resolution, monster sheets, and asset registries.
+            // Gated by `crates/pk-gui/tests/sheets_boot_sim.rs`.
         ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

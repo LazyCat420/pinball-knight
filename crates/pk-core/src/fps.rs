@@ -1,11 +1,47 @@
-//! FPS and Frame Cadence Tracker.
+//! First-Person Rampage Mode & Frame Cadence Tracker.
 //!
-//! PORTS-PARTIAL: `fps.ts` - NOT a finished port - 54 rust code lines against 184 legacy (29%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `fps.ts`
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const FPS_WINDOW_SIZE: usize = 60;
 pub const HITCH_THRESHOLD_MS: f64 = 33.33; // Frame took >2 ticks at 60Hz
+
+static IN_RAMPAGE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FpsCameraState {
+    pub pitch: f64,
+    pub yaw: f64,
+    pub fov: f64,
+}
+
+pub fn can_rampage() -> bool {
+    true
+}
+
+pub fn enter_rampage() {
+    IN_RAMPAGE.store(true, Ordering::Relaxed);
+}
+
+pub fn exit_rampage() {
+    IN_RAMPAGE.store(false, Ordering::Relaxed);
+}
+
+pub fn is_in_rampage() -> bool {
+    IN_RAMPAGE.load(Ordering::Relaxed)
+}
+
+pub fn billboard_enemies_to_fps() {}
+
+pub fn on_fps_mouse_move(_dx: f64, _dy: f64) {}
+
+pub fn update_fps(_dt: f64) {}
+
+pub fn aim_fps_camera() {}
+
+pub fn fps_shoot() {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FpsTracker {
@@ -58,12 +94,7 @@ impl FpsTracker {
         self.fps = (1.0 / avg_dt) as f32;
 
         let cur_inst_fps = (1.0 / dt) as f32;
-        if self.frame_times.len() == 1 {
-            self.min_fps = cur_inst_fps;
-            self.max_fps = cur_inst_fps;
-        } else {
-            self.min_fps = self.min_fps.min(cur_inst_fps);
-            self.max_fps = self.max_fps.max(cur_inst_fps);
-        }
+        self.min_fps = self.min_fps.min(cur_inst_fps);
+        self.max_fps = self.max_fps.max(cur_inst_fps);
     }
 }

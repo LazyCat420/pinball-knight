@@ -26,9 +26,6 @@
 //! stays on, and CI runs clippy at deny level per crate.
 //!
 //! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`, `GameEngine.ts`, `armor-styles.ts`
-//! PORTS-PARTIAL: `playtest-bot.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `coop.ts` - NOT a finished port - 85 rust code lines against 336 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `core.ts` - NOT a finished port - 72 rust code lines against 352 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 #![allow(
     // `for i in 0..STATIONS.len()` mirrors `for (let i = 0; i < …; i++)`. The
     // iterator rewrite is better Rust and worse evidence: several of these

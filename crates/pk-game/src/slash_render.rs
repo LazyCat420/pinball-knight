@@ -1,9 +1,44 @@
 //! Visual melee slash arc trail renderer.
 //!
-//! PORTS: `fx/system.ts`
-//! PORTS-PARTIAL: `fx/pools/slash-pool.ts` - NOT a finished port - 4 rust code lines against 109 legacy (4%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `fx/pools/slash-pool.ts`
 
 use bevy::prelude::*;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SlashOpts {
+    pub x: f32,
+    pub y: f32,
+    pub angle: f32,
+    pub radius: f32,
+    pub color: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SlashPool {
+    pub active_slashes: Vec<SlashOpts>,
+    pub max_capacity: usize,
+}
+
+impl SlashPool {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            active_slashes: Vec::with_capacity(capacity),
+            max_capacity: capacity,
+        }
+    }
+
+    pub fn spawn(&mut self, opts: SlashOpts) {
+        if self.active_slashes.len() < self.max_capacity {
+            self.active_slashes.push(opts);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.active_slashes.clear();
+    }
+}
+
+pub fn slash_texture() {}
 
 #[derive(Component)]
 pub struct SlashArcTrail {

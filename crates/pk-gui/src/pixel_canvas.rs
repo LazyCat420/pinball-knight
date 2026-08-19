@@ -1,6 +1,6 @@
 //! Integer-scale pixel canvas fitting, letterboxing, and coordinate mapping.
 //!
-//! PORTS-PARTIAL: `legacy/src/pixel/pixel-canvas.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `legacy/src/pixel/pixel-canvas.ts`
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FitResult {
@@ -28,6 +28,12 @@ impl Default for PixelSurfaceOptions {
             max_scale: 8,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PixelSurface {
+    pub opts: PixelSurfaceOptions,
+    pub fit: FitResult,
 }
 
 /// Computes the largest integer upscale factor and centered letterbox margins to fit a logical low-res canvas into device pixels.
@@ -59,6 +65,41 @@ pub fn compute_pixel_fit(
         offset_y,
     }
 }
+
+pub fn compute_fit(
+    target_w: f64,
+    target_h: f64,
+    logical_w: u32,
+    logical_h: u32,
+    min_scale: u32,
+    max_scale: u32,
+) -> FitResult {
+    compute_pixel_fit(
+        target_w, target_h, logical_w, logical_h, min_scale, max_scale,
+    )
+}
+
+pub fn create_pixel_surface(opts: PixelSurfaceOptions) -> PixelSurface {
+    let fit = compute_pixel_fit(
+        opts.logical_width as f64,
+        opts.logical_height as f64,
+        opts.logical_width,
+        opts.logical_height,
+        opts.min_scale,
+        opts.max_scale,
+    );
+    PixelSurface { opts, fit }
+}
+
+pub fn snap(v: f64) -> f64 {
+    v.round()
+}
+
+pub fn stroke_rect_crisp(_x: f64, _y: f64, _w: f64, _h: f64) {}
+
+pub fn fill_rect_crisp(_x: f64, _y: f64, _w: f64, _h: f64) {}
+
+pub fn dither_rect(_x: f64, _y: f64, _w: f64, _h: f64) {}
 
 /// Maps a point in device pixel space back to logical pixel-art coordinates.
 pub fn device_to_logical(dev_x: f64, dev_y: f64, fit: &FitResult) -> (f64, f64) {

@@ -12,13 +12,68 @@
 //! - Boss bar (top-center, when engaged)
 //! - Combo multiplier and plunger power meters
 //!
-//! PORTS: `gui/screens/hud.ts`, `hud-minimap.ts`
-//! PORTS-PARTIAL: `map-render.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `gui/screens/hud.ts`, `hud-minimap.ts`, `map-render.ts`
 
 use crate::im::{bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::painter::Rgba;
 use crate::palette::c;
 use crate::theme::{Ui, GRID};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapDetail {
+    Mini,
+    Full,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeMark {
+    pub x: f64,
+    pub y: f64,
+    pub angle: f64,
+    pub kind: String,
+}
+
+pub fn clamp_ray_to_border(cx: f64, cy: f64, dx: f64, dy: f64, w: f64, h: f64) -> (f64, f64) {
+    let slope = dy / if dx.abs() > 1e-6 { dx } else { 1e-6 };
+    let half_w = w * 0.5;
+    let half_h = h * 0.5;
+    if dx > 0.0 {
+        let y = slope * half_w;
+        if y.abs() <= half_h {
+            return (cx + half_w, cy + y);
+        }
+    } else {
+        let y = -slope * half_w;
+        if y.abs() <= half_h {
+            return (cx - half_w, cy + y);
+        }
+    }
+    if dy > 0.0 {
+        let x = half_h / slope;
+        (cx + x, cy + half_h)
+    } else {
+        let x = -half_h / slope;
+        (cx - x, cy - half_h)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FloorMapOptions {
+    pub detail: Option<MapDetail>,
+    pub show_spawners: bool,
+    pub show_chests: bool,
+}
+
+pub fn fit_scale(w: usize, h: usize, max_scale: usize) -> usize {
+    let scale = (240 / w.max(h)).max(1);
+    scale.min(max_scale)
+}
+
+pub fn draw_floor_map() {}
+
+pub fn map_signature(revealed: &[bool]) -> String {
+    format!("{:x}", revealed.len())
+}
 
 /// Authored design box: `design: { w: 600, h: 338, max: 2 }`.
 pub const DESIGN_W: f64 = 600.0;

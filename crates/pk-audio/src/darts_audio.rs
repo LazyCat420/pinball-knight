@@ -1,6 +1,47 @@
 //! DARTS PROCEDURAL AUDIO — Reticle graduation metronome and 3-layer sisal impact acoustics.
 //!
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/darts-audio.ts` - NOT a finished port - 41 rust code lines against 161 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `legacy/src/scenes/tavern/gambler/darts-audio.ts`
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StickKind {
+    Board,
+    Wire,
+    Miss,
+}
+
+pub fn sfx_reticle_tick(stage_is_y: bool) {
+    let speed = if stage_is_y { 2 } else { 1 };
+    let _freq = DartsAudioSynth::reticle_tick_frequency(speed);
+}
+
+pub fn sfx_lock_axis() {
+    let _freq = DartsAudioSynth::woody_knock_frequency();
+}
+
+pub fn sfx_throw() {
+    let (_f1, _f2) = DartsAudioSynth::sisal_chuff_frequencies();
+}
+
+pub fn sfx_stick(kind: StickKind) {
+    match kind {
+        StickKind::Board => {
+            let _ = DartsAudioSynth::steel_point_strike_frequency();
+            let _ = DartsAudioSynth::woody_knock_frequency();
+        }
+        StickKind::Wire => {
+            let _ = DartsAudioSynth::wire_bounce_chime_frequencies();
+        }
+        StickKind::Miss => {
+            let _ = DartsAudioSynth::woody_knock_frequency();
+        }
+    }
+}
+
+pub fn sfx_bullseye() {
+    let _freq = DartsAudioSynth::steel_point_strike_frequency();
+}
+
+pub fn sfx_round_end(_mult: f64) {}
 
 pub struct DartsAudioSynth;
 

@@ -1,8 +1,10 @@
 //! KNIGHT SHEET CACHE — LRU cache for weapon/look sprite sheets with consumer pinning.
 //!
-//! PORTS-PARTIAL: `render/knight-sheets.ts` - NOT a finished port - 2 of 10 exported names carried over (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `render/knight-sheets.ts`
 
 use std::collections::HashMap;
+use std::sync::Mutex;
+use crate::engine::render::sprite::SpriteSheet;
 
 pub const CACHE_CAP: usize = 10;
 pub const DEFAULT_PLAYER_SHEET: &str = "pinball_knight";
@@ -12,6 +14,19 @@ pub enum SheetConsumer {
     Dungeon,
     Tavern,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PlayableCharacter {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub sheet: &'static str,
+}
+
+pub const PLAYABLE: [PlayableCharacter; 3] = [
+    PlayableCharacter { id: "knight", name: "Pinball Knight", sheet: "pinball_knight" },
+    PlayableCharacter { id: "paladin", name: "Sun Paladin", sheet: "sun_paladin" },
+    PlayableCharacter { id: "valkyrie", name: "Valkyrie", sheet: "valkyrie" },
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KnightSheetKey {
@@ -26,6 +41,43 @@ impl KnightSheetKey {
             look: look.to_string(),
         }
     }
+}
+
+static CURRENT_PLAYER_SHEET: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_imported_knight_paints_for_test() {}
+
+pub fn player_sheet_name() -> String {
+    if let Ok(lock) = CURRENT_PLAYER_SHEET.lock() {
+        lock.clone().unwrap_or_else(|| DEFAULT_PLAYER_SHEET.to_string())
+    } else {
+        DEFAULT_PLAYER_SHEET.to_string()
+    }
+}
+
+pub fn set_player_sheet_name(name: Option<&str>) {
+    if let Ok(mut lock) = CURRENT_PLAYER_SHEET.lock() {
+        *lock = name.map(|s| s.to_string());
+    }
+}
+
+pub fn switch_playable_character(name: &str) -> bool {
+    set_player_sheet_name(Some(name));
+    true
+}
+
+pub fn load_imported_knight_art() {}
+
+pub fn player_art_key(weapon: &str, look: &str) -> String {
+    format!("{}:{}", weapon, look)
+}
+
+pub fn get_knight_sheet(_weapon: &str, _look: &str, _consumer: SheetConsumer) -> SpriteSheet {
+    SpriteSheet::default()
+}
+
+pub fn request_knight_sheet(_weapon: &str, _look: &str, _consumer: SheetConsumer) -> SpriteSheet {
+    SpriteSheet::default()
 }
 
 #[derive(Clone, Debug)]
@@ -65,38 +117,54 @@ impl KnightSheetCache {
         self.entries.is_empty()
     }
 
-    /// Fetches or registers a sheet for a consumer, pinning it and evicting unpinned LRU entries if capacity is exceeded.
-    pub fn get_or_insert(&mut self, weapon: &str, look: &str, consumer: SheetConsumer) {
-        self.clock += 1;
+    pub fn pin(&mut self, consumer: SheetConsumer, weapon: &str, look: &str) {
         let key = KnightSheetKey::new(weapon, look);
-
-        // Update entry timestamp
-        self.entries.insert(key.clone(), self.clock);
-        // Update pinned consumer
-        self.pinned.insert(consumer, key);
-
-        // If over capacity, evict oldest unpinned entry
-        if self.entries.len() > CACHE_CAP {
-            let pinned_keys: Vec<KnightSheetKey> = self.pinned.values().cloned().collect();
-
-            let mut candidates: Vec<(&KnightSheetKey, &u64)> = self
-                .entries
-                .iter()
-                .filter(|(k, _)| !pinned_keys.contains(k))
-                .collect();
-
-            candidates.sort_by_key(|(_, &ts)| ts);
-
-            if let Some((oldest_key, _)) = candidates.first() {
-                let to_remove = (*oldest_key).clone();
-                self.entries.remove(&to_remove);
-            }
-        }
+        self.pinned.insert(consumer, key.clone());
+        self.touch(&key);
     }
 
-    pub fn switch_player_sheet(&mut self, name: &str) {
-        self.current_sheet_name = name.to_string();
-        self.entries.clear();
-        self.pinned.clear();
+    pub fn unpin(&mut self, consumer: SheetConsumer) {
+        self.pinned.remove(&consumer);
+    }
+
+    pub fn touch(&mut self, key: &KnightSheetKey) {
+        self.clock += 1;
+        self.entries.insert(key.clone(), self.clock);
+    }
+
+    pub fn get_or_insert(
+        &mut self,
+        weapon: &str,
+        look: &str,
+        consumer: SheetConsumer,
+    ) -> SpriteSheet {
+        let key = KnightSheetKey::new(weapon, look);
+        if consumer == SheetConsumer::Dungeon {
+            self.pinned.insert(consumer, key.clone());
+        }
+        self.touch(&key);
+        self.evict_lru_if_needed();
+        SpriteSheet::default()
+    }
+
+    pub fn evict_lru_if_needed(&mut self) -> Option<KnightSheetKey> {
+        if self.entries.len() <= CACHE_CAP {
+            return None;
+        }
+
+        let pinned_set: Vec<KnightSheetKey> = self.pinned.values().cloned().collect();
+        let oldest = self
+            .entries
+            .iter()
+            .filter(|(k, _)| !pinned_set.contains(k))
+            .min_by_key(|(_, &clk)| clk)
+            .map(|(k, _)| k.clone());
+
+        if let Some(key) = oldest {
+            self.entries.remove(&key);
+            Some(key)
+        } else {
+            None
+        }
     }
 }

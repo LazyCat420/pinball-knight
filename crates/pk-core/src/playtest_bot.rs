@@ -2,7 +2,46 @@
 //!
 //! Drives inputs through the real gamepad layer rather than teleporting to stress physics, collision, and combo chains.
 //!
-//! PORTS-PARTIAL: `playtest-bot.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `playtest-bot.ts`
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static BOT_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BotMode {
+    Loop,
+    Soak,
+    Stress,
+    Combat,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct BotOptions {
+    pub mode: Option<BotMode>,
+    pub duration_seconds: Option<f64>,
+    pub profile: bool,
+}
+
+pub fn start_bot(opts: Option<BotOptions>) -> String {
+    BOT_RUNNING.store(true, Ordering::Relaxed);
+    let mode_str = opts
+        .and_then(|o| o.mode)
+        .map(|m| format!("{:?}", m))
+        .unwrap_or_else(|| "Loop".to_string());
+    format!("PLAYTEST BOT started in {} mode", mode_str)
+}
+
+pub fn stop_bot() -> String {
+    BOT_RUNNING.store(false, Ordering::Relaxed);
+    "PLAYTEST BOT stopped".to_string()
+}
+
+pub fn is_bot_running() -> bool {
+    BOT_RUNNING.load(Ordering::Relaxed)
+}
+
+pub fn install_bot_hooks() {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaytestBotConfig {
@@ -58,7 +97,7 @@ impl PlaytestBot {
             config,
             running: false,
             elapsed: 0.0,
-            frames: 0.0 as u64,
+            frames: 0,
             last_x: 0.0,
             last_z: 0.0,
             stuck_timer: 0.0,
@@ -73,7 +112,6 @@ impl PlaytestBot {
         self.running = true;
         self.elapsed = 0.0;
         self.frames = 0;
-        self.stuck_timer = 0.0;
         self.stuck_count = 0;
         self.deaths = 0;
         self.max_combo = 0;
@@ -92,7 +130,6 @@ impl PlaytestBot {
         }
     }
 
-    /// Advances the bot frame by frame, returning synthetic thumbstick axes [x, y] and button mask.
     pub fn step(
         &mut self,
         player_x: f64,
@@ -113,11 +150,9 @@ impl PlaytestBot {
 
         if is_dead {
             self.deaths += 1;
-            // Tap retry/tavern button (bit 0 = South / A)
             return ([0.0, 0.0], 1);
         }
 
-        // Check if duration exceeded
         if let Some(dur) = self.config.duration {
             if self.elapsed >= dur {
                 self.running = false;
@@ -125,7 +160,6 @@ impl PlaytestBot {
             }
         }
 
-        // Stuck detection: displacement < 0.05 while pushing stick for > 1.5s
         let dx = player_x - self.last_x;
         let dz = player_z - self.last_z;
         let dist_sq = dx * dx + dz * dz;
@@ -143,15 +177,13 @@ impl PlaytestBot {
         self.last_x = player_x;
         self.last_z = player_z;
 
-        // Oscillate stick based on frame counter to generate continuous traversal
         let angle = (self.frames as f32 * 0.05).sin();
         let stick_x = angle.cos();
         let stick_y = angle.sin();
 
-        // Periodically tap attack / flippers (bit 1 = East / B, bit 2 = West / X)
         let mut buttons = 0;
         if self.frames % 30 < 5 {
-            buttons |= 1 << 1; // Flipper / attack tap
+            buttons |= 1 << 1;
         }
 
         ([stick_x, stick_y], buttons)

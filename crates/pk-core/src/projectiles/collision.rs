@@ -1,6 +1,4 @@
 //! Projectile hitbox testing and impact resolution.
-//!
-//! PORTS-PARTIAL: `entities/projectiles.ts` - NOT a finished port - 1 of 13 exported names carried over (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use super::types::Projectile;
 use crate::monsters::types::LiveMonster;

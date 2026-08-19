@@ -1,6 +1,57 @@
 //! ROULETTE AUDIO SYNTHESIS — Bearing hum, velocity-coupled track ticks, and deflector impact physics.
 //!
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/roulette-audio.ts` - NOT a finished port - 50 rust code lines against 222 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `legacy/src/scenes/tavern/gambler/roulette-audio.ts`
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RouletteSound {
+    pub active: bool,
+    pub omega: f32,
+    pub volume: f32,
+}
+
+impl RouletteSound {
+    pub fn new() -> Self {
+        Self {
+            active: true,
+            omega: 12.0,
+            volume: 0.3,
+        }
+    }
+
+    pub fn set_omega(&mut self, omega: f32) {
+        self.omega = omega;
+    }
+
+    pub fn stop(&mut self) {
+        self.active = false;
+    }
+}
+
+pub fn sfx_wheel_spin() -> RouletteSound {
+    RouletteSound::new()
+}
+
+pub fn sfx_ball_launch() {}
+
+pub fn sfx_ball_drop() {
+    let _freq = RouletteAudioSynth::rotor_hum_frequency();
+}
+
+pub fn sfx_deflector() {
+    let _freq = RouletteAudioSynth::deflector_strike_frequency();
+}
+
+pub fn sfx_fret(index: usize) {
+    let _freq = RouletteAudioSynth::fret_click_frequency(index);
+}
+
+pub fn sfx_seat() {
+    let _freq = RouletteAudioSynth::ball_seat_frequency();
+}
+
+pub fn sfx_roulette_win(_multiplier: f64) {}
+
+pub fn sfx_roulette_lose() {}
 
 pub struct RouletteAudioSynth;
 

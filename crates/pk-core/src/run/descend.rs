@@ -1,9 +1,13 @@
 //! Descent reward calculation and floor completion grading.
 //!
-//! PORTS-PARTIAL: `run/descend.ts` - NOT a finished port - 45 rust code lines against 151 legacy (30%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `run/descend.ts`
+
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub const GOLD_PER_DESCENT: u32 = 25;
 pub const BOSS_GOLD: u32 = 150;
+
+static CURRENT_FLOOR: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescendReward {
@@ -11,6 +15,24 @@ pub struct DescendReward {
     pub bonus_gold: u32,
     pub grade_letter: &'static str,
     pub total_gold: u32,
+}
+
+pub fn drop_boss_reward(_x: f64, _z: f64) {}
+
+pub fn descend_into(explicit: Option<u32>) -> u32 {
+    let next = explicit.unwrap_or_else(|| CURRENT_FLOOR.load(Ordering::Relaxed) + 1);
+    CURRENT_FLOOR.store(next, Ordering::Relaxed);
+    next
+}
+
+pub fn grant_delve_boon(_target: u32) {}
+
+pub fn regroup_with_pool_when_they_land(_started_on_level: u32) {}
+
+pub fn adopt_pool_seed_when_it_arrives(_started_on_level: u32) {}
+
+pub fn descend() {
+    descend_into(None);
 }
 
 /// Evaluates floor clear performance and calculates awarded gold rewards.

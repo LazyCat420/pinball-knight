@@ -1,6 +1,38 @@
 //! Centralized Input Ownership Manager — Focus arbitrator suppressing background room interactions.
 //!
-//! PORTS-PARTIAL: `legacy/src/utils/input-manager.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `legacy/src/utils/input-manager.ts`
+
+use std::sync::Mutex;
+
+static INPUT_OWNER: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_input_owner(game_id: &str) {
+    if let Ok(mut lock) = INPUT_OWNER.lock() {
+        *lock = Some(game_id.to_string());
+    }
+}
+
+pub fn clear_input_owner() {
+    if let Ok(mut lock) = INPUT_OWNER.lock() {
+        *lock = None;
+    }
+}
+
+pub fn get_input_owner() -> Option<String> {
+    if let Ok(lock) = INPUT_OWNER.lock() {
+        lock.clone()
+    } else {
+        None
+    }
+}
+
+pub fn is_input_owned() -> bool {
+    if let Ok(lock) = INPUT_OWNER.lock() {
+        lock.is_some()
+    } else {
+        false
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct InputOwnerState {

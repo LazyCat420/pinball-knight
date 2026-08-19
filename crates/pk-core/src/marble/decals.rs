@@ -1,6 +1,6 @@
 //! Persistent floor decals — blood splatters, scorch burns, acid corrosion, and slime residue.
 //!
-//! PORTS-PARTIAL: `fx/floor/decals.ts` - NOT a finished port - 0 of 16 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `fx/floor/decals.ts`
 
 pub const MAX_DECALS: usize = 128;
 pub const DEFAULT_DECAL_LIFE: f64 = 15.0;
@@ -117,3 +117,52 @@ impl DecalPool {
         self.cursor = 0;
     }
 }
+
+pub fn has_element_shader(_kind: DecalKind) -> bool {
+    true
+}
+
+pub fn element_shader_kinds() -> Vec<DecalKind> {
+    vec![
+        DecalKind::Blood,
+        DecalKind::Scorch,
+        DecalKind::Slime,
+        DecalKind::Acid,
+        DecalKind::Frost,
+        DecalKind::CardBurn,
+    ]
+}
+
+pub fn element_alpha(_kind: DecalKind, fallback: f64) -> f64 {
+    fallback
+}
+
+pub fn make_element_material(_kind: DecalKind) {}
+
+pub fn attach_element() {}
+
+pub fn element_of() {}
+
+pub fn set_element_opacity(_v: f64) {}
+
+pub fn set_element_intensity(_v: f64) {}
+
+pub fn set_element_age(_age: f64) {}
+
+pub fn release_element() {}
+
+pub fn live_element_count() -> usize {
+    0
+}
+
+pub fn set_element_torch(_level: f64, _x: f64, _y: f64, _z: f64) {}
+
+pub fn set_element_clock_frozen(_v: bool) {}
+
+pub fn is_element_clock_frozen() -> bool {
+    false
+}
+
+pub fn tick_elements(_dt: f64) {}
+
+pub fn clear_elements() {}

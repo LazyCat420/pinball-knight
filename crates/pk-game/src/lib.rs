@@ -25,9 +25,12 @@ pub struct GhostAfterimage {
     pub max_lifetime: f32,
 }
 
+pub mod animator;
 pub mod ball_anim;
 pub mod coins_render;
 pub mod combat_feedback;
+pub mod figure;
+pub mod juice;
 pub mod mat_cache;
 pub mod pinball_parts;
 pub mod post;

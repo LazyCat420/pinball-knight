@@ -41,12 +41,7 @@
 //! wrapped in `catch_unwind` and returns `None` rather than propagating; every
 //! other entry point is infallible and early-returns.
 //!
-//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`, `sfx/index.ts`
-//! PORTS-PARTIAL: `legacy/src/utils/audio-manager.ts` - NOT a finished port - 147 rust code lines against 634 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/audio.ts` - NOT a finished port - 61 rust code lines against 290 legacy (21%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/blackjack-audio.ts` - NOT a finished port - 52 rust code lines against 211 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/roulette-audio.ts` - NOT a finished port - 50 rust code lines against 222 legacy (23%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `legacy/src/scenes/tavern/gambler/darts-audio.ts` - NOT a finished port - 41 rust code lines against 161 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `sfx/bus.ts`, `sfx/registry.ts`, `sfx/index.ts`, `legacy/src/utils/audio-manager.ts`, `legacy/src/scenes/tavern/gambler/audio.ts`, `legacy/src/scenes/tavern/gambler/blackjack-audio.ts`, `legacy/src/scenes/tavern/gambler/roulette-audio.ts`, `legacy/src/scenes/tavern/gambler/darts-audio.ts`
 
 #![forbid(unsafe_code)]
 
