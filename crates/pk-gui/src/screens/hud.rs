@@ -88,9 +88,26 @@ pub struct HudMinimapView {
     pub player_tile_y: i32,
     pub stairs_tile: Option<(i32, i32)>,
     pub tiles: Vec<MinimapTile>,
-    pub width: usize,
-    pub height: usize,
+    pub player_x: f64,
+    pub player_z: f64,
+    pub revealed: Vec<bool>,
 }
+
+pub fn create_minimap() -> HudMinimapView {
+    HudMinimapView {
+        player_tile_x: 0,
+        player_tile_y: 0,
+        stairs_tile: None,
+        tiles: Vec::new(),
+        player_x: 0.0,
+        player_z: 0.0,
+        revealed: Vec::new(),
+    }
+}
+
+pub fn render_minimap() {}
+
+pub fn dispose_minimap() {}
 
 /// Full data model for the live in-game HUD.
 #[derive(Clone, Debug, PartialEq)]
