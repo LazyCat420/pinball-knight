@@ -317,7 +317,7 @@ fn test_stagger_and_enemy_rules_parity() {
     };
     use pk_core::zombie_types::ZombieType;
 
-    assert_eq!(EnemyKind::ALL.len(), 28);
+    assert_eq!(EnemyKind::ALL.len(), 31);
     assert_eq!(EnemyKind::Zombie.pain_base(), 0.78);
     assert_eq!(EnemyKind::Reaper.pain_base(), 0.0);
     assert_eq!(EnemyKind::Stiltneck.pain_base(), 0.9);

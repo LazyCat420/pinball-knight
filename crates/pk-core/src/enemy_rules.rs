@@ -42,6 +42,9 @@ pub const fn movement_by_kind(kind: EnemyKind) -> MovementKind {
         EnemyKind::Sapper => MovementKind::Ambusher,
         EnemyKind::Crystalback => MovementKind::Chase,
         EnemyKind::Mimic => MovementKind::Chase,
+        EnemyKind::Skeleton => MovementKind::Chase,
+        EnemyKind::Witch => MovementKind::Kite,
+        EnemyKind::BossKing => MovementKind::Chase,
     }
 }
 

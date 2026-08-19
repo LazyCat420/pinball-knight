@@ -1333,11 +1333,13 @@ mod tests {
             ),
             ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
             ("hud-face.ts", 1330, "the animated portrait"),
-            (
-                "entities/zombie.ts",
-                1217,
-                "0 of 5 exports; STATS/updateZombies/movementOf absent",
-            ),
+            // ── entities/zombie.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/zombie_ai.rs` with all 1,218 lines:
+            // STATS table across 31 enemy kinds, sub-type movement mapping (movement_of),
+            // screen-space facing resolution (facing_from_world with hysteresis),
+            // line-of-sight raycasts, pack census, flow-field steering, attack state machines,
+            // and pairwise separation forces.
+            // Gated by `crates/pk-core/tests/zombie_ai_sim.rs`.
             // ── entities/combat.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/combat/mod.rs` with all 1,205 lines:
             // player damage pipeline, upgrade scaling, card synergies, momentum scaling,
