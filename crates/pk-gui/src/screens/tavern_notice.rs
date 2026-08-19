@@ -1,5 +1,7 @@
 //! Tavern Boot Notice — Plain DOM fallback overlay visible before the WebGPU renderer initializes or on initialization failure.
 //!
+//! Port of `legacy/src/scenes/tavern/boot-notice.ts` (115 lines).
+//!
 //! PORTS: `legacy/src/scenes/tavern/boot-notice.ts`
 
 pub const TAVERN_NOTICE_ID: &str = "tavern-boot-notice";
@@ -46,6 +48,22 @@ impl TavernBootNotice {
         }
     }
 }
+
+pub fn tavern_init_promise<F, T>(init_fn: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    init_fn()
+}
+
+pub fn show_tavern_boot_notice(state_name: TavernBootState) -> TavernBootNotice {
+    match state_name {
+        TavernBootState::Loading => TavernBootNotice::loading(),
+        TavernBootState::Failed => TavernBootNotice::failed(None),
+    }
+}
+
+pub fn hide_tavern_boot_notice() {}
 
 /// Evaluates the `?tavernfail=1` fault-injection condition.
 pub fn evaluate_fault_injection(has_fault_flag: bool) -> Result<(), &'static str> {

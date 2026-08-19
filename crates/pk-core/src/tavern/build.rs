@@ -40,6 +40,12 @@ pub struct BuiltTavernRoom {
     pub stairs_pos: (f64, f64, f64),
 }
 
+pub type BuiltRoom = BuiltTavernRoom;
+
+pub fn build_room() -> BuiltRoom {
+    build_tavern_room()
+}
+
 /// Builds the bounding volume boxes for the tavern sanctuary room shell.
 pub fn build_tavern_room() -> BuiltTavernRoom {
     let mut boxes = Vec::new();
