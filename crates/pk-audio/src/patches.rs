@@ -1073,6 +1073,24 @@ pub fn sfx_freeze<B: AudioBackend>(engine: Option<&Engine<B>>) {
     }
 }
 
+pub fn sfx_pickup<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Pickup);
+    }
+}
+
+pub fn sfx_trapdoor<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Trapdoor);
+    }
+}
+
+pub fn sfx_coin<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Coin);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

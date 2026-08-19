@@ -28,3 +28,7 @@ pub fn create_dungeon_scene_plan() -> DungeonSceneBootPlan {
         camera_aim: [0.0, 0.5, 0.0],
     }
 }
+
+pub fn install_scene() -> DungeonSceneBootPlan {
+    create_dungeon_scene_plan()
+}

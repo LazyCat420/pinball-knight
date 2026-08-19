@@ -36,3 +36,7 @@ pub fn compute_reaper_spawn_pos(player_x: f32, player_z: f32, angle: f32) -> (f3
         player_z + angle.sin() * REAPER_DISTANCE_TILES,
     )
 }
+
+pub fn spawn_reaper() -> ReaperParams {
+    ReaperParams::default_params()
+}

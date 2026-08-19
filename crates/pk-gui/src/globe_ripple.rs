@@ -43,3 +43,9 @@ impl GlobeRippleStore {
         }
     }
 }
+
+pub fn ripple_globe(_which: GlobeType) {}
+
+pub fn ripple_amount(_which: GlobeType) -> f32 {
+    0.0
+}
