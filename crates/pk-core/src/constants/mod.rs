@@ -4,6 +4,7 @@
 
 pub mod audio;
 pub mod economy;
+pub mod enemies;
 pub mod level;
 pub mod maze;
 pub mod pinball;
@@ -14,6 +15,7 @@ pub mod world;
 
 pub use audio::*;
 pub use economy::*;
+pub use enemies::*;
 pub use level::*;
 pub use maze::*;
 pub use pinball::*;

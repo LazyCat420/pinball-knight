@@ -114,8 +114,17 @@ pub struct Npc {
     pub id: String,
     pub x: f64,
     pub z: f64,
+    pub vx: f64,
+    pub vz: f64,
     pub kind: String,
     pub dialogue: Vec<String>,
+    pub t: f64,
+    pub cooldown_t: f64,
+    pub phase: String,
+    pub bob_phase: f64,
+    pub shopped: bool,
+    pub dwell_t: f64,
+    pub bell_t: f64,
 }
 
 pub type PinballPartKind = crate::pinball::PartKind;
@@ -476,6 +485,14 @@ pub struct SimState {
     pub haul: Vec<HaulEntry>,
     pub projectiles: Vec<Projectile>,
     pub belt: [Option<BeltSlot>; 4],
+    pub level: i32,
+    pub reaper_out: bool,
+    pub magician_t: f64,
+    pub frog_trail: Vec<(f64, f64)>,
+    pub frog_trail_t: f64,
+    pub witch_spawned: bool,
+    pub stairs: (i32, i32),
+    pub merchant_caught: bool,
 }
 
 /// What's in the active hand right now. An empty slot fights as fists.
@@ -588,6 +605,14 @@ impl SimState {
             haul: Vec::new(),
             projectiles: Vec::new(),
             belt: [None, None, None, None],
+            level: 1,
+            reaper_out: false,
+            magician_t: 45.0,
+            frog_trail: Vec::new(),
+            frog_trail_t: 0.0,
+            witch_spawned: false,
+            stairs: (0, 0),
+            merchant_caught: false,
         }
     }
 }
