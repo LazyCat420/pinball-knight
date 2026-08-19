@@ -4,7 +4,7 @@
 # (pinball-knight, drift-king, video-editor, spritefusion-pixel-snapper);
 # repo-specific facts live in gate-config.sh beside it, never here.
 # If you fix something here, carry the fix to every copy and bump the version.
-GATE_LIB_VERSION="1"
+GATE_LIB_VERSION="3"
 
 # ── hard rules this file encodes (each learned from a real incident) ──────────
 # 1. A leg's command runs BARE — never `cmd | grep PASS`, never `cmd | tail`.
@@ -22,6 +22,28 @@ GATE_LIB_VERSION="1"
 set -u -o pipefail
 # Deliberately NO `set -e` here: legs must be able to fail while the script
 # keeps collecting statuses. Setup steps guard themselves with explicit `|| die`.
+
+# Per-target extra cargo args. Default: none. A repo whose shipped artifact is
+# narrower than its crate overrides this — spritefusion's wasm leg must be
+# --lib, because the [[bin]] drags in the native-only CLI path.
+gate_target_extra_args() { :; }
+
+# Cross-compiling to windows-gnullvm needs the user-local llvm-mingw toolchain
+# on PATH — not for the LINKER (.cargo/config.toml names that by absolute path)
+# but for any dependency whose build.rs probes for a C compiler. `ring` does,
+# and without this dk-game's windows leg dies in cc-rs with "failed to find
+# tool x86_64-w64-mingw32-clang" — an ENVIRONMENTAL failure that reads exactly
+# like a code defect. A gate that goes red for a reason the diff cannot cause
+# is as corrosive as one that goes green over a real break.
+gate_win_toolchain_path() {
+  local bin="${LLVM_MINGW_BIN:-$HOME/.local/opt/llvm-mingw/bin}"
+  if [ -x "$bin/x86_64-w64-mingw32-clang" ]; then
+    case ":$PATH:" in *":$bin:"*) ;; *) export PATH="$bin:$PATH" ;; esac
+    return 0
+  fi
+  echo "gate: WARNING: windows target configured but no llvm-mingw at $bin — run scripts/setup-win-toolchain.sh; the windows leg will fail for a TOOLCHAIN reason, not a code one." >&2
+  return 1
+}
 
 gate_die()  { echo "gate: FATAL: $*" >&2; exit 10; }
 gate_note() { echo "gate: $*"; }
