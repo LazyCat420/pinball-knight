@@ -190,6 +190,9 @@ pub struct HudView {
     pub boss: Option<HudBossInfo>,
     pub minimap: Option<HudMinimapView>,
     pub pain_flash: f64, // >0 when taking damage
+    pub pain_angle: Option<f64>, // Angle of incoming damage for directional head glance
+    pub healed: bool, // Relieved smile on heal
+    pub special: bool, // Toothy grin on powerup / jackpot
 }
 
 impl Default for HudView {
@@ -214,6 +217,9 @@ impl Default for HudView {
             boss: None,
             minimap: None,
             pain_flash: 0.0,
+            pain_angle: None,
+            healed: false,
+            special: false,
         }
     }
 }
@@ -286,14 +292,20 @@ thread_local! {
 }
 
 /// Paint the procedural Doom-style knight mugshot face.
-fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, _time: f64) {
+fn paint_face(f: &mut UiFrame, face_box: &Rect, v: &HudView, _time: f64) {
     fill_rect(f, face_box, Ui::WELL);
 
     HUD_FACE.with(|cell| {
         let mut face = cell.borrow_mut();
-        face.set_health(hp, max_hp);
-        if pain_flash > 0.0 {
-            face.pain_t = pain_flash.min(0.32);
+        face.set_health(v.hp, v.max_hp);
+        if v.pain_flash > 0.0 {
+            face.on_damage(v.pain_angle);
+        }
+        if v.healed {
+            face.on_heal();
+        }
+        if v.special {
+            face.on_special();
         }
         face.render(1.0 / 60.0);
 
@@ -555,7 +567,7 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
         w: FACE_BOX,
         h: FACE_BOX,
     };
-    paint_face(f, &face_rect, v.hp, v.max_hp, v.pain_flash, time);
+    paint_face(f, &face_rect, v, time);
     x += FACE_BOX + 4.0;
 
     // ── 5. MANA GLOBE ──

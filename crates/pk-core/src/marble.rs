@@ -270,6 +270,10 @@ impl MarbleState {
         }
     }
 
+    pub fn active(&self) -> Option<MarbleMaterial> {
+        self.active_material()
+    }
+
     pub fn apply_material(&mut self, mat: MarbleMaterial) {
         if let Some(prev) = self.current {
             if prev != mat && self.time_remaining > 0.0 {

@@ -371,10 +371,12 @@ impl Player {
     }
 
     pub fn is_ball(&self) -> bool {
-        self.mom_speed > 4.2 * 1.15
-            || self.overcharge >= 1.0
+        self.overcharge >= 1.0
+            || self.iron_t > 0.0
+            || self.marble.active().is_some()
             || self.spring_t > 0.0
             || self.turbo_t > 0.0
+            || self.mom_speed > 4.2 * 1.15
     }
 
     pub fn is_rolling(&self) -> bool {
@@ -858,6 +860,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
                 && !s.player.is_ball()
                 && !s.player.is_rolling()
             {
+                s.player.hp = (s.player.hp - m.damage.max(1)).max(0);
                 s.player.iframes = 0.65;
                 s.player.squash_t = 0.18;
                 s.player.squash_amp = 0.35;
@@ -900,8 +903,11 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             s.plunger_charging = false;
             s.plunger_power = 0.0;
             return;
+        } else if input.move_z.abs() > 0.1 {
+            s.plunger_armed = false;
+        } else {
+            return;
         }
-        return;
     }
 
     // The momentum ride owns the player while it lasts.
@@ -1045,7 +1051,9 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
 
     if s.player.moving {
         let (mx, mz) = (input.move_x / len, input.move_z / len);
-        let MoveResult { x, z, .. } = move_circle(
+        let want_x = s.player.x + mx * speed * DT;
+        let want_z = s.player.z + mz * speed * DT;
+        let MoveResult { x, z, hit_n, .. } = move_circle(
             &s.grid,
             s.player.x,
             s.player.z,
@@ -1053,8 +1061,38 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             mx * speed * DT,
             mz * speed * DT,
         );
+        let blocked_x = (x - want_x).abs() > 1e-3;
+        let blocked_z = (z - want_z).abs() > 1e-3;
+        let blocked = blocked_x || blocked_z || hit_n.is_some();
         s.player.x = x;
         s.player.z = z;
+
+        // Slamming into a wall at overcharged sprint -> LAUNCH into pinball: the
+        // machine converts sprint velocity into a high-momentum pinball roll!
+        if want_sprint && s.player.overcharge > 0.0 && blocked {
+            let (nx, nz) = hit_n.or_else(|| {
+                if blocked_x && blocked_z {
+                    Some((-mx.signum(), -mz.signum()))
+                } else if blocked_x {
+                    Some((-mx.signum(), 0.0))
+                } else if blocked_z {
+                    Some((0.0, -mz.signum()))
+                } else {
+                    crate::collide::wall_contact(&s.grid, x, z, PLAYER_R, 0.05)
+                }
+            }).unwrap_or((-mx, -mz));
+
+            let dot = mx * nx + mz * nz;
+            let rx = mx - 2.0 * dot * nx;
+            let rz = mz - 2.0 * dot * nz;
+            let rl = (rx * rx + rz * rz).sqrt().max(1e-4);
+            s.player.mom_x = rx / rl;
+            s.player.mom_z = rz / rl;
+            s.player.mom_speed = (speed * 1.6).max(12.0);
+            s.player.bounce_combo = 1.0;
+            s.player.note_squash(nx, nz, s.player.mom_speed);
+        }
+
         // Facing follows the dominant input axis; ties keep the E/W row (the
         // sheet vocabulary's richest direction).
         s.player.facing = if mx.abs() >= mz.abs() {

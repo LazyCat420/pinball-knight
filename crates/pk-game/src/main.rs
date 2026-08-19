@@ -1504,7 +1504,32 @@ fn gather_input(
     };
 }
 
-fn step_sim(mut sim: ResMut<Sim>, intent: Res<Intent>, mut rp: ResMut<RenderPos>) {
+fn step_sim(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut sim: ResMut<Sim>,
+    intent: Res<Intent>,
+    mut rp: ResMut<RenderPos>,
+) {
+    if keys.just_pressed(KeyCode::KeyB) || keys.just_pressed(KeyCode::KeyO) {
+        if sim.0.player.iron_t > 0.0 || sim.0.player.is_ball() {
+            sim.0.player.iron_t = 0.0;
+            sim.0.player.overcharge = 0.0;
+            sim.0.player.mom_speed = 0.0;
+        } else {
+            sim.0.player.iron_t = 14.0;
+            sim.0.player.overcharge = 1.0;
+            let (fx, fz) = match sim.0.player.facing {
+                Facing::S => (0.0, 1.0),
+                Facing::N => (0.0, -1.0),
+                Facing::E => (1.0, 0.0),
+                Facing::W => (-1.0, 0.0),
+            };
+            sim.0.player.mom_x = fx;
+            sim.0.player.mom_z = fz;
+            sim.0.player.mom_speed = 14.0;
+            sim.0.player.moving = true;
+        }
+    }
     rp.prev = (sim.0.player.x, sim.0.player.z);
     simulate(&mut sim.0, &intent.0);
     rp.curr = (sim.0.player.x, sim.0.player.z);
@@ -1550,7 +1575,7 @@ fn sync_knight(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut spin_tracker: ResMut<ball_anim::MarbleSpinTracker>,
     mut q_sprite: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility), (With<KnightSprite>, Without<KnightMarble>)>,
-    mut q_marble: Query<(&mut Transform, &mut Visibility), (With<KnightMarble>, Without<KnightSprite>)>,
+    mut q_marble: Query<(&mut Transform, &MeshMaterial3d<StandardMaterial>, &mut Visibility), (With<KnightMarble>, Without<KnightSprite>)>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>, Without<KnightMarble>)>,
     mut bursts: MessageWriter<fx::SparkBurst>,
     mut fx: ResMut<fx::Particles>,
@@ -1589,10 +1614,28 @@ fn sync_knight(
     // Toggle Pinball Marble vs Humanoid Sprite Quad
     if is_ball {
         *s_vis = Visibility::Hidden;
-        if let Ok((mut m_tf, mut m_vis)) = q_marble.single_mut() {
+        if let Ok((mut m_tf, m_mat_handle, mut m_vis)) = q_marble.single_mut() {
             *m_vis = Visibility::Inherited;
             m_tf.translation = pos;
             m_tf.scale = Vec3::new(sqx, sqy, sqx);
+
+            if let Some(m_mat) = materials.get_mut(&m_mat_handle.0) {
+                if let Some(mat_kind) = sim.0.player.marble.active() {
+                    let hex = mat_kind.tint_hex();
+                    let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
+                    let g = ((hex >> 8) & 0xFF) as f32 / 255.0;
+                    let b = (hex & 0xFF) as f32 / 255.0;
+                    m_mat.base_color = Color::srgb(r, g, b);
+                    m_mat.emissive = LinearRgba::new(r * 0.8, g * 0.8, b * 0.8, 1.0);
+                } else if sim.0.player.iron_t > 0.0 {
+                    m_mat.base_color = Color::srgba(0.92, 0.96, 1.0, 1.0);
+                    m_mat.emissive = LinearRgba::new(0.12, 0.28, 0.55, 1.0);
+                } else {
+                    // Standard Overcharge ball
+                    m_mat.base_color = Color::srgba(1.0, 0.85, 0.3, 1.0);
+                    m_mat.emissive = LinearRgba::new(0.6, 0.45, 0.1, 1.0);
+                }
+            }
 
             spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
             if let Ok(cam_tf) = cam.single() {
@@ -1607,7 +1650,7 @@ fn sync_knight(
         }
     } else {
         *s_vis = Visibility::Inherited;
-        if let Ok((_, mut m_vis)) = q_marble.single_mut() {
+        if let Ok((_, _, mut m_vis)) = q_marble.single_mut() {
             *m_vis = Visibility::Hidden;
         }
         s_tf.translation = pos;
@@ -2025,9 +2068,16 @@ fn update_dungeon_hud(
     let rampage_ready = p.overcharge >= 0.99 || p.sprint_charge >= 0.99;
     let rampage_active = false; // Never show FPS crosshairs during standard isometric marble gameplay
 
+    let pain_flash = if p.iframes > 0.0 { p.iframes } else { 0.0 };
+    let pain_angle = if p.squash_t > 0.0 {
+        Some(p.squash_nz.atan2(p.squash_nx))
+    } else {
+        None
+    };
+
     let hud_view = HudView {
-        hp: 6,
-        max_hp: 6,
+        hp: p.hp.max(0) as u32,
+        max_hp: p.max_hp as u32,
         mana: 100,
         max_mana: 100,
         level,
@@ -2064,6 +2114,10 @@ fn update_dungeon_hud(
         ],
         belt: [
             Some(HudBeltSlot {
+                id: "ballform".to_string(),
+                count: 1,
+            }),
+            Some(HudBeltSlot {
                 id: "potion_hp".to_string(),
                 count: 3,
             }),
@@ -2072,11 +2126,13 @@ fn update_dungeon_hud(
                 count: 1,
             }),
             None,
-            None,
         ],
         boss: None,
         minimap,
-        pain_flash: if p.iframes > 0.0 { 1.0 } else { 0.0 },
+        pain_flash,
+        pain_angle,
+        healed: false,
+        special: false,
     };
 
     gui::set_view(&mut gui.views.hud, Some(hud_view));
