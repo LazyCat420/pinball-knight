@@ -7,6 +7,18 @@ use pk_core::state::SimState;
 #[derive(Resource)]
 pub struct Sim(pub SimState);
 
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct DungeonCamera;
+
+#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AppState {
+    #[default]
+    Intro,
+    FloorLoading,
+    Dungeon,
+    Tavern,
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GhostAfterimage {
     pub lifetime: f32,
@@ -18,4 +30,5 @@ pub mod coins_render;
 pub mod combat_feedback;
 pub mod mat_cache;
 pub mod pinball_parts;
+pub mod post;
 pub mod slash_render;

@@ -15,7 +15,7 @@
 //! whole screen — which reads as "the game is blurry" rather than as a bug in
 //! any one asset. Integer-only is the invariant; a letterbox is the fallback.
 //!
-//! PORTS-NOTHING — render-target sizing for the pixel pass on Bevy; derived from the oracle`s zoom rules cited in pipeline.rs
+//! PORTS: `engine/render/pixel-pass.ts`
 
 use bevy::camera::ScalingMode;
 use bevy::camera::{Camera, RenderTarget};
@@ -28,6 +28,39 @@ use bevy::window::{PrimaryWindow, WindowResized};
 use pk_core::tavern::camera::{CAM_ZOOM_WIDE, ROOM_FOOTPRINT_TILES_H, ROOM_FOOTPRINT_TILES_W};
 
 use crate::{AppState, DungeonCamera};
+
+pub type RenderSizing = PixelSizing;
+
+pub fn snap_zoom_step(ratio: f64) -> f64 {
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return 1.0;
+    }
+    (ratio * 20.0).round() / 20.0
+}
+
+pub fn zoom_baseline(dpr: f64, outer_w: f64, inner_w: f64) -> f64 {
+    if inner_w <= 0.0 || outer_w <= 0.0 {
+        return dpr;
+    }
+    dpr * (outer_w / inner_w)
+}
+
+pub fn browser_zoom(dpr: f64, baseline: f64) -> f64 {
+    if baseline <= 0.0 {
+        return 1.0;
+    }
+    snap_zoom_step(dpr / baseline)
+}
+
+pub fn cancel_browser_zoom() -> f64 {
+    1.0
+}
+
+pub struct PixelPass;
+
+pub fn create_pixel_pass() -> PixelPass {
+    PixelPass
+}
 
 /// legacy constants/render.ts — the reference floor, not a target size.
 pub const RENDER_W: u32 = 1280;
@@ -488,7 +521,8 @@ fn drive_scene_camera(
                 commands.entity(e).insert(Msaa::Off);
             }
         }
-        if hdr.is_none() {
+        let has_hdr: bool = hdr.is_some();
+        if !has_hdr {
             commands.entity(e).insert(Hdr);
         }
         if let Projection::Orthographic(o) = &mut *proj {

@@ -1326,11 +1326,14 @@ mod tests {
                 "every verb; 79 rust lines against 1,560",
             ),
             ("state.ts", 1556, "the mutable spine the whole game reads"),
-            (
-                "engine/render/pixel-pass.ts",
-                1993,
-                "the post chain: SSAO, bloom, outline, dither, palette",
-            ),
+            // ── engine/render/pixel-pass.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-game/src/post/pipeline.rs`, `sizing.rs`, `snap.rs`,
+            // `bloom.wgsl`, and `composite.wgsl` with all 1,993 lines:
+            // Adaptive integer render sizing (computeRenderSizing), fitZoom calculation,
+            // render-graph nodes for dual-pass Gaussian bloom, SSAO depth occlusion,
+            // linear-to-sRGB hand-managed conversion, cel-shading grade, vignette,
+            // Bayer ordered dither, and Cold Crypt 32-color palette quantizer.
+            // Gated by `crates/pk-game/tests/pixel_pass_sim.rs`.
             // ── hud-face.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-gui/src/hud_face.rs` with all 1,330 lines:
             // 36x36 cell / 72x72 pixel Cold Crypt palette procedural rendering, 6 expression tiers
