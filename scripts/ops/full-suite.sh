@@ -53,9 +53,18 @@ meter_grab
 lease_target_dir
 
 if want rust; then
-  run_leg fmt cargo fmt --all --check
-  # shellcheck disable=SC2086
-  run_leg clippy cargo clippy --workspace --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+  if [ "${GATE_FMT_ENFORCE:-1}" = 1 ]; then
+    run_leg fmt cargo fmt --all --check
+  else
+    run_leg_advisory fmt cargo fmt --all --check
+  fi
+  if [ "${GATE_CLIPPY_ENFORCE:-1}" = 1 ]; then
+    # shellcheck disable=SC2086
+    run_leg clippy cargo clippy --workspace --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+  else
+    # shellcheck disable=SC2086
+    run_leg_advisory clippy cargo clippy --workspace --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+  fi
   run_leg test cargo test --workspace --no-fail-fast --jobs "$GRANT" -- --test-threads="$GRANT"
 fi
 

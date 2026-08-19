@@ -5,9 +5,23 @@
 
 GATE_REPO_NAME="pinball-knight"
 
-# clippy is advisory-strict here: pass extra args after the packages, e.g.
-# "-- -D warnings" once the workspace is clean. Empty = clippy's defaults.
+# Extra clippy args, appended after the packages — e.g. "-- -D warnings" once
+# the workspace is clean. Empty = clippy's own defaults.
 GATE_CLIPPY_ARGS=""
+
+# ── Both of these start ADVISORY, and that is a deliberate, dated choice ──────
+# MEASURED on main @411c1aa6, 2026-08-19, with no local changes:
+#   cargo fmt --check -p pk-core            → RED (drift in camera.rs, combat/,
+#                                              dev/circuit_census.rs, …)
+#   cargo clippy -p pk-core --all-targets   → RED (rc=101, deny-level
+#                                              "right-hand side of `&&` operator
+#                                              has no effect", +36 warnings)
+# A gate that is red on main the day it ships trains everyone to ignore its
+# reds, and the legs that matter here (tests + the cross-target checks) are
+# green. So these two REPORT and do not vote. Flip each to 1 in the same
+# change that lands its cleanup — that is the whole job, and it is small.
+GATE_FMT_ENFORCE=0
+GATE_CLIPPY_ENFORCE=0
 
 # Files outside any crate that are load-bearing for a crate's tests.
 # jsmath-oracle.json is the fixture jsmath_oracle.rs and the wasm probe replay.

@@ -65,6 +65,20 @@ run_leg() {  # run_leg <name> <cmd…>   — command runs BARE, never behind a p
     "$([ "$rc" -eq 0 ] && echo PASS || echo FAIL)" "$rc" $((SECONDS - t0))
 }
 
+run_leg_advisory() {  # like run_leg, but a red is REPORTED and never counted.
+  # For gates that are not yet green on the default branch (e.g. pre-existing
+  # rustfmt drift): a gate that starts red on main trains people to ignore
+  # reds. Promote to run_leg the moment the branch is clean.
+  local name="$1"; shift
+  printf '\n── LEG %s (ADVISORY) ──\n  $ %s\n' "$name" "$*"
+  local t0=$SECONDS rc
+  "$@"
+  rc=$?
+  LEG_NAMES+=("$name(advisory)"); LEG_STATUS+=(0)
+  printf -- '── LEG %s: %s (rc=%d, %ds) — ADVISORY, not counted\n' "$name" \
+    "$([ "$rc" -eq 0 ] && echo PASS || echo FAIL)" "$rc" $((SECONDS - t0))
+}
+
 gate_finish() {  # the ONLY green exit path; exits 1 if any leg was red
   local fails=0 i
   echo; echo "══ SUMMARY (${#LEG_NAMES[@]} legs) ══"

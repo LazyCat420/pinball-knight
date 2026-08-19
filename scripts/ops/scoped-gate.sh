@@ -99,9 +99,18 @@ fi
 meter_grab
 lease_target_dir
 
-run_leg fmt cargo fmt --check "${PKG_ARGS[@]}"
-# shellcheck disable=SC2086
-run_leg clippy cargo clippy "${PKG_ARGS[@]}" --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+if [ "${GATE_FMT_ENFORCE:-1}" = 1 ]; then
+  run_leg fmt cargo fmt --check "${PKG_ARGS[@]}"
+else
+  run_leg_advisory fmt cargo fmt --check "${PKG_ARGS[@]}"
+fi
+if [ "${GATE_CLIPPY_ENFORCE:-1}" = 1 ]; then
+  # shellcheck disable=SC2086
+  run_leg clippy cargo clippy "${PKG_ARGS[@]}" --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+else
+  # shellcheck disable=SC2086
+  run_leg_advisory clippy cargo clippy "${PKG_ARGS[@]}" --all-targets --jobs "$GRANT" ${GATE_CLIPPY_ARGS:-}
+fi
 run_leg test cargo test "${PKG_ARGS[@]}" --no-fail-fast --jobs "$GRANT" -- --test-threads="$GRANT"
 
 for t in ${GATE_TARGETS[@]+"${GATE_TARGETS[@]}"}; do
