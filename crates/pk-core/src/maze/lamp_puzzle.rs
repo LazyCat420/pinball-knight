@@ -1,9 +1,13 @@
-//! Light puzzle authoring — brazier and sealed loot vault placement.
+//! Light puzzle authoring and runtime simulation — brazier and sealed loot vault placement.
 //!
-//! PORTS: `maze/lamp-puzzle.ts`
+//! Port of `legacy/src/game/pinball-knight/lamp-puzzle.ts` (174 lines).
+//!
+//! PORTS: `lamp-puzzle.ts`
+
+use std::sync::RwLock;
 
 use crate::flow_field::bfs_distances;
-use crate::grid::{at, idx, Grid, T_FLOOR};
+use crate::grid::{at, idx, tile_center, Grid, T_FLOOR};
 use crate::rng::Mulberry32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +27,69 @@ pub const LOOT_TABLES: [&[&str]; 5] = [
     &["rage", "gold", "health"],
     &["gold", "ballform", "health"],
 ];
+
+pub const CHEST_UNLIT: u32 = 0x8a2020;
+pub const CHEST_LIT: u32 = 0xd98020;
+pub const CHEST_OPEN: u32 = 0xffe066;
+
+#[derive(Debug, Clone, Default)]
+pub struct LampPuzzleState {
+    pub total: usize,
+    pub lit: usize,
+    pub unlocked: bool,
+    pub vault_i: i32,
+    pub vault_j: i32,
+    pub vault_x: f64,
+    pub vault_z: f64,
+    pub loot: Vec<String>,
+    pub open_t: f64,
+}
+
+static PUZZLE_STATE: RwLock<Option<LampPuzzleState>> = RwLock::new(None);
+
+pub fn install_lamp_puzzle(plan: &LampPuzzlePlan, g: &Grid) {
+    let c = tile_center(g, plan.vault.0, plan.vault.1);
+    let state = LampPuzzleState {
+        total: plan.lamps.len(),
+        lit: 0,
+        unlocked: false,
+        vault_i: plan.vault.0,
+        vault_j: plan.vault.1,
+        vault_x: c.0,
+        vault_z: c.1,
+        loot: plan.loot.clone(),
+        open_t: -1.0,
+    };
+    *PUZZLE_STATE.write().unwrap() = Some(state);
+}
+
+pub fn light_lamp() -> bool {
+    let mut w = PUZZLE_STATE.write().unwrap();
+    if let Some(ref mut pz) = *w {
+        if !pz.unlocked {
+            pz.lit += 1;
+            if pz.lit >= pz.total {
+                pz.unlocked = true;
+                pz.open_t = 0.0;
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub fn update_lamp_puzzle(dt: f64) {
+    let mut w = PUZZLE_STATE.write().unwrap();
+    if let Some(ref mut pz) = *w {
+        if pz.unlocked {
+            pz.open_t += dt;
+        }
+    }
+}
+
+pub fn dispose_lamp_puzzle() {
+    *PUZZLE_STATE.write().unwrap() = None;
+}
 
 /// How many braziers a floor of this depth gets (3-5).
 pub fn lamp_count_for(level: u32) -> usize {
