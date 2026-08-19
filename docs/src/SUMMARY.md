@@ -30,3 +30,4 @@
 
 - [Dev environment (WSL2, shared box)](reference/dev-env.md)
 - [Legacy tree map](reference/legacy.md)
+- [The gate scripts (scoped-gate, full-suite, the lease)](reference/gate-scripts.md)
