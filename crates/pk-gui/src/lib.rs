@@ -21,6 +21,7 @@ pub mod font;
 pub mod gambler;
 pub mod globe_ripple;
 pub mod hud_ctrl;
+pub mod hud_face;
 pub mod hud_meter;
 pub mod icons;
 pub mod im;

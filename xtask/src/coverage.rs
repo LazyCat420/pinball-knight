@@ -1331,8 +1331,13 @@ mod tests {
                 1993,
                 "the post chain: SSAO, bloom, outline, dither, palette",
             ),
-            ("render/pinball-parts.ts", 1611, "23 part-kind visuals"),
-            ("hud-face.ts", 1330, "the animated portrait"),
+            // ── hud-face.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-gui/src/hud_face.rs` with all 1,330 lines:
+            // 36x36 cell / 72x72 pixel Cold Crypt palette procedural rendering, 6 expression tiers
+            // (fresh -> steady -> hurt -> bloodied -> dying -> dead), 6 helmet degradation stages,
+            // stone brow furrows, dynamic gaze tracking with catch-lights and private LCG blink cycles,
+            // leather stubble & aged beard, layered gore, derived 1px silhouette ink, and contact sheet.
+            // Gated by `crates/pk-gui/tests/hud_face_sim.rs`.
             // ── entities/zombie.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/zombie_ai.rs` with all 1,218 lines:
             // STATS table across 31 enemy kinds, sub-type movement mapping (movement_of),

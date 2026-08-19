@@ -13,7 +13,6 @@
 //! - Combo multiplier and plunger power meters
 //!
 //! PORTS: `gui/screens/hud.ts`, `hud-minimap.ts`
-//! PORTS-PARTIAL: `hud-face.ts` - NOT a finished port - 1 of 10 exported names carried over (10%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `map-render.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 use crate::im::{bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
@@ -208,92 +207,16 @@ fn globe(f: &mut UiFrame, r: &Rect, fill_ratio: f64, colour: Rgba, value: u32, t
 fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, time: f64) {
     fill_rect(f, face_box, Ui::WELL);
 
-    let ratio = if max_hp > 0 {
-        hp as f64 / max_hp as f64
-    } else {
-        0.0
-    };
-
-    let cx = face_box.x + face_box.w / 2.0;
-    let cy = face_box.y + face_box.h / 2.0;
-
-    // Helm steel background / head silhouette
-    let helm_rect = Rect {
-        x: cx - 18.0,
-        y: cy - 18.0,
-        w: 36.0,
-        h: 36.0,
-    };
-
-    let helm_color = if pain_flash > 0.0 {
-        Ui::DANGER
-    } else if ratio > 0.6 {
-        c(20) // Steel specular
-    } else if ratio > 0.25 {
-        c(19) // Dented / worn steel
-    } else {
-        c(18) // Bloodied / cracked steel
-    };
-    fill_rect(f, &helm_rect, helm_color);
-
-    // Visor / eyes aperture
-    let look_offset_x = (time * 0.7).sin() * 2.0;
-    let eye_rect = Rect {
-        x: cx - 10.0 + look_offset_x,
-        y: cy - 4.0,
-        w: 20.0,
-        h: 6.0,
-    };
-    fill_rect(f, &eye_rect, c(1)); // Dark void slot
-
-    if hp > 0 {
-        // Glowing gaze points
-        let gaze_color = if ratio > 0.3 { Ui::GOLD } else { Ui::DANGER };
-        fill_rect(
-            f,
-            &Rect {
-                x: eye_rect.x + 3.0,
-                y: eye_rect.y + 1.0,
-                w: 4.0,
-                h: 4.0,
-            },
-            gaze_color,
-        );
-        fill_rect(
-            f,
-            &Rect {
-                x: eye_rect.x + 13.0,
-                y: eye_rect.y + 1.0,
-                w: 4.0,
-                h: 4.0,
-            },
-            gaze_color,
-        );
-    } else {
-        // Dead: X eyes
-        text(
-            f,
-            "X X",
-            cx,
-            cy - 6.0,
-            TextOpts {
-                size: 8,
-                colour: Some(Ui::TEXT_DIM),
-                align: Align::Center,
-                ..TextOpts::default()
-            },
-        );
+    let mut face = crate::hud_face::FaceState::default();
+    face.set_health(hp, max_hp);
+    if pain_flash > 0.0 {
+        face.pain_t = pain_flash.min(0.32);
     }
+    face.render(time);
 
-    // Beard / lower jaw
-    let beard_rect = Rect {
-        x: cx - 12.0,
-        y: cy + 6.0,
-        w: 24.0,
-        h: 10.0,
-    };
-    fill_rect(f, &beard_rect, c(26)); // Leather/grey tone
-
+    let dest_x = face_box.x + (face_box.w - (crate::hud_face::FACE_PX as f64)) / 2.0;
+    let dest_y = face_box.y + (face_box.h - (crate::hud_face::FACE_PX as f64)) / 2.0;
+    face.blit_into(f.p, dest_x, dest_y);
     stroke_rect(f, face_box, Ui::SHEET_EDGE, 2.0);
 }
 
