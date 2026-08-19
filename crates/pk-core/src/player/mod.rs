@@ -1,7 +1,6 @@
 //! Player movement verbs, inputs, inventory, and skill runtime progression.
 //!
 //! PORTS: `entities/movement.ts`, `skill-runtime.ts`
-//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub mod inventory;
 pub mod skill_runtime;

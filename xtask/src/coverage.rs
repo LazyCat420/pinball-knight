@@ -1325,7 +1325,13 @@ mod tests {
                 2445,
                 "every verb; 79 rust lines against 1,560",
             ),
-            ("state.ts", 1556, "the mutable spine the whole game reads"),
+            // ── state.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/state.rs` with all 1,556 lines:
+            // The mutable session spine: Player stats & timer vectors, BeltSlot, Actor, MarbleMaterial,
+            // ZombieMode & EnemyKind aliases, Npc, CoinFlight, HaulEntry, GroundItem, Projectile,
+            // FloorFx & FloorFxKind with tick life decay, WEAPON_SLOTS = 2, active_weapon,
+            // player_is_visible_to_enemies perception gate, fresh_player_fields, and reset_state.
+            // Gated by `crates/pk-core/tests/state_spine_sim.rs`.
             // ── engine/render/pixel-pass.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-game/src/post/pipeline.rs`, `sizing.rs`, `snap.rs`,
             // `bloom.wgsl`, and `composite.wgsl` with all 1,993 lines:

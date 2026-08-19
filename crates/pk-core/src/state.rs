@@ -3,8 +3,7 @@
 //! function with a hand-ordered call sequence) is the architecture decision
 //! and does not change.
 //!
-//! PORTS: `sim/simulate.ts`
-//! PORTS-PARTIAL: `state.ts` — the sim SEED: grid, player, the walk profile, sprint and the pinball ride.
+//! PORTS: `sim/simulate.ts`, `state.ts`
 
 use crate::collide::{move_circle, MoveResult};
 use crate::grid::{set_tile, Grid, T_FLOOR};
@@ -79,11 +78,127 @@ pub const PLUNGER_MIN_SPEED: f64 = 8.0;
 pub const PLUNGER_SPEED: f64 = 18.0;
 pub const PLUNGER_AIM_MAX: f64 = 0.44; // ~25 deg
 pub const PLUNGER_AIM_RATE: f64 = 1.2;
+pub const WEAPON_SLOTS: usize = 2;
+pub const PLAYER_MAX_HP: i32 = 100;
+pub const MANA_MAX: f64 = 100.0;
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct BeltSlot {
+    pub id: String,
+    pub icon: String,
+    pub count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Actor {
+    pub x: f64,
+    pub z: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarbleMaterial {
+    Diamond,
+    Water,
+    Stone,
+    Storm,
+    Shadow,
+    Lava,
+}
+
+pub type ZombieMode = crate::monsters::types::EnemyMode;
+pub type EnemyKind = crate::monsters::types::EnemyKind;
+pub type Zombie = crate::monsters::types::LiveMonster;
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Npc {
+    pub id: String,
+    pub x: f64,
+    pub z: f64,
+    pub kind: String,
+    pub dialogue: Vec<String>,
+}
+
+pub type PinballPartKind = crate::pinball::PartKind;
+pub type PinballPart = crate::pinball::PinballPart;
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct CoinFlight {
+    pub x: f64,
+    pub z: f64,
+    pub start_x: f64,
+    pub start_z: f64,
+    pub target_x: f64,
+    pub target_z: f64,
+    pub t: f64,
+    pub dur: f64,
+    pub value: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct HaulEntry {
+    pub id: String,
+    pub count: u32,
+    pub kind: String,
+    pub tier: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct GroundItem {
+    pub id: String,
+    pub kind: String,
+    pub x: f64,
+    pub z: f64,
+    pub tier: u32,
+    pub life: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Projectile {
+    pub id: String,
+    pub kind: String,
+    pub x: f64,
+    pub z: f64,
+    pub vx: f64,
+    pub vz: f64,
+    pub life: f64,
+    pub damage: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloorFxKind {
+    Slick,
+    Fire,
+    ShardField,
+    Oil,
+    Groove,
+    Frost,
+    Tar,
+    Rod,
+    Molten,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorFx {
+    pub kind: FloorFxKind,
+    pub x: f64,
+    pub z: f64,
+    pub hostile: bool,
+    pub radius: f64,
+    pub life: f64,
+    pub max_life: f64,
+    pub tick: f64,
+    pub dir_x: Option<f64>,
+    pub dir_z: Option<f64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Player {
     pub x: f64,
     pub z: f64,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub mana: f64,
+    pub max_mana: f64,
     pub facing: Facing,
     pub moving: bool,
     // ── Pinball momentum (legacy freshPlayerFields' momentum block) ──
@@ -108,6 +223,38 @@ pub struct Player {
     pub throw_dir_z: f64,
     pub throw_speed: f64,
     pub rail: crate::rail::RailState,
+    // ── Combat, Buffs & Timers ──
+    pub attack_t: f64,
+    pub did_hit: bool,
+    pub combo_landed: bool,
+    pub combo_step: u32,
+    pub cooldown: f64,
+    pub flash_t: f64,
+    pub rage_t: f64,
+    pub haste_t: f64,
+    pub shield_t: f64,
+    pub iron_t: f64,
+    pub webbed_t: f64,
+    pub curve_t: f64,
+    pub mag_boots_t: f64,
+    pub multi_ball_t: f64,
+    pub regen_t: f64,
+    pub regen_tick_t: f64,
+    pub venom_coat_t: f64,
+    pub stone_t: f64,
+    pub static_t: f64,
+    pub bolt_cd_t: f64,
+    pub greed_t: f64,
+    pub magnet_aura_t: f64,
+    pub fire_trail_t: f64,
+    pub blade_storm_t: f64,
+    pub blade_storm_tick_t: f64,
+    pub drop_t: f64,
+    pub drop_x: f64,
+    pub drop_z: f64,
+    pub hop_t: f64,
+    pub hop_dur: f64,
+    pub hop_speed: f64,
     // ── Dodge Roll & Squash State ──
     pub roll_t: f64,
     pub roll_dir_x: f64,
@@ -139,6 +286,10 @@ impl Default for Player {
         Self {
             x: 0.0,
             z: 0.0,
+            hp: PLAYER_MAX_HP,
+            max_hp: PLAYER_MAX_HP,
+            mana: MANA_MAX,
+            max_mana: MANA_MAX,
             facing: Facing::S,
             moving: false,
             mom_x: 0.0,
@@ -160,6 +311,37 @@ impl Default for Player {
             throw_dir_z: 0.0,
             throw_speed: 0.0,
             rail: crate::rail::fresh_rail(),
+            attack_t: -1.0,
+            did_hit: false,
+            combo_landed: false,
+            combo_step: 0,
+            cooldown: 0.0,
+            flash_t: 0.0,
+            rage_t: 0.0,
+            haste_t: 0.0,
+            shield_t: 0.0,
+            iron_t: 0.0,
+            webbed_t: 0.0,
+            curve_t: 0.0,
+            mag_boots_t: 0.0,
+            multi_ball_t: 0.0,
+            regen_t: 0.0,
+            regen_tick_t: 0.0,
+            venom_coat_t: 0.0,
+            stone_t: 0.0,
+            static_t: 0.0,
+            bolt_cd_t: 0.0,
+            greed_t: 0.0,
+            magnet_aura_t: 0.0,
+            fire_trail_t: 0.0,
+            blade_storm_t: 0.0,
+            blade_storm_tick_t: 0.0,
+            drop_t: -1.0,
+            drop_x: 0.0,
+            drop_z: 0.0,
+            hop_t: -1.0,
+            hop_dur: 0.0,
+            hop_speed: 0.0,
             roll_t: -1.0,
             roll_dir_x: 0.0,
             roll_dir_z: 0.0,
@@ -286,6 +468,47 @@ pub struct SimState {
     pub plunger_base_z: f64,
     pub plunger_dir_x: f64,
     pub plunger_dir_z: f64,
+    // ── Entity & World Collections (legacy state.ts) ──
+    pub floor_fx: Vec<FloorFx>,
+    pub ground_items: Vec<GroundItem>,
+    pub coin_flights: Vec<CoinFlight>,
+    pub npcs: Vec<Npc>,
+    pub haul: Vec<HaulEntry>,
+    pub projectiles: Vec<Projectile>,
+    pub belt: [Option<BeltSlot>; 4],
+}
+
+/// What's in the active hand right now. An empty slot fights as fists.
+pub fn active_weapon(inventory: &crate::player::PlayerInventory) -> crate::player::WeaponInstance {
+    inventory.active_weapon()
+}
+
+/// Returns whether the player is visible to enemy AI (hidden while armed in chute).
+pub fn player_is_visible_to_enemies(plunger_armed: bool) -> bool {
+    !plunger_armed
+}
+
+/// Returns fresh default player fields.
+pub fn fresh_player_fields() -> Player {
+    Player::default()
+}
+
+/// Resets mutable session counters and clears dynamic entity pools.
+pub fn reset_state(state: &mut SimState) {
+    state.kills = 0;
+    state.gold_run = 0;
+    state.tick = 0;
+    state.elapsed = 0.0;
+    state.bumpers_lit = 0;
+    state.part_combo_hits = 0;
+    state.jackpots = 0;
+    state.monsters.clear();
+    state.floor_fx.clear();
+    state.ground_items.clear();
+    state.coin_flights.clear();
+    state.projectiles.clear();
+    state.haul.clear();
+    state.player = fresh_player_fields();
 }
 
 impl SimState {
@@ -326,36 +549,7 @@ impl SimState {
                 x: spawn.0,
                 z: spawn.1,
                 facing,
-                moving: false,
-                mom_x: 0.0,
-                mom_z: 0.0,
-                mom_speed: 0.0,
-                bounce_combo: 0.0,
-                bounce_combo_t: 0.0,
-                sprint_charge: 0.0,
-                overcharge: 0.0,
-                oil_t: 0.0,
-                turbo_t: 0.0,
-                spring_t: 0.0,
-                iframes: 0.0,
-                steer_lock_t: 0.0,
-                grab_t: 0.0,
-                grab_x: 0.0,
-                grab_z: 0.0,
-                throw_dir_x: 0.0,
-                throw_dir_z: 0.0,
-                throw_speed: 0.0,
-                rail: crate::rail::fresh_rail(),
-                roll_t: -1.0,
-                roll_dir_x: 0.0,
-                roll_dir_z: 0.0,
-                squash_t: 0.0,
-                squash_amp: 0.0,
-                squash_nx: 0.0,
-                squash_nz: 0.0,
-                slash: crate::player::MeleeSlash::default(),
-                inventory: crate::player::PlayerInventory::default(),
-                marble: crate::marble::MarbleState::default(),
+                ..Default::default()
             },
             monsters: Vec::new(),
             abilities: crate::abilities::PlayerAbilities::default(),
@@ -387,6 +581,13 @@ impl SimState {
             plunger_base_z: bz,
             plunger_dir_x: bx,
             plunger_dir_z: bz,
+            floor_fx: Vec::new(),
+            ground_items: Vec::new(),
+            coin_flights: Vec::new(),
+            npcs: Vec::new(),
+            haul: Vec::new(),
+            projectiles: Vec::new(),
+            belt: [None, None, None, None],
         }
     }
 }
@@ -404,6 +605,30 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
 
     // Tick active marble material and fusion timers
     s.player.marble.update(DT);
+
+    // Tick floor fx life and prune expired effects
+    s.floor_fx.retain_mut(|fx| {
+        fx.life -= DT;
+        fx.tick -= DT;
+        fx.life > 0.0
+    });
+
+    // Tick projectiles
+    s.projectiles.retain_mut(|p| {
+        p.x += p.vx * DT;
+        p.z += p.vz * DT;
+        p.life -= DT;
+        p.life > 0.0
+    });
+
+    // Tick coin flights
+    s.coin_flights.retain_mut(|c| {
+        c.t += DT;
+        let progress = (c.t / c.dur.max(0.001)).clamp(0.0, 1.0);
+        c.x = c.start_x + (c.target_x - c.start_x) * progress;
+        c.z = c.start_z + (c.target_z - c.start_z) * progress;
+        c.t < c.dur
+    });
 
     // Tick abilities
     s.abilities.tick_simple(DT);

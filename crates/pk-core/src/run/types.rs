@@ -1,6 +1,6 @@
 //! Run progression, floor phases, and scoring.
 //!
-//! PORTS-PARTIAL: `state.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-NOTHING — helper module, full state port lives in pk-core/src/state.rs
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloorPhase {
