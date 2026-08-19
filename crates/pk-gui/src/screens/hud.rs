@@ -279,18 +279,26 @@ fn globe(f: &mut UiFrame, r: &Rect, fill_ratio: f64, colour: Rgba, value: u32, t
     );
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    static HUD_FACE: RefCell<crate::hud_face::FaceState> = RefCell::new(crate::hud_face::FaceState::default());
+}
+
 /// Paint the procedural Doom-style knight mugshot face.
 fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, _time: f64) {
     fill_rect(f, face_box, Ui::WELL);
 
-    let mut face = crate::hud_face::FaceState::default();
-    face.set_health(hp, max_hp);
-    if pain_flash > 0.0 {
-        face.pain_t = pain_flash.min(0.32);
-    }
-    face.render(1.0 / 60.0);
+    HUD_FACE.with(|cell| {
+        let mut face = cell.borrow_mut();
+        face.set_health(hp, max_hp);
+        if pain_flash > 0.0 {
+            face.pain_t = pain_flash.min(0.32);
+        }
+        face.render(1.0 / 60.0);
 
-    crate::im::draw_face(f, &face, face_box);
+        crate::im::draw_face(f, &face, face_box);
+    });
     stroke_rect(f, face_box, Ui::SHEET_EDGE, 2.0);
 }
 

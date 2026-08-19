@@ -172,6 +172,9 @@ pub struct KnightArt {
 #[derive(Component)]
 pub struct KnightSprite;
 
+#[derive(Component)]
+pub struct KnightMarble;
+
 /// The authored floor's top-left readout. Its own component so a browser gate
 /// can be told which SOURCE is on screen without scraping pixels.
 #[derive(Component)]
@@ -1304,6 +1307,26 @@ fn setup_dungeon(
         Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
         MeshMaterial3d(art.s.material.clone()),
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
+        Visibility::Inherited,
+    ));
+
+    // ── 3D Chrome Pinball Marble for ball-form & high-momentum rolling ──
+    let marble_r = 0.25f32;
+    let chrome_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.92, 0.96, 1.0, 1.0),
+        metallic: 0.95,
+        perceptual_roughness: 0.08,
+        reflectance: 0.95,
+        emissive: LinearRgba::new(0.12, 0.28, 0.55, 1.0),
+        ..default()
+    });
+    commands.spawn((
+        DungeonScene,
+        KnightMarble,
+        Mesh3d(meshes.add(Sphere::new(marble_r))),
+        MeshMaterial3d(chrome_mat),
+        Transform::from_xyz(spawn.0 as f32, marble_r, spawn.1 as f32),
+        Visibility::Hidden,
     ));
     commands.insert_resource(Sim(sim));
     // The prepared floor is CONSUMED: it exists to cross one state boundary, and
@@ -1526,28 +1549,31 @@ fn sync_knight(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut spin_tracker: ResMut<ball_anim::MarbleSpinTracker>,
-    mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
-    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
+    mut q_sprite: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility), (With<KnightSprite>, Without<KnightMarble>)>,
+    mut q_marble: Query<(&mut Transform, &mut Visibility), (With<KnightMarble>, Without<KnightSprite>)>,
+    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>, Without<KnightMarble>)>,
     mut bursts: MessageWriter<fx::SparkBurst>,
     mut fx: ResMut<fx::Particles>,
     mut ghost_timer: Local<f32>,
     mut last_slash_active: Local<bool>,
     mut last_squash_active: Local<bool>,
 ) {
-    let Ok((mut tf, mut mat)) = q.single_mut() else {
+    let Ok((mut s_tf, mut mat, mut s_vis)) = q_sprite.single_mut() else {
         return;
     };
     let a = time.overstep_fraction() as f64;
     let x = rp.prev.0 + (rp.curr.0 - rp.prev.0) * a;
     let z = rp.prev.1 + (rp.curr.1 - rp.prev.1) * a;
-    tf.translation.x = x as f32;
-    tf.translation.z = z as f32;
+    let quad_h = 1.15f32;
 
     let (sqx, sqy) = sim.0.player.squash_scale();
     let mirror = sim.0.player.facing == Facing::W;
 
     let is_rolling = sim.0.player.is_rolling();
-    let is_ball = sim.0.player.is_ball() || is_rolling;
+    let is_ball = sim.0.player.is_ball()
+        || is_rolling
+        || sim.0.player.iron_t > 0.0
+        || (sim.0.player.mom_speed > 2.4 && sim.0.player.moving);
     let is_attacking = sim.0.player.is_attacking();
 
     // Compute dodge roll progression tau and tuck scale
@@ -1558,8 +1584,49 @@ fn sync_knight(
         (None, 1.0)
     };
 
-    tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx * roll_tuck;
-    tf.scale.y = sqy * roll_tuck;
+    let pos = Vec3::new(x as f32, if is_ball { 0.25 } else { quad_h / 2.0 }, z as f32);
+
+    // Toggle Pinball Marble vs Humanoid Sprite Quad
+    if is_ball {
+        *s_vis = Visibility::Hidden;
+        if let Ok((mut m_tf, mut m_vis)) = q_marble.single_mut() {
+            *m_vis = Visibility::Inherited;
+            m_tf.translation = pos;
+            m_tf.scale = Vec3::new(sqx, sqy, sqx);
+
+            spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
+            if let Ok(cam_tf) = cam.single() {
+                m_tf.rotation = ball_anim::compute_marble_pinball_rotation(
+                    cam_tf.rotation,
+                    sim.0.player.mom_x as f32,
+                    sim.0.player.mom_z as f32,
+                    sim.0.player.mom_speed as f32,
+                    spin_tracker.spin_angle,
+                );
+            }
+        }
+    } else {
+        *s_vis = Visibility::Inherited;
+        if let Ok((_, mut m_vis)) = q_marble.single_mut() {
+            *m_vis = Visibility::Hidden;
+        }
+        s_tf.translation = pos;
+        s_tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx * roll_tuck;
+        s_tf.scale.y = sqy * roll_tuck;
+
+        if let Ok(cam_tf) = cam.single() {
+            if let Some(tau) = roll_tau {
+                s_tf.rotation = ball_anim::compute_dodge_roll_rotation(
+                    cam_tf.rotation,
+                    sim.0.player.roll_dir_x as f32,
+                    sim.0.player.roll_dir_z as f32,
+                    tau,
+                );
+            } else {
+                s_tf.rotation = cam_tf.rotation;
+            }
+        }
+    }
 
     // Spawn ball impact sparks on wall/bumper collision squash
     if sim.0.player.squash_t > 0.0 && !*last_squash_active {
@@ -1577,13 +1644,13 @@ fn sync_knight(
             &mut commands,
             &mut meshes,
             &mut materials,
-            tf.translation,
+            pos,
             normal,
             spark_color,
             6,
         );
         bursts.write(fx::SparkBurst {
-            pos: tf.translation,
+            pos,
             dir: Vec2::new(normal.x, normal.z),
             count: 12,
         });
@@ -1603,12 +1670,12 @@ fn sync_knight(
             &mut commands,
             &mut meshes,
             &mut materials,
-            tf.translation,
+            pos,
             Vec2::new(fx_dir as f32, fz_dir as f32),
             slash_color,
         );
         bursts.write(fx::SparkBurst {
-            pos: tf.translation + Vec3::new(fx_dir as f32 * 0.6, 0.4, fz_dir as f32 * 0.6),
+            pos: pos + Vec3::new(fx_dir as f32 * 0.6, 0.4, fz_dir as f32 * 0.6),
             dir: Vec2::new(fx_dir as f32, fz_dir as f32),
             count: 6,
         });
@@ -1616,31 +1683,8 @@ fn sync_knight(
     *last_slash_active = is_attacking;
 
     // Dust particles when rolling or sprinting
-    if (is_rolling || sim.0.player.sprint_charge > 0.6) && fx.rng.unit() < 0.3 {
-        fx.mote(tf.translation.x, 0.2, tf.translation.z);
-    }
-
-    // Billboard / Roll Rotation
-    if let Ok(cam_tf) = cam.single() {
-        if let Some(tau) = roll_tau {
-            tf.rotation = ball_anim::compute_dodge_roll_rotation(
-                cam_tf.rotation,
-                sim.0.player.roll_dir_x as f32,
-                sim.0.player.roll_dir_z as f32,
-                tau,
-            );
-        } else if sim.0.player.is_ball() {
-            spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
-            tf.rotation = ball_anim::compute_marble_pinball_rotation(
-                cam_tf.rotation,
-                sim.0.player.mom_x as f32,
-                sim.0.player.mom_z as f32,
-                sim.0.player.mom_speed as f32,
-                spin_tracker.spin_angle,
-            );
-        } else {
-            tf.rotation = cam_tf.rotation;
-        }
+    if (is_ball || is_rolling || sim.0.player.sprint_charge > 0.6) && fx.rng.unit() < 0.35 {
+        fx.mote(pos.x, 0.2, pos.z);
     }
 
     let clips = match sim.0.player.facing {
@@ -1669,14 +1713,6 @@ fn sync_knight(
     } else if let Some(tau) = roll_tau {
         let f = if !roll_cells.is_empty() {
             ((tau * roll_cells.len() as f32).floor() as usize).min(roll_cells.len() - 1)
-        } else {
-            0
-        };
-        (roll_cells, f)
-    } else if sim.0.player.is_ball() {
-        let rate = 1.0 + (sim.0.player.mom_speed * 0.1) as f32;
-        let f = if !roll_cells.is_empty() {
-            ((sim.0.tick as f32 * 16.0 * rate / 60.0).floor() as usize) % roll_cells.len()
         } else {
             0
         };
@@ -1730,7 +1766,6 @@ fn sync_knight(
                 } else {
                     Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
                 };
-            let quad_h = 1.15f32;
             let quad_w = quad_h * art.s.aspect;
             let base_tex = materials
                 .get(&clips.material)
@@ -1756,9 +1791,9 @@ fn sync_knight(
                 },
                 Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
                 MeshMaterial3d(ghost_mat),
-                Transform::from_translation(tf.translation)
-                    .with_rotation(tf.rotation)
-                    .with_scale(tf.scale),
+                Transform::from_translation(pos)
+                    .with_rotation(s_tf.rotation)
+                    .with_scale(s_tf.scale),
             ));
         }
     }
