@@ -44,7 +44,7 @@
 //! colour below is the legacy palette index that kind is painted with, so the
 //! floor reads in the right hues before it reads in the right shapes.
 //!
-//! PORTS-PARTIAL: `render/pinball-parts.ts`, `maze/build.ts` — placeholder primitives at the oracle`s POSITIONS; the baked part art and the prop/item meshes are Track V
+//! PORTS-PARTIAL: `maze/build.ts` — placeholder primitives at the oracle`s POSITIONS; the baked part art and the prop/item meshes are Track V
 
 use bevy::prelude::*;
 

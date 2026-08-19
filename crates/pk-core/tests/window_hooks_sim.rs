@@ -1,7 +1,7 @@
 // Parity test suite for Dev / QA Window Inspection API.
 // Replicates legacy/src/game/pinball-knight/dev/window-hooks.ts
 
-use pk_core::dev::window_hooks::DungeonWindowHooks;
+use pk_core::dev::window_hooks::{DebugSpawnSpec, DungeonWindowHooks};
 
 #[test]
 fn window_hooks_scriptable_test_harness_verbs() {
@@ -12,7 +12,11 @@ fn window_hooks_scriptable_test_harness_verbs() {
     assert_eq!(initial_stats.active_zombies, 0);
 
     // Spawn enemy
-    hooks.dungeon_spawn("zombie", 10.0, 15.0);
+    hooks.dungeon_spawn(DebugSpawnSpec {
+        kind: "zombie".to_string(),
+        at: Some((10.0, 15.0)),
+        ..DebugSpawnSpec::default()
+    });
     assert_eq!(hooks.spawned_entities.len(), 1);
     assert_eq!(hooks.dungeon_stats().active_zombies, 1);
 

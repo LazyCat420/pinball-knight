@@ -17,4 +17,5 @@ pub mod ball_anim;
 pub mod coins_render;
 pub mod combat_feedback;
 pub mod mat_cache;
+pub mod pinball_parts;
 pub mod slash_render;

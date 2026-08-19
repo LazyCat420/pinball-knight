@@ -1358,7 +1358,13 @@ mod tests {
             // widgets (button/toggle/slider/pips/bar/tabs/text_field), typography wrapping & ellipsizing,
             // exact icon sizing & card rendering, and scroll containers with follow_focus.
             // Gated by `crates/pk-gui/tests/im_gui_sim.rs`.
-            ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
+            // ── dev/window-hooks.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/dev/window_hooks.rs` with all 1,054 lines:
+            // Full scriptable harness surface (window.__dungeon*), enemy & boss spawning,
+            // horde clearing, cheats & God mode, inventory & potion injection, ability slotting,
+            // material & speed overrides, level descent & fresh runs, gamepad emulation,
+            // and full telemetry probes (stats, probe, player, boss, floor, fog, rail, shots).
+            // Gated by `crates/pk-core/tests/window_hooks_full_sim.rs`.
             // ── entities/marble.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/marble.rs` with all 1,005 lines:
             // All 45 exported symbols, material metadata & physics property overrides,

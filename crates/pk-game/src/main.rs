@@ -44,6 +44,7 @@ mod mat_cache;
 mod maze_art;
 mod overworld;
 mod perf;
+mod pinball_parts;
 mod plunger_render;
 mod post;
 mod real_floor;
