@@ -1,8 +1,12 @@
 //! Pinball assemblies — authored multi-part machines with relative facings and boundary ports.
 //!
-//! PORTS-PARTIAL: `maze/assembly.ts` - NOT a finished port - 2 of 9 exported names carried over (22%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! Port of `legacy/src/game/pinball-knight/maze/assembly.ts` (380 lines).
+//!
+//! PORTS: `maze/assembly.ts`
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Dir {
     pub di: i32,
     pub dj: i32,
@@ -14,11 +18,19 @@ pub const E: Dir = Dir { di: 1, dj: 0 };
 pub const W: Dir = Dir { di: -1, dj: 0 };
 pub const O: Dir = Dir { di: 0, dj: 0 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortRole {
-    Entry,
-    Exit,
-    Bi,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PartRole {
+    Drive,
+    Rebound,
+    Target,
+    Gate,
+    Hazard,
+}
+
+pub const TWO_LEG_KINDS: &[&str] = &["boostcorner", "deflector"];
+
+pub fn is_two_leg_kind(kind: &str) -> bool {
+    TWO_LEG_KINDS.contains(&kind)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,9 +38,24 @@ pub struct AssemblyPart {
     pub ci: i32,
     pub cj: i32,
     pub kind: String,
-    pub dir: Option<Dir>,
+    pub dir: Dir,
+    pub dir2: Option<Dir>,
     pub role: Option<String>,
     pub seq: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PortWay {
+    In,
+    Out,
+    Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PortFlow {
+    Ballistic,
+    Eject,
+    Impact,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +63,9 @@ pub struct AssemblyPort {
     pub ci: i32,
     pub cj: i32,
     pub dir: Dir,
-    pub role: PortRole,
+    pub way: PortWay,
+    pub flow: PortFlow,
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,82 +78,156 @@ pub struct Assembly {
     pub ports: Vec<AssemblyPort>,
 }
 
-/// Rotates a cardinal direction vector clockwise by 90° steps (rot = 0..4).
-pub fn rotate_dir(d: Dir, rot: u8) -> Dir {
-    match rot % 4 {
-        0 => d,
-        1 => Dir {
-            di: -d.dj,
-            dj: d.di,
-        },
-        2 => Dir {
-            di: -d.di,
-            dj: -d.dj,
-        },
-        3 => Dir {
-            di: d.dj,
-            dj: -d.di,
-        },
-        _ => d,
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssemblyRef {
+    pub name: String,
+    pub x: i32,
+    pub z: i32,
+    pub rot: u8,
+    pub mirror: bool,
+}
+
+pub fn rotate_dir(d: Dir) -> Dir {
+    Dir {
+        di: -d.dj,
+        dj: d.di,
     }
 }
 
-/// Rotates a grid-relative coordinate (ci, cj) inside a bounding box of size (w, h).
-pub fn rotate_coord(ci: i32, cj: i32, w: i32, h: i32, rot: u8) -> (i32, i32) {
-    match rot % 4 {
-        0 => (ci, cj),
-        1 => (h - 1 - cj, ci),
-        2 => (w - 1 - ci, h - 1 - cj),
-        3 => (cj, w - 1 - ci),
-        _ => (ci, cj),
+pub fn mirror_dir(d: Dir) -> Dir {
+    Dir {
+        di: -d.di,
+        dj: d.dj,
     }
 }
 
-/// Produces a rotated copy of an authored assembly.
-pub fn rotate_assembly(a: &Assembly, rot: u8) -> Assembly {
-    let r = rot % 4;
-    if r == 0 {
-        return a.clone();
-    }
+pub fn rotate_assembly(a: &Assembly) -> Assembly {
+    let new_w = a.h;
+    let new_h = a.w;
 
-    let (new_w, new_h) = if r % 2 == 1 { (a.h, a.w) } else { (a.w, a.h) };
+    let new_floor = a
+        .floor
+        .iter()
+        .map(|&(ci, cj)| (new_w - 1 - cj, ci))
+        .collect();
 
-    let mut new_floor = Vec::with_capacity(a.floor.len());
-    for &(fi, fj) in &a.floor {
-        new_floor.push(rotate_coord(fi, fj, a.w, a.h, r));
-    }
-
-    let mut new_parts = Vec::with_capacity(a.parts.len());
-    for p in &a.parts {
-        let (pi, pj) = rotate_coord(p.ci, p.cj, a.w, a.h, r);
-        let new_dir = p.dir.map(|d| rotate_dir(d, r));
-        new_parts.push(AssemblyPart {
-            ci: pi,
-            cj: pj,
+    let new_parts = a
+        .parts
+        .iter()
+        .map(|p| AssemblyPart {
+            ci: new_w - 1 - p.cj,
+            cj: p.ci,
             kind: p.kind.clone(),
-            dir: new_dir,
+            dir: rotate_dir(p.dir),
+            dir2: p.dir2.map(rotate_dir),
             role: p.role.clone(),
             seq: p.seq,
-        });
-    }
+        })
+        .collect();
 
-    let mut new_ports = Vec::with_capacity(a.ports.len());
-    for port in &a.ports {
-        let (pi, pj) = rotate_coord(port.ci, port.cj, a.w, a.h, r);
-        new_ports.push(AssemblyPort {
-            ci: pi,
-            cj: pj,
-            dir: rotate_dir(port.dir, r),
-            role: port.role,
-        });
-    }
+    let new_ports = a
+        .ports
+        .iter()
+        .map(|p| AssemblyPort {
+            ci: new_w - 1 - p.cj,
+            cj: p.ci,
+            dir: rotate_dir(p.dir),
+            way: p.way,
+            flow: p.flow,
+            tag: p.tag.clone(),
+        })
+        .collect();
 
     Assembly {
-        name: format!("{}_r{}", a.name, r),
+        name: format!("{}_rot", a.name),
         w: new_w,
         h: new_h,
         floor: new_floor,
         parts: new_parts,
         ports: new_ports,
     }
+}
+
+pub fn mirror_assembly(a: &Assembly) -> Assembly {
+    let new_floor = a.floor.iter().map(|&(ci, cj)| (a.w - 1 - ci, cj)).collect();
+
+    let new_parts = a
+        .parts
+        .iter()
+        .map(|p| AssemblyPart {
+            ci: a.w - 1 - p.ci,
+            cj: p.cj,
+            kind: p.kind.clone(),
+            dir: mirror_dir(p.dir),
+            dir2: p.dir2.map(mirror_dir),
+            role: p.role.clone(),
+            seq: p.seq,
+        })
+        .collect();
+
+    let new_ports = a
+        .ports
+        .iter()
+        .map(|p| AssemblyPort {
+            ci: a.w - 1 - p.ci,
+            cj: p.cj,
+            dir: mirror_dir(p.dir),
+            way: p.way,
+            flow: p.flow,
+            tag: p.tag.clone(),
+        })
+        .collect();
+
+    Assembly {
+        name: format!("{}_mir", a.name),
+        w: a.w,
+        h: a.h,
+        floor: new_floor,
+        parts: new_parts,
+        ports: new_ports,
+    }
+}
+
+pub fn signature_of(a: &Assembly) -> String {
+    let mut floor_keys: Vec<String> = a.floor.iter().map(|&(ci, cj)| format!("{},{}", ci, cj)).collect();
+    floor_keys.sort();
+    let mut part_keys: Vec<String> = a
+        .parts
+        .iter()
+        .map(|p| format!("{}:{},{}:{},{}", p.kind, p.ci, p.cj, p.dir.di, p.dir.dj))
+        .collect();
+    part_keys.sort();
+    format!("{}:{};{}", a.w, a.h, floor_keys.join("|"))
+}
+
+pub fn orientations_of(a: &Assembly) -> Vec<Assembly> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    let mut cur = a.clone();
+    for _ in 0..4 {
+        let sig = signature_of(&cur);
+        if seen.insert(sig) {
+            out.push(cur.clone());
+        }
+        let mir = mirror_assembly(&cur);
+        let mir_sig = signature_of(&mir);
+        if seen.insert(mir_sig) {
+            out.push(mir);
+        }
+        cur = rotate_assembly(&cur);
+    }
+
+    out
+}
+
+pub fn ports_chain(from: &AssemblyPort, to: &AssemblyPort) -> bool {
+    from.way != PortWay::In
+        && to.way != PortWay::Out
+        && from.dir.di == -to.dir.di
+        && from.dir.dj == -to.dir.dj
+}
+
+pub fn has_exit(a: &Assembly) -> bool {
+    a.ports.iter().any(|p| p.way != PortWay::In)
 }

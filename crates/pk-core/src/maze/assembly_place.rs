@@ -35,11 +35,7 @@ pub fn stamp_assembly(g: &mut Grid, a: &Assembly, ox: i32, oy: i32) -> Vec<FlowP
     for p in &a.parts {
         let px = ox + p.ci;
         let py = oy + p.cj;
-        let dir_vec = if let Some(d) = p.dir {
-            (d.di as f64, d.dj as f64)
-        } else {
-            (0.0, 0.0)
-        };
+        let dir_vec = (p.dir.di as f64, p.dir.dj as f64);
 
         placed.push(FlowPart {
             i: px,

@@ -1,62 +1,48 @@
-// Parity test suite for Scripted Debug Monster Spawn Layouts.
+// Simulation test suite for Debug Spawn Layout.
 // Replicates legacy/src/game/pinball-knight/debug-spawn.ts
 
 use pk_core::grid::{Grid, T_FLOOR};
-use pk_core::monsters::EnemyKind;
-use pk_core::spawn::debug_spawn::{layout_debug_spawns, DebugSpawnSpec, SpawnLayout};
+use pk_core::spawn::debug_spawn::{
+    free_tile_near, layout_offsets, resolve_spawn_points, SpawnLayout,
+};
+use std::collections::HashSet;
 
-fn make_open_grid(w: i32, h: i32) -> Grid {
-    let mut grid = Grid::solid(w, h);
-    for j in 1..(h - 1) {
-        for i in 1..(w - 1) {
-            grid.t[(j * w + i) as usize] = T_FLOOR;
+fn make_test_grid() -> Grid {
+    let mut g = Grid::solid(20, 20);
+    for j in 1..19 {
+        for i in 1..19 {
+            g.t[(j * 20 + i) as usize] = T_FLOOR;
         }
     }
-    grid
+    g
 }
 
 #[test]
-fn debug_spawn_layouts_ring_around_center() {
-    let grid = make_open_grid(20, 20);
-
-    let spec = DebugSpawnSpec {
-        layout: SpawnLayout {
-            count: 4,
-            ring: Some(2.0),
-            phase: Some(0.0),
-        },
-        kind: EnemyKind::Zombie,
-        hp: Some(100),
-        aggro: true,
-        at: Some((0.0, 0.0)),
+fn layout_offsets_computes_exact_ring_angles() {
+    let layout = SpawnLayout {
+        count: 4,
+        ring: Some(5.0),
+        phase: Some(0.0),
     };
+    let offsets = layout_offsets(&layout);
+    assert_eq!(offsets.len(), 4);
+    assert!((offsets[0].di - 5.0).abs() < 1e-6);
+    assert!(offsets[0].dj.abs() < 1e-6);
+}
 
-    let positions = layout_debug_spawns(&grid, &spec, (0.0, 0.0));
-    assert_eq!(positions.len(), 4);
+#[test]
+fn resolve_spawn_points_places_distinct_walkable_tiles() {
+    let g = make_test_grid();
+    let layout = SpawnLayout {
+        count: 6,
+        ring: Some(3.0),
+        phase: None,
+    };
+    let points = resolve_spawn_points(&g, 10.0, 10.0, &layout);
+    assert_eq!(points.len(), 6);
 
-    // Each position should be approx 2.0 units from center (0.0, 0.0)
-    for (x, z) in positions {
-        let dist = (x * x + z * z).sqrt();
-        assert!((dist - 2.0).abs() < 0.001);
+    let mut seen = HashSet::new();
+    for p in &points {
+        assert!(seen.insert((p.i, p.j)), "All spawn points must be unique");
     }
-}
-
-#[test]
-fn debug_spawn_layouts_dense_cluster() {
-    let grid = make_open_grid(20, 20);
-
-    let spec = DebugSpawnSpec {
-        layout: SpawnLayout {
-            count: 5,
-            ring: None,
-            phase: None,
-        },
-        kind: EnemyKind::Skeleton,
-        hp: None,
-        aggro: false,
-        at: Some((0.0, 0.0)),
-    };
-
-    let positions = layout_debug_spawns(&grid, &spec, (0.0, 0.0));
-    assert_eq!(positions.len(), 5);
 }

@@ -1,84 +1,201 @@
-//! Procedural and authored maze part assembly validation rules.
+//! Assembly validation — the real-table feel rules, as checkable predicates.
+//!
+//! Port of `legacy/src/game/pinball-knight/maze/assembly-check.ts` (220 lines).
 //!
 //! PORTS: `maze/assembly-check.ts`
 
-use crate::grid::{is_walkable, world_to_tile, Grid};
-use crate::pinball::PartKind;
+use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssemblyIssueKind {
-    BlockedLauncher,
-    UnclosedLoop,
-    OverlappingParts,
-    OutOfBoundsPart,
+use crate::maze::assembly::{
+    is_two_leg_kind, Assembly, AssemblyPart, PortFlow, PortWay,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssemblyProblem {
+    pub machine: String,
+    pub code: &'static str,
+    pub detail: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AssemblyIssue {
-    pub kind: AssemblyIssueKind,
-    pub part_id: u32,
-    pub message: &'static str,
+fn key(ci: i32, cj: i32) -> (i32, i32) {
+    (ci, cj)
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlacedPart {
-    pub id: u32,
-    pub kind: PartKind,
-    pub x: f64,
-    pub z: f64,
+fn floor_set(a: &Assembly) -> HashSet<(i32, i32)> {
+    a.floor.iter().copied().collect()
 }
 
-/// Validates that all placed pinball parts and maze assemblies respect clearance and connectivity rules.
-pub fn validate_maze_assemblies(
-    grid: &Grid,
-    parts: &[PlacedPart],
-) -> Result<(), Vec<AssemblyIssue>> {
-    let mut issues = Vec::new();
+fn check_on_floor(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    let floor = floor_set(a);
+    for p in &a.parts {
+        if !floor.contains(&key(p.ci, p.cj)) {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "part-off-floor",
+                detail: format!("{} at {},{} is not on carved floor", p.kind, p.ci, p.cj),
+            });
+        }
+    }
+    for p in &a.ports {
+        if !floor.contains(&key(p.ci, p.cj)) {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "port-off-floor",
+                detail: format!(
+                    "port {} at {},{} is not on carved floor",
+                    p.tag.as_deref().unwrap_or("?"),
+                    p.ci,
+                    p.cj
+                ),
+            });
+        }
+    }
+}
 
-    for (idx, part) in parts.iter().enumerate() {
-        let (ti, tj) = world_to_tile(grid, part.x, part.z);
+fn check_overlap(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    let mut seen = HashSet::new();
+    for p in &a.parts {
+        let k = key(p.ci, p.cj);
+        if !seen.insert(k) {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "part-overlap",
+                detail: format!("two parts on cell {},{}", k.0, k.1),
+            });
+        }
+    }
+}
 
-        // 1. Check out of bounds
-        if ti < 0 || ti >= grid.w || tj < 0 || tj >= grid.h {
-            issues.push(AssemblyIssue {
-                kind: AssemblyIssueKind::OutOfBoundsPart,
-                part_id: part.id,
-                message: "Part placed outside grid boundary",
+fn check_has_entry(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    if !a.ports.iter().any(|p| p.way != PortWay::Out) {
+        out.push(AssemblyProblem {
+            machine: a.name.clone(),
+            code: "no-entry",
+            detail: "no in/both port — nothing can reach it".to_string(),
+        });
+    }
+}
+
+fn check_exit_lines(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    let mut rebounders = HashMap::new();
+    for p in &a.parts {
+        if p.role.as_deref() == Some("rebound") {
+            rebounders.insert(key(p.ci, p.cj), p);
+        }
+    }
+    if rebounders.is_empty() {
+        return;
+    }
+
+    for port in &a.ports {
+        if port.way == PortWay::In || port.flow == PortFlow::Impact {
+            continue;
+        }
+        let mut ci = port.ci + port.dir.di;
+        let mut cj = port.cj + port.dir.dj;
+        while ci >= 0 && cj >= 0 && ci < a.w && cj < a.h {
+            if let Some(hit) = rebounders.get(&key(ci, cj)) {
+                out.push(AssemblyProblem {
+                    machine: a.name.clone(),
+                    code: "exit-into-rebounder",
+                    detail: format!(
+                        "exit {} fires into {} at {},{}",
+                        port.tag.as_deref().unwrap_or("?"),
+                        hit.kind,
+                        ci,
+                        cj
+                    ),
+                });
+                break;
+            }
+            ci += port.dir.di;
+            cj += port.dir.dj;
+        }
+    }
+}
+
+fn check_drives_go_somewhere(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    let floor = floor_set(a);
+    for p in &a.parts {
+        if p.role.as_deref() != Some("drive") {
+            continue;
+        }
+        if p.dir.di == 0 && p.dir.dj == 0 {
+            continue;
+        }
+        let ni = p.ci + p.dir.di;
+        let nj = p.cj + p.dir.dj;
+        let inside_footprint = ni >= 0 && nj >= 0 && ni < a.w && nj < a.h;
+        if !inside_footprint {
+            continue;
+        }
+        if !floor.contains(&key(ni, nj)) {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "dead-end-drive",
+                detail: format!(
+                    "{} at {},{} fires into uncarved cell {},{}",
+                    p.kind, p.ci, p.cj, ni, nj
+                ),
+            });
+        }
+    }
+}
+
+fn check_corner_legs(a: &Assembly, out: &mut Vec<AssemblyProblem>) {
+    for p in &a.parts {
+        if !is_two_leg_kind(&p.kind) {
+            if p.dir2.is_some() {
+                out.push(AssemblyProblem {
+                    machine: a.name.clone(),
+                    code: "corner-missing-leg",
+                    detail: format!(
+                        "{} at {},{} has a dir2 but is not a corner kind — it will be ignored",
+                        p.kind, p.ci, p.cj
+                    ),
+                });
+            }
+            continue;
+        }
+        let d2 = p.dir2;
+        if d2.is_none() || (d2.unwrap().di == 0 && d2.unwrap().dj == 0) {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "corner-missing-leg",
+                detail: format!(
+                    "{} at {},{} has no dir2 — it throws along a ZERO VECTOR and eats the player",
+                    p.kind, p.ci, p.cj
+                ),
             });
             continue;
         }
-
-        // 2. Check overlap against preceding parts
-        for prev in &parts[..idx] {
-            let dx = prev.x - part.x;
-            let dz = prev.z - part.z;
-            if (dx * dx + dz * dz).sqrt() < 0.6 {
-                issues.push(AssemblyIssue {
-                    kind: AssemblyIssueKind::OverlappingParts,
-                    part_id: part.id,
-                    message: "Part overlaps existing part fixture",
-                });
-            }
-        }
-
-        // 3. Launcher / Booster Clearance Rule
-        if part.kind == PartKind::Booster {
-            // Check that the launch vector tile in front is walkable
-            let launch_target_ti = ti;
-            let launch_target_tj = tj - 1; // standard booster shoots north
-            if !is_walkable(grid, launch_target_ti, launch_target_tj) {
-                issues.push(AssemblyIssue {
-                    kind: AssemblyIssueKind::BlockedLauncher,
-                    part_id: part.id,
-                    message: "Booster exit trajectory blocked by solid wall",
-                });
-            }
+        let d2 = d2.unwrap();
+        if p.dir.di * d2.di + p.dir.dj * d2.dj != 0 {
+            out.push(AssemblyProblem {
+                machine: a.name.clone(),
+                code: "corner-missing-leg",
+                detail: format!(
+                    "{} at {},{} has legs ({},{}) and ({},{}) — a corner's legs must be perpendicular",
+                    p.kind, p.ci, p.cj, p.dir.di, p.dir.dj, d2.di, d2.dj
+                ),
+            });
         }
     }
+}
 
-    if issues.is_empty() {
-        Ok(())
-    } else {
-        Err(issues)
-    }
+/// Run every rule over one machine. Empty array = the definition is sound.
+pub fn check_assembly(a: &Assembly) -> Vec<AssemblyProblem> {
+    let mut out = Vec::new();
+    check_on_floor(a, &mut out);
+    check_overlap(a, &mut out);
+    check_has_entry(a, &mut out);
+    check_exit_lines(a, &mut out);
+    check_drives_go_somewhere(a, &mut out);
+    check_corner_legs(a, &mut out);
+    out
+}
+
+/// Run every rule over a whole library.
+pub fn check_all(list: &[Assembly]) -> Vec<AssemblyProblem> {
+    list.iter().flat_map(check_assembly).collect()
 }
