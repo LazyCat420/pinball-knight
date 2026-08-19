@@ -180,3 +180,103 @@ pub const BOSS_BASE_HP: i32 = 40;
 pub const BOSS_HP_PER_TIER: i32 = 25;
 pub const BOSS_SPEED_FACTOR: f64 = 0.55;
 pub const BOSS_GOLD: i32 = 50;
+
+pub const JESTER_FROM_LEVEL: i32 = 2;
+pub const JESTER_FIRE_RANGE: f64 = 7.5;
+pub const JESTER_WINDUP: f64 = 0.6;
+pub const JESTER_COOLDOWN: f64 = 2.4;
+pub const JESTER_DISC_SPEED: f64 = 7.0;
+pub const JESTER_DISC_LIFE: f64 = 2.2;
+
+pub const ROTORTAIL_HP: i32 = 2;
+pub const ROTORTAIL_R: f64 = 0.3;
+pub const ROTORTAIL_SPEED_FACTOR: f64 = 0.85;
+pub const ROTORTAIL_RATIO: usize = 13;
+pub const ROTORTAIL_FROM_LEVEL: i32 = 3;
+pub const ROTORTAIL_FIRE_RANGE: f64 = 7.0;
+pub const ROTORTAIL_WINDUP: f64 = 0.75;
+pub const ROTORTAIL_COOLDOWN: f64 = 2.8;
+pub const ROTORTAIL_TIMBER_SPEED: f64 = 4.4;
+pub const ROTORTAIL_HOVER_Y: f64 = 0.85;
+
+pub const STILTNECK_HP: i32 = 3;
+pub const STILTNECK_R: f64 = 0.3;
+pub const STILTNECK_SPEED_FACTOR: f64 = 0.62;
+pub const STILTNECK_RATIO: usize = 19;
+pub const STILTNECK_FROM_LEVEL: i32 = 4;
+pub const STILTNECK_FIRE_RANGE: f64 = 9.0;
+pub const STILTNECK_WINDUP: f64 = 1.0;
+pub const STILTNECK_COOLDOWN: f64 = 3.2;
+pub const STILTNECK_BOMB_SPEED: f64 = 6.5;
+pub const STILTNECK_BOMB_FUSE: f64 = 1.5;
+pub const STILTNECK_BLAST_RADIUS: f64 = 1.6;
+pub const STILTNECK_BLAST_ENEMY_DAMAGE: i32 = 3;
+pub const STILTNECK_BLAST_PUSH: f64 = 0.35;
+
+pub const CROAKER_HP: i32 = 3;
+pub const CROAKER_R: f64 = 0.32;
+pub const CROAKER_SPEED_FACTOR: f64 = 0.75;
+pub const CROAKER_RATIO: usize = 17;
+pub const CROAKER_FROM_LEVEL: i32 = 2;
+pub const CROAKER_FIRE_RANGE: f64 = 6.5;
+pub const CROAKER_WINDUP: f64 = 0.45;
+pub const CROAKER_COOLDOWN: f64 = 2.0;
+pub const CROAKER_BEAM_SPEED: f64 = 13.0;
+pub const CROAKER_BEAM_SPREAD: f64 = 0.13;
+pub const CROAKER_HOP_TIME: f64 = 0.42;
+pub const CROAKER_HOP_SPEED: f64 = 8.5;
+pub const CROAKER_HOP_WINDUP: f64 = 0.3;
+pub const CROAKER_HOP_CD: f64 = 1.1;
+pub const CROAKER_HOP_MIN_RANGE: f64 = 2.2;
+
+pub const SPIDER_HP: i32 = 1;
+pub const SPIDER_R: f64 = 0.28;
+pub const SPIDER_SPEED_FACTOR: f64 = 1.4;
+pub const SPIDER_RATIO: usize = 5;
+pub const SPIDER_FROM_LEVEL: i32 = 1;
+
+pub const BRUTE_HP: i32 = 6;
+pub const BRUTE_R: f64 = 0.42;
+pub const BRUTE_SPEED_FACTOR: f64 = 0.7;
+pub const BRUTE_CONTACT_RANGE: f64 = 0.8;
+pub const BRUTE_ATTACK_WINDUP: f64 = 0.4;
+pub const BRUTE_ATTACK_COOLDOWN: f64 = 1.4;
+pub const BRUTE_RATIO: usize = 7;
+pub const BRUTE_FROM_LEVEL: i32 = 2;
+
+pub const ZOMBIE_HP: i32 = 2;
+pub const ZOMBIE_R: f64 = 0.3;
+
+pub const BLOATER_FROM_LEVEL: i32 = 3;
+pub const BLOATER_HP: i32 = 4;
+pub const BLOATER_SPEED_FACTOR: f64 = 0.65;
+
+pub const NECRO_FROM_LEVEL: i32 = 4;
+pub const NECRO_HP: i32 = 3;
+pub const NECRO_SPEED_FACTOR: f64 = 0.7;
+
+pub const WARDEN_FROM_LEVEL: i32 = 4;
+pub const WARDEN_HP: i32 = 6;
+pub const WARDEN_SPEED_FACTOR: f64 = 0.7;
+
+pub const WISP_FROM_LEVEL: i32 = 3;
+pub const WISP_HP: i32 = 2;
+pub const WISP_SPEED_FACTOR: f64 = 1.3;
+
+pub const SAPPER_FROM_LEVEL: i32 = 3;
+pub const SAPPER_HP: i32 = 2;
+pub const SAPPER_SPEED_FACTOR: f64 = 1.2;
+
+pub const CRYSTAL_FROM_LEVEL: i32 = 4;
+pub const CRYSTAL_HP: i32 = 6;
+
+pub const MIMIC_FROM_LEVEL: i32 = 3;
+pub const MIMIC_HP: i32 = 4;
+pub const MIMIC_SPEED_FACTOR: f64 = 0.8;
+
+pub const HOUND_FROM_LEVEL: i32 = 3;
+pub const HOUND_HP: i32 = 3;
+pub const HOUND_SPEED_FACTOR: f64 = 1.25;
+
+pub const HULK_MIN_OPEN_NEIGHBOURS: usize = 3;
+pub const THEME_HORDE_BIAS: usize = 35;
