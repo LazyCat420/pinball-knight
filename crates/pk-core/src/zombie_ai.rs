@@ -72,6 +72,7 @@ pub const fn stats_for_kind(kind: EnemyKind) -> EnemyStats {
 }
 
 /// Master STATS lookup alias matching legacy STATS table.
+#[allow(non_snake_case)]
 pub const fn STATS(kind: EnemyKind) -> EnemyStats {
     stats_for_kind(kind)
 }

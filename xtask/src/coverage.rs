@@ -1352,11 +1352,14 @@ mod tests {
                 "the immediate-mode kit every screen stands on",
             ),
             ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
-            (
-                "entities/marble.ts",
-                1005,
-                "12 of 45 exports; the physics accessors are UNWIRED",
-            ),
+            // ── entities/marble.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/marble.rs` with all 1,005 lines:
+            // All 45 exported symbols, material metadata & physics property overrides,
+            // fusion windows, squash & stretch deformation, diamond cut slicing,
+            // shadow phasing & safety wall ejection, fast bounce emitters,
+            // ground slam shockwaves, and environmental hazard reactions (steam, fire quenching,
+            // oil vaporization, pit bridging, diamond discharge).
+            // Gated by `crates/pk-core/tests/marble_sim.rs`.
             // ── abilities.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/abilities.rs`, `crates/pk-core/src/skills.rs`,
             // `crates/pk-core/src/constants/skills.rs`, and `crates/pk-core/src/player/skill_runtime.rs`
