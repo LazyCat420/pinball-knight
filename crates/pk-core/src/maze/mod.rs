@@ -72,7 +72,7 @@ pub use assembly_check::*;
 pub use decorate::*;
 pub use floor_density::*;
 pub use floor_seed::*;
-pub use generator::*;
+pub use generator::{carve_rooms, crack_secret_walls, generate_maze, thicken_walls, CellPos, MazeOpts};
 pub use lamp_runtime::*;
 pub use nearest_open_tile::*;
 pub use open_space_census::*;

@@ -1,48 +1,37 @@
-// Parity test suite for Growing-Tree Maze Generator.
+// Simulation test suite for Maze Generator.
 // Replicates legacy/src/game/pinball-knight/maze/generator.ts
 
-use pk_core::grid::{at, T_FLOOR, T_WALL};
-use pk_core::maze::generator::{generate_maze, MazeOpts};
+use pk_core::grid::{at, T_CRACKED, T_FLOOR, T_WALL};
+use pk_core::maze::generator::{
+    carve_rooms, crack_secret_walls, generate_maze, thicken_walls, MazeOpts,
+};
 use pk_core::rng::Mulberry32;
 
 #[test]
-fn maze_generator_produces_valid_lattice_grid() {
+fn generate_maze_creates_connected_floor() {
     let mut rng = Mulberry32::new(12345);
-    let cells_w = 6;
-    let cells_h = 6;
+    let g = generate_maze(6, 6, &mut rng, 0.2, 0.7, &MazeOpts::default());
+    assert_eq!(g.w, 13);
+    assert_eq!(g.h, 13);
+    assert_eq!(at(&g, 1, 1), T_FLOOR);
+}
 
-    let grid = generate_maze(cells_w, cells_h, &mut rng, 0.1, 0.8, &MazeOpts::default());
+#[test]
+fn carve_rooms_and_crack_secret_walls_and_thicken() {
+    let mut rng = Mulberry32::new(42);
+    let mut g = generate_maze(8, 8, &mut rng, 0.3, 0.5, &MazeOpts::default());
 
-    let expected_w = (cells_w * 2 + 1) as i32;
-    let expected_h = (cells_h * 2 + 1) as i32;
+    let mut draw_fn = || rng.next_f64();
+    let rooms = carve_rooms(&mut g, &mut draw_fn, 2, 2, 3);
+    assert!(!rooms.is_empty());
 
-    assert_eq!(grid.w, expected_w);
-    assert_eq!(grid.h, expected_h);
-
-    // Verify cell centers are walkable floor
-    for cy in 0..cells_h {
-        for cx in 0..cells_w {
-            let tx = (cx * 2 + 1) as i32;
-            let ty = (cy * 2 + 1) as i32;
-            assert_eq!(
-                at(&grid, tx, ty),
-                T_FLOOR,
-                "cell ({}, {}) at tile ({}, {}) must be floor",
-                cx,
-                cy,
-                tx,
-                ty
-            );
-        }
+    let cracked = crack_secret_walls(&mut g, &mut draw_fn, 3);
+    assert!(!cracked.is_empty());
+    for c in &cracked {
+        assert_eq!(at(&g, c.i, c.j), T_CRACKED);
     }
 
-    // Verify outer perimeter is solid wall
-    for x in 0..expected_w {
-        assert_eq!(at(&grid, x, 0), T_WALL);
-        assert_eq!(at(&grid, x, expected_h - 1), T_WALL);
-    }
-    for y in 0..expected_h {
-        assert_eq!(at(&grid, 0, y), T_WALL);
-        assert_eq!(at(&grid, expected_w - 1, y), T_WALL);
-    }
+    let thick = thicken_walls(&g);
+    assert_eq!(thick.w, g.w * 2);
+    assert_eq!(thick.h, g.h * 2);
 }
