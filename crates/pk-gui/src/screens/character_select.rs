@@ -175,3 +175,7 @@ pub fn paint_character_select(
 
     None
 }
+
+pub fn character_select_screen() -> CharacterSelectState {
+    CharacterSelectState::default()
+}

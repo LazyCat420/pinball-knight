@@ -37,3 +37,7 @@ pub fn compute_map_viewport(
         h: avail_h,
     }
 }
+
+pub fn floor_map_screen() -> bool {
+    floor_map_pauses_game()
+}

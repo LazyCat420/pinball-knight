@@ -149,3 +149,7 @@ pub fn paint_game_over(
 
     None
 }
+
+pub fn game_over_screen() -> GameOverState {
+    GameOverState::default()
+}

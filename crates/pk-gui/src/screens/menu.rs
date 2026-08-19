@@ -266,3 +266,9 @@ pub fn paint_menu(f: &mut UiFrame, state: &mut KnightMenuState, bounds: Rect) {
         }
     }
 }
+
+pub fn menu_screen() -> MenuView {
+    MenuView::default()
+}
+
+pub fn open_menu() {}
