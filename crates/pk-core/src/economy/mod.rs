@@ -1,7 +1,6 @@
 //! THE ECONOMY — the tavern's rules, as pure data and pure functions.
 //!
-//! PORTS: `economy/tavern-shop.ts`, `items.ts`, `economy/shop.ts`, `economy/ground-items.ts`
-//! PORTS-PARTIAL: `armor-styles.ts` - NOT a finished port - 6 rust code lines against 76 legacy (8%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `economy/tavern-shop.ts`, `items.ts`, `economy/shop.ts`, `economy/ground-items.ts`, `armor-styles.ts`, `economy/loot.ts`
 //!
 //! Track T in `docs/src/status/one-to-one.md` — 1,845 lines and, until this
 //! module, **0% ported**, while `pk_core::gambler` next door was complete with

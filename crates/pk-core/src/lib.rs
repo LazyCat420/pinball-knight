@@ -25,7 +25,7 @@
 //! Nothing here is a correctness lint. Anything that could change a digest
 //! stays on, and CI runs clippy at deny level per crate.
 //!
-//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`, `GameEngine.ts`
+//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`, `GameEngine.ts`, `armor-styles.ts`
 //! PORTS-PARTIAL: `playtest-bot.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `coop.ts` - NOT a finished port - 85 rust code lines against 336 legacy (25%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `core.ts` - NOT a finished port - 72 rust code lines against 352 legacy (20%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
@@ -43,6 +43,7 @@
 )]
 
 pub mod abilities;
+pub mod armor_styles;
 pub mod best_depth;
 pub mod bestiary;
 pub mod boot;
@@ -103,6 +104,7 @@ pub mod tile_shape;
 pub mod zombie_ai;
 pub mod zombie_types;
 
+pub use armor_styles::*;
 pub use best_depth::*;
 pub use coop::*;
 pub use dungeon_session::*;
