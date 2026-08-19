@@ -120,3 +120,10 @@ pub const MAGNET_RADIUS: f64 = 2.4;
 // Slingshot Tuning
 pub const SLINGSHOT_IMPULSE: f64 = 15.0;
 pub const SLINGSHOT_COOLDOWN: f64 = 0.22;
+
+pub const TARGETS_PER_FLOOR: usize = 3;
+pub const TRAPDOORS_PER_FLOOR: f64 = 2.0;
+pub const VAULT_RAMPS_PER_FLOOR: usize = 2;
+pub const HAZARDS_BASE: f64 = 2.0;
+pub const HAZARDS_PER_LEVEL: f64 = 0.5;
+pub const HAZARDS_MAX: f64 = 10.0;
