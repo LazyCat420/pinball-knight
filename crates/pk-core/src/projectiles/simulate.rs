@@ -1,4 +1,6 @@
 //! 60 Hz projectile integration and boundary physics.
+//!
+//! PORTS: `entities/projectiles.ts`
 
 use super::types::Projectile;
 use crate::grid::{world_to_tile, Grid, T_WALL};

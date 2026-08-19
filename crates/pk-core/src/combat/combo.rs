@@ -1,4 +1,6 @@
 //! Melee attack combo state machine, weapon heft cadence, and finisher multipliers.
+//!
+//! PORTS: `entities/combat.ts`
 
 use crate::items::WeaponDef;
 

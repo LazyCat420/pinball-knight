@@ -1,4 +1,6 @@
 //! Damage calculation and hit resolution.
+//!
+//! PORTS: `entities/combat.ts`
 
 use super::stagger::{pain_chance, stagger_time};
 use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};

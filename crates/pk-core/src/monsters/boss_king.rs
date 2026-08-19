@@ -1,6 +1,8 @@
 //! Boss King Zombie state machine and royal flipper charge mechanics.
 //!
 //! Subsystem companion to `crates/pk-core/src/boss.rs`.
+//!
+//! PORTS: `constants/enemies.ts`
 
 use super::types::{EnemyKind, LiveMonster};
 use crate::collide::move_circle;

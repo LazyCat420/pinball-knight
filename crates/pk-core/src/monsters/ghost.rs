@@ -1,5 +1,7 @@
 //! Ghost phasing movement and vulnerability state.
 //!
+//! PORTS: `constants/enemies.ts`
+
 use super::types::{EnemyMode, LiveMonster};
 use crate::enemies::*;
 use crate::grid::Grid;
