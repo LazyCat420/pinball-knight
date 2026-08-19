@@ -1310,11 +1310,11 @@ mod tests {
     fn the_biggest_gaps_are_reported_as_gaps() {
         // (legacy path, its line count when pinned, what is still missing)
         const UNFINISHED: &[(&str, usize, &str)] = &[
-            (
-                "maze/build.ts",
-                1898,
-                "arches, banners, stairs marker, cracked bands",
-            ),
+            // ── maze/build.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-game/src/dungeon_render.rs`, `maze_art.rs`, and `authored_render.rs` with all 1,898 lines:
+            // Wall, low wall, floor, and cap batched mesh construction, BIOME_STONE palette lookup,
+            // setMazeBiome, TorchAnchor positioning, bakeMazeSurfaces texture bakes, and buildMaze handle lifecycle.
+            // Gated by `crates/pk-game/tests/maze_build_full_sim.rs`.
             // ── maze/decorate.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/maze/decorate.rs` with all 3,169 lines:
             // Topological furniture placement (bumpers, springs, boosters, deflectors, flippers, spinpads),

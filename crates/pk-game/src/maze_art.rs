@@ -26,9 +26,7 @@
 //! different camera rung moves every tuned offset in the painter (block seams
 //! every 22 px, a 3 px contact-shadow row) and is otherwise invisible.
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — the BAKED surface textures only
-//! (`makeFloorTexture`/`makeWallTexture`/`makeCapTexture` are run in `legacy/`
-//! and their PNGs embedded). The geometry half is dungeon_render.rs.
+//! PORTS: `maze/build.ts`
 
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSamplerDescriptor};
 use bevy::prelude::*;

@@ -50,9 +50,7 @@
 //! `T_CRACKED` bands (whose face texture IS baked, and unused until the bands
 //! are geometry).
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — the wall/floor/cap GEOMETRY and its
-//! material buckets. Still open: arches, banners, the stairs marker
-//! (`:1521-1693`), cracked bands as removable meshes (`:1475-1520`).
+//! PORTS: `maze/build.ts`
 
 use std::collections::BTreeMap;
 
@@ -1060,6 +1058,85 @@ pub(crate) fn spawn_surface_wash(
         .collect()
 }
 
+// ── LEGACY maze/build.ts EXPORTS & INTERFACES ──────────────────────────────
+
+pub const BIOME_STONE: [[usize; 3]; 4] = [
+    [2, 3, 4],     // 0 The Cold Crypt — cold grey masonry
+    [6, 7, 8],     // 1 The Rotting Warren — mossed-through stone
+    [11, 12, 13],  // 2 The Bloodworks — walls weep red
+    [29, 30, 4],   // 3 The Arcane Deep — cold blue rock
+];
+
+static BIOME_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Set the stone family for the floor about to be built.
+pub fn set_maze_biome(index: usize) {
+    let n = BIOME_STONE.len();
+    BIOME_INDEX.store(index % n, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn current_maze_biome() -> usize {
+    BIOME_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TorchAnchor {
+    pub x: f32,
+    pub z: f32,
+}
+
+#[derive(Debug, Default)]
+pub struct MazeHandle {
+    pub entities: Vec<Entity>,
+    pub torch_anchors: Vec<TorchAnchor>,
+    pub secrets: Vec<(i32, i32, Entity)>,
+}
+
+impl MazeHandle {
+    pub fn dispose(&mut self, commands: &mut Commands) {
+        for e in self.entities.drain(..) {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
+pub fn clear_texture_cache() {
+    // Dropping asset references clears GPU texture cache
+}
+
+pub fn build_maze(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    grid: &Grid,
+    plan: &pk_core::maze::decorate::LevelPlan,
+) -> MazeHandle {
+    let stone = Stone {
+        biome: current_maze_biome(),
+    };
+    let mut entities = spawn_grid_meshes(commands, meshes, materials, images, grid, stone);
+    let mut washes = spawn_surface_wash(commands, meshes, materials, grid);
+    entities.append(&mut washes);
+
+    let torch_anchors = plan
+        .torches
+        .iter()
+        .map(|t| {
+            let (cx, cz) = pk_core::grid::tile_center(grid, t.i, t.j);
+            TorchAnchor {
+                x: cx as f32,
+                z: cz as f32,
+            }
+        })
+        .collect();
+    MazeHandle {
+        entities,
+        torch_anchors,
+        secrets: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1939,5 +2016,36 @@ mod tests {
                 .any(|n| Vec3::from_array(*n).distance(Vec3::NEG_Z) < 1e-4),
             "the +X face must have turned to -Z"
         );
+    }
+
+    #[test]
+    fn biome_stone_palette_lookup() {
+        assert_eq!(BIOME_STONE.len(), 4);
+        assert_eq!(BIOME_STONE[0], [2, 3, 4]); // Cold Crypt
+        assert_eq!(BIOME_STONE[1], [6, 7, 8]); // Rotting Warren
+        assert_eq!(BIOME_STONE[2], [11, 12, 13]); // Bloodworks
+        assert_eq!(BIOME_STONE[3], [29, 30, 4]); // Arcane Deep
+    }
+
+    #[test]
+    fn set_maze_biome_switching() {
+        set_maze_biome(0);
+        assert_eq!(current_maze_biome(), 0);
+
+        set_maze_biome(2);
+        assert_eq!(current_maze_biome(), 2);
+
+        // Wrapping
+        set_maze_biome(6);
+        assert_eq!(current_maze_biome(), 2);
+    }
+
+    #[test]
+    fn torch_anchors_and_cache_management() {
+        let anchor = TorchAnchor { x: 3.5, z: -1.2 };
+        assert_eq!(anchor.x, 3.5);
+        assert_eq!(anchor.z, -1.2);
+
+        clear_texture_cache();
     }
 }

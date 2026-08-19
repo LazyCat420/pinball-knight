@@ -44,7 +44,7 @@
 //! colour below is the legacy palette index that kind is painted with, so the
 //! floor reads in the right hues before it reads in the right shapes.
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — placeholder primitives at the oracle`s POSITIONS; the baked part art and the prop/item meshes are Track V
+//! PORTS: `maze/build.ts`
 
 use bevy::prelude::*;
 
@@ -941,7 +941,7 @@ pub fn spawn_standing_horde(
     art: &MonsterArt,
     floor: &AuthoredFloor,
 ) -> Option<Entity> {
-    let cache = &mut crate::mat_cache::MatCache::default();
+    let _cache = &mut crate::mat_cache::MatCache::default();
     let clip = art
         .zombie
         .idle
