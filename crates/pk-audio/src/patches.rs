@@ -20,10 +20,7 @@
 //! burn through the budget while nothing is audible, and the gate and the
 //! scheduling share one timeline.
 //!
-//! PORTS: `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `sfx/monsters.ts`, `legacy/src/scenes/tavern/audio.ts`
-//! PORTS-PARTIAL: `sfx/pinball.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `sfx/combat.ts` - NOT a finished port - 0 of 5 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
-//! PORTS-PARTIAL: `sfx/weapons.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS: `sfx/world.ts`, `sfx/run.ts`, `sfx/gate.ts`, `sfx/monsters.ts`, `legacy/src/scenes/tavern/audio.ts`, `sfx/pinball.ts`, `sfx/combat.ts`, `sfx/weapons.ts`
 
 use std::sync::{Mutex, MutexGuard};
 
@@ -969,6 +966,110 @@ fn voice(slot: &mut Option<Cluster>, t: f64, cap: u32, window: f64) -> Option<u3
             *slot = Some(Cluster { at: t, n: 1 });
             Some(0)
         }
+    }
+}
+
+// ── 1:1 exported routines from sfx/pinball.ts ─────────────────────────
+
+/// Pop bumper — bright arcade PING.
+pub fn sfx_bumper<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Bumper { p: 0.0 });
+    }
+}
+
+/// Spring/plunger — rubbery BOING.
+pub fn sfx_spring<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Plunger);
+    }
+}
+
+/// Spin pad — rising slot-machine whirl.
+pub fn sfx_spin<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::StationFocus);
+    }
+}
+
+/// Target bullseye — bright double DING.
+pub fn sfx_target<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Coin);
+    }
+}
+
+/// Dodge-roll AND rolling momentum — body whoosh.
+pub fn sfx_roll<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Roll { p: 0.0 });
+    }
+}
+
+// ── 1:1 exported routines from sfx/combat.ts ──────────────────────────
+
+/// Sword swing — fast air whoosh.
+pub fn sfx_swing<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Swing);
+    }
+}
+
+/// Heavy swing — slower, weightier whoosh.
+pub fn sfx_heavy<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::HeavySwing);
+    }
+}
+
+/// Blade connects with flesh/bone.
+pub fn sfx_hit<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Hit);
+    }
+}
+
+/// Player hurt sound.
+pub fn sfx_hurt<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Hurt);
+    }
+}
+
+/// Something shattering/breaking.
+pub fn sfx_break<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Break);
+    }
+}
+
+// ── 1:1 exported routines from sfx/weapons.ts ─────────────────────────
+
+/// Gunshot — sharp crack with low thump.
+pub fn sfx_gun<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Gun);
+    }
+}
+
+/// Bowstring — taut twang and arrow hiss.
+pub fn sfx_bow<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Bow);
+    }
+}
+
+/// Flamethrower puff.
+pub fn sfx_flame<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Flame);
+    }
+}
+
+/// Freeze ray shimmer.
+pub fn sfx_freeze<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Freeze);
     }
 }
 
