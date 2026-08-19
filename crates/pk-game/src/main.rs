@@ -1468,7 +1468,10 @@ fn gather_input(
         move_z: z,
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
         dodge: keys.pressed(KeyCode::Space) || keys.pressed(KeyCode::KeyK),
-        attack: mouse.pressed(MouseButton::Left) || keys.pressed(KeyCode::KeyJ),
+        attack: mouse.pressed(MouseButton::Left)
+            || keys.pressed(KeyCode::KeyJ)
+            || keys.pressed(KeyCode::KeyF)
+            || keys.pressed(KeyCode::KeyX),
         swap_weapon: keys.just_pressed(KeyCode::Tab)
             || keys.just_pressed(KeyCode::Digit1)
             || keys.just_pressed(KeyCode::Digit2),

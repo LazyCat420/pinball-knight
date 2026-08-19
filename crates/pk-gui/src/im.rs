@@ -592,6 +592,32 @@ fn draw_icon_inner(
     );
 }
 
+/// Blit a procedural Doom-style knight mugshot face into the frame.
+pub fn draw_face(f: &mut UiFrame, face: &crate::hud_face::FaceState, face_box: &Rect) {
+    let z = f.zoom as i64;
+    let face_d = crate::hud_face::FACE_PX as f64;
+    let dest_x = face_box.x + (face_box.w - face_d) / 2.0;
+    let dest_y = face_box.y + (face_box.h - face_d) / 2.0;
+    let dx = px(dest_x) * z;
+    let dy = (px(dest_y) - f.shift) * z;
+    let dw = (face_d as i64) * z;
+    let dh = (face_d as i64) * z;
+
+    let bytes = face.rgba_bytes();
+    f.p.blit_rgba(
+        &bytes,
+        crate::hud_face::FACE_PX as u32,
+        crate::hud_face::FACE_PX as u32,
+        dx,
+        dy,
+        dw,
+        dh,
+        f.global_alpha,
+        None,
+        f.device_clip,
+    );
+}
+
 /// The largest size ≤ `want` at which `native` divides EXACTLY — a fractional
 /// nearest-neighbour resample DELETES whole rows and columns.
 pub fn exact_icon_size(native: i64, want: i64) -> i64 {

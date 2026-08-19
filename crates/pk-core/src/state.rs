@@ -740,13 +740,13 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             let dx = m.x - px;
             let dz = m.z - pz;
             let dist = (dx * dx + dz * dz).sqrt();
-            if dist <= reach + m.radius {
+            if dist <= reach + m.radius + 0.4 {
                 let dot = if dist > 0.001 {
                     (dx * sx + dz * sz) / dist
                 } else {
                     1.0
                 };
-                if dot > 0.15 {
+                if dot > -0.25 {
                     s.player.slash.hit_entities.push(m.id);
                     let (incoming_dmg, _is_crit) = crate::combat::damage::calculate_player_damage(
                         base_dmg, 0, 1.0, mom_speed, 0.15, 1.5, false,
@@ -777,7 +777,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
     }
 
     // Ball form / pinball momentum ramming monsters
-    if s.player.is_ball() || s.player.mom_speed >= 4.5 {
+    if s.player.is_ball() || s.player.mom_speed >= 3.0 {
         let px = s.player.x;
         let pz = s.player.z;
         let mom_speed = s.player.mom_speed;
@@ -789,7 +789,7 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             let dx = m.x - px;
             let dz = m.z - pz;
             let dist = (dx * dx + dz * dz).sqrt();
-            if dist <= (PLAYER_R + m.radius + 0.15) {
+            if dist <= (PLAYER_R + m.radius + 0.35) {
                 let ram_base = (mom_speed * 1.6).max(6.0);
                 let hit = crate::combat::damage::resolve_enemy_hit(
                     m.hp,

@@ -280,7 +280,7 @@ fn globe(f: &mut UiFrame, r: &Rect, fill_ratio: f64, colour: Rgba, value: u32, t
 }
 
 /// Paint the procedural Doom-style knight mugshot face.
-fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, time: f64) {
+fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, _time: f64) {
     fill_rect(f, face_box, Ui::WELL);
 
     let mut face = crate::hud_face::FaceState::default();
@@ -288,11 +288,9 @@ fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash
     if pain_flash > 0.0 {
         face.pain_t = pain_flash.min(0.32);
     }
-    face.render(time);
+    face.render(1.0 / 60.0);
 
-    let dest_x = face_box.x + (face_box.w - (crate::hud_face::FACE_PX as f64)) / 2.0;
-    let dest_y = face_box.y + (face_box.h - (crate::hud_face::FACE_PX as f64)) / 2.0;
-    face.blit_into(f.p, dest_x, dest_y);
+    crate::im::draw_face(f, &face, face_box);
     stroke_rect(f, face_box, Ui::SHEET_EDGE, 2.0);
 }
 
@@ -301,8 +299,8 @@ fn paint_minimap(f: &mut UiFrame, map_rect: &Rect, minimap: Option<&HudMinimapVi
     cell(f, map_rect, None);
 
     if let Some(mm) = minimap {
-        let tile_size = 4.0;
-        let window_rad = 6;
+        let tile_size = 3.0;
+        let window_rad = 7;
         let cx = map_rect.x + map_rect.w / 2.0;
         let cy = map_rect.y + map_rect.h / 2.0;
 
@@ -430,6 +428,17 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
         stroke_rect(f, &tr, Ui::WELL_EDGE, 1.0);
 
         if let Some(ref skill) = v.skills[i] {
+            // Draw ability mark icon
+            if let Some(ic) = crate::icons::ability_icon(&skill.id, ICON_SKILL as u32, !skill.can_cast) {
+                crate::im::draw_icon(
+                    f,
+                    ic,
+                    tr.x + (TILE - ICON_SKILL) / 2.0,
+                    tr.y + 2.0,
+                    ICON_SKILL,
+                );
+            }
+
             // Cost readout
             let cost_color = if skill.affordable {
                 Ui::ARCANE
@@ -495,6 +504,9 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
         .unwrap_or("WEAPON");
     cell(f, &wpn_rect, Some(wpn_label));
     if let Some(ref w) = v.weapon {
+        if let Some(ic) = crate::icons::item_icon(&w.id) {
+            crate::im::draw_icon(f, ic, wpn_rect.x + 3.0, wpn_rect.y + 3.0, ITEM_ICON);
+        }
         let dur_str = w
             .durability
             .map(|d| d.to_string())
@@ -624,6 +636,15 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
             },
         );
         if let Some(ref slot) = v.belt[i] {
+            if let Some(ic) = crate::icons::item_icon(&slot.id) {
+                crate::im::draw_icon(
+                    f,
+                    ic,
+                    tr.x + (TILE - ITEM_ICON) / 2.0,
+                    tr.y + (TILE - ITEM_ICON) / 2.0,
+                    ITEM_ICON,
+                );
+            }
             if slot.count > 1 {
                 text(
                     f,

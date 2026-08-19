@@ -405,13 +405,24 @@ fn spawn_part(
                         .id(),
                 );
             }
-            // 3 Forward-pointing golden chevron arrows
+            // 3 Forward-pointing golden chevron arrows (each formed by angled wings)
             let chevron_color = c(0xf0a63c);
             let chevron_emissive = LinearRgba::from(chevron_color);
-            let arrow_mesh = meshes.add(Cuboid::new(0.36, 0.04, 0.09));
+            let wing_mesh = meshes.add(Cuboid::new(0.20, 0.04, 0.06));
             for k in 0..3 {
                 let offset = -0.18 + (k as f32) * 0.18;
-                let chevron_tf = xf * Transform::from_xyz(0.0, 0.04, offset);
+                let chevron_mat = cache.add(
+                    materials,
+                    StandardMaterial {
+                        base_color: chevron_color,
+                        emissive: chevron_emissive * 1.8,
+                        unlit: true,
+                        ..default()
+                    },
+                );
+                // Left wing angled at 35 deg pointing forward
+                let left_tf = xf * Transform::from_xyz(-0.08, 0.04, offset - 0.04)
+                    .with_rotation(Quat::from_rotation_y(35.0f32.to_radians()));
                 entities.push(
                     commands
                         .spawn((
@@ -420,17 +431,26 @@ fn spawn_part(
                                 index: k as u8,
                                 base_emissive: chevron_emissive,
                             },
-                            Mesh3d(arrow_mesh.clone()),
-                            MeshMaterial3d(cache.add(
-                                materials,
-                                StandardMaterial {
-                                    base_color: chevron_color,
-                                    emissive: chevron_emissive * 1.8,
-                                    unlit: true,
-                                    ..default()
-                                },
-                            )),
-                            chevron_tf,
+                            Mesh3d(wing_mesh.clone()),
+                            MeshMaterial3d(chevron_mat.clone()),
+                            left_tf,
+                        ))
+                        .id(),
+                );
+                // Right wing angled at -35 deg pointing forward
+                let right_tf = xf * Transform::from_xyz(0.08, 0.04, offset - 0.04)
+                    .with_rotation(Quat::from_rotation_y(-35.0f32.to_radians()));
+                entities.push(
+                    commands
+                        .spawn((
+                            AuthoredDecor,
+                            ChevronArrow {
+                                index: k as u8,
+                                base_emissive: chevron_emissive,
+                            },
+                            Mesh3d(wing_mesh.clone()),
+                            MeshMaterial3d(chevron_mat),
+                            right_tf,
                         ))
                         .id(),
                 );

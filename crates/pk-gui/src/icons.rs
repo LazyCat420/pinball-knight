@@ -87,11 +87,25 @@ pub fn glyph(id: GlyphId, _size: u32, _color: Rgba) -> Option<&'static Icon> {
 }
 
 pub fn ability_icon(id: &str, size: u32, _disabled: bool) -> Option<&'static Icon> {
+    let key = match id {
+        "flipper_charge" | "flipper" | "charge" => "curveshot",
+        "time_crawl" | "time" | "freeze" => "freeze",
+        "slash" | "sword" => "sword",
+        "shield_bash" | "bash" => "shield",
+        "fireball" => "flamethrower",
+        "rage" => "rage",
+        "multiball" => "multiball",
+        "storm" => "storm",
+        other => other,
+    };
+    if let Some(ic) = icon(key) {
+        return Some(ic);
+    }
     let map = ability_glyph_map();
     if let Some(&gid) = map.get(id) {
         glyph(gid, size, Rgba::rgb(255, 255, 255))
     } else {
-        icon(id)
+        icon(id).or_else(|| icon("curveshot"))
     }
 }
 
@@ -100,7 +114,17 @@ pub fn monster_icon(kind: &str) -> Option<&'static Icon> {
 }
 
 pub fn item_icon(id: &str) -> Option<&'static Icon> {
-    icon(id)
+    let key = match id {
+        "potion_hp" | "potion" | "health_potion" => "health",
+        "potion_mana" | "mana_potion" | "mana" => "elixir",
+        "potion_speed" | "speed_potion" => "haste",
+        "bomb" | "bombs" => "steelpin",
+        "key" | "keys" => "lodestone",
+        "coin" | "coins" | "gold" => "gold",
+        "fists" => "ironshard",
+        other => other,
+    };
+    icon(key).or_else(|| icon(id)).or_else(|| icon("health"))
 }
 
 pub fn exact_icon_size(size: u32) -> u32 {

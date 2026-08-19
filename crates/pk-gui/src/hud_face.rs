@@ -311,6 +311,17 @@ impl FaceState {
         }
     }
 
+    pub fn rgba_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.buffer.len() * 4);
+        for p in &self.buffer {
+            bytes.push(p.r);
+            bytes.push(p.g);
+            bytes.push(p.b);
+            bytes.push(p.a);
+        }
+        bytes
+    }
+
     pub fn blit_into(&self, painter: &mut Painter, dest_x: f64, dest_y: f64) {
         let dx = dest_x.round() as i64;
         let dy = dest_y.round() as i64;
