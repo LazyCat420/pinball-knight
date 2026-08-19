@@ -1346,11 +1346,13 @@ mod tests {
             // combo multipliers, gate immunities (Reaper, Ghost), armor durability absorption,
             // Stoneskin reduction, iframes, kill sequences, style kills, and line-AoE thunderbolt.
             // Gated by `crates/pk-core/tests/combat_sim.rs`.
-            (
-                "gui/im.ts",
-                1052,
-                "the immediate-mode kit every screen stands on",
-            ),
+            // ── gui/im.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-gui/src/im.rs` with all 1,052 lines:
+            // All 38 exported symbols, immediate-mode geometry arithmetic, frame input & focus
+            // state machine with disabled hole skipping, primitive rendering (bevel/key/well/scrim),
+            // widgets (button/toggle/slider/pips/bar/tabs/text_field), typography wrapping & ellipsizing,
+            // exact icon sizing & card rendering, and scroll containers with follow_focus.
+            // Gated by `crates/pk-gui/tests/im_gui_sim.rs`.
             ("dev/window-hooks.ts", 1054, "the __dungeon* dev surface"),
             // ── entities/marble.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/marble.rs` with all 1,005 lines:

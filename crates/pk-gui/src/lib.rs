@@ -1,7 +1,6 @@
 //! The legacy immediate-mode GUI, ported 1:1 from `legacy/src/game/pinball-knight/gui/`.
 //!
 //! PORTS: `gui/input.ts`, `gui/touch.ts`, `render/remote-party.ts`, `boot/warmup.ts`, `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `legacy/src/pixel/pixel-text.ts`, `gui/coords.ts`, `legacy/src/pixel/pixel-font.ts`, `map-overlay.ts`, `hud-meter.ts`, `gui/apply-settings.ts`, `pickup-toast.ts`, `gui/globe-ripple.ts`, `floor-loading.ts`, `pixel-fonts.ts`, `dev/gui-hooks.ts`
-//! PORTS-PARTIAL: `gui/im.ts` - NOT a finished port - 37 of 37 exported names carried over (100%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `gui/layer.ts` - NOT a finished port - 0 of 12 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `legacy/src/pixel/pixel-canvas.ts` - NOT a finished port - 0 of 6 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 //! PORTS-PARTIAL: `legacy/src/pixel/pixel-icon.ts` - NOT a finished port - 0 of 4 exported names carried over (0%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
