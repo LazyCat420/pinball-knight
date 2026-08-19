@@ -1379,11 +1379,13 @@ mod tests {
             // with all 6 active skills, cast anticipation & impact frames, Blood Price, table mana
             // battery with Dynamo, rank 2 extra rules, and full skill aggregation.
             // Gated by `crates/pk-core/tests/abilities_sim.rs`.
-            (
-                "legacy/src/scenes/tavern/core.ts",
-                906,
-                "46 rust lines against 536",
-            ),
+            // ── legacy/src/scenes/tavern/core.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/tavern/core.rs` with all 906 lines:
+            // Walkable room locomotion, velocity damping, room bounds clamping, facing resolution,
+            // camera tracking with CAM_LEAN and fitZoom calculation, station focus state machine
+            // (Plunger, Gambler, Vendor counters, Notice Board), interaction routing, diorama animation,
+            // and plunger descent launch sequence.
+            // Gated by `crates/pk-core/tests/tavern_core_full_sim.rs`.
             // ── cards.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/cards.rs` and `crates/pk-core/src/cards/reader.rs`
             // with all 25 monster/mythic cards, rarities, card levels 1..10, 5% shiny chance,

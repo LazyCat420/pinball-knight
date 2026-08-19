@@ -656,3 +656,65 @@ pub fn update_pinball_parts(parts: &mut [PartAnimationState], dt: f32, camera_po
         }
     }
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct PartBuildCtx {
+    pub dir_x: f32,
+    pub dir_z: f32,
+}
+
+pub fn spawn_pinball_part(kind: PinballPartKind, x: f32, z: f32) -> PartAnimationState {
+    PartAnimationState::new(kind, x, z)
+}
+
+pub fn create_pinball_parts(spots: &[(PinballPartKind, f32, f32)]) -> Vec<PartAnimationState> {
+    spots.iter().map(|&(k, x, z)| spawn_pinball_part(k, x, z)).collect()
+}
+
+pub fn update_plunger_rig() {}
+
+pub fn dispose_pinball_parts() {}
+
+pub const PART_HIT_LIFETIME: [(PinballPartKind, f32); 4] = [
+    (PinballPartKind::Bumper, 0.25),
+    (PinballPartKind::Spring, 0.35),
+    (PinballPartKind::Flipper, 0.25),
+    (PinballPartKind::Slingshot, 0.2),
+];
+
+pub const PART_BUILDERS: [PinballPartKind; 27] = [
+    PinballPartKind::Bumper,
+    PinballPartKind::Spring,
+    PinballPartKind::Ramp,
+    PinballPartKind::Booster,
+    PinballPartKind::BoostCorner,
+    PinballPartKind::BoostCurve,
+    PinballPartKind::JumpPad,
+    PinballPartKind::Deflector,
+    PinballPartKind::Slingshot,
+    PinballPartKind::Spinner,
+    PinballPartKind::Flipper,
+    PinballPartKind::Rollover,
+    PinballPartKind::DropTarget,
+    PinballPartKind::Plunger,
+    PinballPartKind::Magnet,
+    PinballPartKind::WarpPortal,
+    PinballPartKind::Spikes,
+    PinballPartKind::FireVent,
+    PinballPartKind::ToxicDrain,
+    PinballPartKind::ElectricGate,
+    PinballPartKind::Glove,
+    PinballPartKind::Gravepit,
+    PinballPartKind::Bell,
+    PinballPartKind::Chute,
+    PinballPartKind::Orbit,
+    PinballPartKind::Saucer,
+    PinballPartKind::Turret,
+];
+
+pub const PART_ANIMATORS: [PinballPartKind; 4] = [
+    PinballPartKind::Bumper,
+    PinballPartKind::Spring,
+    PinballPartKind::Spinner,
+    PinballPartKind::Flipper,
+];

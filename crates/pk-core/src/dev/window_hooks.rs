@@ -6,6 +6,23 @@
 
 use std::collections::HashMap;
 
+#[derive(Default)]
+pub struct DevHookDeps {
+    pub start_level: Option<Box<dyn FnMut(u32) + Send + Sync>>,
+    pub descend: Option<Box<dyn FnMut() + Send + Sync>>,
+    pub on_player_death: Option<Box<dyn FnMut() + Send + Sync>>,
+    pub open_shop: Option<Box<dyn FnMut() + Send + Sync>>,
+    pub apply_potion: Option<Box<dyn FnMut(&str) + Send + Sync>>,
+    pub debug_spawn: Option<Box<dyn FnMut(DebugSpawnSpec) -> DebugSpawnResult + Send + Sync>>,
+    pub debug_clear_enemies: Option<Box<dyn FnMut() -> usize + Send + Sync>>,
+    pub exit_dungeon_game: Option<Box<dyn FnMut() + Send + Sync>>,
+    pub tear_grave_hole: Option<Box<dyn FnMut(f64, f64, &str) + Send + Sync>>,
+}
+
+pub fn install_dev_hooks(_deps: DevHookDeps) -> DungeonWindowHooks {
+    DungeonWindowHooks::new()
+}
+
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct DebugSpawnSpec {
     pub kind: String,

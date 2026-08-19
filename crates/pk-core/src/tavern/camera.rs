@@ -5,23 +5,10 @@
 //!
 //! PORTS-NOTHING — helper module, full core.ts port lives in tavern/core.rs
 
-use super::layout::{ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z};
-
-pub const ROOM_CENTER_X: f64 = (ROOM_MIN_X + ROOM_MAX_X) / 2.0;
-pub const ROOM_CENTER_Z: f64 = (ROOM_MIN_Z + ROOM_MAX_Z) / 2.0;
-
-/// How far the framing drifts from the room's centre toward the player
-/// (0 = locked to centre, 1 = full follow). A MOVEMENT-FEEL constant: the
-/// knight carries ~72% of their own on-screen motion.
-pub const CAM_LEAN: f64 = 0.72;
-/// Camera smoothing, higher = snappier.
-pub const CAM_LERP: f64 = 3.4;
-/// Wide framing when the render target cannot hold the room 1:1.
-pub const CAM_ZOOM_WIDE: f64 = 0.78;
-/// The room's iso footprint in tiles — the shell's `fit_zoom` compares the
-/// render target against this to pick exactly 1.0 (pixel-perfect) or WIDE.
-pub const ROOM_FOOTPRINT_TILES_W: f64 = 22.63;
-pub const ROOM_FOOTPRINT_TILES_H: f64 = 16.45;
+pub use super::core::{
+    CAM_LEAN, CAM_LERP, CAM_ZOOM_WIDE, ROOM_CENTER_X, ROOM_CENTER_Z,
+    ROOM_FOOTPRINT_TILES_H, ROOM_FOOTPRINT_TILES_W,
+};
 
 /// Where the camera should aim this frame: anchored on the room's centre,
 /// leaning a fraction toward the player — and further toward a focused
