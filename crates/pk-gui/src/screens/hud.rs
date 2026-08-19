@@ -84,6 +84,8 @@ pub enum MinimapTile {
 /// Minimap view state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HudMinimapView {
+    pub width: usize,
+    pub height: usize,
     pub player_tile_x: i32,
     pub player_tile_y: i32,
     pub stairs_tile: Option<(i32, i32)>,
@@ -95,6 +97,8 @@ pub struct HudMinimapView {
 
 pub fn create_minimap() -> HudMinimapView {
     HudMinimapView {
+        width: 32,
+        height: 32,
         player_tile_x: 0,
         player_tile_y: 0,
         stairs_tile: None,

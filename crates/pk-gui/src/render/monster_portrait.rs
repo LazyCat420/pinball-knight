@@ -53,3 +53,19 @@ pub fn portrait_spec_for_enemy(kind: &str, variant: usize) -> MonsterPortraitSpe
         _ => MonsterPortraitSpec::new("zombie", 0, None, 1.0),
     }
 }
+
+pub const KIND_PAINTS: &[&str] = &[
+    "zombie", "spider", "brute", "spitter", "ghost", "bat", "slime", "goblin", "pin", "golem",
+    "chomper", "magnet", "webspinner", "reaper", "sporeling", "jester", "croaker", "rotortail",
+    "stiltneck", "hound", "fish_feet",
+];
+
+pub fn monster_portrait(kind: &str, variant: usize) -> Option<MonsterPortraitSpec> {
+    Some(portrait_spec_for_enemy(kind, variant))
+}
+
+pub fn portrait_scale(kind: &str, variant: usize) -> f32 {
+    portrait_spec_for_enemy(kind, variant).scale
+}
+
+pub fn clear_portrait_cache() {}

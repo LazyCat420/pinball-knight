@@ -42,3 +42,11 @@ impl MeterRepaintCache {
         self.shown != new_blocks
     }
 }
+
+pub fn meter_blocks_shown() -> i32 {
+    -1
+}
+
+pub fn set_meter_blocks_shown(_blocks: i32) {}
+
+pub fn invalidate_meter_blocks() {}

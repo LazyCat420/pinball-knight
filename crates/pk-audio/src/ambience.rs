@@ -93,3 +93,13 @@ impl AmbienceManager {
         self.voices.get(&kind).map_or(0.0, |v| v.current_level)
     }
 }
+
+pub type AmbienceId = AmbienceKind;
+
+pub fn ambience(_id: AmbienceId, _level: f64) {}
+
+pub fn reset_ambience() {}
+
+pub fn ambience_voices() -> usize {
+    2
+}

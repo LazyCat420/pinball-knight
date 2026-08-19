@@ -7,7 +7,7 @@
 use std::sync::LazyLock;
 
 use super::assembly::{
-    Assembly, AssemblyPart, AssemblyPort, Dir, PortFlow, PortWay, E, N, O, S, W,
+    Assembly, AssemblyPart, AssemblyPort, PortFlow, PortWay, E, N, O, S, W,
 };
 
 pub static ORBIT: LazyLock<Assembly> = LazyLock::new(|| Assembly {

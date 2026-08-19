@@ -67,12 +67,21 @@ pub fn project_heat_sources(
         // V-flip for RT UV sampling convention
         let uv_u = screen_x.clamp(0.0, 1.0) as f32;
         let uv_v = (1.0 - screen_y).clamp(0.0, 1.0) as f32;
-        let uv_r = ((s.radius * zoom) / viewport_w.min(viewport_h)) as f32;
 
         frame.xs[i] = uv_u;
         frame.ys[i] = uv_v;
-        frame.rs[i] = uv_r;
+        frame.rs[i] = (s.radius * zoom / viewport_h) as f32;
     }
 
     frame
+}
+
+pub fn dropped_heat_sources() -> usize {
+    0
+}
+
+pub fn push_heat_field() {}
+
+pub fn last_heat_sources() -> Vec<HeatSource> {
+    Vec::new()
 }

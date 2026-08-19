@@ -1101,6 +1101,56 @@ pub fn sfx_stairs<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
 
 pub fn sfx_game_over<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
 
+pub fn start_tavern_ambience<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.bed_start();
+    }
+}
+
+pub fn stop_tavern_ambience<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.bed_stop();
+    }
+}
+
+pub fn sfx_anvil<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Anvil);
+    }
+}
+
+pub fn sfx_dart<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_keeper_greet<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::KeeperGreet);
+    }
+}
+
+pub fn sfx_station_focus<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::StationFocus);
+    }
+}
+
+pub fn sfx_plunger<B: AudioBackend>(engine: Option<&Engine<B>>) {
+    if let Some(e) = engine {
+        e.play(Patch::Plunger);
+    }
+}
+
+pub fn sfx_groan<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_zombie_die<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_goblin<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_cackle<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_ribbit<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_cart_bell<B: AudioBackend>(_near: f64, _engine: Option<&Engine<B>>) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

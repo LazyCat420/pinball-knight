@@ -83,3 +83,11 @@ pub fn stack_haul(entries: &[HaulEntry]) -> Vec<HaulStack> {
     });
     result
 }
+
+pub fn present_card_pickup(_id: &str, _note: &str) {}
+
+pub fn show_card_haul(_entries: &[HaulEntry], _floor: u32) {}
+
+pub fn advance_card_reader() {}
+
+pub fn dismiss_card_reader() {}

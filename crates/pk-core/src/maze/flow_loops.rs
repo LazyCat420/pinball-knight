@@ -4,7 +4,7 @@
 //!
 //! PORTS: `maze/flow-loops.ts`
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::grid::{idx, is_walkable, Grid};
 
@@ -352,7 +352,7 @@ pub fn count_uphill(g: &Grid, phi: &[i32], parts: &[FlowPart]) -> UphillCount {
     let mut total = 0;
 
     for p in parts {
-        let countable = countableKind(p);
+        let countable = countable_kind(p);
         if countable.is_none() {
             continue;
         }
@@ -367,8 +367,4 @@ pub fn count_uphill(g: &Grid, phi: &[i32], parts: &[FlowPart]) -> UphillCount {
     }
 
     UphillCount { uphill, total }
-}
-
-fn countableKind(p: &FlowPart) -> Option<&'static str> {
-    countable_kind(p)
 }

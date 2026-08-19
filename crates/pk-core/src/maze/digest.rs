@@ -47,16 +47,16 @@ pub struct FloorCensus {
     pub rooms: usize,
 }
 
-static mut LAST_CENSUS: Option<FloorCensus> = None;
+static LAST_CENSUS: std::sync::Mutex<Option<FloorCensus>> = std::sync::Mutex::new(None);
 
 pub fn capture_floor_census() {
-    unsafe {
-        LAST_CENSUS = Some(FloorCensus::default());
+    if let Ok(mut lock) = LAST_CENSUS.lock() {
+        *lock = Some(FloorCensus::default());
     }
 }
 
 pub fn last_floor_census() -> Option<FloorCensus> {
-    unsafe { LAST_CENSUS.clone() }
+    LAST_CENSUS.lock().ok().and_then(|lock| lock.clone())
 }
 
 // ── THE WIRE ENCODING, ON ITS OWN ────────────────────────────────────────────

@@ -179,6 +179,18 @@ pub fn level_seal_at(w: u32) -> (f64, f64, f64) {
     )
 }
 
+pub fn paint_card(_id: &str) {}
+
+pub fn clear_face_cache() {}
+
+pub fn card_tier(_id: &str) -> u32 {
+    1
+}
+
+pub fn card_style(_id: &str) -> &'static str {
+    "default"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

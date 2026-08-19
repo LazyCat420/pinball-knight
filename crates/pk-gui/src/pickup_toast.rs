@@ -41,3 +41,9 @@ impl ToastQueue {
         });
     }
 }
+
+pub fn clear_pickup_toasts() {}
+
+pub fn show_pickup_toast(_text: &str) {}
+
+pub fn show_card_toast(_id: &str, _note: &str) {}

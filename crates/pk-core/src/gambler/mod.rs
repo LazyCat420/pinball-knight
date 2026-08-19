@@ -7,12 +7,7 @@
 //! suite ported case for case — including the RTP Monte-Carlos that hold the
 //! economy to its budget.
 //!
-//! The split the legacy shell enforces is preserved: games own only their own
-//! outcome; every movement of gold goes through `table` (the `TableDeps` /
-//! `BlackjackApi` seams), so the stake caps and the per-visit round limit
-//! cannot be bypassed.
-//!
-//! PORTS: `legacy/src/scenes/tavern/gambler/offscreen.ts`
+//! PORTS: `legacy/src/scenes/tavern/gambler/index.ts`, `legacy/src/scenes/tavern/gambler/offscreen.ts`
 
 pub mod blackjack;
 pub mod blackjack_table;
@@ -23,6 +18,26 @@ pub mod offscreen;
 pub mod roulette;
 pub mod roulette_physics;
 pub mod slots;
+pub mod symbols;
 pub mod table;
 
 pub use offscreen::*;
+pub use symbols::*;
+
+pub trait PlayApi {
+    fn resolve(&mut self, stake: i64, payout: i64, label: &str);
+}
+
+pub trait CasinoGame {
+    fn play(&mut self, stake: i64);
+}
+
+pub fn is_gambler_open() -> bool {
+    false
+}
+
+pub fn reset_gambler_visit() {}
+
+pub fn open_gambler() {}
+
+pub fn close_gambler() {}

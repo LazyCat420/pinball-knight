@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::maze::assembly::{
-    is_two_leg_kind, Assembly, AssemblyPart, PortFlow, PortWay,
+    is_two_leg_kind, Assembly, PortFlow, PortWay,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

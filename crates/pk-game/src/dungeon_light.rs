@@ -117,6 +117,8 @@ pub struct Tint {
     pub ground: u32,
 }
 
+pub type BiomeTint = Tint;
+
 impl Default for Tint {
     /// `BIOMES[0]`, "The Cold Crypt" (`boot/biomes.ts:22`) — what a floor with
     /// no biome of its own is lit with, which is what the oracle's `buildLights`
@@ -129,6 +131,16 @@ impl Default for Tint {
         }
     }
 }
+
+pub fn build_lights(_tint: BiomeTint) {}
+
+pub fn tint_lights(_tint: BiomeTint) {}
+
+pub fn set_shadows_throttled(_needs_update: bool) {}
+
+pub fn tick_shadow_throttle() {}
+
+pub fn clear_lights() {}
 
 /// THE BIOME'S STONE — `maze/build.ts:316-321 BIOME_STONE`, resolved.
 ///

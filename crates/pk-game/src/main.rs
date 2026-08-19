@@ -1966,6 +1966,9 @@ fn update_dungeon_hud(
         tiles,
         width: w,
         height: h,
+        player_x: p.x,
+        player_z: p.z,
+        revealed: Vec::new(),
     });
 
     let active_w = p.inventory.active_weapon();

@@ -18,11 +18,7 @@ pub struct OpenTavernOptions {
     pub lobby: bool,
 }
 
-pub fn close_tavern() {}
-
-pub fn is_tavern_scene_open() -> bool {
-    false
-}
+pub use super::core::{close_tavern, is_tavern_scene_open};
 
 pub fn enter_tavern(has_3d_context: bool, opts: &OpenTavernOptions) -> TavernEntryKind {
     resolve_tavern_entry(has_3d_context, opts)

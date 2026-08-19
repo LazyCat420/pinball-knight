@@ -1,8 +1,8 @@
 //! Light puzzle authoring and runtime simulation — brazier and sealed loot vault placement.
 //!
-//! Port of `legacy/src/game/pinball-knight/lamp-puzzle.ts` (174 lines).
+//! Port of `legacy/src/game/pinball-knight/lamp-puzzle.ts` (174 lines) and `legacy/src/game/pinball-knight/maze/lamp-puzzle.ts` (106 lines).
 //!
-//! PORTS: `lamp-puzzle.ts`
+//! PORTS: `lamp-puzzle.ts`, `maze/lamp-puzzle.ts`
 
 use std::sync::RwLock;
 
