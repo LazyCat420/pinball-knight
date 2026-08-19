@@ -1,6 +1,6 @@
 //! Player state, verbs, and movement physics data structures.
 //!
-//! PORTS: `entities/movement.ts`
+//! PORTS: `entities/player.ts`, `entities/movement.ts`
 //! PORTS-PARTIAL: `constants/player.ts` - NOT a finished port - 5 rust code lines against 77 legacy (6%). Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
 
 pub const PLAYER_RADIUS: f64 = 0.28;

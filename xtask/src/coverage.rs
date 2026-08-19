@@ -1320,11 +1320,12 @@ mod tests {
                 3169,
                 "the whole decoration pass — 21 exports, 5 carried",
             ),
-            (
-                "entities/player.ts",
-                2445,
-                "every verb; 79 rust lines against 1,560",
-            ),
+            // ── entities/player.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/player/` and `crates/pk-core/src/state.rs` with all 2,445 lines:
+            // Continuous locomotion with sprint charge ramp, wall-ride momentum, pocket rattle damping,
+            // plunger chute aiming/charge/launch, ramp hops off low walls, melee slash arc hitboxes,
+            // debugCurSpeed and debugWallNormal QA probes, and resetPlayerMotion.
+            // Gated by `crates/pk-core/tests/player_entity_sim.rs`.
             // ── state.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/state.rs` with all 1,556 lines:
             // The mutable session spine: Player stats & timer vectors, BeltSlot, Actor, MarbleMaterial,
