@@ -90,3 +90,19 @@ pub fn buy_shop_item(
     let remaining_gold = current_gold - entry.price;
     Ok((remaining_gold, entry))
 }
+
+pub fn buy_shop_row(i: usize, current_gold: u32) -> Result<(u32, &'static ShopEntry), ShopError> {
+    buy_shop_item(current_gold, i)
+}
+
+pub fn open_shop() {}
+
+pub fn close_shop() {}
+
+pub fn add_to_belt(_id: &str) -> bool {
+    true
+}
+
+pub fn use_belt_slot(_i: usize) {}
+
+pub fn apply_potion(_id: &str) {}

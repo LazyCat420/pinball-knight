@@ -1091,6 +1091,16 @@ pub fn sfx_coin<B: AudioBackend>(engine: Option<&Engine<B>>) {
     }
 }
 
+pub fn sfx_level_start<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_modifier<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_boss_reveal<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_stairs<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
+pub fn sfx_game_over<B: AudioBackend>(_engine: Option<&Engine<B>>) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
