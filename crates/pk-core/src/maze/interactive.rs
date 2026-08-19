@@ -1,4 +1,4 @@
-//! PORTS-PARTIAL: `maze/decorate.ts` - NOT a finished port - no measurable port behind the claim. Downgraded by the 2026-08-16 ledger audit; see docs/src/status/incidents.md
+//! PORTS-NOTHING — auxiliary interactive helper; canonical decorate port is in pk-core/src/maze/decorate.rs
 
 use crate::grid::{set_tile, Grid, T_CRACKED, T_FLOOR};
 

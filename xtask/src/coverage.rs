@@ -1315,11 +1315,13 @@ mod tests {
                 1898,
                 "arches, banners, stairs marker, cracked bands",
             ),
-            (
-                "maze/decorate.ts",
-                3169,
-                "the whole decoration pass — 21 exports, 5 carried",
-            ),
+            // ── maze/decorate.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/maze/decorate.rs` with all 3,169 lines:
+            // Topological furniture placement (bumpers, springs, boosters, deflectors, flippers, spinpads),
+            // torch lighting mount calculations, monster spawn distribution tables, secret cracked wall breaks,
+            // BFS-based start/stairs endpoint resolution with winding route biasing, main artery widening,
+            // launch runway opening, and launch duel breaking.
+            // Gated by `crates/pk-core/tests/maze_decorate_full_sim.rs`.
             // ── entities/player.ts: ROW REMOVED 2026-08-18 ──
             // Ported in full in `crates/pk-core/src/player/` and `crates/pk-core/src/state.rs` with all 2,445 lines:
             // Continuous locomotion with sprint charge ramp, wall-ride momentum, pocket rattle damping,

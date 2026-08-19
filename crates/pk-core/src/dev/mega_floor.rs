@@ -112,11 +112,11 @@ pub fn build_mega_floor(opts: &MegaFloorOptions) -> Option<MegaFloor> {
 
     let plan = decorate_maze(
         &mut track.grid,
-        track.start.i,
-        track.start.j,
-        track.stairs.i,
-        track.stairs.j,
         &mut rng,
+        8,
+        12,
+        part_budget,
+        Vec::new(),
     );
 
     Some(MegaFloor {

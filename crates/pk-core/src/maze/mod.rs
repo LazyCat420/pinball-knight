@@ -70,6 +70,7 @@ pub mod relay_chambers;
 pub mod sweep_axis;
 
 pub use assembly_check::*;
+pub use decorate::*;
 pub use floor_density::*;
 pub use floor_seed::*;
 pub use generator::*;
@@ -78,6 +79,7 @@ pub use nearest_open_tile::*;
 pub use open_space_census::*;
 pub use relay_chambers::*;
 pub use sweep_axis::*;
+pub use track_launch::TilePos;
 pub mod surface_paint;
 pub mod track_carve;
 pub mod track_floor;
