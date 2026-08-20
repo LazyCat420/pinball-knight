@@ -168,3 +168,8 @@ impl GameplayInputState {
         }
     }
 }
+
+#[allow(non_snake_case)]
+pub fn createInput() -> InputHandle {
+    create_input()
+}
