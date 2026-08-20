@@ -26,9 +26,7 @@
 //! different camera rung moves every tuned offset in the painter (block seams
 //! every 22 px, a 3 px contact-shadow row) and is otherwise invisible.
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — the BAKED surface textures only
-//! (`makeFloorTexture`/`makeWallTexture`/`makeCapTexture` are run in `legacy/`
-//! and their PNGs embedded). The geometry half is dungeon_render.rs.
+//! PORTS: `maze/build.ts`
 
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSamplerDescriptor};
 use bevy::prelude::*;
@@ -136,6 +134,96 @@ impl Surface {
             _ => 64,
         }
     }
+}
+
+/// Generates a 32×56 pixel swallowtail wall banner texture matching legacy `makeBannerTexture`.
+pub fn make_banner_image(arcane: bool) -> Image {
+    const W: u32 = 32;
+    const H: u32 = 56;
+    let mut rgba = vec![0u8; (W * H * 4) as usize];
+
+    let set_px = |buf: &mut [u8], x: u32, y: u32, hex: u32, a: u8| {
+        if x < W && y < H {
+            let idx = ((y * W + x) * 4) as usize;
+            buf[idx] = ((hex >> 16) & 0xff) as u8;
+            buf[idx + 1] = ((hex >> 8) & 0xff) as u8;
+            buf[idx + 2] = (hex & 0xff) as u8;
+            buf[idx + 3] = a;
+        }
+    };
+
+    let fill_rect = |buf: &mut [u8], rx: u32, ry: u32, rw: u32, rh: u32, hex: u32| {
+        for y in ry..(ry + rh).min(H) {
+            for x in rx..(rx + rw).min(W) {
+                set_px(buf, x, y, hex, 255);
+            }
+        }
+    };
+
+    let cloth = if arcane { 0x1f3d52 } else { 0x6b1f2a };
+    let cloth_lit = if arcane { 0x2e6d8f } else { 0xa83244 };
+    let fold_shadow = if arcane { 0x1f3d52 } else { 0x3a0f18 };
+    let emblem = if arcane { 0xf0a63c } else { 0xc8ccd4 };
+
+    // Cloth base
+    fill_rect(&mut rgba, 2, 4, W - 4, H - 4, cloth);
+    // Hanging pole
+    fill_rect(&mut rgba, 0, 0, W, 4, 0x4a3222);
+    fill_rect(&mut rgba, 0, 0, W, 1, 0x6b4a2e);
+    // Gold trim
+    fill_rect(&mut rgba, 2, 4, W - 4, 2, 0xf0a63c);
+    fill_rect(&mut rgba, 2, 4, 2, H - 4, 0xf0a63c);
+    fill_rect(&mut rgba, W - 4, 4, 2, H - 4, 0xf0a63c);
+    // Cloth sheen down one side
+    fill_rect(&mut rgba, 5, 8, 3, H - 16, cloth_lit);
+    // Fold shadows
+    fill_rect(&mut rgba, 12, 8, 2, H - 14, fold_shadow);
+    fill_rect(&mut rgba, 22, 8, 2, H - 12, fold_shadow);
+
+    // Emblem diamond at (16, 24)
+    let cx = 16i32;
+    let cy = 24i32;
+    for y in (cy - 7)..=(cy + 7) {
+        let dy = (y - cy).abs();
+        let span = ((7 - dy) * 6) / 7;
+        for x in (cx - span)..=(cx + span) {
+            if x >= 0 && y >= 0 {
+                set_px(&mut rgba, x as u32, y as u32, emblem, 255);
+            }
+        }
+    }
+
+    // Outer transparent margins x=0..2 and x=30..32 for y >= 4
+    for y in 4..H {
+        set_px(&mut rgba, 0, y, 0, 0);
+        set_px(&mut rgba, 1, y, 0, 0);
+        set_px(&mut rgba, W - 2, y, 0, 0);
+        set_px(&mut rgba, W - 1, y, 0, 0);
+    }
+
+    // Swallowtail transparent notch
+    for y in (H - 12)..H {
+        let half = ((y - (H - 12)) as i32 * (W as i32 / 2 - 3)) / 12;
+        for x in (cx - half - 1)..=(cx + half) {
+            if x >= 0 {
+                set_px(&mut rgba, x as u32, y, 0, 0);
+            }
+        }
+    }
+
+    let mut img = Image::new_fill(
+        bevy::render::render_resource::Extent3d {
+            width: W,
+            height: H,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        &rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD,
+    );
+    img.sampler = bevy::image::ImageSampler::nearest();
+    img
 }
 
 /// Every texture handle a floor's materials need, uploaded once per descend.

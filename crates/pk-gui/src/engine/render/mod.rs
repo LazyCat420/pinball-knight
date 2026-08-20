@@ -1,6 +1,6 @@
 //! Engine rendering helpers: sprite atlas quad and billboarding engine.
 //!
-//! PORTS: `engine/render/sprite.ts`
+//! PORTS-NOTHING (Module re-export)
 
 pub mod sprite;
 

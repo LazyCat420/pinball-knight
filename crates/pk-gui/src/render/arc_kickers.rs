@@ -97,21 +97,17 @@ pub struct ArcKickerVisual {
 
 impl ArcKickerVisual {
     pub fn new(band: KickBand, cxw: f64, czw: f64, r: f64, h: f64, solid_out: bool) -> Self {
-        let off = if solid_out { -ARC_KICK_THICK } else { ARC_KICK_THICK };
+        let off = if solid_out {
+            -ARC_KICK_THICK
+        } else {
+            ARC_KICK_THICK
+        };
         let y0 = h * 0.16;
         let y1 = h * 0.78;
 
         let body_geo = build_kicker_geometry(cxw, czw, r, band.a0, band.span, y0, y1, off);
-        let rail_geo = build_kicker_geometry(
-            cxw,
-            czw,
-            r,
-            band.a0,
-            band.span,
-            y1,
-            y1 + 0.055,
-            off * 1.25,
-        );
+        let rail_geo =
+            build_kicker_geometry(cxw, czw, r, band.a0, band.span, y1, y1 + 0.055, off * 1.25);
 
         let mid = band.a0 + band.span / 2.0;
         let x = cxw + mid.cos() * (r + off);

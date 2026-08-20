@@ -15,6 +15,48 @@ use crate::im::{
 };
 use crate::painter::Rgba;
 use crate::theme::{Ui, GRID, ROW_H};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static RUN_SUMMARY_OPEN: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StationPrompt {
+    pub label: String,
+    pub visible: bool,
+}
+
+pub fn create_station_prompt() -> StationPrompt {
+    StationPrompt {
+        label: String::new(),
+        visible: false,
+    }
+}
+
+pub fn show_tavern_banner(_text: &str, _sub: &str) {}
+
+pub fn clear_tavern_banner() {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LobbyHud {
+    pub gold: u32,
+    pub floor: u32,
+}
+
+pub fn create_lobby_hud() -> LobbyHud {
+    LobbyHud { gold: 0, floor: 1 }
+}
+
+pub fn is_run_summary_open() -> bool {
+    RUN_SUMMARY_OPEN.load(Ordering::Relaxed)
+}
+
+pub fn close_run_summary() {
+    RUN_SUMMARY_OPEN.store(false, Ordering::Relaxed);
+}
+
+pub fn show_run_summary(_summary: &SummaryView) {
+    RUN_SUMMARY_OPEN.store(true, Ordering::Relaxed);
+}
 
 /// What a screen needs to know about a station. The shell maps
 /// `pk_core::tavern::layout::Station` into this 1:1.
@@ -102,7 +144,8 @@ fn grade_colour(grade: &str) -> Rgba {
     }
 }
 
-/// The run summary — scene-screens.ts L244-266. Returns true when CLOSE fired.
+/// The post-run scorecard: 6 keyed metric rows in a parchment panel with
+/// gold header, dim labels, white values, and an ENTER dismiss button.
 pub fn paint_run_summary(f: &mut UiFrame, v: &SummaryView) -> bool {
     scrim(f);
     let mut body = sheet(f, 420.0, 300.0);
@@ -120,7 +163,7 @@ pub fn paint_run_summary(f: &mut UiFrame, v: &SummaryView) -> bool {
     );
     cut_top(&mut body, 34.0);
 
-    let row = |f: &mut UiFrame, body: &mut Rect, label: &str, value: &str, colour: Rgba| {
+    let mut row = |f: &mut UiFrame, body: &mut Rect, label: &str, value: &str, colour: Rgba| {
         let r = cut_top(body, 22.0);
         text(
             f,

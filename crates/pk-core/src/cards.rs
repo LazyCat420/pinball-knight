@@ -35,6 +35,19 @@
 pub mod reader;
 pub use reader::*;
 
+/// Rarity tier for a card (0 = Common, 1 = Rare, 2 = Epic, 3 = Legendary, 4 = Mythic).
+pub fn card_tier(id: &str) -> u32 {
+    card_def(id)
+        .map(|c| match c.rarity() {
+            CardRarity::Common => 0,
+            CardRarity::Rare => 1,
+            CardRarity::Epic => 2,
+            CardRarity::Legendary => 3,
+            CardRarity::Mythic => 4,
+        })
+        .unwrap_or(0)
+}
+
 use std::borrow::Cow;
 
 use crate::economy::forge::{Weapon, WeaponKind};

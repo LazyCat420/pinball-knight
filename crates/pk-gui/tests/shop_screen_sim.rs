@@ -2,7 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/gui/screens/shop.ts
 
 use pk_gui::screens::shop::{
-    design_height, shop_sheet_h, DESIGN_ROWS, DESIGN_WIDTH, ShopScreenState,
+    design_height, shop_sheet_h, ShopScreenState, DESIGN_ROWS, DESIGN_WIDTH,
 };
 
 #[test]

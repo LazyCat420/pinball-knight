@@ -1,6 +1,6 @@
 //! Projectile hitbox testing and impact resolution.
 //!
-//! PORTS: `entities/projectiles.ts`, `entities/combat.ts`
+//! PORTS: `entities/projectiles.ts`
 
 use super::types::Projectile;
 use crate::monsters::types::LiveMonster;

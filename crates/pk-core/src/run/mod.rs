@@ -1,6 +1,6 @@
 //! Floor-run state machine, scoring, floor hold locks, grave holes, lobby sessions, run lifecycle deps, end-of-floor grades, delve, death, draft, corpse run, legacy perks, and meta-progression loops.
 //!
-//! PORTS: `run/floor-hold.ts`, `run/lobby.ts`, `run/grave-hole.ts`, `run/deps.ts`, `run/grade.ts`, `run/death.ts`, `run/descend.ts`, `run/ledger.ts`
+//! PORTS: `run/floor-hold.ts`, `run/lobby.ts`, `run/grave-hole.ts`, `run/deps.ts`, `run/grade.ts`, `run/ledger.ts`, `run/death.ts`
 
 pub mod corpse_run;
 pub mod death;

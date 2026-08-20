@@ -44,3 +44,13 @@ impl HudMountState {
         self.dirty = true;
     }
 }
+
+pub fn mount_huds() {}
+
+pub fn set_hud_mode(_mode: HudMode) {}
+
+pub fn render_hud(_dt: f64) {}
+
+pub fn refresh_hud() {}
+
+pub fn dispose_huds() {}

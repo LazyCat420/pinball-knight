@@ -59,5 +59,9 @@ fn weapon_durability_breaks_to_fists_at_zero() {
 
     let broken = inv.decrement_active_durability();
     assert!(broken, "Weapon should report breaking at 0 durability");
-    assert_eq!(inv.active_weapon().id, WeaponId::Fists, "Broken weapon falls back to Fists");
+    assert_eq!(
+        inv.active_weapon().id,
+        WeaponId::Fists,
+        "Broken weapon falls back to Fists"
+    );
 }

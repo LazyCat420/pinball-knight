@@ -75,6 +75,132 @@ pub fn roll_modifier(level: i32, rng: &mut CountingRng) -> ModifierId {
     MODIFIER_POOL[k.min(MODIFIER_POOL.len() - 1)]
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorModifier {
+    pub id: ModifierId,
+    pub label: &'static str,
+    pub flavour: &'static str,
+    pub torch_mult: f64,
+    pub part_mult: f64,
+    pub horde_mult: f64,
+    pub hazard_mult: f64,
+    pub trapdoor_mult: f64,
+    pub bonus_items: i32,
+    pub deal_bias: &'static [&'static str],
+    pub surface_coverage: f64,
+}
+
+impl ModifierId {
+    pub fn data(&self) -> FloorModifier {
+        match self {
+            ModifierId::None => FloorModifier {
+                id: ModifierId::None,
+                label: "",
+                flavour: "",
+                torch_mult: 1.0,
+                part_mult: 1.0,
+                horde_mult: 1.0,
+                hazard_mult: 1.0,
+                trapdoor_mult: 1.0,
+                bonus_items: 0,
+                deal_bias: &[],
+                surface_coverage: 0.0,
+            },
+            ModifierId::Flooded => FloorModifier {
+                id: ModifierId::Flooded,
+                label: "Flooded",
+                flavour: "ankle-deep and slick · nothing here stops",
+                torch_mult: 1.0,
+                part_mult: 1.15,
+                horde_mult: 1.0,
+                hazard_mult: 1.2,
+                trapdoor_mult: 1.0,
+                bonus_items: 0,
+                deal_bias: &["oil", "oil", "bumper"],
+                surface_coverage: 0.3,
+            },
+            ModifierId::Blackout => FloorModifier {
+                id: ModifierId::Blackout,
+                label: "Blackout",
+                flavour: "the torches are out · something wanted them out",
+                torch_mult: 0.45,
+                part_mult: 1.0,
+                horde_mult: 0.85,
+                hazard_mult: 1.0,
+                trapdoor_mult: 1.0,
+                bonus_items: 2,
+                deal_bias: &[],
+                surface_coverage: 0.24,
+            },
+            ModifierId::Overcharged => FloorModifier {
+                id: ModifierId::Overcharged,
+                label: "Overcharged",
+                flavour: "the machinery is running hot · everything hits harder",
+                torch_mult: 1.0,
+                part_mult: 1.4,
+                horde_mult: 1.25,
+                hazard_mult: 1.0,
+                trapdoor_mult: 1.0,
+                bonus_items: 0,
+                deal_bias: &["bumper", "slingshot", "glove"],
+                surface_coverage: 0.16,
+            },
+            ModifierId::Gilded => FloorModifier {
+                id: ModifierId::Gilded,
+                label: "Gilded",
+                flavour: "gold in the cracks · and a queue for it",
+                torch_mult: 1.0,
+                part_mult: 1.0,
+                horde_mult: 1.6,
+                hazard_mult: 0.8,
+                trapdoor_mult: 1.0,
+                bonus_items: 3,
+                deal_bias: &[],
+                surface_coverage: 0.22,
+            },
+            ModifierId::Collapsing => FloorModifier {
+                id: ModifierId::Collapsing,
+                label: "Collapsing",
+                flavour: "the floor is giving way · keep moving",
+                torch_mult: 0.75,
+                part_mult: 1.0,
+                horde_mult: 1.0,
+                hazard_mult: 1.5,
+                trapdoor_mult: 2.2,
+                bonus_items: 0,
+                deal_bias: &["pit", "trapdoor"],
+                surface_coverage: 0.4,
+            },
+            ModifierId::Frozen => FloorModifier {
+                id: ModifierId::Frozen,
+                label: "Frozen",
+                flavour: "black ice wall to wall · pick your line early",
+                torch_mult: 1.0,
+                part_mult: 0.85,
+                horde_mult: 1.0,
+                hazard_mult: 0.9,
+                trapdoor_mult: 1.0,
+                bonus_items: 0,
+                deal_bias: &[],
+                surface_coverage: 0.62,
+            },
+            ModifierId::Silted => FloorModifier {
+                id: ModifierId::Silted,
+                label: "Silted",
+                flavour: "silt over everything · the chain dies where it touches",
+                torch_mult: 1.0,
+                part_mult: 1.0,
+                horde_mult: 0.9,
+                hazard_mult: 1.0,
+                trapdoor_mult: 1.0,
+                bonus_items: 2,
+                deal_bias: &[],
+                surface_coverage: 0.45,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

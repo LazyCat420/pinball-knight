@@ -48,7 +48,13 @@ impl Fog {
 
     /// Reveals a circular area around `(ci, cj)` up to `radius`.
     /// Walls within `radius + 1` are marked `FOG_DIM` so corridors have visible rims.
-    pub fn reveal_around(&mut self, is_wall: impl Fn(isize, isize) -> bool, ci: isize, cj: isize, radius: isize) {
+    pub fn reveal_around(
+        &mut self,
+        is_wall: impl Fn(isize, isize) -> bool,
+        ci: isize,
+        cj: isize,
+        radius: isize,
+    ) {
         let r2 = radius * radius;
         let rim = radius + 1;
 

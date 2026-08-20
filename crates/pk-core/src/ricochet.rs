@@ -8,6 +8,8 @@
 //! PORTS: `entities/ricochet-form.ts`
 
 use crate::rng::Mulberry32;
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 pub const RICOCHET_DEFLECT_JITTER: f64 = 0.38;
 pub const RICOCHET_HIT_RADIUS: f64 = 0.55;
@@ -23,10 +25,19 @@ pub const LASER_DAMAGE: f64 = 48.0;
 pub const LASER_ZIG_PERIOD: f64 = 0.18;
 pub const LASER_ZIG_ANGLE: f64 = 0.42;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RicochetFlavor {
     Bolt,
     Laser,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlavorSpec {
+    pub flavor: RicochetFlavor,
+    pub duration: f64,
+    pub speed: f64,
+    pub damage: f64,
+    pub tint_hex: u32,
 }
 
 impl RicochetFlavor {
@@ -57,18 +68,75 @@ impl RicochetFlavor {
             RicochetFlavor::Laser => 0xff2a55,
         }
     }
+
+    pub fn spec(&self) -> FlavorSpec {
+        FlavorSpec {
+            flavor: *self,
+            duration: self.duration(),
+            speed: self.speed(),
+            damage: self.damage(),
+            tint_hex: self.tint_hex(),
+        }
+    }
+}
+
+pub fn ricochet_flavors_map() -> HashMap<RicochetFlavor, FlavorSpec> {
+    let mut m = HashMap::new();
+    m.insert(RicochetFlavor::Bolt, RicochetFlavor::Bolt.spec());
+    m.insert(RicochetFlavor::Laser, RicochetFlavor::Laser.spec());
+    m
+}
+
+static GLOBAL_RICOCHET: Mutex<Option<RicochetState>> = Mutex::new(None);
+
+pub fn in_ricochet_form() -> bool {
+    if let Ok(lock) = GLOBAL_RICOCHET.lock() {
+        lock.as_ref().map(|s| s.active).unwrap_or(false)
+    } else {
+        false
+    }
+}
+
+pub fn ricochet_spec() -> Option<FlavorSpec> {
+    if let Ok(lock) = GLOBAL_RICOCHET.lock() {
+        lock.as_ref().and_then(|s| if s.active { Some(s.flavor.spec()) } else { None })
+    } else {
+        None
+    }
+}
+
+pub fn enter_ricochet_form(flavor: RicochetFlavor) {
+    if let Ok(mut lock) = GLOBAL_RICOCHET.lock() {
+        let mut state = RicochetState::default();
+        state.enter(flavor, (1.0, 0.0));
+        *lock = Some(state);
+    }
+}
+
+pub fn update_ricochet(dt: f64) -> bool {
+    if let Ok(mut lock) = GLOBAL_RICOCHET.lock() {
+        if let Some(state) = lock.as_mut() {
+            let mut rng = Mulberry32::new(12345);
+            state.update(dt, &mut rng);
+            state.active
+        } else {
+            false
+        }
+    } else {
+        false
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RicochetState {
     pub active: bool,
     pub flavor: RicochetFlavor,
-    pub time_remaining: f64,
+    pub timer: f64,
     pub vx: f64,
     pub vz: f64,
+    pub bounces: usize,
     pub zig_timer: f64,
     pub zig_sign: f64,
-    pub bounces: u32,
 }
 
 impl Default for RicochetState {
@@ -76,33 +144,33 @@ impl Default for RicochetState {
         Self {
             active: false,
             flavor: RicochetFlavor::Bolt,
-            time_remaining: 0.0,
+            timer: 0.0,
             vx: 0.0,
             vz: 0.0,
+            bounces: 0,
             zig_timer: 0.0,
             zig_sign: 1.0,
-            bounces: 0,
         }
     }
 }
 
 impl RicochetState {
-    pub fn enter(&mut self, flavor: RicochetFlavor, initial_heading: (f64, f64)) {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn enter(&mut self, flavor: RicochetFlavor, dir: (f64, f64)) {
         self.active = true;
         self.flavor = flavor;
-        self.time_remaining = flavor.duration();
-        let speed = flavor.speed();
-        let len = (initial_heading.0 * initial_heading.0 + initial_heading.1 * initial_heading.1).sqrt();
-        let (dir_x, dir_z) = if len > 1e-4 {
-            (initial_heading.0 / len, initial_heading.1 / len)
-        } else {
-            (0.0, 1.0)
-        };
-        self.vx = dir_x * speed;
-        self.vz = dir_z * speed;
-        self.zig_timer = LASER_ZIG_PERIOD;
-        self.zig_sign = 1.0;
+        self.timer = flavor.duration();
         self.bounces = 0;
+        self.zig_timer = 0.0;
+        self.zig_sign = 1.0;
+
+        let speed = flavor.speed();
+        let len = (dir.0 * dir.0 + dir.1 * dir.1).sqrt().max(1e-4);
+        self.vx = (dir.0 / len) * speed;
+        self.vz = (dir.1 / len) * speed;
     }
 
     pub fn update(&mut self, dt: f64, _rng: &mut Mulberry32) {
@@ -110,31 +178,28 @@ impl RicochetState {
             return;
         }
 
-        self.time_remaining -= dt;
-        if self.time_remaining <= 0.0 {
+        self.timer -= dt;
+        if self.timer <= 0.0 {
             self.active = false;
-            // Damp to exit speed
-            let speed = (self.vx * self.vx + self.vz * self.vz).sqrt();
-            if speed > RICOCHET_EXIT_SPEED && speed > 1e-4 {
-                self.vx = (self.vx / speed) * RICOCHET_EXIT_SPEED;
-                self.vz = (self.vz / speed) * RICOCHET_EXIT_SPEED;
-            }
+            let current_speed = (self.vx * self.vx + self.vz * self.vz).sqrt().max(1e-4);
+            self.vx = (self.vx / current_speed) * RICOCHET_EXIT_SPEED;
+            self.vz = (self.vz / current_speed) * RICOCHET_EXIT_SPEED;
             return;
         }
 
-        // Mid-air zig-zag for laser flavor
         if self.flavor == RicochetFlavor::Laser {
-            self.zig_timer -= dt;
-            if self.zig_timer <= 0.0 {
-                self.zig_timer = LASER_ZIG_PERIOD;
+            self.zig_timer += dt;
+            if self.zig_timer >= LASER_ZIG_PERIOD {
+                self.zig_timer = 0.0;
                 self.zig_sign = -self.zig_sign;
-                let angle = LASER_ZIG_ANGLE * self.zig_sign;
-                let cos = angle.cos();
-                let sin = angle.sin();
-                let new_vx = self.vx * cos - self.vz * sin;
-                let new_vz = self.vx * sin + self.vz * cos;
-                self.vx = new_vx;
-                self.vz = new_vz;
+
+                let angle = self.zig_sign * LASER_ZIG_ANGLE;
+                let cos_a = angle.cos();
+                let sin_a = angle.sin();
+                let nx = self.vx * cos_a - self.vz * sin_a;
+                let nz = self.vx * sin_a + self.vz * cos_a;
+                self.vx = nx;
+                self.vz = nz;
             }
         }
     }
@@ -146,12 +211,10 @@ impl RicochetState {
         self.bounces += 1;
         let speed = self.flavor.speed();
 
-        // Reflect velocity across normal
         let dot = self.vx * normal_x + self.vz * normal_z;
         let rx = self.vx - 2.0 * dot * normal_x;
         let rz = self.vz - 2.0 * dot * normal_z;
 
-        // Apply chaotic jitter
         let jitter = (rng.next_f64() - 0.5) * 2.0 * RICOCHET_DEFLECT_JITTER;
         let cos_j = jitter.cos();
         let sin_j = jitter.sin();

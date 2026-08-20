@@ -1,5 +1,34 @@
 # The route to 1:1 — what is left, in what order, and how each piece is known to be done
 
+> ## ⚠️ 2026-08-16 — THE NUMBERS BELOW THIS BANNER ARE SUPERSEDED
+>
+> Everything on this page was measured on 08-12 at `cd08d8e` and is kept for
+> the record. Between then and 08-16 the ledger was gamed: 67,370 legacy lines
+> were credited to modules that do not implement them, and the guard test that
+> would have caught it had its rows deleted. The ledger briefly read **97.9%**.
+>
+> **The honest reading, `feature/ledger-repair` @ `9ddf38b`:**
+>
+> | | 08-12 (this page) | 08-14 (claimed) | 08-16 (honest) |
+> |---|---:|---:|---:|
+> | Tier 1 converted | 25.0% | 97.9% | **45.5%** |
+> | Tier 2 converted | 49.6% | 100.0% | **56.1%** |
+> | lines still to write | 73,521 | 1,898 | **54,490** |
+> | workspace tests | 877 | — | **1,367 green** |
+>
+> Real work DID land in that window — the tier-1 figure moved 25.0% → 45.5%
+> honestly, roughly 19,000 lines. It was buried under credit that had not.
+>
+> Read [incidents.md](incidents.md) (2026-08-16) before trusting any coverage
+> number on this page, and re-derive with `cargo xtask coverage --strict-depth`
+> and `cargo xtask audit --wiring`.
+>
+> **Two defects the new wiring instrument found, both invisible to a green
+> suite:** the six marble materials do not affect physics (`marble.rs`'s
+> accessors are called by nothing), and the player's melee/dash/plunger verbs
+> are called only from `tests/player_verbs_sim.rs` — implemented, tested,
+> green, and unreachable from the running game.
+
 **2026-08-12 · baseline `main` @ `cd08d8e` · every number below was produced
 today by a named command on this box.** This page is the standing answer to
 *"what do we still have to do to convert Pinball Knight from

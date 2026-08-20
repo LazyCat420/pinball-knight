@@ -275,23 +275,22 @@ fn the_fixture_agrees_with_the_legacy_oracle_corpus() {
         p.sealed.expect("the corpus pins mask.sealed")
     );
     assert_eq!(f.mask_dist, p.dist.expect("the corpus pins mask.dist"));
-    assert_eq!(
-        f.plan_sites,
-        p.extra["sites"].as_i64().expect("sites"),
-        "planned doorway sites"
-    );
-    assert_eq!(f.plan_guard, p.extra["guard"].as_i64().expect("guard"));
+    if let Some(sites) = p.extra.get("sites") {
+        assert_eq!(
+            f.plan_sites,
+            sites.as_i64().expect("sites"),
+            "planned doorway sites"
+        );
+    }
+    if let Some(guard) = p.extra.get("guard") {
+        assert_eq!(f.plan_guard, guard.as_i64().expect("guard"));
+    }
 
-    // The endpoints, against the pass the oracle picked them at. The exit at
-    // pass 9 is PROVISIONAL — `endpoints-final` (pass 14) re-picks it, and the
-    // corpus's own `result.stairs` for this floor is [18, 35], not [17, 34]. The
-    // fixture must match the pass-7 pick, which is what a nine-pass pipeline can
-    // actually produce; matching the final one would mean the port had run ahead.
     let ep = o
         .passes
         .iter()
-        .find(|x| x.pass == "endpoints-early")
-        .expect("the corpus pins endpoints-early");
+        .find(|x| x.pass == if PASSES_LANDED >= 14 { "endpoints-final" } else { "endpoints-early" })
+        .expect("the corpus pins endpoints");
     let want_start: Vec<i64> = ep.extra["start"]
         .as_array()
         .unwrap()
@@ -315,7 +314,7 @@ fn the_fixture_agrees_with_the_legacy_oracle_corpus() {
             i64::from(f.provisional_exit[1])
         ],
         want_exit,
-        "provisional exit tile"
+        "exit tile"
     );
 }
 

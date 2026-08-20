@@ -1,6 +1,6 @@
 //! Stiltneck explosive bomb mechanics and blast physics.
 //!
-//! PORTS: `entities/projectiles.ts`, `render/monsters/stiltneck.ts`
+//! PORTS: `render/monsters/stiltneck.ts`
 
 use super::types::{EnemyKind, LiveMonster};
 use crate::enemies::*;

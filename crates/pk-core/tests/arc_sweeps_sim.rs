@@ -3,9 +3,9 @@
 
 use pk_core::grid::{set_tile, Grid, T_FLOOR};
 use pk_core::maze::arc_sweeps::{
-    arc_tangent_at, has_clear_rail_runway, rail_exit, RAIL_MIN_RUNWAY,
+    arc_tangent_at, has_clear_rail_runway, rail_exit,
 };
-use pk_core::tile_shape::ArcFeature;
+use pk_core::tile_shape::{ArcFeature, LaneBand};
 
 #[test]
 fn arc_tangent_computes_continuous_unit_vector() {
@@ -53,17 +53,20 @@ fn rail_exit_checks_forward_runway() {
         lanes: Vec::new(),
     };
 
-    let (ex, ez, dx, dz) = rail_exit(&feature);
-    assert_eq!(ex, 5);
-    assert_eq!(ez, 8);
+    let lane = LaneBand {
+        a0: 0.0,
+        span: std::f64::consts::FRAC_PI_2,
+        cw: true,
+        cooldown_t: 0.0,
+        hit_t: -1.0,
+    };
 
-    // Runway is open floor
-    assert!(has_clear_rail_runway(
-        &g,
-        ex,
-        ez,
-        dx,
-        dz,
-        RAIL_MIN_RUNWAY
-    ));
+    let exit = rail_exit(&g, &feature, &lane, true).unwrap();
+    assert_eq!(exit.i, 4);
+    assert_eq!(exit.j, 8);
+    assert_eq!(exit.di, -1);
+    assert_eq!(exit.dj, 0);
+
+    // Runway is open floor (3 tiles from x=4 to wall at x=0)
+    assert!(has_clear_rail_runway(&g, exit.i, exit.j, exit.di, exit.dj, 3));
 }

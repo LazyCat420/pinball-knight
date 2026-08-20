@@ -1,6 +1,6 @@
 //! Area-preserving squash and stretch collision impact deformation.
 //!
-//! PORTS: `entities/marble.ts`, `constants/pinball.ts`
+//! PORTS: `constants/pinball.ts`
 
 pub const SQUASH_RECOVER: f64 = 0.18;
 pub const SQUASH_DEPTH: f64 = 0.30;

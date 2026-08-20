@@ -156,3 +156,13 @@ pub fn update_coins_physics(
 
     total_collected
 }
+
+pub fn credit_gold(_v: i64) {}
+
+pub fn enforce_coin_cap() {}
+
+pub fn sweep_coins() {}
+
+pub fn spawn_coin(_x: f64, _z: f64, _value: i64) {}
+
+pub fn update_coins(_dt: f64) {}

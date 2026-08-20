@@ -57,6 +57,28 @@ pub struct SlotsDrive {
     stake: i64,
 }
 
+pub fn create_slots_game() -> SlotsDrive {
+    SlotsDrive::new()
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RouletteOpts {
+    pub single_zero: Option<bool>,
+}
+
+pub fn create_roulette_game(_opts: Option<RouletteOpts>) -> RouletteDrive {
+    RouletteDrive::new(super::roulette::bets()[0].clone())
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DartsOptions {
+    pub target_score: Option<i32>,
+}
+
+pub fn create_darts_game<R: FnMut() -> f64>(rng: R, _opts: Option<DartsOptions>) -> DartsDrive<R> {
+    DartsDrive::new(rng)
+}
+
 impl SlotsDrive {
     pub fn new() -> Self {
         Self {

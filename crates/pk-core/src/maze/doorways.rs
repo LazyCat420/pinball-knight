@@ -118,7 +118,7 @@
 
 use std::collections::HashSet;
 
-use crate::grid::{at, idx, is_walkable, shape_at, Grid, T_WALL};
+use crate::grid::{at, idx, is_walkable, set_tile, shape_at, Grid, T_FLOOR, T_WALL};
 use crate::maze::track_launch::TilePos;
 use crate::maze::track_socket::near_sealed;
 use crate::maze::TrackMask;
@@ -971,6 +971,144 @@ pub fn doorway_footprint(d: &Doorway) -> Vec<TilePos> {
 pub fn width_from_clearance(c3: i32) -> i32 {
     (2 * (c3 / ORTH) - 1).max(1)
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct CarveDoorwaysResult {
+    pub doorways: Vec<Doorway>,
+    pub blocked: usize,
+    pub merged: usize,
+    pub rejects: std::collections::HashMap<String, usize>,
+}
+
+pub fn carve_doorways(
+    g: &mut Grid,
+    sites: &[DoorwaySite],
+    guards: &CarveGuards<'_>,
+) -> CarveDoorwaysResult {
+    let mut doorways = Vec::new();
+    let mut rejects = std::collections::HashMap::new();
+    let mut blocked = 0;
+    let mut merged = 0;
+
+    for site in sites {
+        let d = resolve_doorway(g, site, guards);
+        let Some(d) = d else {
+            let cur = site_width(g, site);
+            if cur > DOORWAY_WIDTHS[0] {
+                merged += 1;
+                *rejects.entry("merged".to_string()).or_insert(0) += 1;
+            } else {
+                blocked += 1;
+                *rejects.entry("blocked".to_string()).or_insert(0) += 1;
+            }
+            continue;
+        };
+        let mut carved = 0;
+        for t in doorway_footprint(&d) {
+            if is_walkable(g, t.i, t.j) {
+                continue;
+            }
+            set_tile(g, t.i, t.j, T_FLOOR);
+            carved += 1;
+        }
+        let mut final_d = d;
+        final_d.carved = carved;
+        doorways.push(final_d);
+    }
+
+    CarveDoorwaysResult {
+        doorways,
+        blocked,
+        merged,
+        rejects,
+    }
+}
+
+pub fn arc_span_mask(g: &Grid) -> Vec<u8> {
+    let mut mask = vec![0u8; (g.w * g.h) as usize];
+    const BACK_PROBE: f64 = 0.6;
+    for f in &g.arcs {
+        let rr = if f.solid_out {
+            f.r + BACK_PROBE
+        } else {
+            f.r - BACK_PROBE
+        };
+        if rr <= 0.0 {
+            continue;
+        }
+        let n = (16_i32).max(((f.r * f.span * 12.0).ceil()) as i32);
+        for s in 0..=n {
+            let ang = f.a0 + (f.span * s as f64) / n as f64;
+            let i = (f.cx + crate::jsmath::js_cos(ang) * rr).floor() as i32;
+            let j = (f.cz + crate::jsmath::js_sin(ang) * rr).floor() as i32;
+            if i < 0 || j < 0 || i >= g.w || j >= g.h {
+                continue;
+            }
+            mask[idx(g, i, j)] = 1;
+        }
+    }
+    mask
+}
+
+pub fn measure_doorway(g: &Grid, d: &Doorway) -> usize {
+    let mut worst = usize::MAX;
+    for t in -d.back..=d.fwd {
+        let i = d.site.i + d.site.ai * t;
+        let j = d.site.j + d.site.aj * t;
+        worst = worst.min(open_run(g, i, j, d.site.wi, d.site.wj) as usize);
+    }
+    if worst == usize::MAX {
+        0
+    } else {
+        worst
+    }
+}
+
+pub fn doorway_census(doorways: &[Doorway]) -> std::collections::HashMap<i32, usize> {
+    let mut out = std::collections::HashMap::new();
+    for d in doorways {
+        *out.entry(d.w).or_insert(0) += 1;
+    }
+    out
+}
+
+pub fn section_pinches(g: &Grid, cl: Option<&[i32]>) -> Vec<TilePos> {
+    let computed_cl;
+    let c = match cl {
+        Some(slice) => slice,
+        None => {
+            computed_cl = clearance_field(g);
+            &computed_cl
+        }
+    };
+    let sec = label_sections(g, c, None);
+    if sec.sizes.len() < 2 {
+        return Vec::new();
+    }
+    let owner = section_territory(g, &sec);
+    let mut out = Vec::new();
+    for j in 0..g.h {
+        for i in 0..g.w {
+            let k = idx(g, i, j);
+            if owner[k] < 0 || sec.label[k] >= 0 {
+                continue;
+            }
+            for (di, dj) in [(1, 0), (0, 1)] {
+                let x = i + di;
+                let y = j + dj;
+                if x >= g.w || y >= g.h {
+                    continue;
+                }
+                let nk = idx(g, x, y);
+                if owner[nk] >= 0 && owner[nk] != owner[k] {
+                    out.push(TilePos { i, j });
+                }
+            }
+        }
+    }
+    out
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -1,9 +1,7 @@
 // Parity test suite for Sprite Atlas and Billboarding Engine.
 // Replicates legacy/src/game/pinball-knight/engine/render/sprite.ts
 
-use pk_gui::engine::render::sprite::{
-    face_camera, face_camera_yaw, SpriteQuad, SpriteSheetAtlas,
-};
+use pk_gui::engine::render::sprite::{face_camera, face_camera_yaw, SpriteQuad, SpriteSheetAtlas};
 
 #[test]
 fn sprite_quad_bottom_center_origin_bounds() {

@@ -1,6 +1,6 @@
 //! Engine boot sequences, scene configuration, depth biomes, renderer lifecycle gate, pipeline warmup, and sprite sheets boot loader.
 //!
-//! PORTS: `boot/warmup.ts`, `boot/scene.ts`, `boot/biomes.ts`, `boot/renderer.ts`, `boot/sheets.ts`
+//! PORTS: `boot/warmup.ts`, `boot/scene.ts`, `boot/biomes.ts`, `boot/renderer.ts`
 
 pub mod biomes;
 pub mod renderer;

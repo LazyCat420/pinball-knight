@@ -25,7 +25,7 @@
 //! Nothing here is a correctness lint. Anything that could change a digest
 //! stays on, and CI runs clippy at deny level per crate.
 //!
-//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`, `GameEngine.ts`, `playtest-bot.ts`, `coop.ts`, `core.ts`
+//! PORTS: `economy/shop.ts`, `engine/gamepad.ts`, `settings-save.ts`, `best-depth.ts`, `GameEngine.ts`, `armor-styles.ts`
 #![allow(
     // `for i in 0..STATIONS.len()` mirrors `for (let i = 0; i < …; i++)`. The
     // iterator rewrite is better Rust and worse evidence: several of these
@@ -40,6 +40,7 @@
 )]
 
 pub mod abilities;
+pub mod armor_styles;
 pub mod best_depth;
 pub mod bestiary;
 pub mod boot;
@@ -90,6 +91,7 @@ pub mod run;
 pub mod secrets;
 pub mod settings_save;
 pub mod sim;
+pub mod skills;
 pub mod spawn;
 pub mod stagger;
 pub mod state;
@@ -99,6 +101,7 @@ pub mod tile_shape;
 pub mod zombie_ai;
 pub mod zombie_types;
 
+pub use armor_styles::*;
 pub use best_depth::*;
 pub use coop::*;
 pub use dungeon_session::*;

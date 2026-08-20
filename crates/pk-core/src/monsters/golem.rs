@@ -1,6 +1,6 @@
 //! Golem shard burst mechanics.
 //!
-//! PORTS: `entities/projectiles.ts`
+//! PORTS: `constants/enemies.ts`
 
 use crate::enemies::*;
 

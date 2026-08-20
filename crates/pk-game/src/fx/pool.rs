@@ -257,6 +257,12 @@ pub struct Particles {
     pub rng: Lcg,
 }
 
+pub type VfxSystem = Particles;
+
+pub fn create_vfx() -> VfxSystem {
+    Particles::default()
+}
+
 impl Particles {
     /// A single rising ember. NEGATIVE gravity — embers float UP.
     pub fn ember(&mut self, x: f32, y: f32, z: f32) {

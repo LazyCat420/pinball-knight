@@ -4,7 +4,6 @@
 //!
 //! Every doc-comment war story lives in the oracle; here only the load-bearing
 //! invariants are restated at the site that carries them.
-//!
 //! PORTS: `gui/im.ts`
 
 use std::collections::BTreeSet;
@@ -589,6 +588,32 @@ fn draw_icon_inner(
         d,
         f.global_alpha,
         tint,
+        f.device_clip,
+    );
+}
+
+/// Blit a procedural Doom-style knight mugshot face into the frame.
+pub fn draw_face(f: &mut UiFrame, face: &crate::hud_face::FaceState, face_box: &Rect) {
+    let z = f.zoom as i64;
+    let face_d = crate::hud_face::FACE_PX as f64;
+    let dest_x = face_box.x + (face_box.w - face_d) / 2.0;
+    let dest_y = face_box.y + (face_box.h - face_d) / 2.0;
+    let dx = px(dest_x) * z;
+    let dy = (px(dest_y) - f.shift) * z;
+    let dw = (face_d as i64) * z;
+    let dh = (face_d as i64) * z;
+
+    let bytes = face.rgba_bytes();
+    f.p.blit_rgba(
+        &bytes,
+        crate::hud_face::FACE_PX as u32,
+        crate::hud_face::FACE_PX as u32,
+        dx,
+        dy,
+        dw,
+        dh,
+        f.global_alpha,
+        None,
         f.device_clip,
     );
 }

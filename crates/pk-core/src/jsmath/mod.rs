@@ -72,10 +72,10 @@ pub mod scalar;
 
 pub use fdlibm::{js_cos, js_sin};
 pub use fdlibm_explog::{js_exp, js_log};
-pub use scalar::*;
 /// Exposed for the oracle's negative control only — production code calls
 /// [`js_pow`], which adds the ±0.5 routing the runtime does.
 pub use pow_arm::arm_pow;
+pub use scalar::*;
 
 /// V8's `Math.hypot(a, b)`. Argument ORDER matters (the compensated loop is
 /// order-sensitive) — pass arguments exactly as the legacy call site does.

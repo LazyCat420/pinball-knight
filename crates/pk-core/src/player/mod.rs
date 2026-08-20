@@ -1,6 +1,6 @@
 //! Player movement verbs, inputs, inventory, and skill runtime progression.
 //!
-//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`, `skill-runtime.ts`
+//! PORTS: `entities/player.ts`, `entities/movement.ts`, `skill-runtime.ts`
 
 pub mod inventory;
 pub mod skill_runtime;

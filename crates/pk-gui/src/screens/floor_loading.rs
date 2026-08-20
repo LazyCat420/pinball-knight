@@ -2,10 +2,51 @@
 //!
 //! PORTS: `gui/screens/floor-loading.ts`
 
-use crate::im::{
-    fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub const DESIGN_W: usize = 480;
+pub const DESIGN_H: usize = 270;
+pub const DESIGN_MAX: usize = 3;
+
+static IS_OPEN: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorLoading {
+    pub level: usize,
+    pub progress: f32,
+    pub labyrinth: Vec<u8>,
+}
+
+pub fn grow_labyrinth(w: usize, h: usize) -> Vec<u8> {
+    let mut grid = vec![1u8; w * h];
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            if x % 2 == 1 && y % 2 == 1 {
+                grid[y * w + x] = 0;
+            }
+        }
+    }
+    grid
+}
+
+pub fn is_floor_loading_open() -> bool {
+    IS_OPEN.load(Ordering::Relaxed)
+}
+
+pub fn open_floor_loading(level: usize) -> FloorLoading {
+    IS_OPEN.store(true, Ordering::Relaxed);
+    FloorLoading {
+        level,
+        progress: 0.0,
+        labyrinth: grow_labyrinth(30, 20),
+    }
+}
+
+pub fn close_floor_loading() {
+    IS_OPEN.store(false, Ordering::Relaxed);
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FloorLoadingState {
@@ -63,32 +104,18 @@ pub fn paint_floor_loading(f: &mut UiFrame, state: &FloorLoadingState, bounds: R
         cage_rect.x + cage_rect.w / 2.0,
         cage_rect.y + 48.0,
         TextOpts {
-            size: 8,
-            colour: Some(Ui::TEXT_DIM),
-            align: Align::Center,
-            max: None,
-        },
-    );
-
-    // Active Floor Modifiers
-    let mod_y = cage_rect.y + 80.0;
-    text(
-        f,
-        "ACTIVE FLOOR MODIFIERS",
-        cage_rect.x + cage_rect.w / 2.0,
-        mod_y,
-        TextOpts {
-            size: 8,
+            size: 12,
             colour: Some(Ui::GOLD),
             align: Align::Center,
             max: None,
         },
     );
 
+    // Active Room Hazards & Modifiers
     for (i, modifier) in state.modifiers.iter().enumerate() {
         let badge_rect = Rect {
             x: cage_rect.x + 30.0,
-            y: mod_y + 18.0 + (i as f64 * 24.0),
+            y: cage_rect.y + 80.0 + (i as f64 * 26.0),
             w: cage_rect.w - 60.0,
             h: 20.0,
         };

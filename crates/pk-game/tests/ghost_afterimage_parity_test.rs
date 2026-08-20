@@ -35,9 +35,19 @@ fn test_ghost_afterimage_material_requires_texture_and_blend() {
     });
 
     let mat = materials.get(&ghost_mat).expect("material exists");
-    assert!(mat.base_color_texture.is_some(), "Ghost afterimage must carry sprite texture");
-    assert_eq!(mat.alpha_mode, AlphaMode::Blend, "Ghost afterimage must use AlphaMode::Blend");
-    assert!(mat.uv_transform.matrix2.x_axis.x > 0.0, "UV transform scale must be positive");
+    assert!(
+        mat.base_color_texture.is_some(),
+        "Ghost afterimage must carry sprite texture"
+    );
+    assert_eq!(
+        mat.alpha_mode,
+        AlphaMode::Blend,
+        "Ghost afterimage must use AlphaMode::Blend"
+    );
+    assert!(
+        mat.uv_transform.matrix2.x_axis.x > 0.0,
+        "UV transform scale must be positive"
+    );
 }
 
 #[test]

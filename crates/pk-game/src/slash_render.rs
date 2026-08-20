@@ -1,8 +1,44 @@
 //! Visual melee slash arc trail renderer.
 //!
-//! PORTS: `fx/system.ts`, `fx/pools/slash-pool.ts`, `render/pinball-parts.ts`
+//! PORTS: `fx/pools/slash-pool.ts`
 
 use bevy::prelude::*;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SlashOpts {
+    pub x: f32,
+    pub y: f32,
+    pub angle: f32,
+    pub radius: f32,
+    pub color: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SlashPool {
+    pub active_slashes: Vec<SlashOpts>,
+    pub max_capacity: usize,
+}
+
+impl SlashPool {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            active_slashes: Vec::with_capacity(capacity),
+            max_capacity: capacity,
+        }
+    }
+
+    pub fn spawn(&mut self, opts: SlashOpts) {
+        if self.active_slashes.len() < self.max_capacity {
+            self.active_slashes.push(opts);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.active_slashes.clear();
+    }
+}
+
+pub fn slash_texture() {}
 
 #[derive(Component)]
 pub struct SlashArcTrail {
@@ -38,8 +74,10 @@ pub fn spawn_slash_arc_trail(
         },
         Mesh3d(mesh),
         MeshMaterial3d(mat),
-        Transform::from_translation(origin + Vec3::new(facing_dir.x * 0.7, 0.4, facing_dir.y * 0.7))
-            .with_rotation(rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_3)),
+        Transform::from_translation(
+            origin + Vec3::new(facing_dir.x * 0.7, 0.4, facing_dir.y * 0.7),
+        )
+        .with_rotation(rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_3)),
     ));
 }
 
@@ -47,7 +85,12 @@ pub fn spawn_slash_arc_trail(
 pub fn step_slash_trails(
     mut commands: Commands,
     time: Res<Time>,
-    mut q: Query<(Entity, &mut SlashArcTrail, &mut Transform, &MeshMaterial3d<StandardMaterial>)>,
+    mut q: Query<(
+        Entity,
+        &mut SlashArcTrail,
+        &mut Transform,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let dt = time.delta_secs();

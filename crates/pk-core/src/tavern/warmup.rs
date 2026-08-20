@@ -2,6 +2,17 @@
 //!
 //! PORTS: `legacy/src/scenes/tavern/warmup.ts`
 
+#[derive(Clone, Debug, Default)]
+pub struct TavernWarmArgs {
+    pub enabled: bool,
+}
+
+pub fn tavern_warm_enabled() -> bool {
+    true
+}
+
+pub fn warm_tavern(_args: &TavernWarmArgs) {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TavernWarmupMesh {
     pub id: u32,

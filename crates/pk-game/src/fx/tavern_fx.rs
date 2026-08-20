@@ -69,26 +69,28 @@ impl SparkBurst {
     }
 }
 
-/// Countdown to the next ambient batch.
+/// Countdown to the next tavern ambient batch.
 #[derive(Resource, Debug)]
 pub struct AmbientTimer(pub f32);
 
 impl Default for AmbientTimer {
     fn default() -> Self {
-        // Zero, so the first tavern frame seeds the room immediately — the
-        // oracle's `moteT` starts at 0 too. Walking in to a dead hearth and
-        // waiting 140 ms for the first ember is a visible hitch on entry.
+        Self(0.0)
+    }
+}
+
+/// Countdown to the next dungeon ambient batch.
+#[derive(Resource, Debug)]
+pub struct DungeonAmbientTimer(pub f32);
+
+impl Default for DungeonAmbientTimer {
+    fn default() -> Self {
         Self(0.0)
     }
 }
 
 /// THE CADENCE, as a plain function so the tests drive the real thing rather
 /// than a copy of it.
-///
-/// `dt` is clamped to [`MAX_DT`] here because the oracle clamps ONCE, at the
-/// top of its scene tick, and every downstream consumer — `moteT` included —
-/// sees the clamped value. That clamp is also what makes a stalled tab emit one
-/// batch instead of nine.
 pub fn emit_ambient(fx: &mut Particles, t: &mut AmbientTimer, dt: f32) {
     t.0 -= dt.min(MAX_DT);
     if t.0 > 0.0 {
@@ -116,6 +118,42 @@ pub fn emit_ambient(fx: &mut Particles, t: &mut AmbientTimer, dt: f32) {
 /// The Bevy wrapper. Gated to `AppState::Tavern` by the plugin.
 pub fn tavern_ambient(time: Res<Time>, mut fx: ResMut<Particles>, mut t: ResMut<AmbientTimer>) {
     emit_ambient(&mut fx, &mut t, time.delta_secs());
+}
+
+/// Dungeon ambient particles: torch embers and drifting air motes around player.
+pub fn dungeon_ambient(
+    time: Res<Time>,
+    mut fx: ResMut<Particles>,
+    mut t: ResMut<DungeonAmbientTimer>,
+    sim: Option<Res<crate::Sim>>,
+) {
+    let Some(sim) = sim else { return };
+    t.0 -= time.delta_secs().min(MAX_DT);
+    if t.0 > 0.0 {
+        return;
+    }
+    t.0 = AMBIENT_PERIOD;
+
+    let px = sim.0.player.x as f32;
+    let pz = sim.0.player.z as f32;
+
+    // Torch embers from nearby torches
+    for p in &sim.0.parts {
+        let dx = (p.x as f32) - px;
+        let dz = (p.z as f32) - pz;
+        if dx * dx + dz * dz < 144.0 {
+            // Embers at pinball part / fixture locations
+            if fx.rng.unit() < 0.25 {
+                fx.ember(p.x as f32, 0.45, p.z as f32);
+            }
+        }
+    }
+
+    // Ambient floating dust motes near player
+    let mx = px + (fx.rng.unit() - 0.5) * 16.0;
+    let my = 0.3 + fx.rng.unit() * 1.8;
+    let mz = pz + (fx.rng.unit() - 0.5) * 16.0;
+    fx.mote(mx, my, mz);
 }
 
 /// Drains [`SparkBurst`] into the pool. Runs in every state — a spark is an

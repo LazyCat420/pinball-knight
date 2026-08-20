@@ -2,9 +2,7 @@
 //!
 //! PORTS: `gui/screens/settings.ts`
 
-use crate::im::{
-    fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -159,4 +157,16 @@ pub fn paint_settings(f: &mut UiFrame, settings: &mut UserSettings, bounds: Rect
             },
         );
     }
+}
+
+pub fn settings_content_height() -> f64 {
+    240.0
+}
+
+pub fn settings_body(f: &mut UiFrame, flow: Rect, settings: &mut UserSettings) {
+    paint_settings(f, settings, flow);
+}
+
+pub fn settings_screen() -> UserSettings {
+    UserSettings::default()
 }

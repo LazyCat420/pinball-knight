@@ -2,8 +2,8 @@
 // Replicates legacy/src/game/pinball-knight/entities/floor-fx.ts and fx/puffs.ts
 
 use pk_core::marble::floor_fx::{
-    spawn_floor_fx, step_floor_fx, FloorFxKind, CARD_BURN_TICK, FIRE_PUDDLE_DMG,
-    FLOOR_FX_MAX, OIL_IGNITE_LIFE,
+    spawn_floor_fx, step_floor_fx, FloorFxKind, CARD_BURN_TICK, FIRE_PUDDLE_DMG, FLOOR_FX_MAX,
+    OIL_IGNITE_LIFE,
 };
 use pk_core::marble::puffs::{spawn_puff_burst, step_puffs, PuffPool};
 use pk_core::monsters::types::{EnemyKind, LiveMonster};
@@ -23,12 +23,7 @@ fn water_slick_applies_slip_to_monsters() {
         5.0,
     );
 
-    let mut monsters = vec![LiveMonster::new(
-        1,
-        EnemyKind::Zombie,
-        0.5,
-        0.5,
-    )];
+    let mut monsters = vec![LiveMonster::new(1, EnemyKind::Zombie, 0.5, 0.5)];
 
     let impacts = step_floor_fx(&mut fx_list, &mut monsters, 0.016);
     assert_eq!(impacts.len(), 1);
@@ -51,12 +46,7 @@ fn fire_puddle_deals_periodic_damage() {
         5.0,
     );
 
-    let mut monsters = vec![LiveMonster::new(
-        1,
-        EnemyKind::Zombie,
-        0.0,
-        0.0,
-    )];
+    let mut monsters = vec![LiveMonster::new(1, EnemyKind::Zombie, 0.0, 0.0)];
 
     let initial_hp = monsters[0].hp;
 

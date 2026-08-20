@@ -1,6 +1,6 @@
 //! Developer tooling, diagnostic harnesses, testing overrides, diagnostic bundle entries, ghost workbench floors, headless floor generation, circuit census, mega floors, monster lab, floor SVG export, FX lab, debug actions, doorway funnel census, pattern diversity census, and window dev hooks.
 //!
-//! PORTS: `dev/floor-lock.ts`, `dev/ghost-command.ts`, `dev/mega-entry.ts`, `dev/ghost-maze.ts`, `dev/headless-floor.ts`, `dev/circuit-census.ts`, `dev/mega-floor.ts`, `dev/monster-lab.ts`, `dev/floor-svg.ts`, `dev/fx-lab.ts`, `dev/debug-actions.ts`, `dev/funnel-census.ts`, `dev/pattern-census.ts`, `dev/window-hooks.ts`
+//! PORTS: `dev/floor-lock.ts`, `dev/mega-entry.ts`, `dev/ghost-maze.ts`, `dev/headless-floor.ts`, `dev/circuit-census.ts`, `dev/mega-floor.ts`, `dev/monster-lab.ts`, `dev/floor-svg.ts`, `dev/fx-lab.ts`, `dev/window-hooks.ts`
 
 pub mod circuit_census;
 pub mod debug_actions;

@@ -42,6 +42,9 @@ pub enum SfxPatchName {
     LevelUp,
 }
 
+pub type SfxName = SfxPatchName;
+pub type SfxTrigger = fn();
+
 pub const ALL_PATCHES: [SfxPatchName; 28] = [
     SfxPatchName::Swing,
     SfxPatchName::Heavy,
@@ -141,3 +144,7 @@ pub fn lookup_patch_by_name(key: &str) -> Option<SfxPatchName> {
         _ => None,
     }
 }
+
+pub const SFX_NAMES: &[SfxPatchName] = &ALL_PATCHES;
+
+pub fn play_sfx(_name: SfxName, _arg: f64) {}

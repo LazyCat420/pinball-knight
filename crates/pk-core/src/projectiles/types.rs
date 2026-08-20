@@ -1,6 +1,6 @@
 //! Projectile data structures and stats definitions.
 //!
-//! PORTS: `entities/projectiles.ts`, `constants/enemies.ts`
+//! PORTS: `constants/enemies.ts`
 
 pub const PROJECTILE_Y: f64 = 0.42;
 pub const MUZZLE_OFFSET: f64 = 0.35;
@@ -57,10 +57,10 @@ pub enum ProjectileKind {
     StiltneckBomb,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Projectile {
     pub id: u64,
-    pub kind: ProjectileKind,
+    pub kind: ProjectKindAlias,
     pub x: f64,
     pub z: f64,
     pub vx: f64,
@@ -75,7 +75,37 @@ pub struct Projectile {
     pub radius: f64,
 }
 
+pub type ProjectKindAlias = ProjectileKind;
+
 impl Projectile {
+    pub fn new(
+        x: f64,
+        z: f64,
+        vx: f64,
+        vz: f64,
+        damage: i32,
+        life: f64,
+        is_player: bool,
+        kind: ProjectileKind,
+    ) -> Self {
+        Self {
+            id: 0,
+            kind,
+            x,
+            z,
+            vx,
+            vz,
+            life,
+            max_life: life,
+            damage,
+            is_player,
+            pierce: 0,
+            curve_rate: 0.0,
+            dead: false,
+            radius: HIT_R,
+        }
+    }
+
     pub fn new_player_shot(
         id: u64,
         kind: ProjectileKind,
@@ -101,10 +131,18 @@ impl Projectile {
             max_life: life,
             damage,
             is_player: true,
-            pierce: if kind == ProjectileKind::Flame || kind == ProjectileKind::Laser { 99 } else { 0 },
+            pierce: if kind == ProjectileKind::Flame || kind == ProjectileKind::Laser {
+                99
+            } else {
+                0
+            },
             curve_rate: 0.0,
             dead: false,
-            radius: if kind == ProjectileKind::Flame { 0.28 } else { HIT_R },
+            radius: if kind == ProjectileKind::Flame {
+                0.28
+            } else {
+                HIT_R
+            },
         }
     }
 
@@ -138,5 +176,18 @@ impl Projectile {
             dead: false,
             radius: HIT_R,
         }
+    }
+
+    pub fn step(&mut self, dt: f64) {
+        if self.dead {
+            return;
+        }
+        self.life -= dt;
+        if self.life <= 0.0 {
+            self.dead = true;
+            return;
+        }
+        self.x += self.vx * dt;
+        self.z += self.vz * dt;
     }
 }

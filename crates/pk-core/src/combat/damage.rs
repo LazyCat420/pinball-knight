@@ -2,8 +2,8 @@
 //!
 //! PORTS: `entities/combat.ts`
 
-use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
 use super::stagger::{pain_chance, stagger_time};
+use crate::combo::{combo_damage_mult, combo_kill_gold, momentum_scaled};
 
 pub const KNOCKBACK_ZOMBIE: f64 = 1.1;
 pub const KNOCKBACK_PLAYER: f64 = 1.4;

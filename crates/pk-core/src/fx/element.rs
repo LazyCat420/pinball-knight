@@ -19,6 +19,16 @@ pub struct ElementMaterialConfig {
     pub depth_write: bool,
 }
 
+pub type ElementMaterial = ElementMaterialConfig;
+
+pub fn element_material(additive: bool) -> ElementMaterial {
+    ElementMaterialConfig {
+        additive,
+        transparent: true,
+        depth_write: false,
+    }
+}
+
 /// Fire, frost and the rod ADD light (bloom feeds on cores); oil, tar and water sit ON the scene.
 pub const fn is_element_additive(kind: ElementKind) -> bool {
     match kind {

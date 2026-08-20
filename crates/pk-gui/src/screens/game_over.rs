@@ -2,9 +2,7 @@
 //!
 //! PORTS: `gui/screens/game-over.ts`
 
-use crate::im::{
-    button, fill_rect, stroke_rect, text, Align, ButtonOpts, Rect, TextOpts, UiFrame,
-};
+use crate::im::{button, fill_rect, stroke_rect, text, Align, ButtonOpts, Rect, TextOpts, UiFrame};
 use crate::theme::Ui;
 
 pub const DESIGN_BOX_H: f64 = 338.0;
@@ -150,4 +148,8 @@ pub fn paint_game_over(
     }
 
     None
+}
+
+pub fn game_over_screen() -> GameOverState {
+    GameOverState::default()
 }

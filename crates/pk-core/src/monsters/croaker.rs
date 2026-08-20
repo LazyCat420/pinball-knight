@@ -1,6 +1,6 @@
 //! Croaker (Frog) hop leaps and corpse acid explosion.
 //!
-//! PORTS: `entities/zombie.ts`, `render/monsters/croaker.ts`
+//! PORTS: `render/monsters/croaker.ts`
 
 use super::types::{EnemyMode, LiveMonster};
 use crate::enemies::*;
@@ -10,13 +10,7 @@ pub const CROAKER_ACID_RADIUS: f64 = 2.0;
 pub const CROAKER_ACID_DAMAGE: i32 = 15;
 
 /// Advances croaker hopping physics and low-wall traversal.
-pub fn step_croaker_hop(
-    m: &mut LiveMonster,
-    grid: &Grid,
-    player_x: f64,
-    player_z: f64,
-    dt: f64,
-) {
+pub fn step_croaker_hop(m: &mut LiveMonster, grid: &Grid, player_x: f64, player_z: f64, dt: f64) {
     if m.hop_cd > 0.0 {
         m.hop_cd = (m.hop_cd - dt).max(0.0);
     }

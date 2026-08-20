@@ -1,36 +1,47 @@
-//! Skill Runtime — Live glue between pure skill tree, XP progression, and derived stats.
+//! SKILL RUNTIME — the live glue between the pure tree (skills.ts) and the game.
+//!
+//! Port of `legacy/src/game/pinball-knight/skill-runtime.ts` (158 lines).
 //!
 //! PORTS: `skill-runtime.ts`
 
 use std::collections::HashMap;
 
-pub const PLAYER_MAX_HP: i32 = 100;
-pub const MANA_MAX: i32 = 100;
-pub const MANA_POOL_FLOOR: i32 = 20;
-pub const XP_KILL: u32 = 10;
-pub const XP_KILL_BOSS: u32 = 150;
+use crate::abilities::{ability_rank, ability_rank_cost, AbilityId};
+use crate::constants::skills::{ABILITY_RANK_MAX, MANA_MAX, MANA_POOL_FLOOR};
+use crate::skills::{
+    aggregate_skills, can_learn, get_skill, grant_xp, xp_for_floor_clear, SkillAggregate,
+    SkillModifier, XpState, XP_KILL, XP_KILL_BOSS,
+};
+
+pub const PLAYER_MAX_HP: i32 = 6;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SkillRuntimeState {
     pub skill_ranks: HashMap<String, usize>,
+    pub ability_ranks: HashMap<AbilityId, usize>,
     pub bonus_max_hp: i32,
-    pub max_hp_flat: i32,
-    pub mana_max_flat: i32,
-    pub xp: u32,
-    pub skill_points: u32,
-    pub unlocked_abilities: Vec<String>,
+    pub xp: f64,
+    pub level: usize,
+    pub skill_points: usize,
+    pub unlocked_abilities: Vec<AbilityId>,
+    pub ability_slots: [Option<AbilityId>; 2],
+    pub ability_cd: HashMap<AbilityId, f64>,
+    cached_agg: Option<SkillAggregate>,
 }
 
 impl Default for SkillRuntimeState {
     fn default() -> Self {
         Self {
             skill_ranks: HashMap::new(),
+            ability_ranks: HashMap::new(),
             bonus_max_hp: 0,
-            max_hp_flat: 0,
-            mana_max_flat: 0,
-            xp: 0,
+            xp: 0.0,
+            level: 1,
             skill_points: 0,
-            unlocked_abilities: vec!["dash".to_string(), "slash".to_string()],
+            unlocked_abilities: vec![AbilityId::Flippercharge, AbilityId::Arcanepulse],
+            ability_slots: [Some(AbilityId::Flippercharge), Some(AbilityId::Arcanepulse)],
+            ability_cd: HashMap::new(),
+            cached_agg: None,
         }
     }
 }
@@ -40,58 +51,124 @@ impl SkillRuntimeState {
         Self::default()
     }
 
-    /// Evaluates total max HP = base (100) + tree modifier + Elixir bonus.
-    pub fn player_max_hp(&self) -> i32 {
-        PLAYER_MAX_HP + self.max_hp_flat + self.bonus_max_hp
+    pub fn invalidate_skill_agg(&mut self) {
+        self.cached_agg = None;
     }
 
-    /// Evaluates total max mana, strictly floored above MANA_POOL_FLOOR (20).
-    pub fn player_mana_max(&self) -> i32 {
-        (MANA_MAX + self.mana_max_flat).max(MANA_POOL_FLOOR)
-    }
-
-    /// Awards XP. Every 100 XP grants 1 skill point. Returns true if a point was earned.
-    pub fn grant_xp(&mut self, amount: u32) -> bool {
-        let old_level = self.xp / 100;
-        self.xp += amount;
-        let new_level = self.xp / 100;
-        if new_level > old_level {
-            self.skill_points += new_level - old_level;
-            true
-        } else {
-            false
+    pub fn skill_agg(&mut self, base: Option<&SkillModifier>) -> SkillAggregate {
+        if let Some(ref agg) = self.cached_agg {
+            return agg.clone();
         }
+        let agg = aggregate_skills(&self.skill_ranks, base);
+        self.cached_agg = Some(agg.clone());
+        agg
     }
 
-    pub fn xp_for_floor_clear(floor_num: u32) -> u32 {
-        100 * floor_num
+    pub fn player_max_hp(&mut self, base: Option<&SkillModifier>) -> i32 {
+        let agg = self.skill_agg(base);
+        PLAYER_MAX_HP + agg.max_hp_flat + self.bonus_max_hp
     }
 
-    /// Spends 1 skill point on a skill rank, applying flat HP/mana bonuses and optional ability unlock.
-    pub fn spend_skill_point(
+    pub fn player_mana_max(&mut self, base: Option<&SkillModifier>) -> i32 {
+        let agg = self.skill_agg(base);
+        (MANA_MAX + agg.mana_max_flat).max(MANA_POOL_FLOOR)
+    }
+
+    pub fn unlocked_abilities(&mut self, base: Option<&SkillModifier>) -> Vec<AbilityId> {
+        let agg = self.skill_agg(base);
+        let mut out = self.unlocked_abilities.clone();
+        for unl in &agg.unlocked {
+            if let Some(id) = AbilityId::from_str_id(unl) {
+                if !out.contains(&id) {
+                    out.push(id);
+                }
+            }
+        }
+        out
+    }
+
+    pub fn sync_ability_slots(&mut self, base: Option<&SkillModifier>) -> bool {
+        let ok = self.unlocked_abilities(base);
+        let mut changed = false;
+        for slot in 0..2 {
+            if let Some(id) = self.ability_slots[slot] {
+                if !ok.contains(&id) {
+                    self.ability_slots[slot] = None;
+                    self.ability_cd.remove(&id);
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
+    pub fn award(&mut self, amount: f64, base: Option<&SkillModifier>) -> usize {
+        let xp_mult = self.skill_agg(base).xp_mult;
+        let res = grant_xp(
+            &XpState {
+                xp: self.xp,
+                level: self.level,
+                points: self.skill_points,
+            },
+            amount * xp_mult,
+        );
+        self.xp = res.xp;
+        self.level = res.level;
+        self.skill_points = res.points;
+        res.levels_gained
+    }
+
+    pub fn award_kill_xp(&mut self, boss: bool, base: Option<&SkillModifier>) -> usize {
+        self.award(if boss { XP_KILL_BOSS } else { XP_KILL }, base)
+    }
+
+    pub fn award_floor_xp(&mut self, floor: u32, grade: &str, base: Option<&SkillModifier>) -> usize {
+        self.award(xp_for_floor_clear(floor, grade), base)
+    }
+
+    pub fn spend_ability_rank(
         &mut self,
-        skill_name: &str,
-        hp_gain: i32,
-        mana_gain: i32,
-        ability_unlock: Option<&str>,
-    ) -> bool {
-        if self.skill_points == 0 {
-            return false;
+        id: AbilityId,
+        base: Option<&SkillModifier>,
+    ) -> Result<(), &'static str> {
+        let unlocked = self.unlocked_abilities(base);
+        if !unlocked.contains(&id) {
+            return Err("ability not unlocked");
         }
+        let rank = ability_rank(id, &self.ability_ranks);
+        if rank >= ABILITY_RANK_MAX {
+            return Err("maxed");
+        }
+        let cost = ability_rank_cost(rank);
+        if self.skill_points < cost {
+            return Err("not enough skill points");
+        }
+        self.ability_ranks.insert(id, rank + 1);
+        self.skill_points -= cost;
+        Ok(())
+    }
 
-        self.skill_points -= 1;
-        let rank = self.skill_ranks.entry(skill_name.to_string()).or_insert(0);
-        *rank += 1;
+    pub fn spend_skill_point(&mut self, id: &str) -> Result<(), &'static str> {
+        if !can_learn(id, &self.skill_ranks, self.skill_points) {
+            return Err("prerequisites or points not met");
+        }
+        let def = match get_skill(id) {
+            Some(d) => d,
+            None => return Err("unknown skill node"),
+        };
+        let current_rank = *self.skill_ranks.get(id).unwrap_or(&0);
+        self.skill_ranks.insert(id.to_string(), current_rank + 1);
+        self.skill_points -= def.cost;
+        self.invalidate_skill_agg();
 
-        self.max_hp_flat += hp_gain;
-        self.mana_max_flat += mana_gain;
-
-        if let Some(ability) = ability_unlock {
-            if !self.unlocked_abilities.iter().any(|a| a == ability) {
-                self.unlocked_abilities.push(ability.to_string());
+        if let Some(unl) = def.modifier.unlock_ability {
+            if let Some(aid) = AbilityId::from_str_id(unl) {
+                if !self.unlocked_abilities.contains(&aid) {
+                    self.unlocked_abilities.push(aid);
+                }
             }
         }
 
-        true
+        Ok(())
     }
 }

@@ -2,7 +2,20 @@
 //!
 //! PORTS: `engine/palette-source.ts`
 
+use std::sync::{LazyLock, RwLock};
+
 use super::palette_shading::{SHADE_DOWN, SHADE_UP};
+
+pub static ENGINE_PALETTE: LazyLock<RwLock<PaletteSource>> =
+    LazyLock::new(|| RwLock::new(PaletteSource::cold_crypt()));
+
+pub fn engine_palette() -> PaletteSource {
+    ENGINE_PALETTE.read().unwrap().clone()
+}
+
+pub fn set_engine_palette(src: PaletteSource) {
+    *ENGINE_PALETTE.write().unwrap() = src;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PaletteSource {

@@ -1,6 +1,6 @@
 //! Pairwise spatial separation for monster hordes.
 //!
-//! PORTS: `entities/enemy-rules.ts`, `entities/zombie.ts`
+//! PORTS: `entities/enemy-rules.ts`
 
 use super::types::LiveMonster;
 

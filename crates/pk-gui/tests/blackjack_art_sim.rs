@@ -6,10 +6,7 @@ use pk_gui::gambler::blackjack_art::{breakdown_bet, midpoint_circle_points};
 #[test]
 fn blackjack_art_chip_breakdown_greedy() {
     let breakdown = breakdown_bet(138);
-    assert_eq!(
-        breakdown,
-        vec![(100, 1), (25, 1), (10, 1), (1, 3)]
-    );
+    assert_eq!(breakdown, vec![(100, 1), (25, 1), (10, 1), (1, 3)]);
 
     let large_breakdown = breakdown_bet(999);
     // Stack is capped at 8 per denomination

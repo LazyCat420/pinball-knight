@@ -6,9 +6,27 @@ use pk_gui::render::monster_portrait::portrait_spec_for_enemy;
 #[test]
 fn portrait_spec_covers_all_twenty_one_enemy_kinds() {
     let kinds = [
-        "zombie", "spider", "brute", "spitter", "ghost", "bat", "slime", "goblin",
-        "pin", "golem", "chomper", "magnet", "webspinner", "reaper", "sporeling",
-        "jester", "croaker", "rotortail", "stiltneck", "hound", "fish_feet",
+        "zombie",
+        "spider",
+        "brute",
+        "spitter",
+        "ghost",
+        "bat",
+        "slime",
+        "goblin",
+        "pin",
+        "golem",
+        "chomper",
+        "magnet",
+        "webspinner",
+        "reaper",
+        "sporeling",
+        "jester",
+        "croaker",
+        "rotortail",
+        "stiltneck",
+        "hound",
+        "fish_feet",
     ];
 
     for kind in kinds {

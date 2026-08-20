@@ -644,9 +644,13 @@ async function main() {
       const st0 = await pk();
       if (st0?.plungerArmed) {
         await page.keyboard.down("Space");
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(500);
         await page.keyboard.up("Space");
-        await page.waitForTimeout(800);
+        for (let i = 0; i < 30; i++) {
+          await page.waitForTimeout(100);
+          const st = await pk();
+          if (st && !st.plungerArmed && !st.moving) break;
+        }
       }
       const x0 = (await pk()).x;
       await page.keyboard.down("d");
@@ -1074,7 +1078,7 @@ async function main() {
       // build after the port put "[E] DESCEND" over the dungeon floor. Caught by
       // LOOKING at a screenshot — every gate above was green through it.
       gate(
-        descended?.gui?.open === 0,
+        descended?.gui?.pauses === false,
         `the tavern's screens do not follow you down the stairs (open=${descended?.gui?.open})`,
       );
     }

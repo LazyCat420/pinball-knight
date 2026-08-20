@@ -1,9 +1,10 @@
 // Parity test suite for The Tide rolling reinforcements and corpse reaping.
 // Replicates legacy/src/game/pinball-knight/spawn/tide.ts
 
+use pk_core::constants::enemies::{CORPSE_BUDGET, TIDE_GRACE};
 use pk_core::grid::{Grid, T_FLOOR};
 use pk_core::monsters::types::{EnemyKind, EnemyMode, LiveMonster};
-use pk_core::spawn::tide::{reap_corpses, step_tide, TideState, CORPSE_BUDGET, TIDE_GRACE};
+use pk_core::spawn::tide::{reap_corpses, step_tide, TideState};
 
 fn make_open_grid(w: i32, h: i32) -> Grid {
     let mut grid = Grid::solid(w, h);
@@ -31,7 +32,7 @@ fn tide_grace_period_spawns_no_monsters() {
 fn tide_spawns_reinforcements_when_horde_depleted() {
     let grid = make_open_grid(40, 40);
     let mut tide = TideState::new(20, 100);
-    let mut monsters = Vec::new();
+    let mut monsters: Vec<LiveMonster> = Vec::new();
 
     // Advance floor age past grace period
     tide.floor_age = TIDE_GRACE + 10.0;

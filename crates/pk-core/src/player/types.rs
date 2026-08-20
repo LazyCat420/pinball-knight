@@ -1,6 +1,6 @@
 //! Player state, verbs, and movement physics data structures.
 //!
-//! PORTS: `entities/movement.ts`, `entities/combat.ts`, `state.ts`, `constants/player.ts`
+//! PORTS: `entities/player.ts`, `entities/movement.ts`, `constants/player.ts`
 
 pub const PLAYER_RADIUS: f64 = 0.28;
 pub const PLAYER_WALK_SPEED: f64 = 4.2;
@@ -38,10 +38,22 @@ impl PlayerFacing {
             Self::North => (0.0, -1.0),
             Self::East => (1.0, 0.0),
             Self::West => (-1.0, 0.0),
-            Self::SouthEast => (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-            Self::SouthWest => (-std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2),
-            Self::NorthEast => (std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
-            Self::NorthWest => (-std::f64::consts::FRAC_1_SQRT_2, -std::f64::consts::FRAC_1_SQRT_2),
+            Self::SouthEast => (
+                std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::SouthWest => (
+                -std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::NorthEast => (
+                std::f64::consts::FRAC_1_SQRT_2,
+                -std::f64::consts::FRAC_1_SQRT_2,
+            ),
+            Self::NorthWest => (
+                -std::f64::consts::FRAC_1_SQRT_2,
+                -std::f64::consts::FRAC_1_SQRT_2,
+            ),
         }
     }
 }
@@ -55,6 +67,7 @@ pub struct MeleeSlash {
     pub base_damage: f64,
     pub dir_x: f64,
     pub dir_z: f64,
+    pub hit_entities: Vec<u32>,
 }
 
 impl Default for MeleeSlash {
@@ -67,6 +80,7 @@ impl Default for MeleeSlash {
             base_damage: MELEE_DAMAGE_BASE,
             dir_x: 0.0,
             dir_z: 1.0,
+            hit_entities: Vec::new(),
         }
     }
 }

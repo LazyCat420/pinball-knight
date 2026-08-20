@@ -24,6 +24,8 @@ import { moveCircle, computeArcCorners } from "./engine/collision";
 import { wallSurface, floorSurface } from "./engine/surfaces";
 import { freshRail, holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./entities/rail";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./intro/title-grid";
+import * as RENDER_CONSTANTS from "./constants/render";
+import * as LEVEL_CONSTANTS from "./constants/level";
 import { stepTavernMovement, type TavernPose } from "../../scenes/tavern/player";
 import { SPAWN as TAVERN_SPAWN, stationAt } from "../../scenes/tavern/layout";
 import { comboWindow, comboZone, comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul, type ComboZone } from "./entities/combo-curve";
@@ -664,9 +666,99 @@ function powOracle() {
   };
 }
 
+/**
+ * Every numeric/string/bool constant `constants/render.ts` exports, by name.
+ *
+ * ## Why a constants fixture exists at all
+ *
+ * Because one did not, and the Rust module claiming to port that file was
+ * INVENTED. Measured 2026-08-16: `crates/pk-core/src/constants/render.rs`
+ * declared `PORTS: constants/render.ts` while sharing ZERO of these 70 names —
+ * it made up `DESIGN_VIEWPORT_W`, `RUNG_BACKGROUND`, `LIGHT_FALLOFF_LINEAR`
+ * and a `calculate_light_attenuation()` that exists nowhere in the oracle,
+ * and the ledger counted the file as converted.
+ *
+ * A transcription is the one kind of port that can be checked exactly, so it
+ * should be: this dumps the values, and `constants_render.rs` on the Rust side
+ * fails if a single one drifts. Nested objects (`CAMERA_ZOOMS`) are flattened
+ * to dotted keys so the shape is a flat name→scalar map on both sides and no
+ * structural convention has to agree.
+ */
+function renderConstants(): Record<string, number | string | boolean> {
+  const out: Record<string, number | string | boolean> = {};
+  const put = (key: string, v: unknown): void => {
+    if (v == null) return;
+    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+      out[key] = v;
+    } else if (Array.isArray(v)) {
+      v.forEach((x, i) => put(`${key}.${i}`, x));
+    } else if (typeof v === "object") {
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) put(`${key}.${k}`, x);
+    }
+  };
+  for (const [name, value] of Object.entries(RENDER_CONSTANTS)) {
+    if (typeof value === "function") continue;
+    put(name, value);
+  }
+  return out;
+}
+
+function levelConstants(): Record<string, number | string | boolean> {
+  const out: Record<string, number | string | boolean> = {};
+  const put = (key: string, v: unknown): void => {
+    if (v == null) return;
+    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+      out[key] = v;
+    } else if (Array.isArray(v)) {
+      v.forEach((x, i) => put(`${key}.${i}`, x));
+    } else if (typeof v === "object") {
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) put(`${key}.${k}`, x);
+    }
+  };
+  for (const [name, value] of Object.entries(LEVEL_CONSTANTS)) {
+    if (typeof value === "function") continue;
+    put(name, value);
+  }
+  for (let l = 1; l <= 30; l++) {
+    const cfg = LEVEL_CONSTANTS.levelConfig(l);
+    for (const [k, v] of Object.entries(cfg)) {
+      put(`levelConfig.${l}.${k}`, v);
+    }
+    const b1 = LEVEL_CONSTANTS.floorBudgets(l, 500);
+    put(`floorBudgets.${l}.500.zombies`, b1.zombies);
+    put(`floorBudgets.${l}.500.torches`, b1.torches);
+    put(`floorBudgets.${l}.500.partsArea`, b1.partsArea);
+    const b2 = LEVEL_CONSTANTS.floorBudgets(l, 3000);
+    put(`floorBudgets.${l}.3000.zombies`, b2.zombies);
+    put(`floorBudgets.${l}.3000.torches`, b2.torches);
+    put(`floorBudgets.${l}.3000.partsArea`, b2.partsArea);
+  }
+  return out;
+}
+
 describe("port-parity fixtures", () => {
   it("the JS math primitives match their pinned sweeps", () => {
     pinFixture("jsmath-oracle.json", powOracle());
+  });
+
+  it("the render constants match the committed fixture", () => {
+    const c = renderConstants();
+    // The export must actually carry the file, not an empty object that would
+    // let the Rust side assert nothing and pass. These four are load-bearing
+    // and spelled out so a barrel-import regression is caught here.
+    expect(c.RENDER_W).toBe(1280);
+    expect(c.RENDER_H).toBe(720);
+    expect(Object.keys(c).length).toBeGreaterThan(60);
+    pinFixture("constants-render.json", c);
+  });
+
+  it("the level constants match the committed fixture", () => {
+    const c = levelConstants();
+    expect(c.STYLE_KILL_BASE_GOLD).toBe(2);
+    expect(c["GRADE_GOLD.S"]).toBe(40);
+    expect(c["WINDINESS_CYCLE.0"]).toBe(1.0);
+    expect(Object.keys(c).length).toBeGreaterThan(15);
+    pinFixture("constants-level.json", c);
   });
 
   it("movement trace (seed 7) matches the committed fixture", () => {

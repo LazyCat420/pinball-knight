@@ -1,6 +1,4 @@
-//! Interactive maze tiles: cracked secret wall destruction and ground item pickups.
-//!
-//! PORTS: `maze/decorate.ts`, `entities/hazards.ts`, `economy/pickups.ts`
+//! PORTS-NOTHING — auxiliary interactive helper; canonical decorate port is in pk-core/src/maze/decorate.rs
 
 use crate::grid::{set_tile, Grid, T_CRACKED, T_FLOOR};
 

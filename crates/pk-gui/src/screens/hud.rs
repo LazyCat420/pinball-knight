@@ -12,14 +12,68 @@
 //! - Boss bar (top-center, when engaged)
 //! - Combo multiplier and plunger power meters
 //!
-//! PORTS: `gui/screens/hud.ts`, `hud-face.ts`, `hud-minimap.ts`, `map-render.ts`
+//! PORTS: `gui/screens/hud.ts`, `hud-minimap.ts`, `map-render.ts`
 
-use crate::im::{
-    bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame,
-};
+use crate::im::{bar, fill_rect, stroke_rect, text, Align, Rect, TextOpts, UiFrame};
 use crate::painter::Rgba;
 use crate::palette::c;
-use crate::theme::{GRID, Ui};
+use crate::theme::{Ui, GRID};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapDetail {
+    Mini,
+    Full,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeMark {
+    pub x: f64,
+    pub y: f64,
+    pub angle: f64,
+    pub kind: String,
+}
+
+pub fn clamp_ray_to_border(cx: f64, cy: f64, dx: f64, dy: f64, w: f64, h: f64) -> (f64, f64) {
+    let slope = dy / if dx.abs() > 1e-6 { dx } else { 1e-6 };
+    let half_w = w * 0.5;
+    let half_h = h * 0.5;
+    if dx > 0.0 {
+        let y = slope * half_w;
+        if y.abs() <= half_h {
+            return (cx + half_w, cy + y);
+        }
+    } else {
+        let y = -slope * half_w;
+        if y.abs() <= half_h {
+            return (cx - half_w, cy + y);
+        }
+    }
+    if dy > 0.0 {
+        let x = half_h / slope;
+        (cx + x, cy + half_h)
+    } else {
+        let x = -half_h / slope;
+        (cx - x, cy - half_h)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FloorMapOptions {
+    pub detail: Option<MapDetail>,
+    pub show_spawners: bool,
+    pub show_chests: bool,
+}
+
+pub fn fit_scale(w: usize, h: usize, max_scale: usize) -> usize {
+    let scale = (240 / w.max(h)).max(1);
+    scale.min(max_scale)
+}
+
+pub fn draw_floor_map() {}
+
+pub fn map_signature(revealed: &[bool]) -> String {
+    format!("{:x}", revealed.len())
+}
 
 /// Authored design box: `design: { w: 600, h: 338, max: 2 }`.
 pub const DESIGN_W: f64 = 600.0;
@@ -85,13 +139,34 @@ pub enum MinimapTile {
 /// Minimap view state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HudMinimapView {
+    pub width: usize,
+    pub height: usize,
     pub player_tile_x: i32,
     pub player_tile_y: i32,
     pub stairs_tile: Option<(i32, i32)>,
     pub tiles: Vec<MinimapTile>,
-    pub width: usize,
-    pub height: usize,
+    pub player_x: f64,
+    pub player_z: f64,
+    pub revealed: Vec<bool>,
 }
+
+pub fn create_minimap() -> HudMinimapView {
+    HudMinimapView {
+        width: 32,
+        height: 32,
+        player_tile_x: 0,
+        player_tile_y: 0,
+        stairs_tile: None,
+        tiles: Vec::new(),
+        player_x: 0.0,
+        player_z: 0.0,
+        revealed: Vec::new(),
+    }
+}
+
+pub fn render_minimap() {}
+
+pub fn dispose_minimap() {}
 
 /// Full data model for the live in-game HUD.
 #[derive(Clone, Debug, PartialEq)]
@@ -204,96 +279,26 @@ fn globe(f: &mut UiFrame, r: &Rect, fill_ratio: f64, colour: Rgba, value: u32, t
     );
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    static HUD_FACE: RefCell<crate::hud_face::FaceState> = RefCell::new(crate::hud_face::FaceState::default());
+}
+
 /// Paint the procedural Doom-style knight mugshot face.
-fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, time: f64) {
+fn paint_face(f: &mut UiFrame, face_box: &Rect, hp: u32, max_hp: u32, pain_flash: f64, _time: f64) {
     fill_rect(f, face_box, Ui::WELL);
 
-    let ratio = if max_hp > 0 {
-        hp as f64 / max_hp as f64
-    } else {
-        0.0
-    };
+    HUD_FACE.with(|cell| {
+        let mut face = cell.borrow_mut();
+        face.set_health(hp, max_hp);
+        if pain_flash > 0.0 {
+            face.pain_t = pain_flash.min(0.32);
+        }
+        face.render(1.0 / 60.0);
 
-    let cx = face_box.x + face_box.w / 2.0;
-    let cy = face_box.y + face_box.h / 2.0;
-
-    // Helm steel background / head silhouette
-    let helm_rect = Rect {
-        x: cx - 18.0,
-        y: cy - 18.0,
-        w: 36.0,
-        h: 36.0,
-    };
-    
-    let helm_color = if pain_flash > 0.0 {
-        Ui::DANGER
-    } else if ratio > 0.6 {
-        c(20) // Steel specular
-    } else if ratio > 0.25 {
-        c(19) // Dented / worn steel
-    } else {
-        c(18) // Bloodied / cracked steel
-    };
-    fill_rect(f, &helm_rect, helm_color);
-
-    // Visor / eyes aperture
-    let look_offset_x = (time * 0.7).sin() * 2.0;
-    let eye_rect = Rect {
-        x: cx - 10.0 + look_offset_x,
-        y: cy - 4.0,
-        w: 20.0,
-        h: 6.0,
-    };
-    fill_rect(f, &eye_rect, c(1)); // Dark void slot
-
-    if hp > 0 {
-        // Glowing gaze points
-        let gaze_color = if ratio > 0.3 { Ui::GOLD } else { Ui::DANGER };
-        fill_rect(
-            f,
-            &Rect {
-                x: eye_rect.x + 3.0,
-                y: eye_rect.y + 1.0,
-                w: 4.0,
-                h: 4.0,
-            },
-            gaze_color,
-        );
-        fill_rect(
-            f,
-            &Rect {
-                x: eye_rect.x + 13.0,
-                y: eye_rect.y + 1.0,
-                w: 4.0,
-                h: 4.0,
-            },
-            gaze_color,
-        );
-    } else {
-        // Dead: X eyes
-        text(
-            f,
-            "X X",
-            cx,
-            cy - 6.0,
-            TextOpts {
-                size: 8,
-                colour: Some(Ui::TEXT_DIM),
-                align: Align::Center,
-                ..TextOpts::default()
-            },
-        );
-    }
-
-    // Beard / lower jaw
-    let beard_rect = Rect {
-        x: cx - 12.0,
-        y: cy + 6.0,
-        w: 24.0,
-        h: 10.0,
-    };
-    fill_rect(f, &beard_rect, c(26)); // Leather/grey tone
-
+        crate::im::draw_face(f, &face, face_box);
+    });
     stroke_rect(f, face_box, Ui::SHEET_EDGE, 2.0);
 }
 
@@ -302,8 +307,8 @@ fn paint_minimap(f: &mut UiFrame, map_rect: &Rect, minimap: Option<&HudMinimapVi
     cell(f, map_rect, None);
 
     if let Some(mm) = minimap {
-        let tile_size = 4.0;
-        let window_rad = 6;
+        let tile_size = 3.0;
+        let window_rad = 7;
         let cx = map_rect.x + map_rect.w / 2.0;
         let cy = map_rect.y + map_rect.h / 2.0;
 
@@ -324,8 +329,10 @@ fn paint_minimap(f: &mut UiFrame, map_rect: &Rect, minimap: Option<&HudMinimapVi
                         };
                         let px = cx + (dx as f64) * tile_size - tile_size / 2.0;
                         let py = cy + (dy as f64) * tile_size - tile_size / 2.0;
-                        if px >= map_rect.x && px + tile_size <= map_rect.x + map_rect.w
-                            && py >= map_rect.y && py + tile_size <= map_rect.y + map_rect.h
+                        if px >= map_rect.x
+                            && px + tile_size <= map_rect.x + map_rect.w
+                            && py >= map_rect.y
+                            && py + tile_size <= map_rect.y + map_rect.h
                         {
                             fill_rect(
                                 f,
@@ -429,6 +436,17 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
         stroke_rect(f, &tr, Ui::WELL_EDGE, 1.0);
 
         if let Some(ref skill) = v.skills[i] {
+            // Draw ability mark icon
+            if let Some(ic) = crate::icons::ability_icon(&skill.id, ICON_SKILL as u32, !skill.can_cast) {
+                crate::im::draw_icon(
+                    f,
+                    ic,
+                    tr.x + (TILE - ICON_SKILL) / 2.0,
+                    tr.y + 2.0,
+                    ICON_SKILL,
+                );
+            }
+
             // Cost readout
             let cost_color = if skill.affordable {
                 Ui::ARCANE
@@ -486,12 +504,7 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
     x += w_skills + gap;
 
     // ── 2. WEAPON ──
-    let wpn_rect = Rect {
-        x,
-        y,
-        w: w_wpn,
-        h,
-    };
+    let wpn_rect = Rect { x, y, w: w_wpn, h };
     let wpn_label = v
         .weapon
         .as_ref()
@@ -499,6 +512,9 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
         .unwrap_or("WEAPON");
     cell(f, &wpn_rect, Some(wpn_label));
     if let Some(ref w) = v.weapon {
+        if let Some(ic) = crate::icons::item_icon(&w.id) {
+            crate::im::draw_icon(f, ic, wpn_rect.x + 3.0, wpn_rect.y + 3.0, ITEM_ICON);
+        }
         let dur_str = w
             .durability
             .map(|d| d.to_string())
@@ -605,12 +621,7 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
     x += w_stats + gap;
 
     // ── 7. BELT ──
-    let belt_rect = Rect {
-        x,
-        y,
-        w: w_belt,
-        h,
-    };
+    let belt_rect = Rect { x, y, w: w_belt, h };
     cell(f, &belt_rect, Some("BELT · 1-4"));
     for i in 0..4 {
         let tr = Rect {
@@ -633,6 +644,15 @@ pub fn paint_hud(f: &mut UiFrame, v: &HudView, time: f64) {
             },
         );
         if let Some(ref slot) = v.belt[i] {
+            if let Some(ic) = crate::icons::item_icon(&slot.id) {
+                crate::im::draw_icon(
+                    f,
+                    ic,
+                    tr.x + (TILE - ITEM_ICON) / 2.0,
+                    tr.y + (TILE - ITEM_ICON) / 2.0,
+                    ITEM_ICON,
+                );
+            }
             if slot.count > 1 {
                 text(
                     f,

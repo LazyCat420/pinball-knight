@@ -1,7 +1,9 @@
 // Parity test suite for Trail Ribbon VFX particle pool.
 // Replicates legacy/src/game/pinball-knight/fx/pools/trail-ribbon.ts
 
-use pk_core::marble::trail_ribbon::{TrailRibbon, LASER_TRAIL_LIFE, TRAIL_CAPACITY, TRAIL_LIFE, TRAIL_PUSH_RATE};
+use pk_core::marble::trail_ribbon::{
+    TrailRibbon, LASER_TRAIL_LIFE, TRAIL_CAPACITY, TRAIL_LIFE, TRAIL_PUSH_RATE,
+};
 
 #[test]
 fn trail_ribbon_capacity_exceeds_push_rate_and_life() {

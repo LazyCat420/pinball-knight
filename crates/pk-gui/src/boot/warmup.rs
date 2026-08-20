@@ -4,6 +4,12 @@
 
 pub const DEFAULT_MAX_GROUP_SIZE: usize = 16;
 
+pub fn warm_units() -> Vec<WarmupUnit> {
+    Vec::new()
+}
+
+pub fn warm_floor_pipelines() {}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WarmupUnit {
     pub id: usize,

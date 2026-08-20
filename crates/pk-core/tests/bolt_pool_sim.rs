@@ -17,15 +17,10 @@ fn spawn_creates_dual_strands_with_endpoint_tapering() {
     let mut pool = BoltPool::new();
     let mut rng_seed = 0.5f32;
 
-    pool.spawn(
-        [10.0, 0.0, 5.0],
-        [0.0, 1.0],
-        20.0,
-        || {
-            rng_seed = (rng_seed + 0.1) % 1.0;
-            rng_seed
-        },
-    );
+    pool.spawn([10.0, 0.0, 5.0], [0.0, 1.0], 20.0, || {
+        rng_seed = (rng_seed + 0.1) % 1.0;
+        rng_seed
+    });
 
     assert_eq!(pool.active_count(), 2);
     assert_eq!(pool.strands[0].color_hex, BOLT_CORE_HEX);

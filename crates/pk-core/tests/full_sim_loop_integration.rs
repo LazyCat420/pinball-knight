@@ -62,9 +62,18 @@ fn melee_attack_damages_staggers_and_kills_monsters() {
     simulate(&mut sim, &input);
 
     // Check monster took damage and entered stagger
-    assert!(sim.monsters[0].hp < initial_hp, "Monster should take damage");
-    assert!(sim.monsters[0].stagger_t > 0.0, "Monster should be staggered");
-    assert!(sim.monsters[0].kbz > 0.0, "Monster should have knockback vector");
+    assert!(
+        sim.monsters[0].hp < initial_hp,
+        "Monster should take damage"
+    );
+    assert!(
+        sim.monsters[0].stagger_t > 0.0,
+        "Monster should be staggered"
+    );
+    assert!(
+        sim.monsters[0].kbz > 0.0,
+        "Monster should have knockback vector"
+    );
 
     // Attack repeatedly until dead
     for _ in 0..200 {

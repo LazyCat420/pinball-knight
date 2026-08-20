@@ -107,7 +107,7 @@ pub const PERIMETER_RULE_MIN: f64 = 0.34;
 const CARDINALS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
 /// A tile position, the twin of the legacy `TilePos`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct TilePos {
     pub i: i32,
     pub j: i32,

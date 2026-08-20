@@ -1,6 +1,6 @@
 //! Loot rewards, gold multipliers, and corpse decay.
 //!
-//! PORTS: `entities/combat.ts`, `constants/enemies.ts`
+//! PORTS: `constants/enemies.ts`
 
 use crate::combo::combo_kill_gold;
 use crate::enemies::CORPSE_BUDGET;

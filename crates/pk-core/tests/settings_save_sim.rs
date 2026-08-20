@@ -44,6 +44,7 @@ fn settings_json_roundtrip_and_missing_field_fallback() {
         camera_zoom: 1.25,
         speedrun: true,
         haul_reveal: true,
+        reader_policy: pk_core::settings_save::ReaderPolicy::Never,
     };
 
     let json = original.serialize_json().expect("Serialize failed");

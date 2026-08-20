@@ -9,7 +9,6 @@
 // material -> crystalshard + golemcore; crit -> goblintooth, flailerjaw,
 // bloodpact; pierce -> venomgland + webspinnersilk; lifesteal ->
 // ectoplasmcore, grimscythe, bloodpact; pinball -> runnersinew + timeripper.
-//
 // PORTS: `cards.ts`
 
 pub static CARDS: [CardDef; 25] = [

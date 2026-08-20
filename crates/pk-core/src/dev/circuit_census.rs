@@ -107,8 +107,7 @@ pub fn census_circuits(level: u32, seeds: &[u32]) -> CircuitReport {
     }
 
     let floors = per_floor.len();
-    let feed_rate_mean =
-        per_floor.iter().map(|f| f.feed_rate).sum::<f64>() / floors as f64;
+    let feed_rate_mean = per_floor.iter().map(|f| f.feed_rate).sum::<f64>() / floors as f64;
     let feed_rate_min = per_floor
         .iter()
         .map(|f| f.feed_rate)
@@ -118,11 +117,7 @@ pub fn census_circuits(level: u32, seeds: &[u32]) -> CircuitReport {
         .map(|f| f.longest_chain as f64)
         .sum::<f64>()
         / floors as f64;
-    let longest_chain_max = per_floor
-        .iter()
-        .map(|f| f.longest_chain)
-        .max()
-        .unwrap_or(0);
+    let longest_chain_max = per_floor.iter().map(|f| f.longest_chain).max().unwrap_or(0);
     let orphan_mean = per_floor
         .iter()
         .map(|f| f.orphan_launchers as f64)

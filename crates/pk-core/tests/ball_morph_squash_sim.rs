@@ -12,7 +12,10 @@ fn squash_scales_are_strictly_area_preserving() {
     assert!(sx != 1.0 || sy != 1.0);
     // Area preservation assertion: sx * sy == 1.0
     let area = sx * sy;
-    assert!((area - 1.0).abs() < 1e-4, "Squash and stretch must preserve apparent area, got {area}");
+    assert!(
+        (area - 1.0).abs() < 1e-4,
+        "Squash and stretch must preserve apparent area, got {area}"
+    );
 }
 
 #[test]

@@ -42,7 +42,11 @@ pub fn sample_goo(u: f64, v: f64, time: f64, opts: GooOpts, is_tar: bool) -> (u8
     let r = (px * px + py * py).sqrt();
 
     // Heavy fluid domain warp
-    let (wx, wy) = warp(px + time * 0.18 * opts.flow, py + time * 0.18 * opts.flow, 0.16);
+    let (wx, wy) = warp(
+        px + time * 0.18 * opts.flow,
+        py + time * 0.18 * opts.flow,
+        0.16,
+    );
 
     // Thickness varies smoothly via noise
     let thick = fbm01(wx * 2.1, wy * 2.1 + time * 0.22 * opts.flow, 3);

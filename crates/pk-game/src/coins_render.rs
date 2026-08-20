@@ -3,9 +3,7 @@
 //! PORTS: `economy/coins.ts`, `render/cel-painter.ts`
 
 use bevy::prelude::*;
-use pk_core::economy::coins::{
-    coin_count_for, split_coin_value, update_coins_physics, CoinEntity,
-};
+use pk_core::economy::coins::{coin_count_for, split_coin_value, update_coins_physics, CoinEntity};
 
 #[allow(dead_code)]
 #[derive(Component)]
@@ -45,7 +43,8 @@ pub fn spawn_coin_burst(
 
         let id = pool.next_id;
         pool.next_id += 1;
-        pool.coins.push(CoinEntity::new(id, origin_x, origin_z, val, vx, vz));
+        pool.coins
+            .push(CoinEntity::new(id, origin_x, origin_z, val, vx, vz));
     }
 }
 

@@ -1,12 +1,120 @@
-//! Monster corpse loot tables and dungeon chest reward generation.
+//! Loot drops — what a corpse leaves behind.
+//!
+//! Port of `legacy/src/game/pinball-knight/economy/loot.ts` (164 lines).
 //!
 //! PORTS: `economy/loot.ts`
 
-use crate::items::WeaponId;
-use crate::reagents::ReagentId;
+use crate::bestiary::family_affinity;
+use crate::reagents::{drops_for_kind, ReagentId};
 use crate::rng::Mulberry32;
+use crate::state::{EnemyKind, GroundItem, HaulEntry, SimState};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Drop a carried weapon on the floor.
+pub fn drop_weapon(sim: &mut SimState, weapon_id: &str, x: f64, z: f64) {
+    sim.ground_items.push(GroundItem {
+        id: weapon_id.to_string(),
+        kind: "weapon".to_string(),
+        x,
+        z,
+        tier: 0,
+        life: 60.0,
+    });
+}
+
+/// A kill rolled the dice — maybe spawn a modifier card on the floor.
+pub fn drop_card_maybe(
+    sim: &mut SimState,
+    x: f64,
+    z: f64,
+    boss: bool,
+    kind: EnemyKind,
+    drop_mult: f64,
+    rng: &mut Mulberry32,
+) {
+    let kills = sim.kills as usize;
+    let _affinity = family_affinity(kills);
+    let card_chance = if boss { 1.0 } else { 0.01 * drop_mult };
+
+    if rng.next_f64() < card_chance {
+        // Pick an affinity or generic card
+        let card_id = match kind {
+            EnemyKind::Spider => "spider_silk",
+            EnemyKind::Zombie => "zombie_stride",
+            EnemyKind::Ghost => "ghost_drift",
+            EnemyKind::Bat => "bat_wing",
+            EnemyKind::Brute => "brute_slam",
+            _ => "iron_edge",
+        };
+        spawn_card_drop(sim, x, z, card_id);
+    }
+}
+
+/// Put a SPECIFIC card on the floor.
+pub fn spawn_card_drop(sim: &mut SimState, x: f64, z: f64, card_id: &str) {
+    sim.ground_items.push(GroundItem {
+        id: card_id.to_string(),
+        kind: "card".to_string(),
+        x,
+        z,
+        tier: 0,
+        life: 60.0,
+    });
+}
+
+/// Credit a reagent straight into the run pouch.
+pub fn credit_reagent(sim: &mut SimState, id: ReagentId) {
+    sim.haul.push(HaulEntry {
+        id: id.as_str().to_string(),
+        count: 1,
+        kind: "reagent".to_string(),
+        tier: 0,
+    });
+}
+
+/// Spawn a reagent mote on the floor.
+pub fn spawn_reagent_mote(sim: &mut SimState, x: f64, z: f64, id: ReagentId) {
+    sim.ground_items.push(GroundItem {
+        id: id.as_str().to_string(),
+        kind: "reagent".to_string(),
+        x,
+        z,
+        tier: 0,
+        life: 60.0,
+    });
+}
+
+/// Roll a kill's themed reagent drops and scatter them.
+pub fn drop_reagents_maybe(
+    sim: &mut SimState,
+    x: f64,
+    z: f64,
+    kind: EnemyKind,
+    boss: bool,
+    drop_mult: f64,
+    rng: &mut Mulberry32,
+) {
+    let drops = drops_for_kind(kind.as_str());
+    for entry in drops {
+        let chance = if boss { 1.0 } else { entry.chance * drop_mult };
+        if rng.next_f64() < chance {
+            spawn_reagent_mote(sim, x, z, entry.id);
+        }
+    }
+}
+
+/// Drop a marble material on the floor.
+pub fn spawn_material_drop(sim: &mut SimState, x: f64, z: f64, material: &str) {
+    sim.ground_items.push(GroundItem {
+        id: material.to_string(),
+        kind: "material".to_string(),
+        x,
+        z,
+        tier: 0,
+        life: 60.0,
+    });
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChestTier {
     Wood,
     Iron,
@@ -17,7 +125,7 @@ pub enum ChestTier {
 pub struct MonsterLootDrop {
     pub gold: i64,
     pub reagent: Option<ReagentId>,
-    pub weapon: Option<WeaponId>,
+    pub weapon: Option<crate::items::WeaponId>,
     pub card_id: Option<String>,
 }
 
@@ -25,7 +133,7 @@ pub struct MonsterLootDrop {
 pub struct ChestReward {
     pub gold: i64,
     pub potion: Option<String>,
-    pub weapon: Option<WeaponId>,
+    pub weapon: Option<crate::items::WeaponId>,
     pub card_id: Option<String>,
 }
 
@@ -40,7 +148,7 @@ pub fn roll_monster_loot(
         return MonsterLootDrop {
             gold: 150 + (rng.next_f64() * 100.0) as i64 + (floor as i64 * 25),
             reagent: Some(ReagentId::Grimbone),
-            weapon: Some(WeaponId::Greatsword),
+            weapon: Some(crate::items::WeaponId::Greatsword),
             card_id: Some("boss_king".to_string()),
         };
     }
@@ -58,29 +166,8 @@ pub fn roll_monster_loot(
     };
 
     let gold = base_gold + (rng.next_f64() * max_bonus as f64) as i64 + (floor as i64 * 2);
-
     let reagent = if rng.next_f64() < reagent_chance {
         Some(reagent_id)
-    } else {
-        None
-    };
-
-    let weapon = if rng.next_f64() < 0.08 {
-        let weapons = [
-            WeaponId::Sword,
-            WeaponId::Stick,
-            WeaponId::Mace,
-            WeaponId::Bow,
-            WeaponId::Gun,
-        ];
-        let idx = (rng.next_f64() * weapons.len() as f64) as usize % weapons.len();
-        Some(weapons[idx])
-    } else {
-        None
-    };
-
-    let card_id = if rng.next_f64() < 0.15 {
-        Some(format!("{}_card", kind_name))
     } else {
         None
     };
@@ -88,43 +175,31 @@ pub fn roll_monster_loot(
     MonsterLootDrop {
         gold,
         reagent,
-        weapon,
-        card_id,
+        weapon: None,
+        card_id: None,
     }
 }
 
-/// Rolls rewards when opening a dungeon chest.
+/// Rolls chest rewards based on tier and dungeon floor.
 pub fn roll_chest_loot(tier: ChestTier, floor: u32, rng: &mut Mulberry32) -> ChestReward {
     match tier {
         ChestTier::Wood => ChestReward {
-            gold: 15 + (rng.next_f64() * 15.0) as i64 + (floor as i64 * 3),
-            potion: if rng.next_f64() < 0.5 {
-                Some("health_potion".to_string())
-            } else {
-                None
-            },
+            gold: 20 + (rng.next_f64() * 15.0) as i64 + (floor as i64 * 5),
+            potion: None,
             weapon: None,
             card_id: None,
         },
         ChestTier::Iron => ChestReward {
-            gold: 40 + (rng.next_f64() * 30.0) as i64 + (floor as i64 * 8),
-            potion: Some("mana_flask".to_string()),
-            weapon: if rng.next_f64() < 0.4 {
-                Some(WeaponId::Mace)
-            } else {
-                None
-            },
-            card_id: if rng.next_f64() < 0.3 {
-                Some("iron_guard".to_string())
-            } else {
-                None
-            },
+            gold: 60 + (rng.next_f64() * 40.0) as i64 + (floor as i64 * 10),
+            potion: Some("health_potion".to_string()),
+            weapon: Some(crate::items::WeaponId::Sword),
+            card_id: None,
         },
         ChestTier::Gold => ChestReward {
-            gold: 120 + (rng.next_f64() * 80.0) as i64 + (floor as i64 * 20),
-            potion: Some("elixir_strength".to_string()),
-            weapon: Some(WeaponId::Warhammer),
-            card_id: Some("golden_aegis".to_string()),
+            gold: 150 + (rng.next_f64() * 80.0) as i64 + (floor as i64 * 20),
+            potion: Some("elixir_of_haste".to_string()),
+            weapon: Some(crate::items::WeaponId::Greatsword),
+            card_id: Some("gold_tier_power".to_string()),
         },
     }
 }

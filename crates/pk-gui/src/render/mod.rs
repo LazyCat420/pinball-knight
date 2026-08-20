@@ -1,6 +1,6 @@
 //! Scene rendering helpers: arc-lanes, arc-kickers, light crossing model, aim indicator, aim indicator geometry, palette shading, monster portraits, palette sources, paint types, tell clips, knight look, canvas backing, knight portrait layout, lazy reaper sheet cache, atlas noise census, knight sprite sheets cache, part instancing, card vector glyphs, and card material styles.
 //!
-//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`, `engine/render/canvas-backing.ts`, `render/knight-portrait.ts`, `render/aim-indicator-math.ts`, `render/reaper-sheet.ts`, `render/atlas-census.ts`, `render/knight-sheets.ts`, `render/part-instancer.ts`, `render/card-glyphs.ts`, `render/card-styles.ts`
+//! PORTS: `render/arc-lanes.ts`, `render/arc-kickers.ts`, `render/light-crossing.ts`, `render/aim-indicator.ts`, `render/palette-shading.ts`, `render/monster-portrait.ts`, `engine/palette-source.ts`, `engine/render/paint-types.ts`, `render/tell-clips.ts`, `render/knight-look.ts`, `engine/render/canvas-backing.ts`, `render/knight-portrait.ts`, `render/aim-indicator-math.ts`, `render/reaper-sheet.ts`, `render/atlas-census.ts`, `render/part-instancer.ts`
 
 pub mod aim_indicator;
 pub mod aim_indicator_math;

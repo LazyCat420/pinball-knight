@@ -24,16 +24,16 @@ fn floor_one_death_with_zero_kills_scores_base_floor_points() {
 #[test]
 fn scoring_evaluates_all_tiebreaker_components() {
     let stats = RunStats {
-        deepest_floor: 4,     // 4000
-        best_combo: 10,       // 500
-        kills: 20,            // 500
-        gold: 150,            // 150
+        deepest_floor: 4, // 4000
+        best_combo: 10,   // 500
+        kills: 20,        // 500
+        gold: 150,        // 150
         duration_s: 180.0,
-        named_shots: 2,       // 200
-        orbit_laps: 3,        // 180
-        jackpots: 1,          // 80
-        best_flow: 0.5,       // 150 (0.5 * 300)
-        flawless_floors: 1,   // 200
+        named_shots: 2,     // 200
+        orbit_laps: 3,      // 180
+        jackpots: 1,        // 80
+        best_flow: 0.5,     // 150 (0.5 * 300)
+        flawless_floors: 1, // 200
     };
 
     // 4000 + 500 + 500 + 150 + 200 + 180 + 80 + 150 + 200 = 5960

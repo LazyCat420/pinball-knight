@@ -1,50 +1,63 @@
-// Parity test for Flow Loops and Directional Raycasts.
-// Replicates legacy/src/game/pinball-knight/maze/flow-loops.ts, flow-loops.test.ts
+// Simulation test suite for Flow Loops detection and breaking.
+// Replicates legacy/src/game/pinball-knight/maze/flow-loops.ts
 
-use pk_core::grid::{set_tile, Grid, T_FLOOR};
-use pk_core::maze::flow_loops::{exit_ray, summarize_flow_loops, FlowPart};
+use pk_core::grid::{Grid, T_FLOOR};
+use pk_core::maze::flow_loops::{
+    break_flow_loops, exit_ray, find_flow_cycles, successors_of, FlowPart,
+};
 
-#[test]
-fn exit_ray_traces_open_corridor_and_stops_at_wall() {
-    let mut g = Grid::solid(15, 15);
-    // Create a 5-tile corridor from (5, 5) to (10, 5)
-    for i in 5..=10 {
-        set_tile(&mut g, i, 5, T_FLOOR);
+fn make_loop_grid() -> Grid {
+    let mut g = Grid::solid(10, 10);
+    for j in 1..9 {
+        for i in 1..9 {
+            g.t[(j * 10 + i) as usize] = T_FLOOR;
+        }
     }
-
-    // Facing East (+X) from (5, 5)
-    let ray = exit_ray(&g, (5, 5), (1.0, 0.0), 10);
-    assert_eq!(ray.len(), 5);
-    assert_eq!(ray[0], (6, 5));
-    assert_eq!(ray[4], (10, 5));
+    g
 }
 
 #[test]
-fn summarize_flow_loops_classifies_open_and_blocked_parts() {
-    let mut g = Grid::solid(15, 15);
-    for j in 1..14 {
-        for i in 1..14 {
-            set_tile(&mut g, i, j, T_FLOOR);
-        }
-    }
+fn exit_ray_resolves_second_leg_for_boostcorner() {
+    let corner = FlowPart {
+        kind: "boostcorner".to_string(),
+        dir_i: 1,
+        dir_j: 0,
+        dir2_i: 0,
+        dir2_j: 1,
+        ..Default::default()
+    };
+    assert_eq!(exit_ray(&corner), (0, 1));
+}
 
-    let parts = vec![
-        // Open launcher in center facing East
-        FlowPart {
-            kind: "launcher".to_string(),
-            pos: (5, 5),
-            dir: (1.0, 0.0),
-        },
-        // Blocked launcher near edge facing West into wall
-        FlowPart {
-            kind: "launcher".to_string(),
-            pos: (1, 5),
-            dir: (-1.0, 0.0),
-        },
+#[test]
+fn find_flow_cycles_and_break_flow_loops() {
+    let g = make_loop_grid();
+    // 4 boosters pointing into each other in a loop:
+    // (2,2)->(6,2)->(6,6)->(2,6)->(2,2)
+    let mut parts = vec![
+        FlowPart::new(2, 2, "booster", 1, 0),
+        FlowPart::new(6, 2, "booster", 0, 1),
+        FlowPart::new(6, 6, "booster", -1, 0),
+        FlowPart::new(2, 6, "booster", 0, -1),
     ];
 
-    let summary = summarize_flow_loops(&g, &parts, 3);
-    assert_eq!(summary.total_parts, 2);
-    assert_eq!(summary.open_exits, 1);
-    assert_eq!(summary.blocked_exits, 1);
+    let succ = successors_of(&g, &parts);
+    assert_eq!(succ.len(), 4);
+
+    let cycles = find_flow_cycles(&g, &parts);
+    assert_eq!(cycles.len(), 1);
+    assert_eq!(cycles[0].len(), 4);
+
+    let mut phi = vec![100; 100];
+    // Create downhill toward (2, 2)
+    phi[2 * 10 + 2] = 10;
+    phi[6 * 10 + 2] = 20;
+    phi[6 * 10 + 6] = 30;
+    phi[2 * 10 + 6] = 40;
+
+    let broken = break_flow_loops(&g, &phi, &mut parts);
+    assert!(broken > 0);
+
+    let cycles_after = find_flow_cycles(&g, &parts);
+    assert!(cycles_after.is_empty(), "All loops must be broken");
 }

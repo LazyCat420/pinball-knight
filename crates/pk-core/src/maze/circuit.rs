@@ -5,9 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::grid::{at, idx, Grid, T_FLOOR, T_STAIRS};
-use crate::maze::flow_orient::{
-    is_downhill, open_runway, phi_at, TilePos, CARDS, UNREACHED,
-};
+use crate::maze::flow_orient::{is_downhill, open_runway, phi_at, TilePos, CARDS, UNREACHED};
 
 pub const RAY: usize = 12;
 pub const MIN_RUNWAY: usize = 3;
@@ -66,7 +64,10 @@ pub fn find_rings(
                 continue;
             }
             let key = idx(g, ni, nj);
-            if !open(g, ni, nj) || on_artery.contains_key(&key) || used.map_or(false, |u| u.contains(&key)) {
+            if !open(g, ni, nj)
+                || on_artery.contains_key(&key)
+                || used.map_or(false, |u| u.contains(&key))
+            {
                 continue;
             }
             if tag.contains_key(&key) {
@@ -83,7 +84,11 @@ pub fn find_rings(
         pos.insert(idx(g, t.i, t.j), *t);
     }
 
-    let path_back = |key: usize, prev: &HashMap<usize, usize>, pos: &HashMap<usize, TilePos>, on_artery: &HashMap<usize, usize>| -> Vec<TilePos> {
+    let path_back = |key: usize,
+                     prev: &HashMap<usize, usize>,
+                     pos: &HashMap<usize, TilePos>,
+                     on_artery: &HashMap<usize, usize>|
+     -> Vec<TilePos> {
         let mut out = Vec::new();
         let mut cur = Some(key);
         let mut seen = HashSet::new();
@@ -152,9 +157,23 @@ pub fn find_rings(
                 }
                 let detour = path_back(key, &prev, &pos, &on_artery);
                 if my_tag < artery_idx {
-                    close(my_tag, artery_idx, detour, Vec::new(), &mut rings, &mut seen_pair);
+                    close(
+                        my_tag,
+                        artery_idx,
+                        detour,
+                        Vec::new(),
+                        &mut rings,
+                        &mut seen_pair,
+                    );
                 } else {
-                    close(artery_idx, my_tag, Vec::new(), detour, &mut rings, &mut seen_pair);
+                    close(
+                        artery_idx,
+                        my_tag,
+                        Vec::new(),
+                        detour,
+                        &mut rings,
+                        &mut seen_pair,
+                    );
                 }
                 continue;
             }
@@ -222,12 +241,7 @@ fn open_legs(g: &Grid, t: TilePos) -> usize {
         .count()
 }
 
-fn off_ramp_dir(
-    g: &Grid,
-    phi: &[i32],
-    t: TilePos,
-    on_ring: &HashSet<usize>,
-) -> Option<(i32, i32)> {
+fn off_ramp_dir(g: &Grid, phi: &[i32], t: TilePos, on_ring: &HashSet<usize>) -> Option<(i32, i32)> {
     let mut best = None;
     let mut best_run = MIN_RUNWAY.saturating_sub(1);
     for (di, dj) in CARDS {
@@ -549,10 +563,14 @@ fn upgrade_bends(g: &Grid, phi: &[i32], ring: &[TilePos], links: &mut [PinballPa
         if into.0 * out_of.0 + into.1 * out_of.1 != 0 {
             continue;
         }
-        if at(g, p.i - into.0, p.j - into.1) != T_FLOOR && at(g, p.i - into.0, p.j - into.1) != T_STAIRS {
+        if at(g, p.i - into.0, p.j - into.1) != T_FLOOR
+            && at(g, p.i - into.0, p.j - into.1) != T_STAIRS
+        {
             continue;
         }
-        if at(g, p.i + out_of.0, p.j + out_of.1) != T_FLOOR && at(g, p.i + out_of.0, p.j + out_of.1) != T_STAIRS {
+        if at(g, p.i + out_of.0, p.j + out_of.1) != T_FLOOR
+            && at(g, p.i + out_of.0, p.j + out_of.1) != T_STAIRS
+        {
             continue;
         }
 

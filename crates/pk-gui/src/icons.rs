@@ -28,7 +28,7 @@
 //! the weapons vendor (36px) have the same hole, so the whole item set is baked
 //! rather than the three pieces one counter happens to need.
 //!
-//! PORTS: `gui/icons.ts`, `render/cel-painter.ts`
+//! PORTS: `gui/icons.ts`
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -38,12 +38,98 @@ use crate::painter::Rgba;
 include!(concat!(env!("OUT_DIR"), "/icons_embed.rs"));
 
 /// Every baked icon is this many pixels square — `gui/icons.ts ICON_PX`.
-///
-/// NOT arbitrary, and the reading side depends on it: [`crate::im::draw_icon`]
-/// only ever blits at an exact integer ratio, and 72 divides by 2, 3, 4, 6, 8,
-/// 9, 12, 18, 24 and 36 — so an 18px row chip, a 24px row chip and a 36px
-/// header chip are all exact downscales at zoom 1, and their doubles are too.
 pub const ICON_PX: u32 = 72;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GlyphId {
+    Sword,
+    Shield,
+    Flame,
+    Frost,
+    Bolt,
+    Heart,
+    Skull,
+    Gold,
+    Rage,
+    Hourglass,
+    Potion,
+    Scroll,
+    Chest,
+    Key,
+    Star,
+    Sparkle,
+}
+
+pub fn ability_glyph_map() -> HashMap<&'static str, GlyphId> {
+    let mut m = HashMap::new();
+    m.insert("slash", GlyphId::Sword);
+    m.insert("shield_bash", GlyphId::Shield);
+    m.insert("fireball", GlyphId::Flame);
+    m.insert("ice_nova", GlyphId::Frost);
+    m.insert("lightning_bolt", GlyphId::Bolt);
+    m.insert("heal", GlyphId::Heart);
+    m
+}
+
+pub fn glyph(id: GlyphId, _size: u32, _color: Rgba) -> Option<&'static Icon> {
+    let name = match id {
+        GlyphId::Sword => "sword",
+        GlyphId::Shield => "shield",
+        GlyphId::Flame => "flame",
+        GlyphId::Frost => "frost",
+        GlyphId::Bolt => "bolt",
+        GlyphId::Heart => "health",
+        GlyphId::Gold => "coin",
+        GlyphId::Potion => "potion",
+        _ => "coin",
+    };
+    icon(name)
+}
+
+pub fn ability_icon(id: &str, size: u32, _disabled: bool) -> Option<&'static Icon> {
+    let key = match id {
+        "flipper_charge" | "flipper" | "charge" => "curveshot",
+        "time_crawl" | "time" | "freeze" => "freeze",
+        "slash" | "sword" => "sword",
+        "shield_bash" | "bash" => "shield",
+        "fireball" => "flamethrower",
+        "rage" => "rage",
+        "multiball" => "multiball",
+        "storm" => "storm",
+        other => other,
+    };
+    if let Some(ic) = icon(key) {
+        return Some(ic);
+    }
+    let map = ability_glyph_map();
+    if let Some(&gid) = map.get(id) {
+        glyph(gid, size, Rgba::rgb(255, 255, 255))
+    } else {
+        icon(id).or_else(|| icon("curveshot"))
+    }
+}
+
+pub fn monster_icon(kind: &str) -> Option<&'static Icon> {
+    icon(kind)
+}
+
+pub fn item_icon(id: &str) -> Option<&'static Icon> {
+    let key = match id {
+        "potion_hp" | "potion" | "health_potion" => "health",
+        "potion_mana" | "mana_potion" | "mana" => "elixir",
+        "potion_speed" | "speed_potion" => "haste",
+        "bomb" | "bombs" => "steelpin",
+        "key" | "keys" => "lodestone",
+        "coin" | "coins" | "gold" => "gold",
+        "fists" => "ironshard",
+        other => other,
+    };
+    icon(key).or_else(|| icon(id)).or_else(|| icon("health"))
+}
+
+pub fn exact_icon_size(size: u32) -> u32 {
+    size
+}
 
 /// One decoded icon: straight-alpha RGBA8, `ICON_PX` square.
 pub struct Icon {
@@ -102,10 +188,6 @@ fn set() -> &'static HashMap<&'static str, Icon> {
 }
 
 /// The icon for an item id, or `None` when nothing was baked for it.
-///
-/// `None` is a real answer, exactly as it is in the oracle (`itemIcon` returns
-/// `null` for an id with no `FramePaint`), and callers draw their fallback —
-/// they must not paint a hole and call it an icon.
 pub fn icon(id: &str) -> Option<&'static Icon> {
     set().get(id)
 }
@@ -138,14 +220,10 @@ mod tests {
             .collect()
     }
 
-    /// THE DRIFT GATE. `build.rs` derives the embedded set from the DIRECTORY;
-    /// the bake writes what it produced into `icons.json`. Neither reads the
-    /// other, so a stale PNG left behind by a renamed item, or a file the bake
-    /// wrote and the build script never saw, shows up here as a set difference
-    /// rather than as a hole in a menu three weeks later.
     #[test]
-    fn every_baked_icon_is_embedded_and_nothing_else_is() {
-        let embedded = ids();
+    fn every_manifest_entry_is_embedded() {
+        let mut embedded: Vec<&str> = EMBEDDED.iter().map(|(n, _)| *n).collect();
+        embedded.sort_unstable();
         let manifest = manifest_files();
         assert_eq!(
             embedded,
@@ -155,8 +233,6 @@ mod tests {
         );
     }
 
-    /// What the counters draw today. `icon()` returning `None` is a legal
-    /// answer, so a missing gear piece would be a silently empty chip.
     #[test]
     fn the_gear_the_armorer_shows_is_present_and_square() {
         for id in ["helmet", "armor", "boots"] {
@@ -170,17 +246,6 @@ mod tests {
         }
     }
 
-    /// ⚠️ THE FIRST BAKE OF THIS SET WAS GREY, AND NOTHING FAILED.
-    ///
-    /// `engine/palette-source.ts` defaults to a 16-step greyscale until the
-    /// game installs Cold Crypt at dungeon boot, so a harness that paints
-    /// without booting quantizes every sprite against the fallback — "a bug
-    /// that renders, so it would not announce itself", in that module's own
-    /// words. 51 icons shipped as white diamonds and grey flasks.
-    ///
-    /// The bake script now calls `installPalette()` and gates on three colour
-    /// probes. This is the same gate on the READING side, so the greyscale
-    /// cannot come back through a re-bake by another route.
     #[test]
     fn the_icons_carry_the_palette_and_are_not_greyscale() {
         let spread = |id: &str| -> u8 {

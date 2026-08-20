@@ -1,6 +1,8 @@
 //! Boss King Zombie state machine and royal flipper charge mechanics.
 //!
-//! PORTS: `boss.ts`
+//! Subsystem companion to `crates/pk-core/src/boss.rs`.
+//!
+//! PORTS: `constants/enemies.ts`
 
 use super::types::{EnemyKind, LiveMonster};
 use crate::collide::move_circle;
@@ -39,7 +41,11 @@ impl Default for BossKingState {
 pub enum BossKingAction {
     None,
     SpawnMinions(Vec<(EnemyKind, f64, f64)>),
-    FlipperChargeImpact { damage: i32, push_x: f64, push_z: f64 },
+    FlipperChargeImpact {
+        damage: i32,
+        push_x: f64,
+        push_z: f64,
+    },
 }
 
 /// Advances Boss King Zombie combat logic across its 3 phases.
@@ -87,14 +93,28 @@ pub fn step_boss_king(
                 boss.vx = (dx / dist) * boss.speed;
                 boss.vz = (dz / dist) * boss.speed;
             }
-            let res = move_circle(grid, boss.x, boss.z, boss.radius, boss.vx * dt, boss.vz * dt);
+            let res = move_circle(
+                grid,
+                boss.x,
+                boss.z,
+                boss.radius,
+                boss.vx * dt,
+                boss.vz * dt,
+            );
             boss.x = res.x;
             boss.z = res.z;
         }
         KingPhase::Phase2FlipperCharge => {
             if state.charge_t > 0.0 {
                 state.charge_t -= dt;
-                let res = move_circle(grid, boss.x, boss.z, boss.radius, boss.vx * dt, boss.vz * dt);
+                let res = move_circle(
+                    grid,
+                    boss.x,
+                    boss.z,
+                    boss.radius,
+                    boss.vx * dt,
+                    boss.vz * dt,
+                );
                 boss.x = res.x;
                 boss.z = res.z;
 
@@ -122,7 +142,14 @@ pub fn step_boss_king(
                         boss.vx = (dx / dist) * boss.speed;
                         boss.vz = (dz / dist) * boss.speed;
                     }
-                    let res = move_circle(grid, boss.x, boss.z, boss.radius, boss.vx * dt, boss.vz * dt);
+                    let res = move_circle(
+                        grid,
+                        boss.x,
+                        boss.z,
+                        boss.radius,
+                        boss.vx * dt,
+                        boss.vz * dt,
+                    );
                     boss.x = res.x;
                     boss.z = res.z;
                 }
@@ -135,7 +162,14 @@ pub fn step_boss_king(
                 boss.vx = (dx / dist) * enraged_speed;
                 boss.vz = (dz / dist) * enraged_speed;
             }
-            let res = move_circle(grid, boss.x, boss.z, boss.radius, boss.vx * dt, boss.vz * dt);
+            let res = move_circle(
+                grid,
+                boss.x,
+                boss.z,
+                boss.radius,
+                boss.vx * dt,
+                boss.vz * dt,
+            );
             boss.x = res.x;
             boss.z = res.z;
         }

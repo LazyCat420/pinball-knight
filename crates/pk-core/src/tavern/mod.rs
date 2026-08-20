@@ -23,7 +23,7 @@ pub mod warmup;
 
 pub use backend_gate::*;
 pub use build::*;
-pub use camera::*;
+pub use camera::{camera_target, ease_camera};
 pub use core::*;
 pub use entry::*;
 pub use join_board::*;

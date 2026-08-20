@@ -40,9 +40,11 @@ mod fx;
 mod gambler;
 mod gui;
 mod intro;
+mod mat_cache;
 mod maze_art;
 mod overworld;
 mod perf;
+mod pinball_parts;
 mod plunger_render;
 mod post;
 mod real_floor;
@@ -170,6 +172,9 @@ pub struct KnightArt {
 #[derive(Component)]
 pub struct KnightSprite;
 
+#[derive(Component)]
+pub struct KnightMarble;
+
 /// The authored floor's top-left readout. Its own component so a browser gate
 /// can be told which SOURCE is on screen without scraping pixels.
 #[derive(Component)]
@@ -295,15 +300,21 @@ fn main() {
     };
 
     let scene_name = match start {
-        AppState::Intro => "Intro (Title Sequence — press Space/Enter or Click to continue to Tavern)",
+        AppState::Intro => {
+            "Intro (Title Sequence — press Space/Enter or Click to continue to Tavern)"
+        }
         AppState::Tavern => "Tavern Hub (WASD to move, Shift to sprint, Talk to Keepers)",
-        AppState::FloorLoading => "Dungeon Floor (WASD to move, Shift to sprint, Space/Click to interact/attack)",
+        AppState::FloorLoading => {
+            "Dungeon Floor (WASD to move, Shift to sprint, Space/Click to interact/attack)"
+        }
         _ => "Game",
     };
     println!("════════════════════════════════════════════════════════════════════");
     println!(" [Pinball Knight] Bevy Engine running on Vulkan/WebGPU");
     println!(" [Pinball Knight] Initial Scene: {}", scene_name);
-    println!(" [Pinball Knight] Controls: WASD/Arrows (Move), Shift (Sprint), Space/Click (Action)");
+    println!(
+        " [Pinball Knight] Controls: WASD/Arrows (Move), Shift (Sprint), Space/Click (Action)"
+    );
     println!(" [Pinball Knight] Exit: Alt+F4 or close window (Ctrl+C in terminal)");
     println!("════════════════════════════════════════════════════════════════════");
 
@@ -824,7 +835,11 @@ fn decode_sheet(
         SheetClips {
             material,
             idle,
-            run: if run.is_empty() { walk.clone() } else { run.clone() },
+            run: if run.is_empty() {
+                walk.clone()
+            } else {
+                run.clone()
+            },
             roll: if roll.is_empty() {
                 if !run.is_empty() {
                     run
@@ -834,7 +849,11 @@ fn decode_sheet(
             } else {
                 roll
             },
-            attack: if attack.is_empty() { walk.clone() } else { attack },
+            attack: if attack.is_empty() {
+                walk.clone()
+            } else {
+                attack
+            },
             walk,
             aspect,
         },
@@ -971,14 +990,56 @@ fn setup_common(
         &mut materials,
         false,
     );
-    let (brute, _) = decode_sheet(BRUTE_S_PNG, BRUTE_S_JSON, &mut images, &mut materials, false);
+    let (brute, _) = decode_sheet(
+        BRUTE_S_PNG,
+        BRUTE_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
     let (frog, _) = decode_sheet(FROG_S_PNG, FROG_S_JSON, &mut images, &mut materials, false);
-    let (goblin, _) = decode_sheet(GOBLIN_S_PNG, GOBLIN_S_JSON, &mut images, &mut materials, false);
-    let (jester, _) = decode_sheet(JESTER_S_PNG, JESTER_S_JSON, &mut images, &mut materials, false);
-    let (reaper, _) = decode_sheet(REAPER_S_PNG, REAPER_S_JSON, &mut images, &mut materials, false);
-    let (slime, _) = decode_sheet(SLIME_S_PNG, SLIME_S_JSON, &mut images, &mut materials, false);
-    let (spider, _) = decode_sheet(SPIDER_S_PNG, SPIDER_S_JSON, &mut images, &mut materials, false);
-    let (stiltneck, _) = decode_sheet(STILTNECK_S_PNG, STILTNECK_S_JSON, &mut images, &mut materials, false);
+    let (goblin, _) = decode_sheet(
+        GOBLIN_S_PNG,
+        GOBLIN_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (jester, _) = decode_sheet(
+        JESTER_S_PNG,
+        JESTER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (reaper, _) = decode_sheet(
+        REAPER_S_PNG,
+        REAPER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (slime, _) = decode_sheet(
+        SLIME_S_PNG,
+        SLIME_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (spider, _) = decode_sheet(
+        SPIDER_S_PNG,
+        SPIDER_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
+    let (stiltneck, _) = decode_sheet(
+        STILTNECK_S_PNG,
+        STILTNECK_S_JSON,
+        &mut images,
+        &mut materials,
+        false,
+    );
 
     commands.insert_resource(authored_render::MonsterArt {
         zombie,
@@ -1034,7 +1095,11 @@ fn setup_dungeon(
     mut prepared: ResMut<PreparedFloor>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
     mut ambient: ResMut<AmbientLight>,
+    mut gui: gui::Gui,
 ) {
+    gui.layer.clear();
+    *gui.views = gui::GuiViews::default();
+
     // The intro's black hold ends the moment the dungeon exists (legacy
     // setIntroFade(0) right after onDone()).
     for mut bg in &mut fade_q {
@@ -1077,6 +1142,9 @@ fn setup_dungeon(
     // authoritative. See `real_floor`'s header for why that split is worth the
     // copy, and `assert_grid_still_authored` for what enforces it.
     let mut sim = SimState::new(prepared.grid.clone(), spawn, prepared.seed);
+    if prepared.real.is_some() {
+        sim.plunger_armed = false;
+    }
     // ── The parts the floor DRAWS become the parts the ball HITS ──
     //
     // `pk_core::pinball` has been ported, fixture-gated and ticked every frame
@@ -1101,28 +1169,35 @@ fn setup_dungeon(
         sim.bumpers_lit = 0;
         // Populate live monster entities in the core simulation
         for (idx, spawn_tile) in f.plan.spawns.iter().enumerate() {
-            let kind = match idx % 4 {
-                0 => pk_core::monsters::types::EnemyKind::Zombie,
+            let kind = match idx % 9 {
                 1 => pk_core::monsters::types::EnemyKind::Brute,
-                2 => pk_core::monsters::types::EnemyKind::Jester,
-                _ => pk_core::monsters::types::EnemyKind::Goblin,
+                2 => pk_core::monsters::types::EnemyKind::Croaker,
+                3 => pk_core::monsters::types::EnemyKind::Goblin,
+                4 => pk_core::monsters::types::EnemyKind::Jester,
+                5 => pk_core::monsters::types::EnemyKind::Reaper,
+                6 => pk_core::monsters::types::EnemyKind::Slime,
+                7 => pk_core::monsters::types::EnemyKind::Spider,
+                8 => pk_core::monsters::types::EnemyKind::Stiltneck,
+                _ => pk_core::monsters::types::EnemyKind::Zombie,
             };
             let (sx, sz) = (spawn_tile.i as f64 + 0.5, spawn_tile.j as f64 + 0.5);
-            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
-                idx as u32 + 1,
-                kind,
-                sx,
-                sz,
-            ));
+            sim.monsters
+                .push(pk_core::monsters::types::LiveMonster::new(
+                    idx as u32 + 1,
+                    kind,
+                    sx,
+                    sz,
+                ));
         }
         if let Some(frog) = f.plan.frog {
             let (sx, sz) = (frog.i as f64 + 0.5, frog.j as f64 + 0.5);
-            sim.monsters.push(pk_core::monsters::types::LiveMonster::new(
-                999,
-                pk_core::monsters::types::EnemyKind::Croaker,
-                sx,
-                sz,
-            ));
+            sim.monsters
+                .push(pk_core::monsters::types::LiveMonster::new(
+                    999,
+                    pk_core::monsters::types::EnemyKind::Croaker,
+                    sx,
+                    sz,
+                ));
         }
 
         let inert = authored_floor::unhonoured_part_kinds(&f.plan);
@@ -1196,9 +1271,13 @@ fn setup_dungeon(
         }
         commands.insert_resource(anchors);
         // The floor's active live monsters with flow-field AI and directional rigs.
-        for e in
-            authored_render::spawn_live_horde(&mut commands, &mut meshes, &monster_art, f)
-        {
+        for e in authored_render::spawn_live_horde(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &monster_art,
+            &sim.monsters,
+        ) {
             commands.entity(e).insert(DungeonScene);
         }
         commands.spawn((
@@ -1231,6 +1310,26 @@ fn setup_dungeon(
         Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
         MeshMaterial3d(art.s.material.clone()),
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
+        Visibility::Inherited,
+    ));
+
+    // ── 3D Chrome Pinball Marble for ball-form & high-momentum rolling ──
+    let marble_r = 0.25f32;
+    let chrome_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.92, 0.96, 1.0, 1.0),
+        metallic: 0.95,
+        perceptual_roughness: 0.08,
+        reflectance: 0.95,
+        emissive: LinearRgba::new(0.12, 0.28, 0.55, 1.0),
+        ..default()
+    });
+    commands.spawn((
+        DungeonScene,
+        KnightMarble,
+        Mesh3d(meshes.add(Sphere::new(marble_r))),
+        MeshMaterial3d(chrome_mat),
+        Transform::from_xyz(spawn.0 as f32, marble_r, spawn.1 as f32),
+        Visibility::Hidden,
     ));
     commands.insert_resource(Sim(sim));
     // The prepared floor is CONSUMED: it exists to cross one state boundary, and
@@ -1395,7 +1494,10 @@ fn gather_input(
         move_z: z,
         sprint: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
         dodge: keys.pressed(KeyCode::Space) || keys.pressed(KeyCode::KeyK),
-        attack: mouse.pressed(MouseButton::Left) || keys.pressed(KeyCode::KeyJ),
+        attack: mouse.pressed(MouseButton::Left)
+            || keys.pressed(KeyCode::KeyJ)
+            || keys.pressed(KeyCode::KeyF)
+            || keys.pressed(KeyCode::KeyX),
         swap_weapon: keys.just_pressed(KeyCode::Tab)
             || keys.just_pressed(KeyCode::Digit1)
             || keys.just_pressed(KeyCode::Digit2),
@@ -1420,7 +1522,11 @@ pub struct GhostAfterimage {
 fn step_ghost_afterimages(
     mut commands: Commands,
     time: Res<Time>,
-    mut q: Query<(Entity, &mut GhostAfterimage, &MeshMaterial3d<StandardMaterial>)>,
+    mut q: Query<(
+        Entity,
+        &mut GhostAfterimage,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let dt = time.delta_secs();
@@ -1446,26 +1552,31 @@ fn sync_knight(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut spin_tracker: ResMut<ball_anim::MarbleSpinTracker>,
-    mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<KnightSprite>>,
-    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>)>,
+    mut q_sprite: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility), (With<KnightSprite>, Without<KnightMarble>)>,
+    mut q_marble: Query<(&mut Transform, &mut Visibility), (With<KnightMarble>, Without<KnightSprite>)>,
+    cam: Query<&Transform, (With<DungeonCamera>, Without<KnightSprite>, Without<KnightMarble>)>,
+    mut bursts: MessageWriter<fx::SparkBurst>,
+    mut fx: ResMut<fx::Particles>,
     mut ghost_timer: Local<f32>,
     mut last_slash_active: Local<bool>,
     mut last_squash_active: Local<bool>,
 ) {
-    let Ok((mut tf, mut mat)) = q.single_mut() else {
+    let Ok((mut s_tf, mut mat, mut s_vis)) = q_sprite.single_mut() else {
         return;
     };
     let a = time.overstep_fraction() as f64;
     let x = rp.prev.0 + (rp.curr.0 - rp.prev.0) * a;
     let z = rp.prev.1 + (rp.curr.1 - rp.prev.1) * a;
-    tf.translation.x = x as f32;
-    tf.translation.z = z as f32;
+    let quad_h = 1.15f32;
 
     let (sqx, sqy) = sim.0.player.squash_scale();
     let mirror = sim.0.player.facing == Facing::W;
 
     let is_rolling = sim.0.player.is_rolling();
-    let is_ball = sim.0.player.is_ball() || is_rolling;
+    let is_ball = sim.0.player.is_ball()
+        || is_rolling
+        || sim.0.player.iron_t > 0.0
+        || (sim.0.player.mom_speed > 2.4 && sim.0.player.moving);
     let is_attacking = sim.0.player.is_attacking();
 
     // Compute dodge roll progression tau and tuck scale
@@ -1476,8 +1587,49 @@ fn sync_knight(
         (None, 1.0)
     };
 
-    tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx * roll_tuck;
-    tf.scale.y = sqy * roll_tuck;
+    let pos = Vec3::new(x as f32, if is_ball { 0.25 } else { quad_h / 2.0 }, z as f32);
+
+    // Toggle Pinball Marble vs Humanoid Sprite Quad
+    if is_ball {
+        *s_vis = Visibility::Hidden;
+        if let Ok((mut m_tf, mut m_vis)) = q_marble.single_mut() {
+            *m_vis = Visibility::Inherited;
+            m_tf.translation = pos;
+            m_tf.scale = Vec3::new(sqx, sqy, sqx);
+
+            spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
+            if let Ok(cam_tf) = cam.single() {
+                m_tf.rotation = ball_anim::compute_marble_pinball_rotation(
+                    cam_tf.rotation,
+                    sim.0.player.mom_x as f32,
+                    sim.0.player.mom_z as f32,
+                    sim.0.player.mom_speed as f32,
+                    spin_tracker.spin_angle,
+                );
+            }
+        }
+    } else {
+        *s_vis = Visibility::Inherited;
+        if let Ok((_, mut m_vis)) = q_marble.single_mut() {
+            *m_vis = Visibility::Hidden;
+        }
+        s_tf.translation = pos;
+        s_tf.scale.x = (if mirror { -1.0 } else { 1.0 }) * sqx * roll_tuck;
+        s_tf.scale.y = sqy * roll_tuck;
+
+        if let Ok(cam_tf) = cam.single() {
+            if let Some(tau) = roll_tau {
+                s_tf.rotation = ball_anim::compute_dodge_roll_rotation(
+                    cam_tf.rotation,
+                    sim.0.player.roll_dir_x as f32,
+                    sim.0.player.roll_dir_z as f32,
+                    tau,
+                );
+            } else {
+                s_tf.rotation = cam_tf.rotation;
+            }
+        }
+    }
 
     // Spawn ball impact sparks on wall/bumper collision squash
     if sim.0.player.squash_t > 0.0 && !*last_squash_active {
@@ -1486,22 +1638,31 @@ fn sync_knight(
         } else {
             Color::srgb_u8(180, 225, 255)
         };
-        let normal = Vec3::new(sim.0.player.squash_nx as f32, 0.0, sim.0.player.squash_nz as f32);
+        let normal = Vec3::new(
+            sim.0.player.squash_nx as f32,
+            0.0,
+            sim.0.player.squash_nz as f32,
+        );
         ball_anim::spawn_ball_impact_sparks(
             &mut commands,
             &mut meshes,
             &mut materials,
-            tf.translation,
+            pos,
             normal,
             spark_color,
             6,
         );
+        bursts.write(fx::SparkBurst {
+            pos,
+            dir: Vec2::new(normal.x, normal.z),
+            count: 12,
+        });
     }
     *last_squash_active = sim.0.player.squash_t > 0.0;
 
     // Spawn slash trail on attack swing start
     if is_attacking && !*last_slash_active {
-        let (fx, fz) = match sim.0.player.facing {
+        let (fx_dir, fz_dir) = match sim.0.player.facing {
             Facing::S => (0.0, 1.0),
             Facing::N => (0.0, -1.0),
             Facing::E => (1.0, 0.0),
@@ -1512,34 +1673,21 @@ fn sync_knight(
             &mut commands,
             &mut meshes,
             &mut materials,
-            tf.translation,
-            Vec2::new(fx as f32, fz as f32),
+            pos,
+            Vec2::new(fx_dir as f32, fz_dir as f32),
             slash_color,
         );
+        bursts.write(fx::SparkBurst {
+            pos: pos + Vec3::new(fx_dir as f32 * 0.6, 0.4, fz_dir as f32 * 0.6),
+            dir: Vec2::new(fx_dir as f32, fz_dir as f32),
+            count: 6,
+        });
     }
     *last_slash_active = is_attacking;
 
-    // Billboard / Roll Rotation
-    if let Ok(cam_tf) = cam.single() {
-        if let Some(tau) = roll_tau {
-            tf.rotation = ball_anim::compute_dodge_roll_rotation(
-                cam_tf.rotation,
-                sim.0.player.roll_dir_x as f32,
-                sim.0.player.roll_dir_z as f32,
-                tau,
-            );
-        } else if sim.0.player.is_ball() {
-            spin_tracker.update(sim.0.player.mom_speed as f32, time.delta_secs());
-            tf.rotation = ball_anim::compute_marble_pinball_rotation(
-                cam_tf.rotation,
-                sim.0.player.mom_x as f32,
-                sim.0.player.mom_z as f32,
-                sim.0.player.mom_speed as f32,
-                spin_tracker.spin_angle,
-            );
-        } else {
-            tf.rotation = cam_tf.rotation;
-        }
+    // Dust particles when rolling or sprinting
+    if (is_ball || is_rolling || sim.0.player.sprint_charge > 0.6) && fx.rng.unit() < 0.35 {
+        fx.mote(pos.x, 0.2, pos.z);
     }
 
     let clips = match sim.0.player.facing {
@@ -1572,21 +1720,17 @@ fn sync_knight(
             0
         };
         (roll_cells, f)
-    } else if sim.0.player.is_ball() {
-        let rate = 1.0 + (sim.0.player.mom_speed * 0.1) as f32;
-        let f = if !roll_cells.is_empty() {
-            ((sim.0.tick as f32 * 16.0 * rate / 60.0).floor() as usize) % roll_cells.len()
-        } else {
-            0
-        };
-        (roll_cells, f)
     } else if sim.0.player.moving {
         let cells = if sim.0.player.sprint_charge > 0.4 && !clips.run.is_empty() {
             &clips.run
         } else {
             &clips.walk
         };
-        let fps = if sim.0.player.sprint_charge > 0.4 { 12 } else { 8 };
+        let fps = if sim.0.player.sprint_charge > 0.4 {
+            12
+        } else {
+            8
+        };
         let f = if !cells.is_empty() {
             (sim.0.tick * fps / 60) as usize % cells.len()
         } else {
@@ -1619,12 +1763,12 @@ fn sync_knight(
         *ghost_timer += time.delta_secs();
         if *ghost_timer >= 0.055 {
             *ghost_timer = 0.0;
-            let aura_color = if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
-                Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
-            } else {
-                Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
-            };
-            let quad_h = 1.15f32;
+            let aura_color =
+                if sim.0.player.overcharge >= 0.99 || sim.0.player.sprint_charge >= 0.95 {
+                    Color::srgba(1.0, 0.82, 0.2, 0.45) // Gold overcharge aura
+                } else {
+                    Color::srgba(0.2, 0.75, 1.0, 0.35) // Arcane blue speed aura
+                };
             let quad_w = quad_h * art.s.aspect;
             let base_tex = materials
                 .get(&clips.material)
@@ -1650,16 +1794,20 @@ fn sync_knight(
                 },
                 Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
                 MeshMaterial3d(ghost_mat),
-                Transform::from_translation(tf.translation).with_rotation(tf.rotation).with_scale(tf.scale),
+                Transform::from_translation(pos)
+                    .with_rotation(s_tf.rotation)
+                    .with_scale(s_tf.scale),
             ));
         }
     }
 }
 
 fn step_live_monsters(
+    mut commands: Commands,
     time: Res<Time>,
     sim: Res<Sim>,
     mut monster_q: Query<(
+        Entity,
         &mut Transform,
         &mut authored_render::LiveMonster,
         &MeshMaterial3d<StandardMaterial>,
@@ -1667,67 +1815,116 @@ fn step_live_monsters(
     mut materials: ResMut<Assets<StandardMaterial>>,
     monster_art: Res<authored_render::MonsterArt>,
     cam: Query<&Transform, (With<DungeonCamera>, Without<authored_render::LiveMonster>)>,
+    mut coin_pool: ResMut<coins_render::DungeonCoinPool>,
+    mut bursts: MessageWriter<fx::SparkBurst>,
 ) {
-    let dt = (time.delta_secs_f64()).min(0.05);
-    if dt <= 0.0 {
-        return;
-    }
-    let px = sim.0.player.x;
-    let pz = sim.0.player.z;
-    let (pi, pj) = pk_core::grid::world_to_tile(&sim.0.grid, px, pz);
-    let flow_dist = pk_core::flow_field::bfs_distances(&sim.0.grid, pi, pj);
-
-    let mut live_monsters: Vec<pk_core::monsters::LiveMonster> = monster_q
-        .iter()
-        .map(|(_, m, _)| m.monster.clone())
-        .collect();
-
-    pk_core::monsters::update_monsters_horde(&mut live_monsters, &sim.0.grid, px, pz, &flow_dist, dt);
-
     let Ok(cam_tf) = cam.single() else {
         return;
     };
+    let dt = time.delta_secs();
 
-    for (i, (mut tf, mut m, mat_handle)) in monster_q.iter_mut().enumerate() {
-        if i < live_monsters.len() {
-            m.monster = live_monsters[i].clone();
-            tf.translation.x = m.monster.x as f32;
-            tf.translation.z = m.monster.z as f32;
-            tf.rotation = cam_tf.rotation;
+    let sim_map: std::collections::HashMap<u32, &pk_core::monsters::LiveMonster> =
+        sim.0.monsters.iter().map(|m| (m.id, m)).collect();
 
-            let clips = match m.kind_index {
-                1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
-                2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
-                3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
-                4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
-                5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
-                6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
-                7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
-                8 => monster_art.stiltneck.as_ref().unwrap_or(&monster_art.zombie),
-                _ => &monster_art.zombie,
-            };
+    for (entity, mut tf, mut comp, mat_handle) in monster_q.iter_mut() {
+        let Some(sm) = sim_map.get(&comp.id) else {
+            continue;
+        };
 
-            let is_moving = m.monster.vx.abs() > 0.05 || m.monster.vz.abs() > 0.05;
-            let cells = if is_moving {
-                if !clips.walk.is_empty() {
-                    &clips.walk
-                } else {
-                    &clips.idle
-                }
+        // If dead, despawn entity and spawn death gore + coins
+        if !sm.is_alive() {
+            bursts.write(fx::SparkBurst {
+                pos: tf.translation,
+                dir: Vec2::new(0.0, 1.0),
+                count: 16,
+            });
+            coins_render::spawn_coin_burst(
+                &mut coin_pool,
+                sm.x,
+                sm.z,
+                (sm.damage as i64 * 3).max(5),
+                sm.id,
+            );
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        // Damage reaction: took damage
+        if sm.hp < comp.last_hp {
+            let dmg = (comp.last_hp - sm.hp).round() as i32;
+            comp.last_hp = sm.hp;
+            comp.flash_t = 0.12;
+
+            // Spawn floating damage number
+            combat_feedback::spawn_floating_damage(
+                &mut commands,
+                tf.translation,
+                dmg,
+                false,
+                Color::srgb(1.0, 0.3, 0.2),
+            );
+
+            // Spawn hit sparks
+            bursts.write(fx::SparkBurst {
+                pos: tf.translation + Vec3::new(0.0, 0.4, 0.0),
+                dir: Vec2::new(
+                    (sm.kbx as f32).clamp(-1.0, 1.0),
+                    (sm.kbz as f32).clamp(-1.0, 1.0),
+                ),
+                count: 8,
+            });
+        }
+
+        // Hurt flash
+        if comp.flash_t > 0.0 {
+            comp.flash_t -= dt;
+            if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                mat.base_color = Color::srgb(2.5, 2.5, 2.5); // Bright white hurt flash
+            }
+        } else if let Some(mat) = materials.get_mut(&mat_handle.0) {
+            mat.base_color = Color::WHITE;
+        }
+
+        // Update position from sim
+        tf.translation.x = sm.x as f32;
+        tf.translation.z = sm.z as f32;
+        tf.rotation = cam_tf.rotation;
+
+        let clips = match comp.kind_index {
+            1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
+            2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
+            3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
+            4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
+            5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
+            6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
+            7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
+            8 => monster_art
+                .stiltneck
+                .as_ref()
+                .unwrap_or(&monster_art.zombie),
+            _ => &monster_art.zombie,
+        };
+
+        let is_moving = sm.kbx.abs() > 0.05 || sm.kbz.abs() > 0.05 || sm.stagger_t > 0.0;
+        let cells = if is_moving {
+            if !clips.walk.is_empty() {
+                &clips.walk
             } else {
                 &clips.idle
-            };
+            }
+        } else {
+            &clips.idle
+        };
 
-            if !cells.is_empty() {
-                let fps = if is_moving { 8 } else { 4 };
-                let frame = ((sim.0.tick + i as u64 * 7) * fps / 60) as usize % cells.len();
-                let [u, v, uw, vh] = cells[frame];
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    mat.uv_transform = Affine2 {
-                        matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
-                        translation: Vec2::new(u, v),
-                    };
-                }
+        if !cells.is_empty() {
+            let fps = if is_moving { 8 } else { 4 };
+            let frame = ((sim.0.tick + comp.id as u64 * 7) * fps / 60) as usize % cells.len();
+            let [u, v, uw, vh] = cells[frame];
+            if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                mat.uv_transform = Affine2 {
+                    matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
+                    translation: Vec2::new(u, v),
+                };
             }
         }
     }
@@ -1810,6 +2007,9 @@ fn update_dungeon_hud(
         tiles,
         width: w,
         height: h,
+        player_x: p.x,
+        player_z: p.z,
+        revealed: Vec::new(),
     });
 
     let active_w = p.inventory.active_weapon();
@@ -1884,4 +2084,3 @@ fn update_dungeon_hud(
 
     gui::set_view(&mut gui.views.hud, Some(hud_view));
 }
-

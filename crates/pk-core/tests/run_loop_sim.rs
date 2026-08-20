@@ -3,7 +3,9 @@
 
 use pk_core::player::types::PlayerCoreState;
 use pk_core::rng::Mulberry32;
-use pk_core::run::state_machine::{resolve_draft_choice, step_run_state_machine, DungeonRun, RunEvent};
+use pk_core::run::state_machine::{
+    resolve_draft_choice, step_run_state_machine, DungeonRun, RunEvent,
+};
 use pk_core::run::types::{FloorPhase, RunSummary};
 
 #[test]

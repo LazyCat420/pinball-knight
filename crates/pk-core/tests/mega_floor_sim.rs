@@ -6,10 +6,11 @@ use pk_core::dev::mega_floor::{build_mega_floor, MegaFloorOptions};
 #[test]
 fn build_mega_floor_generates_valid_large_layout() {
     let opts = MegaFloorOptions {
-        scale: 2.0,
-        density_mode: "shipped",
-        level: 3,
-        seed: 42,
+        scale: Some(2.0),
+        density: Some("shipped".to_string()),
+        level: Some(3),
+        run_seed: Some(42),
+        ..MegaFloorOptions::default()
     };
 
     let floor = build_mega_floor(&opts).expect("mega floor builds");

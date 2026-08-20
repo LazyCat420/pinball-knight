@@ -4,9 +4,7 @@
 
 use crate::grid::{at, set_surface, Grid, T_FLOOR};
 use crate::rng::Mulberry32;
-use crate::surfaces::{
-    FLOOR_GRIP, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL, FLOOR_STONE,
-};
+use crate::surfaces::{FLOOR_GRIP, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL, FLOOR_STONE};
 
 pub const PATCH_MIN_R: f64 = 2.5;
 pub const PATCH_MAX_R: f64 = 6.0;
@@ -92,8 +90,8 @@ pub fn paint_surfaces(g: &mut Grid, seed: u32, opts: PaintOpts) -> usize {
         return 0;
     }
 
-    let target_patches = ((floor_tiles.len() as f64 * opts.coverage.clamp(0.0, 1.0)) / 18.0)
-        .ceil() as usize;
+    let target_patches =
+        ((floor_tiles.len() as f64 * opts.coverage.clamp(0.0, 1.0)) / 18.0).ceil() as usize;
 
     let is_safe = |i: i32, j: i32| -> bool {
         opts.safe_spots.iter().any(|&(sx, sz)| {
@@ -106,7 +104,8 @@ pub fn paint_surfaces(g: &mut Grid, seed: u32, opts: PaintOpts) -> usize {
     let mut written = 0;
 
     for _ in 0..target_patches {
-        let center = floor_tiles[(rng.next_f64() * floor_tiles.len() as f64) as usize % floor_tiles.len()];
+        let center =
+            floor_tiles[(rng.next_f64() * floor_tiles.len() as f64) as usize % floor_tiles.len()];
         if is_safe(center.0, center.1) {
             continue;
         }

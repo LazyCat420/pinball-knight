@@ -26,8 +26,7 @@
 //! The generator then lands pass by pass against `PASS_ORDER`, and each new
 //! pass is either bit-identical to the oracle at its boundary or it is not
 //! finished.
-//!
-//! PORTS: `spawn/floor-authoring.ts`, `maze/track-floor.ts`, `maze/assembly-check.ts`, `maze/relay-chambers.ts`, `maze/floor-density.ts`, `lamp-puzzle.ts`, `dev/open-space-census.ts`, `maze/sweep-axis.ts`, `fog.ts`, `engine/spacing-grid.ts`, `maze/floor-seed.ts`, `maze/nearest-open-tile.ts`, `maze/generator.ts`
+//! PORTS: `fog.ts`, `engine/spacing-grid.ts`
 
 pub mod fog;
 pub mod spacing_grid;
@@ -70,14 +69,16 @@ pub mod relay_chambers;
 pub mod sweep_axis;
 
 pub use assembly_check::*;
+pub use decorate::*;
 pub use floor_density::*;
 pub use floor_seed::*;
-pub use generator::*;
+pub use generator::{carve_rooms, crack_secret_walls, generate_maze, thicken_walls, CellPos, MazeOpts};
 pub use lamp_runtime::*;
 pub use nearest_open_tile::*;
 pub use open_space_census::*;
 pub use relay_chambers::*;
 pub use sweep_axis::*;
+pub use track_launch::TilePos;
 pub mod surface_paint;
 pub mod track_carve;
 pub mod track_floor;

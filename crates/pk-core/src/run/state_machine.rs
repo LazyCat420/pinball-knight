@@ -1,6 +1,6 @@
 //! Run progression state machine and floor lifecycle.
 //!
-//! PORTS: `state.ts`
+//! PORTS-NOTHING — helper module, full state port lives in pk-core/src/state.rs
 
 use super::draft::{generate_draft_offer, DraftOffer};
 use super::types::{FloorPhase, RunSummary};

@@ -50,20 +50,11 @@ pub fn build_headless_floor(level: u32, run_seed: u32) -> Option<HeadlessFloor> 
 }
 
 /// Builds a finished floor plan with content, walkable count, and active modifier.
-pub fn build_headless_plan(
-    level: u32,
-    run_seed: u32,
-    _bonus_room: bool,
-) -> Option<HeadlessPlan> {
+pub fn build_headless_plan(level: u32, run_seed: u32, _bonus_room: bool) -> Option<HeadlessPlan> {
     let spec = derive_floor_spec(level as i32, run_seed);
     let track = build_track_floor_from_spec(&spec).ok()?;
 
-    let walkable = track
-        .grid
-        .t
-        .iter()
-        .filter(|&&cell| cell == T_FLOOR)
-        .count();
+    let walkable = track.grid.t.iter().filter(|&&cell| cell == T_FLOOR).count();
 
     let ends = track.ends.unwrap_or(TrackEnds {
         start: TilePos { i: 0, j: 0 },

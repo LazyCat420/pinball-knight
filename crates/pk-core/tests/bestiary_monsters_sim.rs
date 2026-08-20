@@ -28,8 +28,14 @@ fn jester_disc_bounces_off_spring_pads_with_boost() {
     disc.bounce_spring_pad(-1.0, 0.0, 12.0);
 
     let boosted_speed = (disc.vx * disc.vx + disc.vz * disc.vz).sqrt();
-    assert!(disc.vx < 0.0, "Disc velocity must be reflected along spring normal");
-    assert!(boosted_speed >= 12.0, "Disc must gain speed from spring pad");
+    assert!(
+        disc.vx < 0.0,
+        "Disc velocity must be reflected along spring normal"
+    );
+    assert!(
+        boosted_speed >= 12.0,
+        "Disc must gain speed from spring pad"
+    );
     assert!(boosted_speed > initial_speed);
 }
 
@@ -84,5 +90,8 @@ fn monster_horde_separation_prevents_overlap() {
     }
 
     let final_dist = (monsters[1].x - monsters[0].x).abs();
-    assert!(final_dist > initial_dist, "Separation forces must push monsters apart");
+    assert!(
+        final_dist > initial_dist,
+        "Separation forces must push monsters apart"
+    );
 }

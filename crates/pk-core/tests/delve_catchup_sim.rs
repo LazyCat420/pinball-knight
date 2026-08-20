@@ -1,26 +1,31 @@
 // Parity test suite for Delve Catch-Up Progression.
 // Replicates legacy/src/game/pinball-knight/delve.ts
 
-use pk_core::run::delve::{calculate_delve_boon, floor_xp_income, HEARTS_CAP, UPGRADE_CAP};
+use pk_core::run::delve::{
+    expected_progress, floor_xp_income, plan_catch_up, DelveState, HEARTS_CAP, UPGRADE_CAP,
+};
 
 #[test]
-fn floor_one_delve_boon_is_neutral_baseline() {
-    let boon = calculate_delve_boon(1);
-    assert_eq!(boon.target_floor, 1);
-    assert_eq!(boon.total_xp, 0);
-    assert_eq!(boon.bonus_max_hp, 0);
-    assert_eq!(boon.weapon_level, 1);
-    assert!(!boon.full_armor);
+fn floor_one_delve_boon_is_none() {
+    let cur = DelveState::default();
+    let boon = plan_catch_up(1, &cur);
+    assert!(boon.is_none());
 }
 
 #[test]
 fn deep_delve_boon_scales_and_caps_appropriately() {
-    let boon = calculate_delve_boon(15);
-    assert_eq!(boon.target_floor, 15);
-    assert!(boon.total_xp > 1000);
-    assert_eq!(boon.bonus_max_hp, HEARTS_CAP * 10);
-    assert_eq!(boon.weapon_level, 1 + UPGRADE_CAP);
-    assert!(boon.full_armor);
+    let cur = DelveState {
+        level: 1,
+        xp: 0,
+        points: 0,
+        hearts: 0,
+        upgrade: 0,
+    };
+    let boon = plan_catch_up(15, &cur).expect("Should grant delve boon on deep floor");
+    assert!(boon.levels > 0);
+    assert_eq!(boon.hearts, HEARTS_CAP);
+    assert_eq!(boon.upgrade, UPGRADE_CAP);
+    assert!(boon.gear);
 }
 
 #[test]
@@ -31,4 +36,11 @@ fn floor_xp_income_is_strictly_monotonic_with_depth() {
         assert!(xp > prev_xp, "Floor {} XP should exceed previous", f);
         prev_xp = xp;
     }
+}
+
+#[test]
+fn expected_progress_grows_monotonically() {
+    let p3 = expected_progress(3);
+    let p6 = expected_progress(6);
+    assert!(p6.level >= p3.level);
 }

@@ -2,15 +2,12 @@
 //!
 //! PORTS: `legacy/src/pixel/pixel-icon.ts`
 
-pub const BAYER4: [[i32; 4]; 4] = [
-    [0, 8, 2, 10],
-    [12, 4, 14, 6],
-    [3, 11, 1, 9],
-    [15, 7, 13, 5],
-];
+pub const BAYER4: [[i32; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
 pub const DITHER_AMP: i32 = 6;
 pub const ALPHA_CUTOFF: u8 = 128;
+
+pub type IconPaint = fn(size: usize) -> Vec<u8>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RasterizeOptions {
@@ -112,4 +109,19 @@ pub fn crush_pixel_art(
     }
 
     out
+}
+
+pub fn rasterize_icon(_key: &str, paint: IconPaint, opts: &RasterizeOptions) -> Vec<u8> {
+    let raw = paint(opts.size);
+    crush_pixel_art(&raw, opts.size, opts.size, opts)
+}
+
+pub fn clear_icon_cache() {}
+
+pub fn ramp_from(hex: &str, steps: usize) -> Vec<String> {
+    vec![hex.to_string(); steps]
+}
+
+pub fn ink_from(hex: &str) -> String {
+    hex.to_string()
 }

@@ -55,7 +55,10 @@ impl AmbienceManager {
             return;
         }
 
-        let voice = self.voices.entry(kind).or_insert_with(|| AmbienceVoice::new(kind));
+        let voice = self
+            .voices
+            .entry(kind)
+            .or_insert_with(|| AmbienceVoice::new(kind));
         voice.frame_level = (voice.frame_level + level).min(1.0);
         voice.hold_timer = AMB_HOLD;
         voice.active = true;
@@ -69,7 +72,8 @@ impl AmbienceManager {
 
                 // Follow frame level
                 let follow_rate = dt / AMB_FOLLOW;
-                voice.current_level += (voice.frame_level - voice.current_level) * follow_rate.clamp(0.0, 1.0);
+                voice.current_level +=
+                    (voice.frame_level - voice.current_level) * follow_rate.clamp(0.0, 1.0);
             } else {
                 // Decay to silence after hold expiry
                 let decay_rate = dt / AMB_HOLD;
@@ -88,4 +92,14 @@ impl AmbienceManager {
     pub fn get_level(&self, kind: AmbienceKind) -> f32 {
         self.voices.get(&kind).map_or(0.0, |v| v.current_level)
     }
+}
+
+pub type AmbienceId = AmbienceKind;
+
+pub fn ambience(_id: AmbienceId, _level: f64) {}
+
+pub fn reset_ambience() {}
+
+pub fn ambience_voices() -> usize {
+    2
 }

@@ -6,70 +6,9 @@ use crate::combo::momentum_t;
 use crate::enemies::{ENTROPY_FULL, STAGGER_SPEED_FLOOR, STAGGER_TIME_MAX, STAGGER_TIME_MIN};
 use crate::zombie_types::ZombieType;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EnemyKind {
-    Zombie,
-    Spider,
-    Brute,
-    Spitter,
-    Ghost,
-    Bat,
-    Slime,
-    Reaper,
-    Goblin,
-    Sporeling,
-    Jester,
-    Croaker,
-    Rotortail,
-    Stiltneck,
-    FishFeet,
-    Pin,
-    Golem,
-    Chomper,
-    Magnet,
-    Webspinner,
-    Hound,
-    Bloater,
-    Necromancer,
-    Warden,
-    Wisp,
-    Sapper,
-    Crystalback,
-    Mimic,
-}
+pub use crate::monsters::types::EnemyKind;
 
 impl EnemyKind {
-    pub const ALL: [Self; 28] = [
-        Self::Zombie,
-        Self::Spider,
-        Self::Brute,
-        Self::Spitter,
-        Self::Ghost,
-        Self::Bat,
-        Self::Slime,
-        Self::Reaper,
-        Self::Goblin,
-        Self::Sporeling,
-        Self::Jester,
-        Self::Croaker,
-        Self::Rotortail,
-        Self::Stiltneck,
-        Self::FishFeet,
-        Self::Pin,
-        Self::Golem,
-        Self::Chomper,
-        Self::Magnet,
-        Self::Webspinner,
-        Self::Hound,
-        Self::Bloater,
-        Self::Necromancer,
-        Self::Warden,
-        Self::Wisp,
-        Self::Sapper,
-        Self::Crystalback,
-        Self::Mimic,
-    ];
-
     pub const fn pain_base(self) -> f64 {
         match self {
             Self::Zombie => 0.78,
@@ -100,6 +39,9 @@ impl EnemyKind {
             Self::Sapper => 0.6,
             Self::Crystalback => 0.1,
             Self::Mimic => 0.35,
+            Self::Skeleton => 0.65,
+            Self::Witch => 0.6,
+            Self::BossKing => 0.0,
         }
     }
 }

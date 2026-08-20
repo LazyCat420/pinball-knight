@@ -1,10 +1,22 @@
 //! BESTIARY — "which monster drops what", derived rather than authored.
 //!
-//! Derived from ENEMY_DROPS (reagents.ts) and ZOMBIE_TYPES (zombie-types.ts).
+//! Port of `legacy/src/game/pinball-knight/bestiary.ts` (380 lines).
 //!
 //! PORTS: `bestiary.ts`
 
-use crate::reagents::{drops_for_kind, ReagentDef};
+use std::collections::HashMap;
+
+use crate::cards::{self, CardRarity, CARDS};
+use crate::constants::enemies::{BESTIARY_AFFINITY_MAX, BESTIARY_AFFINITY_STEP, BESTIARY_MILESTONES};
+use crate::reagents::drops_for_kind;
+use crate::state::EnemyKind;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KindInfo {
+    pub label: &'static str,
+    pub icon: &'static str,
+    pub blurb: &'static str,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonsterInfo {
@@ -189,33 +201,210 @@ pub fn info_for_kind(kind: &str) -> Option<&'static MonsterInfo> {
     MONSTER_INFOS.iter().find(|m| m.kind == kind)
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BestiaryDropView {
-    pub reagent: ReagentDef,
+pub const KIND_IDS: [EnemyKind; 16] = [
+    EnemyKind::Zombie,
+    EnemyKind::Spider,
+    EnemyKind::Brute,
+    EnemyKind::Spitter,
+    EnemyKind::Ghost,
+    EnemyKind::Bat,
+    EnemyKind::Slime,
+    EnemyKind::Sporeling,
+    EnemyKind::Jester,
+    EnemyKind::Croaker,
+    EnemyKind::Rotortail,
+    EnemyKind::Stiltneck,
+    EnemyKind::FishFeet,
+    EnemyKind::Reaper,
+    EnemyKind::Goblin,
+    EnemyKind::Pin,
+];
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BestiaryDrop {
+    pub id: String,
+    pub label: String,
+    pub icon: String,
+    pub color: String,
     pub chance: f64,
 }
 
-pub fn bestiary_drops_for(kind: &str) -> Vec<BestiaryDropView> {
-    drops_for_kind(kind)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BestiaryCard {
+    pub id: &'static str,
+    pub label: String,
+    pub icon: String,
+    pub rarity: CardRarity,
+    pub hex: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BestiarySubType {
+    pub id: String,
+    pub label: String,
+    pub cards: Vec<BestiaryCard>,
+    pub hp: i32,
+    pub notes: Vec<String>,
+    pub kills: usize,
+    pub seen: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BestiaryMilestone {
+    pub tier: usize,
+    pub to_next: Option<i32>,
+    pub next: Option<i32>,
+    pub affinity: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BestiaryEntry {
+    pub kind: EnemyKind,
+    pub label: String,
+    pub icon: String,
+    pub blurb: String,
+    pub kills: usize,
+    pub seen: bool,
+    pub drops: Vec<BestiaryDrop>,
+    pub cards: Vec<BestiaryCard>,
+    pub sub_types: Vec<BestiarySubType>,
+    pub mechanics: Vec<String>,
+    pub milestone: BestiaryMilestone,
+    pub ram_kills: usize,
+    pub best_combo: usize,
+}
+
+/// The card-affinity multiplier a family's kill count has earned, ≥ 1.0.
+pub fn family_affinity(kills: usize) -> f64 {
+    let mut tier = 0;
+    for &m in &BESTIARY_MILESTONES {
+        if kills as i32 >= m {
+            tier += 1;
+        }
+    }
+    (1.0 + tier as f64 * BESTIARY_AFFINITY_STEP).min(BESTIARY_AFFINITY_MAX)
+}
+
+/// What a family's kill count has bought in milestones.
+pub fn family_milestone(kills: usize) -> BestiaryMilestone {
+    let mut tier = 0;
+    for &m in &BESTIARY_MILESTONES {
+        if kills as i32 >= m {
+            tier += 1;
+        }
+    }
+    let next = if tier < BESTIARY_MILESTONES.len() {
+        Some(BESTIARY_MILESTONES[tier])
+    } else {
+        None
+    };
+    let to_next: Option<i32> = next.map(|n| (n - kills as i32).max(0));
+    BestiaryMilestone {
+        tier,
+        next,
+        to_next,
+        affinity: family_affinity(kills),
+    }
+}
+
+/// Helper for looking up KindInfo.
+pub fn kind_info_for(kind: EnemyKind) -> KindInfo {
+    if let Some(info) = info_for_kind(kind.as_str()) {
+        KindInfo {
+            label: info.label,
+            icon: info.icon,
+            blurb: info.blurb,
+        }
+    } else {
+        KindInfo {
+            label: "Unknown",
+            icon: "❓",
+            blurb: "a mysterious creature of the crypt",
+        }
+    }
+}
+
+/// Convert state::EnemyKind to cards::EnemyKind if present.
+fn to_cards_kind(kind: EnemyKind) -> Option<cards::EnemyKind> {
+    match kind {
+        EnemyKind::Zombie => Some(cards::EnemyKind::Zombie),
+        EnemyKind::Bat => Some(cards::EnemyKind::Bat),
+        EnemyKind::Spider => Some(cards::EnemyKind::Spider),
+        EnemyKind::Goblin => Some(cards::EnemyKind::Goblin),
+        EnemyKind::Spitter => Some(cards::EnemyKind::Spitter),
+        EnemyKind::Ghost => Some(cards::EnemyKind::Ghost),
+        EnemyKind::Reaper => Some(cards::EnemyKind::Reaper),
+        EnemyKind::Brute => Some(cards::EnemyKind::Brute),
+        _ => None,
+    }
+}
+
+/// Build cards for a given enemy kind.
+fn cards_for(kind: EnemyKind) -> Vec<BestiaryCard> {
+    let target = to_cards_kind(kind);
+    CARDS
         .iter()
-        .map(|d| BestiaryDropView {
-            reagent: d.id.def(),
-            chance: d.chance,
+        .filter(|c| target.is_some() && c.source == target)
+        .map(|c| BestiaryCard {
+            id: c.id,
+            label: c.label.to_string(),
+            icon: c.icon.to_string(),
+            rarity: c.rarity,
+            hex: c.rarity.hex().to_string(),
+            description: c.description.to_string(),
         })
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_monster_info_has_blurb_and_label() {
-        for m in MONSTER_INFOS {
-            assert!(!m.kind.is_empty());
-            assert!(!m.label.is_empty());
-            assert!(!m.icon.is_empty());
-            assert!(!m.blurb.is_empty());
-        }
+/// Build reagent drops for a given enemy kind.
+fn drops_for(kind: EnemyKind) -> Vec<BestiaryDrop> {
+    let mut out = Vec::new();
+    let kind_str = kind.as_str();
+    for entry in drops_for_kind(kind_str) {
+        let def = entry.id.def();
+        out.push(BestiaryDrop {
+            id: entry.id.as_str().to_string(),
+            label: def.label.to_string(),
+            icon: def.icon.to_string(),
+            color: def.color.to_string(),
+            chance: entry.chance,
+        });
     }
+    out
+}
+
+/// Build the whole bestiary from the live tables + the run's kill tally.
+pub fn build_bestiary(kills: &HashMap<String, usize>) -> Vec<BestiaryEntry> {
+    KIND_IDS
+        .iter()
+        .map(|&kind| {
+            let n = kills.get(kind.as_str()).copied().unwrap_or(0);
+            let info = kind_info_for(kind);
+            BestiaryEntry {
+                kind,
+                label: info.label.to_string(),
+                icon: info.icon.to_string(),
+                blurb: info.blurb.to_string(),
+                kills: n,
+                seen: n > 0,
+                drops: drops_for(kind),
+                cards: cards_for(kind),
+                sub_types: Vec::new(),
+                mechanics: vec![info.blurb.to_string()],
+                milestone: family_milestone(n),
+                ram_kills: kills.get(&format!("{}#ram", kind.as_str())).copied().unwrap_or(0),
+                best_combo: kills.get(&format!("{}#combo", kind.as_str())).copied().unwrap_or(0),
+            }
+        })
+        .collect()
+}
+
+/// How much of the bestiary the player has actually uncovered.
+pub fn bestiary_progress(kills: &HashMap<String, usize>) -> (usize, usize) {
+    let seen = KIND_IDS
+        .iter()
+        .filter(|k| kills.get(k.as_str()).copied().unwrap_or(0) > 0)
+        .count();
+    (seen, KIND_IDS.len())
 }

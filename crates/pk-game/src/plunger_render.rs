@@ -57,7 +57,8 @@ pub fn update_plunger_rig(
             .spawn((
                 crate::DungeonScene,
                 PlungerRig,
-                Transform::from_xyz(p.x as f32, 0.0, p.z as f32).with_rotation(Quat::from_rotation_y(yaw)),
+                Transform::from_xyz(p.x as f32, 0.0, p.z as f32)
+                    .with_rotation(Quat::from_rotation_y(yaw)),
                 Visibility::default(),
             ))
             .with_children(|parent| {
@@ -94,7 +95,9 @@ pub fn update_plunger_rig(
                                     ..default()
                                 })),
                                 Transform::from_xyz(-0.12 - (k as f32) * 0.16, 0.0, 0.0)
-                                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
+                                    .with_rotation(Quat::from_rotation_y(
+                                        std::f32::consts::FRAC_PI_2,
+                                    )),
                             ));
                         }
                     });

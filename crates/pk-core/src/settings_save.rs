@@ -14,6 +14,22 @@ pub const HEAT_DEFAULT: bool = true;
 pub const CAMERA_ZOOM_DEFAULT: f32 = 1.0;
 pub const VOLUME_STEPS: usize = 20;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReaderPolicy {
+    #[serde(rename = "always")]
+    Always,
+    #[serde(rename = "smart")]
+    Smart,
+    #[serde(rename = "never")]
+    Never,
+}
+
+impl Default for ReaderPolicy {
+    fn default() -> Self {
+        ReaderPolicy::Smart
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DungeonSettings {
     #[serde(default)]
@@ -36,6 +52,8 @@ pub struct DungeonSettings {
     pub speedrun: bool,
     #[serde(default)]
     pub haul_reveal: bool,
+    #[serde(default)]
+    pub reader_policy: ReaderPolicy,
 }
 
 fn default_volume() -> f32 {
@@ -67,6 +85,7 @@ impl Default for DungeonSettings {
             camera_zoom: CAMERA_ZOOM_DEFAULT,
             speedrun: false,
             haul_reveal: false,
+            reader_policy: ReaderPolicy::default(),
         }
     }
 }
@@ -90,4 +109,17 @@ impl DungeonSettings {
     pub fn deserialize_json(json_str: &str) -> Self {
         serde_json::from_str(json_str).unwrap_or_default()
     }
+}
+
+pub fn default_settings() -> DungeonSettings {
+    DungeonSettings::default()
+}
+
+pub fn get_settings() -> DungeonSettings {
+    DungeonSettings::default()
+}
+
+pub fn save_settings(current: &mut DungeonSettings, patch: DungeonSettings) -> DungeonSettings {
+    *current = patch;
+    current.clone()
 }

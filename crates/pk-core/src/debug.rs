@@ -2,6 +2,27 @@
 //!
 //! PORTS: `debug-panel.ts`
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static PANEL_VISIBLE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpawnableEntry {
+    pub kind: String,
+    pub label: String,
+}
+
+pub fn spawnable_enemies() -> Vec<SpawnableEntry> {
+    vec![
+        SpawnableEntry { kind: "zombie".to_string(), label: "Zombie".to_string() },
+        SpawnableEntry { kind: "skeleton".to_string(), label: "Skeleton".to_string() },
+        SpawnableEntry { kind: "slime".to_string(), label: "Slime".to_string() },
+        SpawnableEntry { kind: "necromancer".to_string(), label: "Necromancer".to_string() },
+        SpawnableEntry { kind: "gargoyle".to_string(), label: "Gargoyle".to_string() },
+        SpawnableEntry { kind: "dragon".to_string(), label: "Dragon".to_string() },
+    ]
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct DebugFlags {
     pub god_mode: bool,
@@ -34,6 +55,34 @@ pub enum DebugAction {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DebugActions {
+    pub actions: Vec<DebugAction>,
+}
+
+impl DebugActions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, action: DebugAction) {
+        self.actions.push(action);
+    }
+}
+
+pub fn create_debug_panel() {}
+
+pub fn toggle_debug_panel() -> bool {
+    let current = PANEL_VISIBLE.load(Ordering::Relaxed);
+    let next = !current;
+    PANEL_VISIBLE.store(next, Ordering::Relaxed);
+    next
+}
+
+pub fn dispose_debug_panel() {
+    PANEL_VISIBLE.store(false, Ordering::Relaxed);
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DebugConsoleState {
     pub flags: DebugFlags,
     pub log: Vec<String>,
@@ -59,30 +108,27 @@ impl DebugConsoleState {
         self.flags.no_cooldowns
     }
 
+    pub fn toggle_hitboxes(&mut self) -> bool {
+        self.flags.show_hitboxes = !self.flags.show_hitboxes;
+        self.flags.show_hitboxes
+    }
+
     pub fn set_floor_lock(&mut self, floor: Option<u32>) {
         self.flags.floor_lock = floor.map(|f| f.clamp(1, 40));
     }
 
     pub fn dispatch(&mut self, action: DebugAction) {
-        let msg = match &action {
-            DebugAction::Heal => "Action: Player healed to full".to_string(),
-            DebugAction::AddGold(n) => format!("Action: Added {} gold", n),
-            DebugAction::GrantXp(n) => format!("Action: Granted {} XP", n),
-            DebugAction::GrantSkillPoints(n) => format!("Action: Granted {} skill points", n),
-            DebugAction::FillRampage => "Action: Filled rampage meter".to_string(),
-            DebugAction::KillAll => "Action: Killed all active horde monsters".to_string(),
-            DebugAction::ClearEnemies => "Action: Cleared enemy spawns".to_string(),
-            DebugAction::NextFloor => "Action: Progressing to next floor".to_string(),
-            DebugAction::GotoFloor(n) => format!("Action: Jump to floor {}", n.clamp(&1, &40)),
-            DebugAction::NextBoss => "Action: Advanced to boss encounter".to_string(),
-            DebugAction::SpawnReaper => "Action: Summoned Death Dealer Reaper".to_string(),
-            DebugAction::TeleportStairs => "Action: Teleported player to stairs".to_string(),
-            DebugAction::SpawnRing => "Action: Triggered debug shockwave ring".to_string(),
-            DebugAction::GiveWeapon(w) => format!("Action: Equipped weapon {}", w),
-            DebugAction::ApplyPotion(p) => format!("Action: Quaffed potion {}", p),
-            DebugAction::ApplyMaterial(m) => format!("Action: Applied material {}", m),
-            DebugAction::SpawnEnemy(k, count) => format!("Action: Spawned {}x {}", count, k),
-        };
-        self.log.push(msg);
+        match &action {
+            DebugAction::Heal => self.log.push("Player healed to maximum HP".to_string()),
+            DebugAction::AddGold(g) => self.log.push(format!("Added {} gold to inventory", g)),
+            DebugAction::GrantXp(x) => self.log.push(format!("Granted {} XP to player", x)),
+            DebugAction::GotoFloor(f) => self.log.push(format!("Warped to floor {}", f)),
+            DebugAction::GiveWeapon(w) => self.log.push(format!("Equipped weapon {}", w)),
+            _ => self.log.push(format!("Executed debug action: {:?}", action)),
+        }
+    }
+
+    pub fn log_message(&mut self, msg: impl Into<String>) {
+        self.log.push(msg.into());
     }
 }

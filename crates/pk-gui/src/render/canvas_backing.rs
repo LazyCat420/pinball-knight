@@ -6,6 +6,14 @@
 ///
 /// Prevents WebGPU `CopyExternalImageToTexture` failures on freshly created or resized surfaces.
 pub fn allocate_canvas_backing(width: u32, height: u32) -> Vec<u8> {
-    let size = (width as usize).saturating_mul(height as usize).saturating_mul(4);
+    let size = (width as usize)
+        .saturating_mul(height as usize)
+        .saturating_mul(4);
     vec![0u8; size]
+}
+
+pub fn force_backing_store(buffer: &mut Vec<u8>, width: u32, height: u32) {
+    if buffer.is_empty() {
+        *buffer = allocate_canvas_backing(width, height);
+    }
 }

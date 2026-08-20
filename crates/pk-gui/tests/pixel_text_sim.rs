@@ -10,10 +10,10 @@ fn threshold_alpha_buffer_cleans_anti_aliasing_fringes() {
     assert_eq!(ALPHA_CUT, 96);
 
     let mut rgba = vec![
-        255, 255, 255, 95,  // Just below cutoff -> 0
-        255, 255, 255, 96,  // At cutoff -> 255
+        255, 255, 255, 95, // Just below cutoff -> 0
+        255, 255, 255, 96, // At cutoff -> 255
         255, 255, 255, 120, // Above cutoff -> 255
-        255, 255, 255, 10,  // Far below -> 0
+        255, 255, 255, 10, // Far below -> 0
     ];
 
     threshold_alpha_buffer(&mut rgba);

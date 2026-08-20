@@ -14,7 +14,10 @@ fn layer_compositor_orders_passes_strictly_ascending() {
     }
 
     assert_eq!(passes[0].kind, RenderPassKind::Background);
-    assert_eq!(passes[passes.len() - 1].kind, RenderPassKind::ToastNotification);
+    assert_eq!(
+        passes[passes.len() - 1].kind,
+        RenderPassKind::ToastNotification
+    );
 }
 
 #[test]

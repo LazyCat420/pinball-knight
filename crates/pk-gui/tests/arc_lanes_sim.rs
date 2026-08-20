@@ -1,16 +1,37 @@
 // Parity test suite for Arc Lanes Curved Speed Boosters.
 // Replicates legacy/src/game/pinball-knight/render/arc-lanes.ts
 
-use pk_gui::render::arc_lanes::{build_bed_geometry, build_chevron_geometry, ArcLaneVisual, LaneBand, ARC_LANE_FLASH};
+use pk_gui::render::arc_lanes::{
+    build_bed_geometry, build_chevron_geometry, ArcLaneVisual, LaneBand, ARC_LANE_FLASH,
+};
 
 #[test]
 fn arc_lanes_generates_bed_and_chevron_geometry() {
-    let bed = build_bed_geometry(0.0, 0.0, 3.0, 0.0, std::f64::consts::PI / 2.0, 0.1, 0.9, 0.08);
+    let bed = build_bed_geometry(
+        0.0,
+        0.0,
+        3.0,
+        0.0,
+        std::f64::consts::PI / 2.0,
+        0.1,
+        0.9,
+        0.08,
+    );
     assert!(!bed.positions.is_empty());
     assert_eq!(bed.positions.len(), bed.normals.len());
     assert!(!bed.indices.is_empty());
 
-    let chevrons = build_chevron_geometry(0.0, 0.0, 3.0, 0.0, std::f64::consts::PI / 2.0, 0.1, 0.9, 0.08, true);
+    let chevrons = build_chevron_geometry(
+        0.0,
+        0.0,
+        3.0,
+        0.0,
+        std::f64::consts::PI / 2.0,
+        0.1,
+        0.9,
+        0.08,
+        true,
+    );
     assert!(!chevrons.positions.is_empty());
     assert_eq!(chevrons.positions.len(), chevrons.normals.len());
 }

@@ -2,8 +2,7 @@
 // Replicates legacy/src/game/pinball-knight/fx/elements/rod.ts
 
 use pk_core::fx::rod::{
-    compute_rod_core, compute_rod_hum, compute_rod_intensity, compute_rod_ring, ROD_RAMP,
-    ROD_STOPS,
+    compute_rod_core, compute_rod_hum, compute_rod_intensity, compute_rod_ring, ROD_RAMP, ROD_STOPS,
 };
 
 #[test]

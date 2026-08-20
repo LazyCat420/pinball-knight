@@ -10,7 +10,10 @@ fn card_styles_monster_family_mapping() {
     assert_eq!(style_for_monster("brute").id, CardStyleId::Stone);
     assert_eq!(style_for_monster("spider").id, CardStyleId::Chitin);
     assert_eq!(style_for_monster("knight").id, CardStyleId::Iron);
-    assert_eq!(style_for_monster("unknown_aberration").id, CardStyleId::Void);
+    assert_eq!(
+        style_for_monster("unknown_aberration").id,
+        CardStyleId::Void
+    );
 
     let bone = style_for_monster("zombie");
     assert_eq!(bone.imprint, "BONE RELIC");

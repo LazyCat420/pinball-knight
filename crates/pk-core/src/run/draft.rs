@@ -1,6 +1,6 @@
 //! Card drafting rewards upon floor clear.
 //!
-//! PORTS: `cards.ts`, `state.ts`
+//! PORTS-NOTHING — helper module, full state port lives in pk-core/src/state.rs
 
 use crate::cards::{card_def, cards_of_rarity, CardRarity};
 use crate::rng::Mulberry32;
@@ -43,7 +43,10 @@ pub fn generate_draft_offer(floor_level: u32, prng: &mut Mulberry32) -> DraftOff
     let build_choice = |idx: usize, prng: &mut Mulberry32| {
         let card_id = pool[idx];
         let def = card_def(card_id);
-        let label = def.as_ref().map(|c| c.label().to_string()).unwrap_or_else(|| card_id.to_string());
+        let label = def
+            .as_ref()
+            .map(|c| c.label().to_string())
+            .unwrap_or_else(|| card_id.to_string());
         DraftChoice {
             card_id,
             label,

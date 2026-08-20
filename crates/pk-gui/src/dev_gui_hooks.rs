@@ -24,6 +24,10 @@ pub struct GuiHooksController {
     pub fonts_ready: bool,
 }
 
+pub fn install_gui_hooks() -> GuiHooksController {
+    GuiHooksController::new()
+}
+
 impl GuiHooksController {
     pub fn new() -> Self {
         Self {

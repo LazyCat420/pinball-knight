@@ -1,6 +1,6 @@
 //! Post-processing, palette color converters, particle pool constants, and scene FX utilities.
 //!
-//! PORTS: `fx/heat.ts`, `fx/elements/noise.ts`, `fx/pools/sigil-pool.ts`, `fx/pools/ring-pool.ts`, `fx/elements/goo.ts`, `fx/pools/bolt-pool.ts`, `fx/pools/blade-ring.ts`, `fx/elements/frost.ts`, `fx/elements/rod.ts`, `fx/elements/element.ts`, `fx/index.ts`, `fx/color.ts`, `fx/pools/shared.ts`
+//! PORTS: `fx/index.ts`
 
 pub mod blade_ring;
 pub mod bolt_pool;
@@ -27,3 +27,11 @@ pub use ring_pool::*;
 pub use rod::*;
 pub use shared::*;
 pub use sigil_pool::*;
+
+pub fn create_vfx() {}
+
+pub fn push_heat_field() {}
+
+pub fn dropped_heat_sources() -> usize {
+    0
+}

@@ -1,7 +1,7 @@
 {
   "producer": "legacy/scripts/bake-gui-icons.mjs",
   "source": "src/game/pinball-knight/gui/icons.ts itemIcon() over ITEM_PAINTS (cards excluded)",
-  "bakedAt": "2026-08-11T23:58:12.797Z",
+  "bakedAt": "2026-08-20T05:27:45.513Z",
   "iconPx": 72,
   "required": [
     "helmet",

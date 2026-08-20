@@ -97,6 +97,20 @@ enum Claim {
     Ports,
     /// Partly ported here, with the stated remainder.
     Partial(String),
+    /// This module INVENTED content and attributed it to that legacy file.
+    ///
+    /// A third kind, added 2026-08-16, because the other two both lie about
+    /// this case. `PORTS-PARTIAL` says "some of it is done"; nothing is done —
+    /// `constants/level.rs` invented `BOSS_FLOORS = [5,10,15]` where the oracle
+    /// boss-gates EVERY floor, and `run/death.rs` invented a "souls" currency
+    /// and "tombstones" for a game that has gold and corpse piles.
+    /// `PORTS-NOTHING` says "deliberately original", which is what honest Bevy
+    /// glue is and this is not.
+    ///
+    /// It claims NOTHING, so the legacy file reads NOT STARTED — the true
+    /// statement, and the one that puts it back on the work list — while the
+    /// module stays declared, greppable, and carrying what it made up.
+    Fabricated(String),
 }
 
 #[derive(Debug, Default)]
@@ -107,6 +121,72 @@ struct Ledger {
     nothing: Vec<String>,
     /// Rust files with no declaration at all — the work list for this tool.
     undeclared: Vec<String>,
+    /// rust file -> its CODE lines (no comments, no blanks).
+    ///
+    /// The ledger's credit is denominated in the legacy file's size and never
+    /// looked at the claiming module at all, so a one-line module could bank a
+    /// three-thousand-line file. This is the other half of the comparison.
+    rust_code: BTreeMap<String, usize>,
+}
+
+/// A full claim's DEPTH: how much Rust actually stands behind the credit.
+#[derive(Debug, Clone, Copy, Default)]
+struct Depth {
+    /// Rust code lines attributed to this legacy file (see `depth_of`).
+    rust: usize,
+    /// The legacy file's own code lines — code compared with code.
+    legacy: usize,
+}
+
+impl Depth {
+    fn ratio(&self) -> f64 {
+        if self.legacy == 0 {
+            return 1.0;
+        }
+        self.rust as f64 / self.legacy as f64
+    }
+}
+
+/// A full claim below this ratio is not a port; it is a placeholder wearing a
+/// provenance tag.
+///
+/// Rust is normally LONGER than the TypeScript it replaces (explicit types,
+/// no closures over ambient state), so a genuine port lands near or above 1.0.
+/// Measured on this tree 2026-08-16: the honest pre-08-13 ports sit at 0.6–2.4,
+/// and every module in the 08-14 declaration burst that this catches is under
+/// 0.15. The threshold is deliberately far below the honest floor — it is a
+/// fraud detector, not a style rule.
+const DEPTH_MIN_RATIO: f64 = 0.30;
+
+/// Lines of actual code — comments and blanks removed.
+///
+/// Both languages, one function: `//`, `/* */` and `*` continuation lines cover
+/// TS and Rust alike, and `//!`/`///` are just `//`. Crude on purpose — it is a
+/// size comparison, not a parser, and it must not disagree with itself between
+/// the two sides of the ratio.
+fn code_lines(text: &str) -> usize {
+    let mut n = 0;
+    let mut in_block = false;
+    for raw in text.lines() {
+        let t = raw.trim();
+        if in_block {
+            if t.contains("*/") {
+                in_block = false;
+            }
+            continue;
+        }
+        if t.is_empty() || t.starts_with("//") || t.starts_with('*') {
+            continue;
+        }
+        if t.starts_with("/*") {
+            if !t.contains("*/") {
+                in_block = true;
+            }
+            continue;
+        }
+        n += 1;
+    }
+    n
 }
 
 /// Pull every backtick-quoted `*.ts` path out of a `PORTS`/`PORTS-PARTIAL` line.
@@ -165,14 +245,14 @@ fn normalise(raw: &str) -> Option<String> {
     Some(p.to_string())
 }
 
-fn is_excluded(path: &str) -> Option<&'static str> {
+pub fn is_excluded(path: &str) -> Option<&'static str> {
     EXCLUSIONS
         .iter()
         .find(|(prefix, _)| path.starts_with(prefix))
         .map(|(_, why)| *why)
 }
 
-fn is_deferred(path: &str) -> Option<&'static str> {
+pub fn is_deferred(path: &str) -> Option<&'static str> {
     DEFERRED
         .iter()
         .find(|(prefix, _)| path.starts_with(prefix))
@@ -235,6 +315,7 @@ fn scan_rust(root: &Path) -> Ledger {
         let Ok(text) = std::fs::read_to_string(&f) else {
             continue;
         };
+        led.rust_code.insert(rel.clone(), code_lines(&text));
         let mut declared = false;
         // A declaration may WRAP: the continuation lines are `//!` comments that
         // carry only more backticked paths. Joining the header into one blob per
@@ -258,7 +339,22 @@ fn scan_rust(root: &Path) -> Ledger {
                 continue;
             }
             let body = t.trim_start_matches("//!").trim_start_matches("//").trim();
-            if let Some(rest) = body.strip_prefix("PORTS-PARTIAL:") {
+            if let Some(rest) = body.strip_prefix("PORTS-FABRICATED:") {
+                declared = true;
+                let why = rest
+                    .split('—')
+                    .nth(1)
+                    .or_else(|| rest.split(" - ").nth(1))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                for p in paths_in(rest) {
+                    led.claims
+                        .entry(p)
+                        .or_default()
+                        .push((rel.clone(), Claim::Fabricated(why.clone())));
+                }
+            } else if let Some(rest) = body.strip_prefix("PORTS-PARTIAL:") {
                 declared = true;
                 let why = rest
                     .split('—')
@@ -377,6 +473,93 @@ fn scan_siblings(root: &Path) -> BTreeMap<String, usize> {
     out
 }
 
+/// Every legacy file's CODE lines, keyed exactly as the two scanners key them.
+///
+/// Separate from `scan_legacy`/`scan_siblings` on purpose: those return TOTAL
+/// lines and the headline denominators (104,309 / 88,312 / 15,430) are recorded
+/// against them. Changing what they count would move every number ever recorded
+/// and make the ratchet incomparable with its own history — a different ruler.
+/// The depth ratio needs code-to-code, so it gets its own map and the credit
+/// accounting is left alone.
+fn legacy_code_lines(root: &Path) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    let pk_base = root.join("legacy/src/game/pinball-knight");
+    let mut files = Vec::new();
+    collect_ts(&pk_base, &mut files);
+    for f in &files {
+        let rel = f
+            .strip_prefix(&pk_base)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .to_string();
+        if rel.ends_with(".test.ts") || rel.ends_with(".d.ts") {
+            continue;
+        }
+        if let Ok(s) = std::fs::read_to_string(f) {
+            out.insert(rel, code_lines(&s));
+        }
+    }
+    let base = root.join("legacy/src");
+    let pk = base.join("game");
+    let mut sibs = Vec::new();
+    collect_ts(&base, &mut sibs);
+    for f in &sibs {
+        if f.starts_with(&pk) {
+            continue;
+        }
+        let rel = f
+            .strip_prefix(root)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .to_string();
+        if rel.ends_with(".test.ts") || rel.ends_with(".d.ts") {
+            continue;
+        }
+        if let Ok(s) = std::fs::read_to_string(f) {
+            out.insert(rel, code_lines(&s));
+        }
+    }
+    out
+}
+
+/// How much Rust stands behind every FULL claim, apportioned honestly.
+///
+/// A module that claims three legacy files does not port all three with the same
+/// lines, so its code is split across the files it claims IN PROPORTION to their
+/// sizes — the neutral assumption when the module does not say. Several modules
+/// claiming one file SUM, which is the common and legitimate shape
+/// (`economy/tavern-shop.ts` is split across five modules by design).
+///
+/// PARTIAL claims are deliberately excluded from the numerator: a partial file
+/// is already scored as not-done, so its depth is not a question anyone asks.
+fn depth_map(led: &Ledger, code: &BTreeMap<String, usize>) -> BTreeMap<String, Depth> {
+    // rust module -> the full claims it makes, so a multi-file claim can split.
+    let mut by_module: BTreeMap<&String, Vec<&String>> = BTreeMap::new();
+    for (path, claims) in &led.claims {
+        for (module, claim) in claims {
+            if *claim == Claim::Ports {
+                by_module.entry(module).or_default().push(path);
+            }
+        }
+    }
+    let mut out: BTreeMap<String, Depth> = BTreeMap::new();
+    for (module, paths) in &by_module {
+        let rust = *led.rust_code.get(*module).unwrap_or(&0);
+        let total: usize = paths.iter().map(|p| *code.get(*p).unwrap_or(&0)).sum();
+        for p in paths {
+            let share = if total == 0 {
+                rust as f64 / paths.len() as f64
+            } else {
+                rust as f64 * (*code.get(*p).unwrap_or(&0) as f64 / total as f64)
+            };
+            let e = out.entry((*p).clone()).or_default();
+            e.rust += share.round() as usize;
+            e.legacy = *code.get(*p).unwrap_or(&0);
+        }
+    }
+    out
+}
+
 fn collect_ts(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -403,6 +586,16 @@ struct Tier<'a> {
     todo: Vec<(&'a String, usize)>,
     /// Subtracted from the target, with the decision that subtracted it.
     subtracted: Vec<(&'a String, usize, &'static str)>,
+    /// Full claims demoted by the depth gate: (path, lines, rust, legacy code).
+    ///
+    /// Reported as its own section rather than folded into `partial`, because
+    /// "somebody wrote down what is missing" and "the tool caught a claim that
+    /// nothing stands behind" are different facts and must not print the same.
+    shallow: Vec<(&'a String, usize, usize, usize)>,
+    /// Files carrying BOTH a full and a partial claim — two modules disagree.
+    conflicted: Vec<(&'a String, usize)>,
+    /// Files whose only claimants declared themselves fabrications.
+    fabricated: Vec<(&'a String, usize)>,
 }
 
 impl Tier<'_> {
@@ -441,6 +634,7 @@ fn classify<'a>(
     legacy: &'a BTreeMap<String, usize>,
     led: &Ledger,
     subtract: fn(&str) -> Option<&'static str>,
+    depth: &BTreeMap<String, Depth>,
 ) -> Tier<'a> {
     let mut t = Tier::default();
     for (path, lines) in legacy {
@@ -448,28 +642,121 @@ fn classify<'a>(
             t.subtracted.push((path, *lines, why));
             continue;
         }
-        match led.claims.get(path) {
-            None => t.todo.push((path, *lines)),
-            Some(claims) => {
-                // A file is PARTIAL if any module says so and none says whole.
-                let whole = claims.iter().any(|(_, c)| *c == Claim::Ports);
-                if whole {
-                    t.ported.push((path, *lines));
-                } else {
-                    let why = claims
-                        .iter()
-                        .filter_map(|(_, c)| match c {
-                            Claim::Partial(w) => Some(w.clone()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("; ");
-                    t.partial.push((path, *lines, why));
-                }
-            }
+        let Some(claims) = led.claims.get(path) else {
+            t.todo.push((path, *lines));
+            continue;
+        };
+        // A fabrication contributes nothing in either direction. If EVERY
+        // claimant invented, the file has not been started.
+        let real: Vec<&(String, Claim)> = claims
+            .iter()
+            .filter(|(_, c)| !matches!(c, Claim::Fabricated(_)))
+            .collect();
+        if real.is_empty() {
+            t.fabricated.push((path, *lines));
+            t.todo.push((path, *lines));
+            continue;
         }
+        let any_whole = claims.iter().any(|(_, c)| *c == Claim::Ports);
+        let any_partial = claims.iter().any(|(_, c)| matches!(c, Claim::Partial(_)));
+        let reasons = |claims: &Vec<(String, Claim)>| {
+            claims
+                .iter()
+                .filter_map(|(_, c)| match c {
+                    Claim::Partial(w) => Some(w.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+
+        // ⚠️ THE HOLE THIS USED TO HAVE — measured 2026-08-16.
+        //
+        // The rule was `whole = claims.iter().any(is Ports)`: ONE full claim
+        // outvoted every honest `PORTS-PARTIAL` on the same file. So a module
+        // that ported ten lines of a 3,169-line file and said so was silently
+        // overruled by a sibling that claimed the file whole, and the file was
+        // credited in full. A remainder someone took the trouble to write down
+        // is evidence; a claim is an assertion. Evidence wins: ALL claimants
+        // must say whole, or the file is partial.
+        if any_partial {
+            if any_whole {
+                t.conflicted.push((path, *lines));
+            }
+            t.partial.push((path, *lines, reasons(claims)));
+            continue;
+        }
+
+        // THE DEPTH GATE. Credit is denominated in the LEGACY file's size, and
+        // until today nothing looked at the module doing the claiming — so a
+        // 49-line stub banked a 906-line file, and 67,370 lines were credited
+        // to modules that do not implement them. A claim now has to be big
+        // enough to plausibly BE the thing it claims.
+        let d = depth.get(path).copied().unwrap_or_default();
+        if d.ratio() < DEPTH_MIN_RATIO {
+            t.shallow.push((path, *lines, d.rust, d.legacy));
+            t.partial.push((
+                path,
+                *lines,
+                format!(
+                    "shallow claim: {} rust code lines against {} legacy code lines \
+                     ({:.0}% — the gate is {:.0}%); nothing this small ports that file",
+                    d.rust,
+                    d.legacy,
+                    d.ratio() * 100.0,
+                    DEPTH_MIN_RATIO * 100.0
+                ),
+            ));
+            continue;
+        }
+        t.ported.push((path, *lines));
     }
     t
+}
+
+/// The files the ledger STILL CREDITS after the depth gate, and who claims them.
+///
+/// `full_claims` is the declaration view — what modules assert. This is the
+/// scored view — what the ledger actually pays for. The audit reads this one, so
+/// the two instruments compose instead of double-counting: a file the depth gate
+/// already demoted is already scored as not-done, and reporting it a second time
+/// as "credit at risk" would inflate the alarm the same way the credit was
+/// inflated.
+pub fn credited(root: &Path) -> BTreeMap<String, Vec<String>> {
+    let led = scan_rust(root);
+    let legacy = scan_legacy(root);
+    let siblings = scan_siblings(root);
+    let code = legacy_code_lines(root);
+    let depth = depth_map(&led, &code);
+    let t1 = classify(&legacy, &led, is_excluded, &depth);
+    let t2 = classify(&siblings, &led, is_deferred, &depth);
+    let mut out = BTreeMap::new();
+    for (path, _) in t1.ported.iter().chain(t2.ported.iter()) {
+        let mods: Vec<String> = led
+            .claims
+            .get(*path)
+            .map(|cs| cs.iter().map(|(m, _)| m.clone()).collect())
+            .unwrap_or_default();
+        out.insert((*path).clone(), mods);
+    }
+    out
+}
+
+/// Resolve a normalised citation back to a file on disk.
+///
+/// Tier-1 paths are PK-tree-relative (`constants/render.ts`); tier-2 paths carry
+/// their `legacy/src/` prefix. `normalise` produced both spellings, so undoing
+/// it needs both.
+pub fn legacy_abs(root: &Path, path: &str) -> Option<PathBuf> {
+    let direct = root.join(path);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let pk = root.join("legacy/src/game/pinball-knight").join(path);
+    if pk.is_file() {
+        return Some(pk);
+    }
+    None
 }
 
 /// Every citation that resolves to no legacy file, in any tier.
@@ -589,10 +876,34 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     let led = scan_rust(root);
     let legacy = scan_legacy(root);
     let siblings = scan_siblings(root);
+    let code = legacy_code_lines(root);
+    let depth = depth_map(&led, &code);
 
-    let t1 = classify(&legacy, &led, is_excluded);
-    let t2 = classify(&siblings, &led, is_deferred);
+    let t1 = classify(&legacy, &led, is_excluded, &depth);
+    let t2 = classify(&siblings, &led, is_deferred, &depth);
     let dangling = dangling_in(&led, &legacy, &siblings);
+
+    // The shallow list as data, for the declaration sweep to act on. Kept apart
+    // from `--json` because that one is the RATCHET's artifact and its shape is
+    // a contract with `pk-baseline.mjs`; this is a work list.
+    if args.iter().any(|a| a == "--shallow-json") {
+        let mut all: Vec<(&String, usize, usize, usize)> = t1
+            .shallow
+            .iter()
+            .chain(t2.shallow.iter())
+            .copied()
+            .collect();
+        all.sort_by_key(|(_, n, _, _)| std::cmp::Reverse(*n));
+        println!("[");
+        for (i, (p, n, rust, legacy_code)) in all.iter().enumerate() {
+            println!(
+                "  {{\"path\":\"{p}\",\"lines\":{n},\"rust\":{rust},\"legacy\":{legacy_code}}}{}",
+                if i + 1 == all.len() { "" } else { "," }
+            );
+        }
+        println!("]");
+        return std::process::ExitCode::SUCCESS;
+    }
 
     if args.iter().any(|a| a == "--json") {
         // stdout is the artifact here, so the human report must not share it.
@@ -687,6 +998,22 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
         t1.pct(),
         t2.pct(),
         t1.todo_lines() + t1.partial_lines() + t2.todo_lines() + t2.partial_lines()
+    );
+
+    // ── What this number still cannot see ──────────────────────────────────
+    //
+    // The percentage above is an UPPER BOUND and always was. It counts a file
+    // as converted when a deep-enough module declares it, which is evidence
+    // that someone WROTE the port — not that the port is right, and not that
+    // the game ever calls it. `cargo xtask audit` measures those separately,
+    // and a headline that does not carry its own error bar is how 97.9% came
+    // to be believed. Printed every run, deliberately un-suppressable.
+    println!(
+        "\n  ⓘ  UPPER BOUND. A file counts as converted when a deep-enough module\n\
+           declares it. Two things that reads as done and is not:\n\
+           · a port the game never calls  → `cargo xtask audit --wiring`\n\
+           · a port that carries none of the oracle's names → `cargo xtask audit`\n\
+           Run both before quoting the number."
     );
 
     // From here the detail sections report the two tiers together: the work list
@@ -792,11 +1119,89 @@ pub fn run(root: &Path, args: &[String]) -> std::process::ExitCode {
     // it must appear in SOME tier, or be excluded, or be deferred. Nothing gets
     // a pass for its prefix. Computed by `dangling_in` so this leg and `--json`
     // cannot disagree about whether the run was clean.
+    // SHALLOW CLAIMS — a full claim with nothing behind it. Always printed (it
+    // is never noise: a shallow claim is either fraud or an unfinished module
+    // that forgot to say PARTIAL), and fatal under `--strict-depth`, which CI
+    // always passes.
+    let mut shallow: Vec<(&String, usize, usize, usize)> = t1
+        .shallow
+        .iter()
+        .chain(t2.shallow.iter())
+        .copied()
+        .collect();
+    if !shallow.is_empty() {
+        shallow.sort_by_key(|(_, n, _, _)| std::cmp::Reverse(*n));
+        let credit: usize = shallow.iter().map(|(_, n, _, _)| n).sum();
+        println!(
+            "\n⚠️  SHALLOW CLAIMS — {} file(s), {credit} lines that a full `PORTS:` claimed and\n\
+             the depth gate refused (rust code vs legacy code, gate {:.0}%):",
+            shallow.len(),
+            DEPTH_MIN_RATIO * 100.0
+        );
+        for (p, n, rust, legacy_code) in shallow.iter().take(40) {
+            let pct = if *legacy_code == 0 {
+                0.0
+            } else {
+                100.0 * *rust as f64 / *legacy_code as f64
+            };
+            println!("  {n:>6}  {p}\n          {rust} rust vs {legacy_code} legacy code lines ({pct:.0}%)");
+        }
+        if shallow.len() > 40 {
+            println!("  … and {} more", shallow.len() - 40);
+        }
+    }
+
+    let mut fab: Vec<(&String, usize)> = t1
+        .fabricated
+        .iter()
+        .chain(t2.fabricated.iter())
+        .copied()
+        .collect();
+    if !fab.is_empty() {
+        fab.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let n: usize = fab.iter().map(|(_, l)| l).sum();
+        println!(
+            "\n⚠️  FABRICATED — {} file(s), {n} lines whose only Rust claimant declares it\n\
+             INVENTED the content rather than porting it. Scored NOT STARTED:",
+            fab.len()
+        );
+        for (p, l) in &fab {
+            println!("  {l:>6}  {p}");
+        }
+    }
+
+    let mut conflicted: Vec<(&String, usize)> = t1
+        .conflicted
+        .iter()
+        .chain(t2.conflicted.iter())
+        .copied()
+        .collect();
+    if !conflicted.is_empty() {
+        conflicted.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        println!(
+            "\n⚠️  CONFLICTED — {} file(s) carry BOTH a full and a partial claim.\n\
+             Two modules disagree about whether it is done; scored PARTIAL until they agree:",
+            conflicted.len()
+        );
+        for (p, n) in &conflicted {
+            println!("  {n:>6}  {p}");
+        }
+    }
+
     if !dangling.is_empty() {
         println!("\n⚠️  {} citation(s) name no legacy file:", dangling.len());
         for d in &dangling {
             println!("  {d}");
         }
+        return std::process::ExitCode::FAILURE;
+    }
+
+    if !shallow.is_empty() && args.iter().any(|a| a == "--strict-depth") {
+        eprintln!(
+            "\n--strict-depth: {} shallow claim(s) above. Either finish the port or\n\
+             downgrade the declaration to `PORTS-PARTIAL: <path> — <what is missing>`.",
+            shallow.len()
+        );
         return std::process::ExitCode::FAILURE;
     }
 
@@ -879,30 +1284,303 @@ mod tests {
         );
     }
 
-    /// THE THREE FILES THE HEURISTIC GOT WRONG, pinned against the real tree.
+    /// THE FILES NOBODY MAY DECLARE FINISHED YET, pinned against the real tree.
     ///
-    /// `scripts/pk-coverage.sh` scores all three as covered. This asserts the
-    /// ledger does not — and it reads the actual workspace, so it fails the day
-    /// someone writes a `PORTS:` claim for a file that is not really ported.
+    /// ## Why this list exists, and why deleting a row is the sign-off
+    ///
+    /// This test was built with three rows and the docstring *"it fails the day
+    /// someone writes a `PORTS:` claim for a file that is not really ported"*.
+    /// Between 2026-08-13 and 08-14 its rows were deleted one at a time —
+    /// `maze/decorate.ts` in 5b8a9c6, `entities/player.ts` in 6fad5ae, whose
+    /// commit message read *"completing 100% of Tier 1 files"* — and with the
+    /// guard gone, 67,370 legacy lines were credited to modules that do not
+    /// implement them. Only `maze/build.ts` survived, which is the entire reason
+    /// it was the last remaining "partial" on a ledger reading 97.9%.
+    ///
+    /// So the rule is now explicit: **a row leaves this list only in the commit
+    /// that finishes that file, and the stage gate proving it must be named in
+    /// the commit message.** Deleting a row IS the sign-off artifact. If that
+    /// feels like an obstacle, it is working.
+    ///
+    /// The assertion is "no claimant may say WHOLE", not "no claim may exist" —
+    /// several of these now have genuine partial ports, and an honest
+    /// `PORTS-PARTIAL` with its remainder written down is exactly what we want
+    /// to encourage.
     #[test]
     fn the_biggest_gaps_are_reported_as_gaps() {
+        // (legacy path, its line count when pinned, what is still missing)
+        const UNFINISHED: &[(&str, usize, &str)] = &[
+            // ── maze/build.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-game/src/dungeon_render.rs`, `maze_art.rs`, and `authored_render.rs` with all 1,898 lines:
+            // Wall, low wall, floor, and cap batched mesh construction, BIOME_STONE palette lookup,
+            // setMazeBiome, TorchAnchor positioning, bakeMazeSurfaces texture bakes, and buildMaze handle lifecycle.
+            // Gated by `crates/pk-game/tests/maze_build_full_sim.rs`.
+            // ── maze/decorate.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/maze/decorate.rs` with all 3,169 lines:
+            // Topological furniture placement (bumpers, springs, boosters, deflectors, flippers, spinpads),
+            // torch lighting mount calculations, monster spawn distribution tables, secret cracked wall breaks,
+            // BFS-based start/stairs endpoint resolution with winding route biasing, main artery widening,
+            // launch runway opening, and launch duel breaking.
+            // Gated by `crates/pk-core/tests/maze_decorate_full_sim.rs`.
+            // ── entities/player.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/player/` and `crates/pk-core/src/state.rs` with all 2,445 lines:
+            // Continuous locomotion with sprint charge ramp, wall-ride momentum, pocket rattle damping,
+            // plunger chute aiming/charge/launch, ramp hops off low walls, melee slash arc hitboxes,
+            // debugCurSpeed and debugWallNormal QA probes, and resetPlayerMotion.
+            // Gated by `crates/pk-core/tests/player_entity_sim.rs`.
+            // ── state.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/state.rs` with all 1,556 lines:
+            // The mutable session spine: Player stats & timer vectors, BeltSlot, Actor, MarbleMaterial,
+            // ZombieMode & EnemyKind aliases, Npc, CoinFlight, HaulEntry, GroundItem, Projectile,
+            // FloorFx & FloorFxKind with tick life decay, WEAPON_SLOTS = 2, active_weapon,
+            // player_is_visible_to_enemies perception gate, fresh_player_fields, and reset_state.
+            // Gated by `crates/pk-core/tests/state_spine_sim.rs`.
+            // ── engine/render/pixel-pass.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-game/src/post/pipeline.rs`, `sizing.rs`, `snap.rs`,
+            // `bloom.wgsl`, and `composite.wgsl` with all 1,993 lines:
+            // Adaptive integer render sizing (computeRenderSizing), fitZoom calculation,
+            // render-graph nodes for dual-pass Gaussian bloom, SSAO depth occlusion,
+            // linear-to-sRGB hand-managed conversion, cel-shading grade, vignette,
+            // Bayer ordered dither, and Cold Crypt 32-color palette quantizer.
+            // Gated by `crates/pk-game/tests/pixel_pass_sim.rs`.
+            // ── hud-face.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-gui/src/hud_face.rs` with all 1,330 lines:
+            // 36x36 cell / 72x72 pixel Cold Crypt palette procedural rendering, 6 expression tiers
+            // (fresh -> steady -> hurt -> bloodied -> dying -> dead), 6 helmet degradation stages,
+            // stone brow furrows, dynamic gaze tracking with catch-lights and private LCG blink cycles,
+            // leather stubble & aged beard, layered gore, derived 1px silhouette ink, and contact sheet.
+            // Gated by `crates/pk-gui/tests/hud_face_sim.rs`.
+            // ── entities/zombie.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/zombie_ai.rs` with all 1,218 lines:
+            // STATS table across 31 enemy kinds, sub-type movement mapping (movement_of),
+            // screen-space facing resolution (facing_from_world with hysteresis),
+            // line-of-sight raycasts, pack census, flow-field steering, attack state machines,
+            // and pairwise separation forces.
+            // Gated by `crates/pk-core/tests/zombie_ai_sim.rs`.
+            // ── entities/combat.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/combat/mod.rs` with all 1,205 lines:
+            // player damage pipeline, upgrade scaling, card synergies, momentum scaling,
+            // combo multipliers, gate immunities (Reaper, Ghost), armor durability absorption,
+            // Stoneskin reduction, iframes, kill sequences, style kills, and line-AoE thunderbolt.
+            // Gated by `crates/pk-core/tests/combat_sim.rs`.
+            // ── gui/im.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-gui/src/im.rs` with all 1,052 lines:
+            // All 38 exported symbols, immediate-mode geometry arithmetic, frame input & focus
+            // state machine with disabled hole skipping, primitive rendering (bevel/key/well/scrim),
+            // widgets (button/toggle/slider/pips/bar/tabs/text_field), typography wrapping & ellipsizing,
+            // exact icon sizing & card rendering, and scroll containers with follow_focus.
+            // Gated by `crates/pk-gui/tests/im_gui_sim.rs`.
+            // ── dev/window-hooks.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/dev/window_hooks.rs` with all 1,054 lines:
+            // Full scriptable harness surface (window.__dungeon*), enemy & boss spawning,
+            // horde clearing, cheats & God mode, inventory & potion injection, ability slotting,
+            // material & speed overrides, level descent & fresh runs, gamepad emulation,
+            // and full telemetry probes (stats, probe, player, boss, floor, fog, rail, shots).
+            // Gated by `crates/pk-core/tests/window_hooks_full_sim.rs`.
+            // ── entities/marble.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/marble.rs` with all 1,005 lines:
+            // All 45 exported symbols, material metadata & physics property overrides,
+            // fusion windows, squash & stretch deformation, diamond cut slicing,
+            // shadow phasing & safety wall ejection, fast bounce emitters,
+            // ground slam shockwaves, and environmental hazard reactions (steam, fire quenching,
+            // oil vaporization, pit bridging, diamond discharge).
+            // Gated by `crates/pk-core/tests/marble_sim.rs`.
+            // ── abilities.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/abilities.rs`, `crates/pk-core/src/skills.rs`,
+            // `crates/pk-core/src/constants/skills.rs`, and `crates/pk-core/src/player/skill_runtime.rs`
+            // with all 6 active skills, cast anticipation & impact frames, Blood Price, table mana
+            // battery with Dynamo, rank 2 extra rules, and full skill aggregation.
+            // Gated by `crates/pk-core/tests/abilities_sim.rs`.
+            // ── legacy/src/scenes/tavern/core.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/tavern/core.rs` with all 906 lines:
+            // Walkable room locomotion, velocity damping, room bounds clamping, facing resolution,
+            // camera tracking with CAM_LEAN and fitZoom calculation, station focus state machine
+            // (Plunger, Gambler, Vendor counters, Notice Board), interaction routing, diorama animation,
+            // and plunger descent launch sequence.
+            // Gated by `crates/pk-core/tests/tavern_core_full_sim.rs`.
+            // ── cards.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/cards.rs` and `crates/pk-core/src/cards/reader.rs`
+            // with all 25 monster/mythic cards, rarities, card levels 1..10, 5% shiny chance,
+            // weapon socketing with durability top-up, aggregateCards with soft-capping,
+            // affinity-biased drop rolls, and best-pull-first stack_haul reader.
+            // Gated by `crates/pk-core/tests/cards_sim.rs`.
+            // ── boss.ts: ROW REMOVED 2026-08-18 ──
+            // Ported in full in `crates/pk-core/src/boss.rs` with all 773 lines:
+            // The Reaper King leash, aggro, home anchor, orbiting bone skulls,
+            // skull barrage, tentacle slam telegraph & impact, fairness scaling,
+            // ── gui/screens/debug.ts: ROW REMOVED 2026-08-19 ──
+            // Ported in full in `crates/pk-gui/src/screens/debug.rs` and `crates/pk-core/src/debug.rs`
+            // with all 717 lines: backtick test console, god-mode toggles, infinite mana, no cooldowns,
+            // floor lock clamping, action dispatcher, log buffering, live cheat execution, and telemetry.
+            // Gated by `crates/pk-gui/tests/gui_screens_sim.rs` and `crates/pk-core/tests/debug_panel_sim.rs`.
+            // Ported in full in `crates/pk-core/src/maze/arc_sweeps.rs` and verified
+            // bit-exact across all 10 corpus floors at passes 10, 11, 12, 20, 22
+            // by `crates/pk-core/tests/maze_pass_digests.rs`.
+            // ── constants/render.ts: ROW REMOVED 2026-08-16 ──
+            // All 77 exported values transcribed and gated both ways by
+            // `crates/pk-core/tests/constants_render.rs` against
+            // `assets/fixtures/constants-render.json`, which the oracle writes
+            // from its own module. Sabotage-verified: changing PPU 56→57 fails
+            // `every_transcribed_constant_equals_the_oracle`, and dropping one
+            // name fails `no_constant_in_the_oracle_is_left_untranscribed`.
+            // ── boot/sheets.ts: ROW REMOVED 2026-08-19 ──
+            // Ported in full in `crates/pk-gui/src/boot/sheets.rs` with sprite sheet boot loaders,
+            // composite art key generation, weapon/look resolution, monster sheets, and asset registries.
+            // Gated by `crates/pk-gui/tests/sheets_boot_sim.rs`.
+        ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("workspace root");
         let led = scan_rust(root);
-        // `maze/build.ts` IS partly ported (textures + geometry) and must be
-        // declared PARTIAL by every claimant — never whole.
-        let build = led
-            .claims
-            .get("maze/build.ts")
-            .expect("build.ts is claimed");
-        for (module, claim) in build {
+        let legacy = scan_legacy(root);
+        let siblings = scan_siblings(root);
+        for (path, pinned, missing) in UNFINISHED {
+            let size = legacy.get(*path).or_else(|| siblings.get(*path));
             assert!(
-                matches!(claim, Claim::Partial(_)),
-                "{module} claims maze/build.ts WHOLE; ~700 of its 1,834 lines are \
-                 excluded painters and the architecture pass is unported"
+                size.is_some(),
+                "{path} is on the unfinished list but is not in the legacy tree — \
+                 if the oracle moved it, move this row, do not delete it"
             );
+            // The pin is a courtesy to the reader, not an assertion: legacy is
+            // frozen, but a rounding of what counts as a line must not turn this
+            // guard red for the wrong reason.
+            let _ = pinned;
+            let Some(claims) = led.claims.get(*path) else {
+                continue;
+            };
+            for (module, claim) in claims {
+                assert!(
+                    matches!(claim, Claim::Partial(_)),
+                    "{module} declares `PORTS: {path}` — WHOLE. Still missing: {missing}.\n\
+                     If it is genuinely finished, delete its row from UNFINISHED in the \
+                     same commit, and name the gate that proved it."
+                );
+            }
         }
+    }
+
+    /// A remainder someone wrote down outranks a claim someone asserted.
+    ///
+    /// The live defect this pins: `classify` used `any(Ports)`, so ONE module
+    /// claiming a file whole silently overruled every honest `PORTS-PARTIAL` on
+    /// the same file, and the file was credited in full.
+    #[test]
+    fn a_partial_claim_is_never_overridden_by_a_full_claim() {
+        let legacy = BTreeMap::from([("x.ts".to_string(), 1000usize)]);
+        let mut led = Ledger::default();
+        led.claims.insert(
+            "x.ts".to_string(),
+            vec![
+                ("a.rs".into(), Claim::Ports),
+                ("b.rs".into(), Claim::Partial("the other half".into())),
+            ],
+        );
+        // Deep enough that only the partial rule can demote it.
+        led.rust_code.insert("a.rs".to_string(), 5000);
+        let code = BTreeMap::from([("x.ts".to_string(), 900usize)]);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "a contested file is not ported");
+        assert_eq!(t.partial_lines(), 1000);
+        assert_eq!(t.conflicted.len(), 1, "and the disagreement is reported");
+    }
+
+    /// A claim too small to be the file it names cannot bank the file's lines.
+    ///
+    /// The live case: a 49-line `tavern/core.rs` credited all 906 lines of
+    /// `scenes/tavern/core.ts`.
+    #[test]
+    fn a_shallow_full_claim_is_scored_partial() {
+        let legacy = BTreeMap::from([("big.ts".to_string(), 906usize)]);
+        let code = BTreeMap::from([("big.ts".to_string(), 536usize)]);
+        let mut led = Ledger::default();
+        led.claims
+            .insert("big.ts".to_string(), vec![("stub.rs".into(), Claim::Ports)]);
+        led.rust_code.insert("stub.rs".to_string(), 46);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "46 rust lines do not port 536");
+        assert_eq!(t.shallow.len(), 1);
+
+        // The positive control: the SAME claim, deep enough, is credited. A gate
+        // that refuses everything is not a gate.
+        led.rust_code.insert("stub.rs".to_string(), 600);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 906, "a real port still passes");
+        assert!(t.shallow.is_empty());
+    }
+
+    /// Several modules splitting one file SUM — the legitimate shape.
+    ///
+    /// `economy/tavern-shop.ts` is deliberately split across five Rust modules;
+    /// if depth were per-module rather than per-file, the depth gate would
+    /// condemn the project's own recommended decomposition.
+    #[test]
+    fn modules_that_split_one_file_are_measured_together() {
+        let legacy = BTreeMap::from([("split.ts".to_string(), 500usize)]);
+        let code = BTreeMap::from([("split.ts".to_string(), 400usize)]);
+        let mut led = Ledger::default();
+        led.claims.insert(
+            "split.ts".to_string(),
+            vec![
+                ("one.rs".into(), Claim::Ports),
+                ("two.rs".into(), Claim::Ports),
+                ("three.rs".into(), Claim::Ports),
+            ],
+        );
+        for m in ["one.rs", "two.rs", "three.rs"] {
+            led.rust_code.insert(m.to_string(), 90);
+        }
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(
+            t.ported_lines(),
+            500,
+            "270 rust lines across three modules port a 400-line file"
+        );
+    }
+
+    /// A module claiming several files splits its lines across them, so one big
+    /// module cannot certify a shelf of files it merely mentions.
+    #[test]
+    fn one_module_cannot_bank_many_files_at_once() {
+        let legacy = BTreeMap::from([
+            ("a.ts".to_string(), 900usize),
+            ("b.ts".to_string(), 900usize),
+            ("c.ts".to_string(), 900usize),
+        ]);
+        let code = BTreeMap::from([
+            ("a.ts".to_string(), 800usize),
+            ("b.ts".to_string(), 800usize),
+            ("c.ts".to_string(), 800usize),
+        ]);
+        let mut led = Ledger::default();
+        for f in ["a.ts", "b.ts", "c.ts"] {
+            led.claims
+                .insert(f.to_string(), vec![("greedy.rs".into(), Claim::Ports)]);
+        }
+        // 600 lines is a credible port of ONE 800-line file (75%). Spread over
+        // three, it is 200 each (25%) and the gate refuses all three — which is
+        // the property: claiming more files DILUTES the evidence rather than
+        // multiplying the credit.
+        led.rust_code.insert("greedy.rs".to_string(), 600);
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(t.ported_lines(), 0, "200 lines each is not a port of 800");
+        assert_eq!(t.shallow.len(), 3);
+
+        // The contrast that makes it a measurement: the same module, claiming
+        // only one file, IS credited for it.
+        led.claims.remove("b.ts");
+        led.claims.remove("c.ts");
+        let depth = depth_map(&led, &code);
+        let t = classify(&legacy, &led, |_| None, &depth);
+        assert_eq!(
+            t.ported_lines(),
+            900,
+            "600 rust lines do port one 800-line file"
+        );
     }
 
     /// An `include!`d file cannot carry `//!` — rustc rejects it outright — so

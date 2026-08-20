@@ -69,20 +69,24 @@ pub const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 /// directly against the lane is the seal, and the one behind it is what stops
 /// the seal from being a single tile thick — and a one-tile membrane is exactly
 /// what [`remove_wall_stubs`] is built to delete.
-pub fn near_sealed(g: &Grid, mask: &TrackMask, i: i32, j: i32) -> bool {
+pub fn near_sealed_coords(w: i32, h: i32, sealed: &[u8], i: i32, j: i32) -> bool {
     for dj in -2..=2 {
         for di in -2..=2 {
             let x = i + di;
             let y = j + dj;
-            if x < 0 || y < 0 || x >= g.w || y >= g.h {
+            if x < 0 || y < 0 || x >= w || y >= h {
                 continue;
             }
-            if mask.sealed[idx(g, x, y)] == 1 {
+            if sealed[(y * w + x) as usize] == 1 {
                 return true;
             }
         }
     }
     false
+}
+
+pub fn near_sealed(g: &Grid, mask: &TrackMask, i: i32, j: i32) -> bool {
+    near_sealed_coords(g.w, g.h, &mask.sealed, i, j)
 }
 
 /// ROAD TERMINATIONS — the real "highway that stops in mid-air".

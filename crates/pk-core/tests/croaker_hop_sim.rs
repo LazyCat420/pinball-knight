@@ -1,10 +1,10 @@
 // Parity test for Croaker Hop Trajectory and Low-Wall Traversal.
 // Replicates legacy/src/game/pinball-knight/entities/croaker-hop.test.ts
 
-use pk_core::grid::{is_low_wall, set_tile, Grid, T_FLOOR, T_WALL};
-use pk_core::monsters::types::{EnemyKind, EnemyMode, LiveMonster};
-use pk_core::monsters::croaker::step_croaker_hop;
 use pk_core::enemies::{CROAKER_HOP_BOUNCES, CROAKER_HOP_MIN_RANGE};
+use pk_core::grid::{is_low_wall, set_tile, Grid, T_FLOOR, T_WALL};
+use pk_core::monsters::croaker::step_croaker_hop;
+use pk_core::monsters::types::{EnemyKind, EnemyMode, LiveMonster};
 
 const W: i32 = 21;
 
@@ -74,8 +74,14 @@ fn croaker_does_not_cross_full_height_wall_and_ricochets() {
         step_croaker_hop(&mut frog, &g, player_x, player_z, 1.0 / 60.0);
     }
 
-    assert!(frog.x < wx(12) - 0.2, "Croaker must not walk through full masonry");
-    assert!(frog.hop_bounces < CROAKER_HOP_BOUNCES, "Croaker must have spent a ricochet bouncing");
+    assert!(
+        frog.x < wx(12) - 0.2,
+        "Croaker must not walk through full masonry"
+    );
+    assert!(
+        frog.hop_bounces < CROAKER_HOP_BOUNCES,
+        "Croaker must have spent a ricochet bouncing"
+    );
     assert!(frog.x != start_x);
 }
 

@@ -1,6 +1,6 @@
 //! Simulation loop, step coordination, frame orchestration, and pause contracts.
 //!
-//! PORTS: `sim/paused.ts`, `sim/loop.ts`
+//! PORTS: `sim/paused.ts`
 
 pub mod loop_orchestrator;
 pub mod paused;

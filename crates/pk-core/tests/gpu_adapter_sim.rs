@@ -14,12 +14,7 @@ fn hardware_gpu_adapters_are_trusted() {
     assert!(!nvidia.software);
     assert!(!is_software_adapter(Some(&nvidia)));
 
-    let amd = parse_gpu_adapter_info(
-        "AMD",
-        "RDNA3",
-        "AMD Radeon RX 7900 XTX",
-        "Vulkan",
-    );
+    let amd = parse_gpu_adapter_info("AMD", "RDNA3", "AMD Radeon RX 7900 XTX", "Vulkan");
     assert!(!amd.software);
     assert!(!is_software_adapter(Some(&amd)));
 }
@@ -35,21 +30,11 @@ fn cpu_software_rasterizers_are_flagged() {
     assert!(swiftshader.software);
     assert!(is_software_adapter(Some(&swiftshader)));
 
-    let llvmpipe = parse_gpu_adapter_info(
-        "Mesa",
-        "",
-        "llvmpipe (LLVM 15.0.7, 256 bits)",
-        "",
-    );
+    let llvmpipe = parse_gpu_adapter_info("Mesa", "", "llvmpipe (LLVM 15.0.7, 256 bits)", "");
     assert!(llvmpipe.software);
     assert!(is_software_adapter(Some(&llvmpipe)));
 
-    let basic = parse_gpu_adapter_info(
-        "Microsoft",
-        "",
-        "Microsoft Basic Render Driver",
-        "",
-    );
+    let basic = parse_gpu_adapter_info("Microsoft", "", "Microsoft Basic Render Driver", "");
     assert!(basic.software);
     assert!(is_software_adapter(Some(&basic)));
 }

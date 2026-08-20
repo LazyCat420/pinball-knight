@@ -36,6 +36,29 @@ use crate::tile_shape::ArcFeature;
 pub const FNV_OFFSET: u32 = 0x811c_9dc5;
 pub const FNV_PRIME: u32 = 0x0100_0193;
 
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct FloorCensus {
+    pub level: i32,
+    pub run_seed: u32,
+    pub walkable: usize,
+    pub horde_size: usize,
+    pub props: usize,
+    pub doorways: usize,
+    pub rooms: usize,
+}
+
+static LAST_CENSUS: std::sync::Mutex<Option<FloorCensus>> = std::sync::Mutex::new(None);
+
+pub fn capture_floor_census() {
+    if let Ok(mut lock) = LAST_CENSUS.lock() {
+        *lock = Some(FloorCensus::default());
+    }
+}
+
+pub fn last_floor_census() -> Option<FloorCensus> {
+    LAST_CENSUS.lock().ok().and_then(|lock| lock.clone())
+}
+
 // ── THE WIRE ENCODING, ON ITS OWN ────────────────────────────────────────────
 //
 // Three one-line functions rather than `to_le_bytes()` at the call site, and

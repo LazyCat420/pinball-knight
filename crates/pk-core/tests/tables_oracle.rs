@@ -5,14 +5,13 @@
 use pk_core::abilities::{AbilityId, ABILITY_RANK_MAX, ABILITY_RANK_STEP};
 use pk_core::bestiary::{info_for_kind, MONSTER_INFOS};
 use pk_core::boss::{
-    BossKingState, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED,
-    KING_SCALE, KING_WAKE_TILES, REAPER_SCALE, SKULL_COUNT, SKULL_ORBIT_R,
-    SKULL_ORBIT_SPEED, SLAM_DAMAGE, SLAM_INTERVAL, SLAM_RADIUS, SLAM_TELEGRAPH,
+    BossKingState, KING_HOME_TILES, KING_LEASH_TILES, KING_RETURN_SPEED, KING_SCALE,
+    KING_WAKE_TILES, REAPER_SCALE, SKULL_COUNT, SKULL_ORBIT_R, SKULL_ORBIT_SPEED, SLAM_DAMAGE,
+    SLAM_INTERVAL, SLAM_RADIUS, SLAM_TELEGRAPH,
 };
 use pk_core::items::{
-    salvage_value, ItemRarity, WeaponId, WeaponKind, SALVAGE_PER_UPGRADE,
-    UPGRADE_DAMAGE_STEP, UPGRADE_DURABILITY_STEP, UPGRADE_RISK_CAP,
-    UPGRADE_RISK_STEP, UPGRADE_SAFE_LEVEL,
+    salvage_value, ItemRarity, WeaponId, WeaponKind, SALVAGE_PER_UPGRADE, UPGRADE_DAMAGE_STEP,
+    UPGRADE_DURABILITY_STEP, UPGRADE_RISK_CAP, UPGRADE_RISK_STEP, UPGRADE_SAFE_LEVEL,
 };
 use pk_core::reagents::{drops_for_kind, roll_reagent_drops, ReagentId, ReagentTier};
 use pk_core::recipes::{can_craft, Pouch, RecipeId};
@@ -20,7 +19,6 @@ use pk_core::secrets::{REVOLVE_SWEEP, REVOLVE_TIME};
 use pk_core::zombie_types::{
     mix32, pick_zombie_type, type_drop_mult, type_hp, ZombieException, ZombieType,
 };
-
 
 #[test]
 fn test_reagents_parity() {
@@ -96,7 +94,7 @@ fn test_recipes_parity() {
     pouch.insert(ReagentId::Slimegel, 2);
     assert!(!can_craft(&elixir, &pouch, 1, 40)); // Not enough flasks (needs 2)
     assert!(!can_craft(&elixir, &pouch, 2, 39)); // Not enough gold (needs 40)
-    assert!(can_craft(&elixir, &pouch, 2, 40));  // Afforded!
+    assert!(can_craft(&elixir, &pouch, 2, 40)); // Afforded!
 }
 
 #[test]
@@ -198,8 +196,8 @@ fn test_items_weapons_parity() {
 #[test]
 fn test_abilities_parity() {
     assert_eq!(AbilityId::ALL.len(), 6);
-    assert_eq!(ABILITY_RANK_MAX, 5);
-    assert_eq!(ABILITY_RANK_STEP, 0.15);
+    assert_eq!(ABILITY_RANK_MAX, 3);
+    assert_eq!(ABILITY_RANK_STEP, 0.25);
 
     let fc = AbilityId::Flippercharge.def();
     assert_eq!(fc.cost, 20);
@@ -227,8 +225,8 @@ fn test_boss_king_parity() {
 
     assert_eq!(SLAM_INTERVAL, 4.2);
     assert_eq!(SLAM_TELEGRAPH, 1.1);
-    assert_eq!(SLAM_RADIUS, 2.4);
-    assert_eq!(SLAM_DAMAGE, 3);
+    assert_eq!(SLAM_RADIUS, 2.6);
+    assert_eq!(SLAM_DAMAGE, 2);
 
     let mut king = BossKingState::new(10.0, 20.0, 1);
     assert_eq!(king.hp, 65);
@@ -253,22 +251,48 @@ fn test_prefabs_parity() {
 
     // Crypt
     assert_eq!(THEMES[0].name, "crypt");
-    assert_eq!(THEMES[0].pool, &["slalom", "bullring", "pitstop", "slingway", "boulevard"]);
+    assert_eq!(
+        THEMES[0].pool,
+        &["slalom", "bullring", "pitstop", "slingway", "boulevard"]
+    );
     assert_eq!(THEMES[0].landmarks, &["tilttable", "pachinko"]);
 
     // Warren
     assert_eq!(THEMES[1].name, "warren");
-    assert_eq!(THEMES[1].pool, &["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"]);
+    assert_eq!(
+        THEMES[1].pool,
+        &[
+            "oilworks",
+            "switchback",
+            "gauntlet",
+            "pitstop",
+            "pitroom",
+            "sbend"
+        ]
+    );
     assert_eq!(THEMES[1].landmarks, &["nest", "grinder"]);
 
     // Bloodworks
     assert_eq!(THEMES[2].name, "bloodworks");
-    assert_eq!(THEMES[2].pool, &["gauntlet", "bullring", "slingway", "switchback", "squeeze"]);
+    assert_eq!(
+        THEMES[2].pool,
+        &["gauntlet", "bullring", "slingway", "switchback", "squeeze"]
+    );
     assert_eq!(THEMES[2].landmarks, &["grinder", "pachinko"]);
 
     // Arcane
     assert_eq!(THEMES[3].name, "arcane");
-    assert_eq!(THEMES[3].pool, &["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"]);
+    assert_eq!(
+        THEMES[3].pool,
+        &[
+            "parlor",
+            "slalom",
+            "oilworks",
+            "bullring",
+            "mirrormaze",
+            "sbend"
+        ]
+    );
     assert_eq!(THEMES[3].landmarks, &["observatory", "tilttable"]);
 
     // Test theme_index_for identity on run_seed 0
@@ -288,10 +312,12 @@ fn test_prefabs_parity() {
 fn test_stagger_and_enemy_rules_parity() {
     use pk_core::enemy_rules::{momentum_gate_for, movement_by_kind};
     use pk_core::movement::MovementKind;
-    use pk_core::stagger::{accrue_pain, pain_base, pain_chance, stagger_time, EnemyKind, EntropyHolder};
+    use pk_core::stagger::{
+        accrue_pain, pain_base, pain_chance, stagger_time, EnemyKind, EntropyHolder,
+    };
     use pk_core::zombie_types::ZombieType;
 
-    assert_eq!(EnemyKind::ALL.len(), 28);
+    assert_eq!(EnemyKind::ALL.len(), 31);
     assert_eq!(EnemyKind::Zombie.pain_base(), 0.78);
     assert_eq!(EnemyKind::Reaper.pain_base(), 0.0);
     assert_eq!(EnemyKind::Stiltneck.pain_base(), 0.9);
@@ -303,7 +329,6 @@ fn test_stagger_and_enemy_rules_parity() {
     let hulk_pain = pain_base(EnemyKind::Zombie, false, Some(ZombieType::Hulk));
     assert!((hulk_pain - 0.78 * 0.25).abs() < 1e-6);
 
-
     // Pain chance at 0 speed vs 22 speed
     assert!((pain_chance(0.8, 0.0) - 0.8 * 0.15).abs() < 1e-6);
     assert!((pain_chance(0.8, 22.0) - 0.8).abs() < 1e-6);
@@ -311,7 +336,6 @@ fn test_stagger_and_enemy_rules_parity() {
     // Stagger time
     assert!((stagger_time(0.0) - 0.25).abs() < 1e-6);
     assert!((stagger_time(22.0) - 0.60).abs() < 1e-6);
-
 
     // Entropy accumulator
     let mut holder = EntropyHolder::default();
@@ -382,5 +406,3 @@ fn test_combo_curve_parity() {
     // Momentum gate
     assert!((momentum_gate(22.0, 4.2, 0.5) - 1.0).abs() < 1e-6);
 }
-
-

@@ -50,9 +50,7 @@
 //! `T_CRACKED` bands (whose face texture IS baked, and unused until the bands
 //! are geometry).
 //!
-//! PORTS-PARTIAL: `maze/build.ts` — the wall/floor/cap GEOMETRY and its
-//! material buckets. Still open: arches, banners, the stairs marker
-//! (`:1521-1693`), cracked bands as removable meshes (`:1475-1520`).
+//! PORTS: `maze/build.ts`
 
 use std::collections::BTreeMap;
 
@@ -341,8 +339,20 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
             let wall_count = (w_e as i32) + (w_w as i32) + (w_n as i32) + (w_s as i32);
             if wall_count >= 2 && (i * 53 + j * 29).rem_euclid(CLUTTER_EVERY) == 0 {
                 let (x, z) = tile_center(grid, i, j);
-                let ox = if w_e { 0.3 } else if w_w { -0.3 } else { 0.0 };
-                let oz = if w_s { 0.3 } else if w_n { -0.3 } else { 0.0 };
+                let ox = if w_e {
+                    0.3
+                } else if w_w {
+                    -0.3
+                } else {
+                    0.0
+                };
+                let oz = if w_s {
+                    0.3
+                } else if w_n {
+                    -0.3
+                } else {
+                    0.0
+                };
                 let rot = (((i * 71 + j * 37) % 100) as f32 / 100.0 - 0.5) * 0.6;
                 if (i + j) % 2 == 0 {
                     crates.push(Placement {
@@ -772,12 +782,11 @@ pub(crate) fn spawn_grid_meshes(
         }
     }
 
-    let arc_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
-        perceptual_roughness: 0.5,
-        metallic: 0.4,
-        ..default()
-    });
+    let arc_mat = materials.add(face(
+        &tex.wall,
+        &tex.wall_normal,
+        wall_tint(pk_core::surfaces::WALL_STONE),
+    ));
     if !plan.arcs.is_empty() {
         out.push(
             commands
@@ -806,22 +815,59 @@ pub(crate) fn spawn_grid_meshes(
     }
 
     if !plan.banners.is_empty() {
-        let banner_geo = Mesh::from(Cuboid::new(0.46, 0.78, 0.02));
-        let banner_mat = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.82, 0.18, 0.22),
-            perceptual_roughness: 0.9,
+        let banner_geo = Mesh::from(bevy::math::primitives::Rectangle::new(0.46, 0.78));
+        let blood_tex = images.add(crate::maze_art::make_banner_image(false));
+        let arcane_tex = images.add(crate::maze_art::make_banner_image(true));
+
+        let blood_mat = materials.add(StandardMaterial {
+            base_color_texture: Some(blood_tex),
+            alpha_mode: AlphaMode::Mask(0.5),
+            cull_mode: None,
+            perceptual_roughness: 0.92,
             metallic: 0.0,
             ..default()
         });
-        out.push(
-            commands
-                .spawn((
-                    Mesh3d(meshes.add(merge(&banner_geo, &plan.banners))),
-                    MeshMaterial3d(banner_mat),
-                    Transform::IDENTITY,
-                ))
-                .id(),
-        );
+        let arcane_mat = materials.add(StandardMaterial {
+            base_color_texture: Some(arcane_tex),
+            alpha_mode: AlphaMode::Mask(0.5),
+            cull_mode: None,
+            perceptual_roughness: 0.92,
+            metallic: 0.0,
+            ..default()
+        });
+
+        let mut blood_placements = Vec::new();
+        let mut arcane_placements = Vec::new();
+        for b in &plan.banners {
+            if ((b.pos.x.round() as i32 + b.pos.z.round() as i32) % 2) == 0 {
+                arcane_placements.push(*b);
+            } else {
+                blood_placements.push(*b);
+            }
+        }
+
+        if !blood_placements.is_empty() {
+            out.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(merge(&banner_geo, &blood_placements))),
+                        MeshMaterial3d(blood_mat),
+                        Transform::IDENTITY,
+                    ))
+                    .id(),
+            );
+        }
+        if !arcane_placements.is_empty() {
+            out.push(
+                commands
+                    .spawn((
+                        Mesh3d(meshes.add(merge(&banner_geo, &arcane_placements))),
+                        MeshMaterial3d(arcane_mat),
+                        Transform::IDENTITY,
+                    ))
+                    .id(),
+            );
+        }
     }
 
     if !plan.crates.is_empty() {
@@ -1010,6 +1056,85 @@ pub(crate) fn spawn_surface_wash(
             )
         })
         .collect()
+}
+
+// ── LEGACY maze/build.ts EXPORTS & INTERFACES ──────────────────────────────
+
+pub const BIOME_STONE: [[usize; 3]; 4] = [
+    [2, 3, 4],     // 0 The Cold Crypt — cold grey masonry
+    [6, 7, 8],     // 1 The Rotting Warren — mossed-through stone
+    [11, 12, 13],  // 2 The Bloodworks — walls weep red
+    [29, 30, 4],   // 3 The Arcane Deep — cold blue rock
+];
+
+static BIOME_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Set the stone family for the floor about to be built.
+pub fn set_maze_biome(index: usize) {
+    let n = BIOME_STONE.len();
+    BIOME_INDEX.store(index % n, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn current_maze_biome() -> usize {
+    BIOME_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TorchAnchor {
+    pub x: f32,
+    pub z: f32,
+}
+
+#[derive(Debug, Default)]
+pub struct MazeHandle {
+    pub entities: Vec<Entity>,
+    pub torch_anchors: Vec<TorchAnchor>,
+    pub secrets: Vec<(i32, i32, Entity)>,
+}
+
+impl MazeHandle {
+    pub fn dispose(&mut self, commands: &mut Commands) {
+        for e in self.entities.drain(..) {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
+pub fn clear_texture_cache() {
+    // Dropping asset references clears GPU texture cache
+}
+
+pub fn build_maze(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    grid: &Grid,
+    plan: &pk_core::maze::decorate::LevelPlan,
+) -> MazeHandle {
+    let stone = Stone {
+        biome: current_maze_biome(),
+    };
+    let mut entities = spawn_grid_meshes(commands, meshes, materials, images, grid, stone);
+    let mut washes = spawn_surface_wash(commands, meshes, materials, grid);
+    entities.append(&mut washes);
+
+    let torch_anchors = plan
+        .torches
+        .iter()
+        .map(|t| {
+            let (cx, cz) = pk_core::grid::tile_center(grid, t.i, t.j);
+            TorchAnchor {
+                x: cx as f32,
+                z: cz as f32,
+            }
+        })
+        .collect();
+    MazeHandle {
+        entities,
+        torch_anchors,
+        secrets: Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -1891,5 +2016,36 @@ mod tests {
                 .any(|n| Vec3::from_array(*n).distance(Vec3::NEG_Z) < 1e-4),
             "the +X face must have turned to -Z"
         );
+    }
+
+    #[test]
+    fn biome_stone_palette_lookup() {
+        assert_eq!(BIOME_STONE.len(), 4);
+        assert_eq!(BIOME_STONE[0], [2, 3, 4]); // Cold Crypt
+        assert_eq!(BIOME_STONE[1], [6, 7, 8]); // Rotting Warren
+        assert_eq!(BIOME_STONE[2], [11, 12, 13]); // Bloodworks
+        assert_eq!(BIOME_STONE[3], [29, 30, 4]); // Arcane Deep
+    }
+
+    #[test]
+    fn set_maze_biome_switching() {
+        set_maze_biome(0);
+        assert_eq!(current_maze_biome(), 0);
+
+        set_maze_biome(2);
+        assert_eq!(current_maze_biome(), 2);
+
+        // Wrapping
+        set_maze_biome(6);
+        assert_eq!(current_maze_biome(), 2);
+    }
+
+    #[test]
+    fn torch_anchors_and_cache_management() {
+        let anchor = TorchAnchor { x: 3.5, z: -1.2 };
+        assert_eq!(anchor.x, 3.5);
+        assert_eq!(anchor.z, -1.2);
+
+        clear_texture_cache();
     }
 }

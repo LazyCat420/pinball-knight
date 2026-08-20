@@ -1,9 +1,7 @@
 // Parity test suite for Sealed Vault Lamp Puzzle Runtime.
 // Replicates legacy/src/game/pinball-knight/lamp-puzzle.ts
 
-use pk_core::maze::lamp_runtime::{
-    LampRuntimeState, CHEST_LIT, CHEST_OPEN, CHEST_UNLIT,
-};
+use pk_core::maze::lamp_runtime::{LampRuntimeState, CHEST_LIT, CHEST_OPEN, CHEST_UNLIT};
 
 #[test]
 fn lamp_puzzle_progressively_lights_and_unlocks_vault() {

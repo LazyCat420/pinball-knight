@@ -1,6 +1,6 @@
 //! Stagger, pain interruption, and squash-and-stretch deformation physics.
 //!
-//! PORTS: `entities/stagger.ts`, `entities/combat.ts`
+//! PORTS: `entities/stagger.ts`
 
 pub use crate::stagger::*;
 
@@ -38,7 +38,8 @@ impl SquashState {
             return (1.0, 1.0);
         }
         let t = (self.timer / SQUASH_RECOVER_TIME).clamp(0.0, 1.0);
-        let depth = (SQUASH_DEPTH_MAX * self.amplitude * (t * std::f64::consts::FRAC_PI_2).sin()) as f32;
+        let depth =
+            (SQUASH_DEPTH_MAX * self.amplitude * (t * std::f64::consts::FRAC_PI_2).sin()) as f32;
         (1.0 - depth * 0.7, 1.0 + depth * 0.5)
     }
 }

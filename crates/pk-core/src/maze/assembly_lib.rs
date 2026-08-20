@@ -1,251 +1,471 @@
 //! Canonical pinball machine library — authored modular mechanisms.
 //!
+//! Port of `legacy/src/game/pinball-knight/maze/assembly-lib.ts` (305 lines).
+//!
 //! PORTS: `maze/assembly-lib.ts`
 
-use super::assembly::{Assembly, AssemblyPart, AssemblyPort, PortRole, Dir, E, N, S, W};
+use std::sync::LazyLock;
 
-/// The classic Orbit: a curved wraparound lane that returns the ball with preserved speed.
-pub fn orbit() -> Assembly {
-    Assembly {
-        name: "orbit".to_string(),
-        w: 4,
-        h: 3,
-        floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0),
-            (3, 1),
-            (0, 2), (1, 2), (2, 2), (3, 2),
-        ],
-        parts: vec![
-            AssemblyPart {
-                ci: 1,
-                cj: 0,
-                kind: "booster".to_string(),
-                dir: Some(E),
-                role: Some("drive".to_string()),
-                seq: Some(0),
-            },
-            AssemblyPart {
-                ci: 3,
-                cj: 0,
-                kind: "deflector".to_string(),
-                dir: Some(S),
-                role: Some("corner".to_string()),
-                seq: Some(1),
-            },
-            AssemblyPart {
-                ci: 3,
-                cj: 2,
-                kind: "deflector".to_string(),
-                dir: Some(W),
-                role: Some("corner".to_string()),
-                seq: Some(2),
-            },
-            AssemblyPart {
-                ci: 1,
-                cj: 2,
-                kind: "booster".to_string(),
-                dir: Some(W),
-                role: Some("return".to_string()),
-                seq: Some(3),
-            },
-        ],
-        ports: vec![
-            AssemblyPort {
-                ci: 0,
-                cj: 0,
-                dir: E,
-                role: PortRole::Entry,
-            },
-            AssemblyPort {
-                ci: 0,
-                cj: 2,
-                dir: W,
-                role: PortRole::Exit,
-            },
-        ],
-    }
-}
+use super::assembly::{
+    Assembly, AssemblyPart, AssemblyPort, PortFlow, PortWay, E, N, O, S, W,
+};
 
-/// The Slingshot Pair: two diagonal rebounders positioned above the flippers.
-pub fn slingshot_pair() -> Assembly {
-    Assembly {
-        name: "slingshot_pair".to_string(),
-        w: 5,
-        h: 3,
-        floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0), (4, 0),
-            (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
-            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
-        ],
-        parts: vec![
-            AssemblyPart {
-                ci: 1,
-                cj: 1,
-                kind: "slingshot_l".to_string(),
-                dir: Some(Dir { di: 1, dj: -1 }),
-                role: Some("slingshot".to_string()),
-                seq: Some(0),
-            },
-            AssemblyPart {
-                ci: 3,
-                cj: 1,
-                kind: "slingshot_r".to_string(),
-                dir: Some(Dir { di: -1, dj: -1 }),
-                role: Some("slingshot".to_string()),
-                seq: Some(1),
-            },
-        ],
-        ports: vec![
-            AssemblyPort {
-                ci: 2,
-                cj: 2,
-                dir: N,
-                role: PortRole::Entry,
-            },
-            AssemblyPort {
-                ci: 2,
-                cj: 0,
-                dir: N,
-                role: PortRole::Exit,
-            },
-        ],
-    }
-}
+pub static ORBIT: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "orbit".to_string(),
+    w: 4,
+    h: 3,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (3, 0),
+        (3, 1),
+        (3, 2),
+        (2, 2),
+        (1, 2),
+        (0, 2),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 1,
+            cj: 0,
+            kind: "booster".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 3,
+            cj: 0,
+            kind: "deflector".to_string(),
+            dir: E,
+            dir2: Some(S),
+            role: Some("turn".to_string()),
+            seq: Some(1),
+        },
+        AssemblyPart {
+            ci: 3,
+            cj: 2,
+            kind: "deflector".to_string(),
+            dir: S,
+            dir2: Some(W),
+            role: Some("turn".to_string()),
+            seq: Some(2),
+        },
+        AssemblyPart {
+            ci: 1,
+            cj: 2,
+            kind: "booster".to_string(),
+            dir: W,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: Some(3),
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 0,
+            cj: 0,
+            dir: E,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("upper".to_string()),
+        },
+        AssemblyPort {
+            ci: 0,
+            cj: 2,
+            dir: W,
+            way: PortWay::Out,
+            flow: PortFlow::Ballistic,
+            tag: Some("return".to_string()),
+        },
+    ],
+});
 
-/// Drop Target Bank: a row of targets guarding a reward vault.
-pub fn drop_target_bank() -> Assembly {
-    Assembly {
-        name: "drop_target_bank".to_string(),
-        w: 5,
-        h: 2,
-        floor: vec![
-            (0, 0), (1, 0), (2, 0), (3, 0), (4, 0),
-            (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
-        ],
-        parts: vec![
-            AssemblyPart {
-                ci: 1,
-                cj: 0,
-                kind: "target".to_string(),
-                dir: Some(S),
-                role: Some("bank".to_string()),
-                seq: Some(0),
-            },
-            AssemblyPart {
-                ci: 2,
-                cj: 0,
-                kind: "target".to_string(),
-                dir: Some(S),
-                role: Some("bank".to_string()),
-                seq: Some(1),
-            },
-            AssemblyPart {
-                ci: 3,
-                cj: 0,
-                kind: "target".to_string(),
-                dir: Some(S),
-                role: Some("bank".to_string()),
-                seq: Some(2),
-            },
-        ],
-        ports: vec![
-            AssemblyPort {
-                ci: 2,
-                cj: 1,
-                dir: N,
-                role: PortRole::Entry,
-            },
-        ],
-    }
-}
+pub static RAMP_RETURN: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "ramp-return".to_string(),
+    w: 3,
+    h: 3,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (2, 1),
+        (0, 2),
+        (1, 2),
+        (2, 2),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 0,
+            cj: 0,
+            kind: "ramp".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 0,
+            kind: "deflector".to_string(),
+            dir: E,
+            dir2: Some(S),
+            role: Some("turn".to_string()),
+            seq: Some(1),
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 2,
+            kind: "spring".to_string(),
+            dir: W,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: Some(2),
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 0,
+            cj: 0,
+            dir: E,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("ramp".to_string()),
+        },
+        AssemblyPort {
+            ci: 0,
+            cj: 2,
+            dir: W,
+            way: PortWay::Out,
+            flow: PortFlow::Eject,
+            tag: Some("return".to_string()),
+        },
+    ],
+});
 
-/// Scoop Return: a saucer scoop that catches balls and ejects them along a track.
-pub fn scoop_return() -> Assembly {
-    Assembly {
-        name: "scoop_return".to_string(),
-        w: 3,
-        h: 3,
-        floor: vec![
-            (0, 0), (1, 0), (2, 0),
-            (0, 1), (1, 1), (2, 1),
-            (0, 2), (1, 2), (2, 2),
-        ],
-        parts: vec![
-            AssemblyPart {
-                ci: 1,
-                cj: 1,
-                kind: "scoop".to_string(),
-                dir: Some(S),
-                role: Some("eject".to_string()),
-                seq: Some(0),
-            },
-        ],
-        ports: vec![
-            AssemblyPort {
-                ci: 1,
-                cj: 0,
-                dir: S,
-                role: PortRole::Entry,
-            },
-            AssemblyPort {
-                ci: 1,
-                cj: 2,
-                dir: S,
-                role: PortRole::Exit,
-            },
-        ],
-    }
-}
+pub static TARGET_BANK: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "target-bank".to_string(),
+    w: 3,
+    h: 2,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (0, 1),
+        (1, 1),
+        (2, 1),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 0,
+            cj: 1,
+            kind: "target".to_string(),
+            dir: N,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 1,
+            cj: 1,
+            kind: "target".to_string(),
+            dir: N,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(1),
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 1,
+            kind: "target".to_string(),
+            dir: N,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(2),
+        },
+    ],
+    ports: vec![AssemblyPort {
+        ci: 1,
+        cj: 0,
+        dir: S,
+        way: PortWay::In,
+        flow: PortFlow::Ballistic,
+        tag: Some("face".to_string()),
+    }],
+});
 
-/// Plunger Runway: a high-speed launch chute.
-pub fn plunger_runway() -> Assembly {
-    Assembly {
-        name: "plunger_runway".to_string(),
-        w: 2,
-        h: 5,
-        floor: vec![
-            (0, 0), (1, 0),
-            (0, 1), (1, 1),
-            (0, 2), (1, 2),
-            (0, 3), (1, 3),
-            (0, 4), (1, 4),
-        ],
-        parts: vec![
-            AssemblyPart {
-                ci: 0,
-                cj: 4,
-                kind: "plunger".to_string(),
-                dir: Some(N),
-                role: Some("launch".to_string()),
-                seq: Some(0),
-            },
-            AssemblyPart {
-                ci: 0,
-                cj: 2,
-                kind: "magstrip".to_string(),
-                dir: Some(N),
-                role: Some("accel".to_string()),
-                seq: Some(1),
-            },
-        ],
-        ports: vec![
-            AssemblyPort {
-                ci: 0,
-                cj: 0,
-                dir: N,
-                role: PortRole::Exit,
-            },
-        ],
-    }
-}
+pub static POP_NEST: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "pop-nest".to_string(),
+    w: 3,
+    h: 3,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (0, 1),
+        (1, 1),
+        (2, 1),
+        (0, 2),
+        (1, 2),
+        (2, 2),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 1,
+            cj: 0,
+            kind: "bumper".to_string(),
+            dir: O,
+            dir2: None,
+            role: Some("rebound".to_string()),
+            seq: None,
+        },
+        AssemblyPart {
+            ci: 0,
+            cj: 2,
+            kind: "bumper".to_string(),
+            dir: O,
+            dir2: None,
+            role: Some("rebound".to_string()),
+            seq: None,
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 2,
+            kind: "bumper".to_string(),
+            dir: O,
+            dir2: None,
+            role: Some("rebound".to_string()),
+            seq: None,
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 1,
+            cj: 1,
+            dir: S,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("mouth".to_string()),
+        },
+        AssemblyPort {
+            ci: 1,
+            cj: 2,
+            dir: S,
+            way: PortWay::Out,
+            flow: PortFlow::Impact,
+            tag: Some("spill".to_string()),
+        },
+    ],
+});
 
-/// Returns the full collection of authored pinball machines.
-pub fn all_machines() -> Vec<Assembly> {
+pub static SLING_PAIR: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "sling-pair".to_string(),
+    w: 3,
+    h: 2,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (0, 1),
+        (1, 1),
+        (2, 1),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 0,
+            cj: 1,
+            kind: "slingshot".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("rebound".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 1,
+            kind: "slingshot".to_string(),
+            dir: W,
+            dir2: None,
+            role: Some("rebound".to_string()),
+            seq: Some(1),
+        },
+    ],
+    ports: vec![AssemblyPort {
+        ci: 1,
+        cj: 0,
+        dir: S,
+        way: PortWay::In,
+        flow: PortFlow::Ballistic,
+        tag: Some("lane".to_string()),
+    }],
+});
+
+pub static KICKER_LANE: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "kicker-lane".to_string(),
+    w: 2,
+    h: 2,
+    floor: vec![(0, 0), (1, 0), (0, 1), (1, 1)],
+    parts: vec![
+        AssemblyPart {
+            ci: 0,
+            cj: 1,
+            kind: "spring".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 1,
+            cj: 0,
+            kind: "rollover".to_string(),
+            dir: O,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: None,
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 0,
+            cj: 0,
+            dir: S,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("mouth".to_string()),
+        },
+        AssemblyPort {
+            ci: 1,
+            cj: 1,
+            dir: E,
+            way: PortWay::Out,
+            flow: PortFlow::Eject,
+            tag: Some("kickout".to_string()),
+        },
+    ],
+});
+
+pub static SPINNER_GATE: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "spinner-gate".to_string(),
+    w: 3,
+    h: 1,
+    floor: vec![(0, 0), (1, 0), (2, 0)],
+    parts: vec![
+        AssemblyPart {
+            ci: 1,
+            cj: 0,
+            kind: "spinpad".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: None,
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 0,
+            kind: "booster".to_string(),
+            dir: E,
+            dir2: None,
+            role: Some("drive".to_string()),
+            seq: None,
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 0,
+            cj: 0,
+            dir: E,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("mouth".to_string()),
+        },
+        AssemblyPort {
+            ci: 2,
+            cj: 0,
+            dir: E,
+            way: PortWay::Out,
+            flow: PortFlow::Ballistic,
+            tag: Some("through".to_string()),
+        },
+    ],
+});
+
+pub static ROLLOVER_BANK: LazyLock<Assembly> = LazyLock::new(|| Assembly {
+    name: "rollover-bank".to_string(),
+    w: 3,
+    h: 2,
+    floor: vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (0, 1),
+        (1, 1),
+        (2, 1),
+    ],
+    parts: vec![
+        AssemblyPart {
+            ci: 0,
+            cj: 0,
+            kind: "rollover".to_string(),
+            dir: S,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(0),
+        },
+        AssemblyPart {
+            ci: 1,
+            cj: 0,
+            kind: "rollover".to_string(),
+            dir: S,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(1),
+        },
+        AssemblyPart {
+            ci: 2,
+            cj: 0,
+            kind: "rollover".to_string(),
+            dir: S,
+            dir2: None,
+            role: Some("score".to_string()),
+            seq: Some(2),
+        },
+    ],
+    ports: vec![
+        AssemblyPort {
+            ci: 1,
+            cj: 0,
+            dir: S,
+            way: PortWay::In,
+            flow: PortFlow::Ballistic,
+            tag: Some("lanes".to_string()),
+        },
+        AssemblyPort {
+            ci: 1,
+            cj: 1,
+            dir: S,
+            way: PortWay::Out,
+            flow: PortFlow::Ballistic,
+            tag: Some("below".to_string()),
+        },
+    ],
+});
+
+pub static MACHINES: LazyLock<Vec<Assembly>> = LazyLock::new(|| {
     vec![
-        orbit(),
-        slingshot_pair(),
-        drop_target_bank(),
-        scoop_return(),
-        plunger_runway(),
+        ORBIT.clone(),
+        RAMP_RETURN.clone(),
+        TARGET_BANK.clone(),
+        POP_NEST.clone(),
+        SLING_PAIR.clone(),
+        KICKER_LANE.clone(),
+        SPINNER_GATE.clone(),
+        ROLLOVER_BANK.clone(),
     ]
+});
+
+pub fn machine_named(name: &str) -> Option<Assembly> {
+    MACHINES.iter().find(|m| m.name == name).cloned()
 }

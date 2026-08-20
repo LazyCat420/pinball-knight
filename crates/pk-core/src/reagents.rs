@@ -237,87 +237,225 @@ pub struct DropEntry {
 
 pub fn drops_for_kind(kind: &str) -> &'static [DropEntry] {
     match kind {
-        "zombie" => &[DropEntry { id: ReagentId::Rotflesh, chance: 0.28 }],
+        "zombie" => &[DropEntry {
+            id: ReagentId::Rotflesh,
+            chance: 0.28,
+        }],
         "spider" => &[
-            DropEntry { id: ReagentId::Silk, chance: 0.18 },
-            DropEntry { id: ReagentId::Fang, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Silk,
+                chance: 0.18,
+            },
+            DropEntry {
+                id: ReagentId::Fang,
+                chance: 0.1,
+            },
         ],
         "brute" => &[
-            DropEntry { id: ReagentId::Hide, chance: 0.28 },
-            DropEntry { id: ReagentId::Rotflesh, chance: 0.08 },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.28,
+            },
+            DropEntry {
+                id: ReagentId::Rotflesh,
+                chance: 0.08,
+            },
         ],
-        "spitter" => &[DropEntry { id: ReagentId::Venomsac, chance: 0.2 }],
-        "ghost" => &[DropEntry { id: ReagentId::Ectoplasm, chance: 0.14 }],
-        "bat" => &[DropEntry { id: ReagentId::Batwing, chance: 0.28 }],
-        "slime" => &[DropEntry { id: ReagentId::Slimegel, chance: 0.3 }],
-        "reaper" => &[DropEntry { id: ReagentId::Grimbone, chance: 0.12 }],
-        "goblin" => &[DropEntry { id: ReagentId::Goblintooth, chance: 0.16 }],
+        "spitter" => &[DropEntry {
+            id: ReagentId::Venomsac,
+            chance: 0.2,
+        }],
+        "ghost" => &[DropEntry {
+            id: ReagentId::Ectoplasm,
+            chance: 0.14,
+        }],
+        "bat" => &[DropEntry {
+            id: ReagentId::Batwing,
+            chance: 0.28,
+        }],
+        "slime" => &[DropEntry {
+            id: ReagentId::Slimegel,
+            chance: 0.3,
+        }],
+        "reaper" => &[DropEntry {
+            id: ReagentId::Grimbone,
+            chance: 0.12,
+        }],
+        "goblin" => &[DropEntry {
+            id: ReagentId::Goblintooth,
+            chance: 0.16,
+        }],
         "pin" => &[
-            DropEntry { id: ReagentId::Steelpin, chance: 0.14 },
-            DropEntry { id: ReagentId::Glass, chance: 0.06 },
+            DropEntry {
+                id: ReagentId::Steelpin,
+                chance: 0.14,
+            },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.06,
+            },
         ],
         "golem" => &[
-            DropEntry { id: ReagentId::Ironshard, chance: 0.2 },
-            DropEntry { id: ReagentId::Glass, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Ironshard,
+                chance: 0.2,
+            },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.1,
+            },
         ],
         "chomper" => &[
-            DropEntry { id: ReagentId::Slimegel, chance: 0.14 },
-            DropEntry { id: ReagentId::Fang, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Slimegel,
+                chance: 0.14,
+            },
+            DropEntry {
+                id: ReagentId::Fang,
+                chance: 0.1,
+            },
         ],
-        "magnet" => &[DropEntry { id: ReagentId::Lodestone, chance: 0.16 }],
-        "webspinner" => &[DropEntry { id: ReagentId::Silk, chance: 0.28 }],
+        "magnet" => &[DropEntry {
+            id: ReagentId::Lodestone,
+            chance: 0.16,
+        }],
+        "webspinner" => &[DropEntry {
+            id: ReagentId::Silk,
+            chance: 0.28,
+        }],
         "sporeling" => &[
-            DropEntry { id: ReagentId::Rotflesh, chance: 0.22 },
-            DropEntry { id: ReagentId::Slimegel, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Rotflesh,
+                chance: 0.22,
+            },
+            DropEntry {
+                id: ReagentId::Slimegel,
+                chance: 0.12,
+            },
         ],
         "jester" => &[
-            DropEntry { id: ReagentId::Steelpin, chance: 0.26 },
-            DropEntry { id: ReagentId::Glass, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Steelpin,
+                chance: 0.26,
+            },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.1,
+            },
         ],
         "croaker" => &[
-            DropEntry { id: ReagentId::Slimegel, chance: 0.26 },
-            DropEntry { id: ReagentId::Glass, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Slimegel,
+                chance: 0.26,
+            },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.12,
+            },
         ],
         "rotortail" => &[
-            DropEntry { id: ReagentId::Hide, chance: 0.24 },
-            DropEntry { id: ReagentId::Ironshard, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.24,
+            },
+            DropEntry {
+                id: ReagentId::Ironshard,
+                chance: 0.12,
+            },
         ],
         "stiltneck" => &[
-            DropEntry { id: ReagentId::Ironshard, chance: 0.26 },
-            DropEntry { id: ReagentId::Hide, chance: 0.16 },
+            DropEntry {
+                id: ReagentId::Ironshard,
+                chance: 0.26,
+            },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.16,
+            },
         ],
         "fish_feet" => &[
-            DropEntry { id: ReagentId::Hide, chance: 0.24 },
-            DropEntry { id: ReagentId::Fang, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.24,
+            },
+            DropEntry {
+                id: ReagentId::Fang,
+                chance: 0.12,
+            },
         ],
         "hound" => &[
-            DropEntry { id: ReagentId::Fang, chance: 0.24 },
-            DropEntry { id: ReagentId::Hide, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Fang,
+                chance: 0.24,
+            },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.1,
+            },
         ],
         "bloater" => &[
-            DropEntry { id: ReagentId::Venomsac, chance: 0.24 },
-            DropEntry { id: ReagentId::Slimegel, chance: 0.14 },
+            DropEntry {
+                id: ReagentId::Venomsac,
+                chance: 0.24,
+            },
+            DropEntry {
+                id: ReagentId::Slimegel,
+                chance: 0.14,
+            },
         ],
         "necromancer" => &[
-            DropEntry { id: ReagentId::Grimbone, chance: 0.22 },
-            DropEntry { id: ReagentId::Ectoplasm, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Grimbone,
+                chance: 0.22,
+            },
+            DropEntry {
+                id: ReagentId::Ectoplasm,
+                chance: 0.12,
+            },
         ],
         "warden" => &[
-            DropEntry { id: ReagentId::Ironshard, chance: 0.2 },
-            DropEntry { id: ReagentId::Hide, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Ironshard,
+                chance: 0.2,
+            },
+            DropEntry {
+                id: ReagentId::Hide,
+                chance: 0.12,
+            },
         ],
-        "wisp" => &[DropEntry { id: ReagentId::Ectoplasm, chance: 0.24 }],
+        "wisp" => &[DropEntry {
+            id: ReagentId::Ectoplasm,
+            chance: 0.24,
+        }],
         "sapper" => &[
-            DropEntry { id: ReagentId::Lodestone, chance: 0.2 },
-            DropEntry { id: ReagentId::Glass, chance: 0.1 },
+            DropEntry {
+                id: ReagentId::Lodestone,
+                chance: 0.2,
+            },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.1,
+            },
         ],
         "crystalback" => &[
-            DropEntry { id: ReagentId::Glass, chance: 0.3 },
-            DropEntry { id: ReagentId::Ironshard, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Glass,
+                chance: 0.3,
+            },
+            DropEntry {
+                id: ReagentId::Ironshard,
+                chance: 0.12,
+            },
         ],
         "mimic" => &[
-            DropEntry { id: ReagentId::Goblintooth, chance: 0.2 },
-            DropEntry { id: ReagentId::Steelpin, chance: 0.12 },
+            DropEntry {
+                id: ReagentId::Goblintooth,
+                chance: 0.2,
+            },
+            DropEntry {
+                id: ReagentId::Steelpin,
+                chance: 0.12,
+            },
         ],
         _ => &[],
     }
@@ -348,7 +486,6 @@ pub fn roll_reagent_drops<F: FnMut() -> f64>(
     }
     out
 }
-
 
 #[cfg(test)]
 mod tests {

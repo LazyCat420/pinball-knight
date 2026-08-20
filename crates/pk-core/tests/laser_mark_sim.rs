@@ -9,15 +9,7 @@ fn laser_mark_field_stamps_and_overwrites_at_capacity() {
 
     // Stamp 50 marks (capacity is 48)
     for i in 0..50 {
-        field.stamp(
-            i as f32,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.5,
-            [1.0, 1.0, 1.0],
-        );
+        field.stamp(i as f32, 0.0, 0.0, 1.0, 0.0, 0.5, [1.0, 1.0, 1.0]);
     }
 
     assert_eq!(field.count, MARK_CAP);

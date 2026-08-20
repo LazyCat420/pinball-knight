@@ -57,7 +57,11 @@ pub fn hex_to_srgb(h: u32) -> [f64; 3] {
 
 pub fn hex_to_linear(h: u32) -> [f64; 3] {
     let s = hex_to_srgb(h);
-    [srgb_to_linear(s[0]), srgb_to_linear(s[1]), srgb_to_linear(s[2])]
+    [
+        srgb_to_linear(s[0]),
+        srgb_to_linear(s[1]),
+        srgb_to_linear(s[2]),
+    ]
 }
 
 pub const LUMA_W: [f64; 3] = [0.3, 0.59, 0.11];

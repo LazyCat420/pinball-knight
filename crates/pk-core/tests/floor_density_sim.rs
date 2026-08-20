@@ -1,9 +1,7 @@
 // Parity test suite for Maze Floor Density Metrics.
 // Replicates legacy/src/game/pinball-knight/maze/floor-density.ts
 
-use pk_core::maze::floor_density::{
-    check_density, measure_density, DensityBudget, DensityInput,
-};
+use pk_core::maze::floor_density::{check_density, measure_density, DensityBudget, DensityInput};
 
 #[test]
 fn floor_density_measures_rates_per_thousand_walkable() {

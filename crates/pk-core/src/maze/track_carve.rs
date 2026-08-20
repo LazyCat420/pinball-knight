@@ -59,13 +59,57 @@
 //!
 //! PORTS: `maze/track-carve.ts`
 
-use crate::grid::{at, ensure_arcs, idx, is_walkable, set_shape, set_tile, Grid, T_FLOOR, T_WALL};
+use crate::grid::{
+    at, ensure_arcs, idx, is_walkable, set_shape, set_tile, shape_at, Grid, T_FLOOR, T_WALL,
+};
 use crate::jsmath::{js_cos, js_hypot, js_sin};
 use crate::jssort::js_sort_by;
 use crate::maze::track_path::TrackPath;
 use crate::maze::CountingRng;
 use crate::maze::TrackMask;
-use crate::tile_shape::SHAPE_FULL;
+use crate::tile_shape::{SHAPE_ARC, SHAPE_FULL};
+
+/// Publish the circuit's own banked turns into `Grid.arcs` and mark their wall shoulder tiles with `SHAPE_ARC`.
+pub fn publish_arcs(g: &mut Grid, path: &TrackPath) {
+    ensure_arcs(g);
+    for a in &path.arcs {
+        let mut own = Vec::new();
+        let steps = (8_i32).max(((a.r * a.span) / 0.3).ceil() as i32);
+        for s in 0..=steps {
+            let ang = a.a0 + (a.span * s as f64) / steps as f64;
+            let mut d = 2.0_f64;
+            while d <= 4.50001 {
+                let i = (a.cx + js_cos(ang) * (a.r - d)).floor() as i32;
+                let j = (a.cz + js_sin(ang) * (a.r - d)).floor() as i32;
+                d += 0.5;
+                if i < 0 || j < 0 || i >= g.w || j >= g.h {
+                    continue;
+                }
+                if at(g, i, j) != T_WALL {
+                    continue;
+                }
+                if shape_at(g, i, j) == SHAPE_ARC {
+                    continue;
+                }
+                own.push(idx(g, i, j));
+            }
+        }
+        if own.is_empty() {
+            continue;
+        }
+        let fi = g.arcs.len() as i16;
+        let mut feat = a.clone();
+        feat.owner = Some("track");
+        g.arcs.push(feat);
+        for &k in &own {
+            g.shapes[k] = SHAPE_ARC;
+            if let Some(arr) = g.arc_idx.as_mut() {
+                arr[k] = fi;
+            }
+        }
+    }
+}
+
 
 /// Bounds-safe mask read. [`idx`] does no range check (it is on the hot path for
 /// every tile loop in the game), so an out-of-bounds probe yields a nonsense

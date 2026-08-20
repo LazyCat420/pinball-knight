@@ -1,6 +1,6 @@
 //! Pinball Knight ball transformation and 3D rolling physics controller.
 //!
-//! PORTS: `engine/render/animator.ts`, `engine/render/figure.ts`, `entities/marble.ts`
+//! PORTS-NOTHING (Bevy 3D rolling and billboard spin controller)
 
 use bevy::prelude::*;
 
@@ -80,7 +80,11 @@ pub fn spawn_ball_impact_sparks(
 
     for i in 0..count {
         let angle = (i as f32) * (std::f32::consts::TAU / count as f32);
-        let spread = Vec3::new(angle.cos() * 2.5, (i as f32 % 3.0) * 1.5 + 1.0, angle.sin() * 2.5);
+        let spread = Vec3::new(
+            angle.cos() * 2.5,
+            (i as f32 % 3.0) * 1.5 + 1.0,
+            angle.sin() * 2.5,
+        );
         let vel = (normal * 4.0 + spread) * 0.8;
 
         commands.spawn((

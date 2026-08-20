@@ -56,6 +56,10 @@ jobs:
         if: '!cancelled()'
       - run: cargo clippy -p pk-game --all-targets -- -D warnings
         if: '!cancelled()'
+      # pk-gui was missing from this list while carrying 216 tests — the
+      # per-crate loop exists precisely so a crate cannot be skipped silently.
+      - run: cargo clippy -p pk-gui --all-targets -- -D warnings
+        if: '!cancelled()'
       - run: cargo clippy -p xtask --all-targets -- -D warnings
         if: '!cancelled()'
 
@@ -174,6 +178,17 @@ jobs:
           mkdir -p .checks
           cargo run -q -p xtask -- coverage --json > .checks/ledger.json
           node scripts/pk-baseline.mjs check ledger --from .checks/ledger.json
+      # THE DEPTH GATE (added 2026-08-16). A `PORTS:` claim whose Rust is under
+      # 30% of the legacy file's code lines is not a port. Fatal here, because
+      # the ratchet above is higher-better and therefore CANNOT catch credit
+      # being invented — it only catches credit being lost.
+      - name: no shallow provenance claims
+        run: cargo run -q -p xtask -- coverage --strict-depth
+      # Reported, not gated: carryover and wiring are heuristics with known
+      # blind spots (trait dispatch, legitimate renames). They inform a human.
+      - name: provenance audit (report only)
+        if: '!cancelled()'
+        run: cargo run -q -p xtask -- audit --wiring
       - name: baselines lint
         run: node scripts/pk-baseline.mjs lint
       # The comparator's own verdict logic. It reads no GPU and no browser, so

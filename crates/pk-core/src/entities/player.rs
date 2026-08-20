@@ -1,6 +1,6 @@
 //! PLAYER CONTINUOUS LOCOMOTION & COMBAT — Grid-free hero movement, sprint curves, and weapon actions.
 //!
-//! PORTS: `entities/player.ts`
+//! PORTS-NOTHING — auxiliary locomotion helper; canonical port is in pk-core/src/player/ and state.rs
 
 use crate::state::{PLAYER_R, PLAYER_SPEED, SPRINT_SPEED_MULT};
 

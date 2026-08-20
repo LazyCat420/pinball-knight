@@ -3,8 +3,8 @@
 //! PORTS: `lamp-puzzle.ts`
 
 pub const CHEST_UNLIT: u32 = 0x6b1f2a; // Dim blood-iron while sealed
-pub const CHEST_LIT: u32 = 0xf0c040;   // Gold as braziers light
-pub const CHEST_OPEN: u32 = 0xa050e0;  // Arcane portal-violet on open
+pub const CHEST_LIT: u32 = 0xf0c040; // Gold as braziers light
+pub const CHEST_OPEN: u32 = 0xa050e0; // Arcane portal-violet on open
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VaultChest {

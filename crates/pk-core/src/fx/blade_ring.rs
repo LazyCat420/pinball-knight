@@ -78,11 +78,7 @@ impl BladeRing {
             }
 
             let a = angle + (i as f32 / n as f32) * PI * 2.0;
-            m.pos = [
-                pos[0] + a.cos() * radius,
-                pos[1],
-                pos[2] + a.sin() * radius,
-            ];
+            m.pos = [pos[0] + a.cos() * radius, pos[1], pos[2] + a.sin() * radius];
 
             // Lean crescent along orbit tangent, then billboard to iso camera
             m.rot_z = -a - PI / 2.0;

@@ -120,6 +120,10 @@ impl Default for BlackjackTable {
     }
 }
 
+pub fn create_blackjack_game() -> BlackjackTable {
+    BlackjackTable::new()
+}
+
 impl BlackjackTable {
     pub fn new() -> Self {
         Self {
