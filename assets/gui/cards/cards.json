@@ -1,7 +1,7 @@
 {
   "producer": "legacy/scripts/bake-card-faces.mjs",
   "source": "src/game/pinball-knight/gui/card-face.ts cardFaceAt() over CARD_IDS",
-  "bakedAt": "2026-08-12T04:11:33.573Z",
+  "bakedAt": "2026-08-20T05:27:39.852Z",
   "widths": [
     56,
     112

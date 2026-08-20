@@ -1142,6 +1142,9 @@ fn setup_dungeon(
     // authoritative. See `real_floor`'s header for why that split is worth the
     // copy, and `assert_grid_still_authored` for what enforces it.
     let mut sim = SimState::new(prepared.grid.clone(), spawn, prepared.seed);
+    if prepared.real.is_some() {
+        sim.plunger_armed = false;
+    }
     // ── The parts the floor DRAWS become the parts the ball HITS ──
     //
     // `pk_core::pinball` has been ported, fixture-gated and ticked every frame
