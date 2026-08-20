@@ -49,3 +49,7 @@ pub fn compute_draw_census(rows: &[DrawRow]) -> DrawCensusReport {
         saved_by_instancing,
     }
 }
+
+pub fn drawCensus(rows: &[DrawRow]) -> DrawCensusReport {
+    compute_draw_census(rows)
+}

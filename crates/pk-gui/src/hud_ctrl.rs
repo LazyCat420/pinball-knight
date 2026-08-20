@@ -46,11 +46,18 @@ impl HudMountState {
 }
 
 pub fn mount_huds() {}
-
 pub fn set_hud_mode(_mode: HudMode) {}
-
 pub fn render_hud(_dt: f64) {}
-
 pub fn refresh_hud() {}
-
 pub fn dispose_huds() {}
+
+#[allow(non_snake_case)]
+pub fn mountHUDs() { mount_huds(); }
+#[allow(non_snake_case)]
+pub fn setHUDMode(mode: HudMode) { set_hud_mode(mode); }
+#[allow(non_snake_case)]
+pub fn renderHUD(dt: f64) { render_hud(dt); }
+#[allow(non_snake_case)]
+pub fn refreshHUD() { refresh_hud(); }
+#[allow(non_snake_case)]
+pub fn disposeHUDs() { dispose_huds(); }
