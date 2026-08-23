@@ -30,11 +30,5 @@
     "typescript": "^6.0.3",
     "vite": "^6.2.0",
     "vitest": "^4.1.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "canvas",
-      "esbuild"
-    ]
   }
 }
