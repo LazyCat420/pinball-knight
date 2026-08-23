@@ -1,0 +1,17 @@
+{
+ "state": "done",
+ "mode": "rotate",
+ "label": "rotate-S",
+ "startedAt": 1785892889604,
+ "params": {
+  "facing": "S"
+ },
+ "resolvedPrompt": "Turn the character to face the camera (front view). Same character, same colors, same pixel art style, same size and position, plain white background, full body visible.",
+ "seed": 7,
+ "fast": true,
+ "promptId": "e5f220d4-69dd-45ac-bb8e-b72d494943e8",
+ "frames": [
+  "qwen_00004_.png"
+ ],
+ "tookS": 423
+}

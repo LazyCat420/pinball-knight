@@ -1,0 +1,18 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "segment",
+ "label": "cut out",
+ "startedAt": 1785952384965,
+ "params": {},
+ "resolvedPrompt": "background removal (no prompt — this is a segmentation model)",
+ "seed": 501436932,
+ "fast": false,
+ "project": "pinball-knight",
+ "promptId": "c8fa77c6-9e7e-43e8-af48-bbdf0fa55299",
+ "frames": [
+  "intake_mask_00001_.png",
+  "intake_cut_00001_.png"
+ ],
+ "tookS": 9
+}

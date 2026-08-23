@@ -1,0 +1,17 @@
+{
+ "source": "cli",
+ "state": "error",
+ "startedAt": 1786230971024,
+ "promptId": "ebc82097-0973-4898-baf5-475d925bc121",
+ "error": "[comfy] execution failed:\n[]",
+ "mode": "animate",
+ "label": "animate · idle4",
+ "params": {
+  "preset": "idle4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "idle",
+ "resolvedPrompt": "Pixel art game sprite standing still on all four legs, alert and breathing, the ribcage swelling and settling, the head lifting and lowering slightly, the tail swaying slowly, ears twitching, all four paws staying planted on the ground, a subtle looping idle animation, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7
+}

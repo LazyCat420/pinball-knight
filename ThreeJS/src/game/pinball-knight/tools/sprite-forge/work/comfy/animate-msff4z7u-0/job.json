@@ -1,0 +1,41 @@
+{
+ "state": "done",
+ "mode": "animate",
+ "label": "animate",
+ "startedAt": 1785893934666,
+ "params": {
+  "preset": "walk",
+  "action": "",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite walking in place, a steady side-view walk cycle, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "frog",
+ "promptId": "c74de63e-7d01-4b36-8b80-5287c825565d",
+ "frames": [
+  "wan_00022_.png",
+  "wan_00023_.png",
+  "wan_00024_.png",
+  "wan_00025_.png",
+  "wan_00026_.png",
+  "wan_00027_.png",
+  "wan_00028_.png",
+  "wan_00029_.png",
+  "wan_00030_.png",
+  "wan_00031_.png",
+  "wan_00032_.png",
+  "wan_00033_.png",
+  "wan_00034_.png",
+  "wan_00035_.png",
+  "wan_00036_.png",
+  "wan_00037_.png",
+  "wan_00038_.png",
+  "wan_00039_.png",
+  "wan_00040_.png",
+  "wan_00041_.png",
+  "wan_00042_.png"
+ ],
+ "tookS": 202
+}

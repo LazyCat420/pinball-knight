@@ -1,0 +1,20 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "rotate",
+ "label": "rotate-E",
+ "startedAt": 1786051960533,
+ "params": {
+  "facing": "E"
+ },
+ "resolvedPrompt": "<sks> right side view eye-level shot medium shot, plain white background",
+ "seed": 450900862,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "8cd1007b-e33b-4ea9-9899-59a656c63600",
+ "frames": [
+  "qwen_00037_.png"
+ ],
+ "tookS": 147
+}

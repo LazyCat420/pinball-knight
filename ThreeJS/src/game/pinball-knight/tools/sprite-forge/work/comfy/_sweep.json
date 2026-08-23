@@ -1,0 +1,26 @@
+{
+ "character": "dog",
+ "tool": "bench-moveset",
+ "startedAt": 1786236184304,
+ "updatedAt": 1786241674628,
+ "total": 14,
+ "done": 10,
+ "completed": 12,
+ "facings": [
+  "N",
+  "E"
+ ],
+ "clips": [
+  "idle",
+  "walk",
+  "run",
+  "attack",
+  "stumble",
+  "crouch",
+  "death"
+ ],
+ "etaS": 2196,
+ "current": null,
+ "finishedAt": 1786241674628,
+ "stopped": true
+}

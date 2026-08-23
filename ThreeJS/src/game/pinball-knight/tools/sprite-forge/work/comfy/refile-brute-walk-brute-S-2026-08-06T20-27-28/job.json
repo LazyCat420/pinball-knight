@@ -1,0 +1,15 @@
+{
+ "source": "refile",
+ "state": "done",
+ "mode": "cli",
+ "label": "brute · prepped S cells · walk",
+ "startedAt": 1786045424079,
+ "character": "brute",
+ "clip": "walk",
+ "frames": [
+  "S-walk0.png",
+  "S-walk1.png",
+  "S-walk2.png",
+  "S-walk3.png"
+ ]
+}

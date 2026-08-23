@@ -1,0 +1,113 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786238043239,
+ "tookS": 508,
+ "promptId": "4b8e47c6-ff73-49cd-b7fb-0f9923b7cfd1",
+ "frames": [
+  "wan_01149_.png",
+  "wan_01150_.png",
+  "wan_01151_.png",
+  "wan_01152_.png",
+  "wan_01153_.png",
+  "wan_01154_.png",
+  "wan_01155_.png",
+  "wan_01156_.png",
+  "wan_01157_.png",
+  "wan_01158_.png",
+  "wan_01159_.png",
+  "wan_01160_.png",
+  "wan_01161_.png",
+  "wan_01162_.png",
+  "wan_01163_.png",
+  "wan_01164_.png",
+  "wan_01165_.png",
+  "wan_01166_.png",
+  "wan_01167_.png",
+  "wan_01168_.png",
+  "wan_01169_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · stumble4",
+ "params": {
+  "preset": "stumble4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "stumble",
+ "resolvedPrompt": "Pixel art game sprite recoiling from a blow, the whole body flinching and twisting away, the head snapping down and to the side, the legs buckling and scrabbling for footing, the tail tucking under, hurt and staggering, one continuous action from start to finish, ending in a clearly different pose from the one it began in, a locked-off camera with the whole body staying inside the frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.03,
+   0.02,
+   0.03,
+   0.04,
+   0.03,
+   0.04,
+   0.05,
+   0.05,
+   0.06,
+   0.08,
+   0.09,
+   0.07,
+   0.11,
+   0.11,
+   0.08,
+   0.06,
+   0.06,
+   0.08,
+   0.07,
+   0.06,
+   0.05
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   1.62,
+   2.48,
+   4.01,
+   6.28,
+   8.34,
+   13.2,
+   11.43,
+   14.86,
+   17.39,
+   16.25,
+   17.88,
+   19.43,
+   13.8,
+   15.68,
+   8.35,
+   11.01,
+   7.01,
+   4.66,
+   4.87,
+   3.72
+  ],
+  "seam": 39.73,
+  "boxes": 21,
+  "scaleSwing": 54.35,
+  "level": "usable"
+ },
+ "fade": {
+  "palette": [
+   "#04041f",
+   "#15162f",
+   "#2a2b3f",
+   "#404351",
+   "#b5b7c0"
+  ],
+  "flagged": [],
+  "level": "usable",
+  "worst": {
+   "drop": 0.392382187242512,
+   "colour": "#404351",
+   "frame": 14
+  }
+ }
+}

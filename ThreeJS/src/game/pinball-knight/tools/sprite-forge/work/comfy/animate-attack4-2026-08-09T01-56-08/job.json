@@ -1,0 +1,116 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786240568677,
+ "tookS": 548,
+ "promptId": "bdf6685c-2709-4729-b240-3b2c95b6b2f7",
+ "frames": [
+  "wan_01254_.png",
+  "wan_01255_.png",
+  "wan_01256_.png",
+  "wan_01257_.png",
+  "wan_01258_.png",
+  "wan_01259_.png",
+  "wan_01260_.png",
+  "wan_01261_.png",
+  "wan_01262_.png",
+  "wan_01263_.png",
+  "wan_01264_.png",
+  "wan_01265_.png",
+  "wan_01266_.png",
+  "wan_01267_.png",
+  "wan_01268_.png",
+  "wan_01269_.png",
+  "wan_01270_.png",
+  "wan_01271_.png",
+  "wan_01272_.png",
+  "wan_01273_.png",
+  "wan_01274_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · attack4",
+ "params": {
+  "preset": "attack4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "attack",
+ "resolvedPrompt": "Pixel art game sprite first coiling back on its haunches with the head drawn back and the shoulders gathering, then exploding forward off the hind legs into a full lunge, the front paws leaving the ground, the neck and spine extending straight out, the jaws opening wide and snapping shut on the target, then landing heavily on the forelegs with the head low, a single committed bite, one continuous action from start to finish, ending in a clearly different pose from the one it began in, a locked-off camera with the whole body staying inside the frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.12,
+   0.11,
+   0.08,
+   0.07,
+   0.08,
+   0.08,
+   0.06,
+   0.07,
+   0.07,
+   0.1,
+   0.11,
+   0.11,
+   0.11,
+   0.11,
+   0.14,
+   0.09,
+   0.11,
+   0.06,
+   0.11,
+   0.11,
+   0.04
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   23.98,
+   28.12,
+   28.09,
+   27.54,
+   27.57,
+   27.58,
+   27.11,
+   26.26,
+   23.39,
+   20.61,
+   16.36,
+   12.8,
+   9.89,
+   6.39,
+   4.71,
+   2.49,
+   1.88,
+   1.52,
+   1.69,
+   1.53
+  ],
+  "seam": 48.58,
+  "boxes": 21,
+  "scaleSwing": 93.03,
+  "scaleTrend": -11.593,
+  "level": "usable"
+ },
+ "fade": {
+  "palette": [
+   "#08061b",
+   "#17152a",
+   "#322d39",
+   "#6d615c",
+   "#bdb9bb"
+  ],
+  "flagged": [
+   10
+  ],
+  "level": "reject",
+  "worst": {
+   "drop": 0.4562150505510994,
+   "colour": "#322d39",
+   "frame": 10
+  }
+ }
+}

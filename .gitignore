@@ -1,12 +1,16 @@
 # Rust
-/target
+target/
+**/target/
 **/*.rs.bk
+
+# Node & Frontend
+node_modules/
+**/node_modules/
+dist/
+**/dist/
 
 # Docs build output (mdbook serve/build)
 /docs/book
-
-# Web build output
-/web/dist
 
 # Editor/OS noise
 .DS_Store
@@ -15,9 +19,6 @@
 # pk-check output
 /.checks
 
-# stray tool caches at repo root
-/node_modules
-
 # Local git worktrees & builds
-/.worktrees
-/build-windows
+/.worktrees/
+/build-windows/

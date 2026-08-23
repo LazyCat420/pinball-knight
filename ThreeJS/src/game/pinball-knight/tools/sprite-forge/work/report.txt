@@ -1,0 +1,497 @@
+
+═══ beaver (E) — 4 rows [4/4/4/4], 16 frames
+GRID   NO BLOCK GRID, but 66% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×13: 1.6% — a real lattice is ~100%, so the blocks are mush.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         20       35.0    1.44        20
+idle1         20       34.5    1.48        20
+idle2         22       33.9    1.45        22
+idle3         20       33.5    1.44        20
+walk0         20       34.2    1.46        20
+walk1         24       34.9    1.44        24
+walk2         25       35.0    1.46        25
+walk3         24       34.1    1.44        24
+attack0       21       30.8    1.66        21
+attack1       21       32.5    1.50        21
+attack2       22       32.4    1.48        22
+attack3       25       36.5    1.46        25
+death0        25       32.2    1.51        25
+death1        27       34.9    1.43        27
+death2        21       32.6    1.48        21
+death3        24       33.9    1.43        24
+MEAN   entries 22.6  isolated 33.8%  runLen 1.47
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/beaver-E  (frames + preview.png)
+
+═══ beaver (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NO BLOCK GRID, but 66% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×13: 1.6% — a real lattice is ~100%, so the blocks are mush.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         20       35.0    1.44        20
+idle1         20       34.5    1.48        20
+idle2         22       33.9    1.45        22
+idle3         20       33.5    1.44        20
+walk0         20       34.2    1.46        20
+walk1         24       34.9    1.44        24
+walk2         25       35.0    1.46        25
+walk3         24       34.1    1.44        24
+attack0       21       30.8    1.66        21
+attack1       21       32.5    1.50        21
+attack2       22       32.4    1.48        22
+attack3       25       36.5    1.46        25
+death0        25       32.2    1.51        25
+death1        27       34.9    1.43        27
+death2        21       32.6    1.48        21
+death3        24       33.9    1.43        24
+MEAN   entries 22.6  isolated 33.8%  runLen 1.47
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/beaver-S  (frames + preview.png)
+
+═══ brute (S) — 3 rows [2/4/4], 10 frames
+GRID   PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+COMMIT COMMITTED ×8 — figure 63×72 texels, 20 palette entries (under the 20 lock with room to spare) [despeckled 1450] [flattened 1656 texel(s) of sub-6 regions] [PER-SPRITE palette, 20 entries derived from the sheet] [snap: oklab]. Imports 1:1 at atlas grid ≥ 84; wider rungs take the fitted resample.
+       GATE re-measured on the committed sheet: PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+       promote with:  cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/brute-S/brute-S.png /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/brute-S.png && cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/brute-S/brute-S.json /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/brute-S.json
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         20        6.2    2.04         2
+idle1         20        7.1    1.94         2
+walk0         19        6.9    1.87         1
+walk1         20        6.1    2.00         1
+walk2         19        5.5    1.98         2
+walk3         21        6.9    2.02         2
+attack0       22        9.9    1.88         4
+attack1       19        6.8    2.30         2
+attack2       21        8.0    2.25         2
+attack3       22        8.0    2.12         3
+MEAN   entries 20.3  isolated 7.2%  runLen 2.04
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/brute-S  (frames + preview.png)
+
+═══ compass (E) — 2 rows [2/4], 6 frames
+GRID   NO BLOCK GRID, but 98% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 99.1% — a real lattice is ~100%, so the blocks are close but not flat.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         13        1.7    7.03        13
+idle1         13        1.4    6.87        13
+walk0         12        1.3    8.02        12
+walk1         12        1.2    7.00        12
+walk2         12        1.5    8.20        12
+walk3         11        1.1    7.98        11
+MEAN   entries 12.2  isolated 1.4%  runLen 7.52
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/compass-E  (frames + preview.png)
+
+═══ compass (N) — 2 rows [2/4], 6 frames
+GRID   NO BLOCK GRID, but 98% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 98.2% — a real lattice is ~100%, so the blocks are close but not flat.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         13        1.6    5.97        13
+idle1         13        1.6    5.93        13
+walk0         15        2.1    5.83        15
+walk1         12        1.7    6.00        12
+walk2         12        1.5    6.01        12
+walk3         14        1.6    5.94        14
+MEAN   entries 13.2  isolated 1.7%  runLen 5.95
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/compass-N  (frames + preview.png)
+
+═══ compass (S) — 2 rows [2/4], 6 frames
+GRID   NO BLOCK GRID, but 98% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 98.7% — a real lattice is ~100%, so the blocks are close but not flat.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         12        2.5    5.13        12
+idle1         15        2.8    4.95        15
+walk0         14        2.5    5.85        14
+walk1         11        2.7    6.46        11
+walk2         14        2.6    6.33        14
+walk3         13        2.6    6.00        13
+MEAN   entries 13.2  isolated 2.6%  runLen 5.79
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/compass-S  (frames + preview.png)
+
+═══ fish_feet (E) — 4 rows [4/4/4/4], 16 frames
+GRID   NO BLOCK GRID, but 68% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 28.0% — a real lattice is ~100%, so the blocks are mush.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         22       35.6    1.49        22
+idle1         21       34.1    1.45        21
+idle2         22       34.4    1.50        22
+idle3         21       34.2    1.48        21
+walk0         22       35.6    1.49        22
+walk1         21       34.1    1.45        21
+walk2         22       34.4    1.50        22
+walk3         21       34.2    1.48        21
+attack0       21       35.4    1.48        21
+attack1       21       33.0    1.45        21
+attack2       22       32.2    1.44        22
+attack3       21       35.6    1.43        21
+death0        22       37.0    1.41        22
+death1        22       35.5    1.45        22
+death2        20       37.3    1.42        20
+death3        19       32.1    1.70        19
+MEAN   entries 21.3  isolated 34.7%  runLen 1.48
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/fish_feet-E  (frames + preview.png)
+
+═══ frog (E) — 4 rows [5/5/5/5], 20 frames
+GRID   NOT PIXEL ART — no lattice (best ×4 at 2.2%, need 90%) and only 36% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×4: 7.9% — a real lattice is ~100%, so the blocks are mush.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         32       27.0    1.60        32
+idle1         32       29.0    1.59        32
+idle2         32       27.1    1.61        32
+idle3         32       24.5    1.66        32
+idle4         32       27.3    1.60        32
+walk0         32       27.4    1.61        32
+walk1         32       26.1    1.67        32
+walk2         32       33.3    1.50        32
+walk3         32       27.7    1.56        32
+walk4         32       32.1    1.52        32
+attack0       32       29.1    1.57        32
+attack1       32       33.9    1.51        32
+attack2       32       35.5    1.46        32
+attack3       32       37.8    1.41        32
+attack4       32       29.4    1.56        32
+death0        32       29.4    1.54        32
+death1        32       28.7    1.55        32
+death2        32       26.2    1.62        32
+death3        32       31.4    1.51        32
+death4        26       20.9    1.92        26
+MEAN   entries 31.7  isolated 29.2%  runLen 1.58
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/frog-E  (frames + preview.png)
+
+═══ frog (S) — 4 rows [5/5/5/5], 20 frames
+GRID   NOT PIXEL ART — no lattice (best ×4 at 2.1%, need 90%) and only 14% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×4: 7.9% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #fdfdfd (100% of the border) — keyed 74.2%, 1241 pocket(s) LEFT OPAQUE
+⚠ 1241 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         32       29.1    1.53        32
+idle1         32       30.7    1.52        32
+idle2         32       27.8    1.57        32
+idle3         32       28.1    1.58        32
+idle4         32       30.0    1.55        32
+walk0         32       28.4    1.57        32
+walk1         32       30.1    1.54        32
+walk2         32       32.7    1.50        32
+walk3         31       28.7    1.52        31
+walk4         32       32.2    1.47        32
+attack0       32       28.9    1.56        32
+attack1       32       40.3    1.42        32
+attack2       32       37.3    1.43        32
+attack3       32       38.2    1.40        32
+attack4       32       30.6    1.53        32
+death0        32       29.0    1.52        32
+death1        32       32.8    1.47        32
+death2        32       28.3    1.53        32
+death3        32       31.6    1.48        32
+death4        26       24.4    1.84        26
+MEAN   entries 31.6  isolated 31.0%  runLen 1.53
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/frog-S  (frames + preview.png)
+
+═══ jester (S) — 5 rows [3/6/3/3/5], 20 frames
+GRID   NO BLOCK GRID, but 62% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×3: 19.8% — a real lattice is ~100%, so the blocks are mush.
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+idle0          24       27.2    1.79        24
+idle1          25       26.7    1.74        25
+idle2          26       24.4    1.79        26
+walk0          25       22.7    1.87        25
+walk1          26       23.3    1.94        26
+walk2          26       23.6    1.84        26
+walk3          26       21.6    1.90        26
+walk4          24       23.4    1.92        24
+walk5          27       21.2    1.87        27
+attack0        24       28.7    1.61        24
+attack1        25       32.9    1.59        25
+attack2        26       23.4    1.81        26
+stumble0       26       30.0    1.63        26
+stumble1       25       31.4    1.61        25
+stumble2       26       31.4    1.59        26
+death0         25       24.3    1.76        24
+death1         25       24.4    1.68        25
+death2         26       17.6    1.85        25
+death3         24       17.3    1.94        24
+death4         24       15.7    2.13        24
+MEAN   entries 25.3  isolated 24.6%  runLen 1.79
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/jester-S  (frames + preview.png)
+
+═══ pinball_knight (E) — 8 rows [5/6/6/4/4/2/3/6], 36 frames
+GRID   PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+COMMIT COMMITTED ×8 — figure 70×72 texels, 20 palette entries (3 evicted to meet the 20 lock, 0.16% of opaque texels moved) [despeckled 5288] [flattened 2081 texel(s) of sub-6 regions] [banned entries: 6,7,8,9] [shared Cold-Crypt palette] [snap: oklab]. Imports 1:1 at atlas grid ≥ 84; wider rungs take the fitted resample.
+       GATE re-measured on the committed sheet: PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+       promote with:  cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-E/pinball_knight-E.png /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-E.png && cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-E/pinball_knight-E.json /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-E.json
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+idle0          18        4.4    2.17         2
+idle1          18        5.5    2.14         0
+idle2          19        7.2    2.06         2
+idle3          20        5.6    2.09         2
+idle4          18        5.3    2.17         1
+walk0          20        6.0    2.09         3
+walk1          19        6.0    2.08         2
+walk2          19        6.0    2.09         1
+walk3          20        5.1    2.10         3
+walk4          19        6.2    2.09         3
+walk5          20        7.0    2.01         2
+run0           20        6.0    2.09         3
+run1           19        6.0    2.08         2
+run2           19        6.0    2.09         1
+run3           20        5.1    2.10         3
+run4           19        6.2    2.09         3
+run5           20        7.0    2.01         2
+attack0        18        5.1    2.10         2
+attack1        17        8.2    2.01         2
+attack2        19        6.7    2.15         2
+attack3        19        5.6    2.11         2
+attack4        18        7.2    2.06         2
+attack5        17        7.6    2.13         2
+attack6        19        7.2    2.21         2
+attack7        19        6.4    1.98         2
+stumble0       18        6.4    1.98         0
+stumble1       22        9.2    1.93         2
+death0         22        9.2    1.93         2
+death1         22       10.0    1.97         3
+death2         16        7.6    2.02         0
+roll0          15        5.9    2.15         0
+roll1          13        4.4    2.25         0
+roll2          11        5.6    2.07         0
+roll3          13        6.0    2.07         0
+roll4          13        4.4    2.25         0
+roll5          15        5.9    2.15         0
+MEAN   entries 18.1  isolated 6.4%  runLen 2.08
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-E  (frames + preview.png)
+
+═══ pinball_knight (N) — 8 rows [4/3/3/3/4/2/3/6], 28 frames
+GRID   PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+COMMIT COMMITTED ×8 — figure 70×72 texels, 20 palette entries (4 evicted to meet the 20 lock, 0.22% of opaque texels moved) [despeckled 4525] [flattened 2103 texel(s) of sub-6 regions] [banned entries: 6,7,8,9] [shared Cold-Crypt palette] [snap: oklab]. Imports 1:1 at atlas grid ≥ 84; wider rungs take the fitted resample.
+       GATE re-measured on the committed sheet: PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+       promote with:  cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-N/pinball_knight-N.png /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-N.png && cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-N/pinball_knight-N.json /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-N.json
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+idle0          14        5.3    2.37         2
+idle1          14        3.2    2.44         3
+idle2          14        4.1    2.37         2
+idle3          15        4.6    2.35         2
+walk0          16        3.6    2.30         0
+walk1          16        4.3    2.20         0
+walk2          13        3.6    2.29         0
+run0           16        3.6    2.30         0
+run1           16        4.3    2.20         0
+run2           13        3.6    2.29         0
+attack0        14        4.4    2.20         1
+attack1        14        3.8    2.22         1
+attack2        11        3.1    2.26         0
+attack3        18        7.2    2.06         2
+attack4        20        7.8    2.14         5
+attack5        19        7.2    2.21         2
+attack6        20        6.6    1.98         3
+stumble0       19        6.5    1.98         0
+stumble1       21        7.6    2.01         2
+death0         21        7.6    2.01         2
+death1         21        9.7    2.00         3
+death2         16        7.6    2.02         0
+roll0          15        5.9    2.15         0
+roll1          13        4.4    2.25         0
+roll2          11        3.4    2.07         0
+roll3          13        6.0    2.07         0
+roll4          13        4.4    2.25         0
+roll5          15        5.9    2.15         0
+MEAN   entries 15.8  isolated 5.3%  runLen 2.18
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-N  (frames + preview.png)
+
+═══ pinball_knight (S) — 8 rows [4/3/3/4/4/2/3/6], 29 frames
+GRID   PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+COMMIT COMMITTED ×8 — figure 70×72 texels, 20 palette entries (5 evicted to meet the 20 lock, 0.31% of opaque texels moved) [despeckled 5183] [flattened 3445 texel(s) of sub-6 regions] [banned entries: 6,7,8,9] [shared Cold-Crypt palette] [snap: oklab]. Imports 1:1 at atlas grid ≥ 84; wider rungs take the fitted resample.
+       GATE re-measured on the committed sheet: PIXEL GRID ×8 (confidence 100.0%) — block-reduce is EXACT; this sheet can import 1:1. Cell purity at ×8: 100.0%.
+       promote with:  cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-S/pinball_knight-S.png /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-S.png && cp /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-S/pinball_knight-S.json /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/inbox/pinball_knight-S.json
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+idle0          16        6.2    2.08         0
+idle1          16        5.3    2.14         0
+idle2          16        6.0    2.12         1
+idle3          16        6.5    2.10         0
+walk0          16        5.0    2.20         1
+walk1          16        5.6    2.12         0
+walk2          17        5.7    2.11         1
+run0           16        5.0    2.20         1
+run1           16        5.6    2.12         0
+run2           17        5.7    2.11         1
+attack0        16        5.8    2.07         1
+attack1        17        6.1    2.02         2
+attack2        16        5.0    2.10         0
+attack3        16        6.5    2.13         0
+attack4        17        6.1    2.05         2
+attack5        20        7.7    2.12         5
+attack6        19        7.2    2.21         2
+attack7        20        6.6    1.98         3
+stumble0       19        6.5    1.98         0
+stumble1       21        8.2    1.96         2
+death0         21        8.2    1.96         2
+death1         21        9.2    1.96         2
+death2         17        6.9    2.13         0
+roll0          15        7.1    2.14         0
+roll1          12        5.2    2.23         0
+roll2          10        4.8    2.13         0
+roll3          13        4.4    2.14         0
+roll4          12        5.2    2.23         0
+roll5          15        7.1    2.14         0
+MEAN   entries 16.5  isolated 6.2%  runLen 2.10
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/pinball_knight-S  (frames + preview.png)
+
+═══ stiltneck (E) — 5 rows [5/5/5/2/3], 20 frames
+GRID   NO BLOCK GRID, but 65% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×9: 2.0% — a real lattice is ~100%, so the blocks are mush.
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+idle0          25       47.0    1.16        25
+idle1          26       48.0    1.16        26
+idle2          26       42.4    1.21        26
+idle3          24       41.7    1.18        24
+idle4          25       46.5    1.16        25
+walk0          26       45.3    1.19        26
+walk1          26       44.2    1.18        26
+walk2          25       48.0    1.19        25
+walk3          25       48.3    1.17        25
+walk4          26       47.2    1.18        26
+attack0        25       47.0    1.17        25
+attack1        25       43.4    1.19        25
+attack2        26       50.0    1.18        26
+attack3        25       45.2    1.19        25
+attack4        25       48.0    1.17        25
+stumble0       24       48.7    1.19        24
+stumble1       24       49.4    1.17        24
+death0         26       49.9    1.20        26
+death1         26       45.0    1.28        26
+death2         25       46.9    1.27        25
+MEAN   entries 25.3  isolated 46.6%  runLen 1.19
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: WORSE than the painted roster — too busy for this crush
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/stiltneck-E  (frames + preview.png)
+
+═══ zombie (E) — 6 rows [4/4/4/4/4/4], 24 frames
+GRID   NOT PIXEL ART — no lattice (best ×5 at 1.9%, need 90%) and only 27% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×5: 10.4% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #fc15fc (100% of the border) — keyed 74.2%, 335 pocket(s) LEFT OPAQUE
+⚠ 335 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster   entries  isolated%  runLen  invented
+----------------------------------------------
+walk0          14       20.0    1.56        14
+walk1          14       21.1    1.53        14
+walk2          15       23.1    1.52        15
+walk3          15       22.0    1.52        15
+idle0          15       21.1    1.54        15
+idle1          13       19.6    1.54        13
+idle2          14       21.6    1.53        14
+idle3          14       21.1    1.56        14
+attack0        15       24.5    1.51        15
+attack1        13       23.8    1.50        13
+attack2        14       21.3    1.70        14
+attack3        15       23.8    1.59        15
+attack4        15       20.2    1.64        15
+attack5        17       22.1    1.64        17
+attack6        14       22.3    1.56        14
+attack7        14       21.7    1.53        14
+stumble0       22       22.4    1.58        22
+stumble1       15       22.3    1.60        15
+stumble2       13       20.3    1.62        13
+stumble3       12       21.3    1.61        12
+death0         13       23.4    1.63        13
+death1          9       21.1    1.60         9
+death2         14       19.8    1.65        14
+death3         12       20.3    1.60        12
+MEAN   entries 14.2  isolated 21.7%  runLen 1.58
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-split-threejs-rust/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/zombie-E  (frames + preview.png)
+
+=== RECT DRIFT — does the figure hold its place across each row?
+    sweep = how far it travels × how monotonically it does it. A ramp
+    means the sprite slides sideways while the creature does not move.
+  beaver-E           idle     centred sweep 0.246 (span 0.250 × r +0.98)  grounded 0px spread
+  beaver-E           walk     centred sweep 0.247 (span 0.247 × r +1.00)  grounded 0px spread  gait peak 0.55
+  beaver-E           attack   centred sweep 0.357 (span 0.359 × r +0.99)  grounded 0px spread
+  beaver-E           death    centred sweep 0.152 (span 0.226 × r +0.67)  grounded 0px spread
+  beaver-S           idle     centred sweep 0.246 (span 0.250 × r +0.98)  grounded 0px spread
+  beaver-S           walk     centred sweep 0.247 (span 0.247 × r +1.00)  grounded 0px spread  gait peak 0.55
+  beaver-S           attack   centred sweep 0.357 (span 0.359 × r +0.99)  grounded 0px spread
+  beaver-S           death    centred sweep 0.152 (span 0.226 × r +0.67)  grounded 0px spread
+  brute-S            idle     centred sweep 0.000 (span 0.000 × r +0.00)  grounded 0px spread
+  brute-S            walk     centred sweep 0.002 (span 0.013 × r -0.14)  grounded 0px spread  gait peak 0.05
+  brute-S            attack   centred sweep 0.030 (span 0.042 × r -0.72)  grounded 0px spread
+  compass-E          idle     centred sweep 0.000 (span 0.200 × r +0.00)  grounded 4px spread
+  compass-E          walk     centred sweep 0.250 (span 0.250 × r +1.00)  grounded 16px spread  gait peak 0.98
+  compass-N          idle     centred sweep 0.000 (span 0.446 × r +0.00)  grounded 4px spread
+  compass-N          walk     centred sweep 0.547 (span 0.547 × r +1.00)  grounded 16px spread  gait peak 1.00
+  compass-S          idle     centred sweep 0.000 (span 0.446 × r +0.00)  grounded 4px spread
+  compass-S          walk     centred sweep 0.547 (span 0.547 × r +1.00)  grounded 15px spread  gait peak 1.00
+  fish_feet-E        idle     centred sweep 0.082 (span 0.082 × r +1.00)  grounded 0px spread
+  fish_feet-E        walk     centred sweep 0.082 (span 0.082 × r +1.00)  grounded 0px spread  gait peak 0.26
+  fish_feet-E        attack   centred sweep 0.087 (span 0.091 × r +0.96)  grounded 0px spread
+  fish_feet-E        death    centred sweep 0.100 (span 0.110 × r +0.91)  grounded 0px spread
+  frog-E             idle     centred sweep 0.005 (span 0.029 × r +0.17)  grounded 0px spread
+  frog-E             walk     centred sweep 0.044 (span 0.073 × r +0.60)  grounded 0px spread  gait peak 0.45
+  frog-E             attack   centred sweep 0.007 (span 0.106 × r +0.06)  grounded 0px spread
+  frog-E             death    centred sweep 0.040 (span 0.084 × r +0.48)  grounded 0px spread
+  frog-S             idle     centred sweep 0.007 (span 0.008 × r -0.81)  grounded 0px spread
+  frog-S             walk     centred sweep 0.035 (span 0.073 × r +0.48)  grounded 0px spread  gait peak 0.45
+  frog-S             attack   centred sweep 0.024 (span 0.076 × r -0.32)  grounded 0px spread
+  frog-S             death    centred sweep 0.031 (span 0.041 × r +0.74)  grounded 0px spread
+  jester-S           idle     centred sweep 0.222 (span 0.224 × r +0.99)  grounded 0px spread
+  jester-S           walk     centred sweep 0.359 (span 0.359 × r +1.00)  grounded 0px spread  gait peak 0.77
+  jester-S           attack   centred sweep 0.190 (span 0.196 × r +0.97)  grounded 0px spread
+  jester-S           stumble  centred sweep 0.265 (span 0.265 × r +1.00)  grounded 0px spread
+  jester-S           death    centred sweep 0.094 (span 0.181 × r +0.52)  grounded 0px spread
+  pinball_knight-E   idle     centred sweep 0.025 (span 0.072 × r -0.35)  grounded 0px spread
+  pinball_knight-E   walk     centred sweep 0.028 (span 0.135 × r +0.21)  grounded 0px spread  gait peak 0.34
+  pinball_knight-E   run      centred sweep 0.028 (span 0.135 × r +0.21)  grounded 0px spread  gait peak 0.34
+  pinball_knight-E   attack   centred sweep 0.081 (span 0.142 × r +0.57)  grounded 0px spread
+  pinball_knight-E   attack   centred sweep 0.020 (span 0.073 × r +0.28)  grounded 0px spread
+  pinball_knight-E   stumble  centred sweep 0.000 (span 0.064 × r +0.00)  grounded 0px spread
+  pinball_knight-E   death    centred sweep 0.080 (span 0.088 × r +0.90)  grounded 0px spread
+  pinball_knight-E   roll     centred sweep 0.001 (span 0.041 × r -0.02)  grounded 0px spread
+  pinball_knight-N   idle     centred sweep 0.008 (span 0.019 × r +0.42)  grounded 0px spread
+  pinball_knight-N   walk     centred sweep 0.004 (span 0.006 × r +0.63)  grounded 0px spread  gait peak 0.05
+  pinball_knight-N   run      centred sweep 0.004 (span 0.006 × r +0.63)  grounded 0px spread  gait peak 0.05
+  pinball_knight-N   attack   centred sweep 0.143 (span 0.145 × r +0.98)  grounded 0px spread
+  pinball_knight-N   attack   centred sweep 0.021 (span 0.073 × r +0.28)  grounded 0px spread
+  pinball_knight-N   stumble  centred sweep 0.000 (span 0.065 × r +0.00)  grounded 0px spread
+  pinball_knight-N   death    centred sweep 0.081 (span 0.090 × r +0.90)  grounded 0px spread
+  pinball_knight-N   roll     centred sweep 0.001 (span 0.041 × r -0.02)  grounded 0px spread
+  pinball_knight-S   idle     centred sweep 0.002 (span 0.010 × r +0.19)  grounded 0px spread
+  pinball_knight-S   walk     centred sweep 0.003 (span 0.036 × r -0.09)  grounded 0px spread  gait peak 0.11
+  pinball_knight-S   run      centred sweep 0.003 (span 0.036 × r -0.09)  grounded 0px spread  gait peak 0.11
+  pinball_knight-S   attack   centred sweep 0.065 (span 0.075 × r +0.87)  grounded 0px spread
+  pinball_knight-S   attack   centred sweep 0.019 (span 0.072 × r +0.27)  grounded 0px spread
+  pinball_knight-S   stumble  centred sweep 0.000 (span 0.065 × r +0.00)  grounded 0px spread
+  pinball_knight-S   death    centred sweep 0.083 (span 0.092 × r +0.91)  grounded 0px spread
+  pinball_knight-S   roll     centred sweep 0.001 (span 0.041 × r -0.02)  grounded 0px spread
+  stiltneck-E        idle     centred sweep 0.017 (span 0.054 × r +0.32)  grounded 0px spread
+  stiltneck-E        walk     centred sweep 0.027 (span 0.046 × r +0.59)  grounded 0px spread  gait peak 0.33
+  stiltneck-E        attack   centred sweep 0.264 (span 0.374 × r +0.71)  grounded 4px spread
+  stiltneck-E        stumble  centred sweep 0.000 (span 0.145 × r +0.00)  grounded 3px spread
+  stiltneck-E        death    centred sweep 0.131 (span 0.143 × r +0.91)  grounded 18px spread
+  zombie-E           walk     centred sweep 0.295 (span 0.295 × r +1.00)  grounded 10px spread  gait peak 0.77
+  zombie-E           idle     centred sweep 0.344 (span 0.351 × r +0.98)  grounded 10px spread
+  zombie-E           attack   centred sweep 0.113 (span 0.120 × r +0.94)  grounded 11px spread
+  zombie-E           attack   centred sweep 0.175 (span 0.182 × r +0.96)  grounded 20px spread
+  zombie-E           stumble  centred sweep 0.109 (span 0.117 × r +0.93)  grounded 16px spread
+  zombie-E           death    centred sweep 0.015 (span 0.073 × r -0.21)  grounded 20px spread

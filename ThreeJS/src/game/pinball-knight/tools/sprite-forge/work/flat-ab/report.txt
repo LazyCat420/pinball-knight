@@ -1,0 +1,5 @@
+minRegion 0  mean region 8.14 texels  single-texel regions 26.8%  entries 20
+minRegion 3  mean region 9.09 texels  single-texel regions 18.6%  entries 20
+minRegion 4  mean region 9.22 texels  single-texel regions 18.8%  entries 20
+minRegion 6  mean region 9.30 texels  single-texel regions 19.1%  entries 20
+minRegion 9  mean region 9.47 texels  single-texel regions 19.5%  entries 20

@@ -1,0 +1,18 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786222626497,
+ "tookS": 544,
+ "promptId": "5c2a0590-07e3-492c-bf2b-0e5c58010af7",
+ "frames": [
+  "qwen_00044_.png"
+ ],
+ "mode": "rotate",
+ "label": "rotate → S",
+ "params": {
+  "facing": "S"
+ },
+ "resolvedPrompt": "<sks> front view eye-level shot medium shot, plain white background",
+ "seed": 7,
+ "character": "dog"
+}

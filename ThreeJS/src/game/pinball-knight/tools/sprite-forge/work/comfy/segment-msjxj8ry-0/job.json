@@ -1,0 +1,17 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "segment",
+ "label": "cut out",
+ "startedAt": 1786166698030,
+ "params": {},
+ "resolvedPrompt": "background removal (no prompt — this is a segmentation model)",
+ "seed": 216384650,
+ "fast": false,
+ "promptId": "5298dfd2-fa95-4f04-8c1c-d323f2b85013",
+ "frames": [
+  "intake_mask_00011_.png",
+  "intake_cut_00011_.png"
+ ],
+ "tookS": 3
+}

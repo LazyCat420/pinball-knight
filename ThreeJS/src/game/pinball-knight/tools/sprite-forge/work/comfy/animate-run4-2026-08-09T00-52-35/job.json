@@ -1,0 +1,112 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786236756625,
+ "tookS": 665,
+ "promptId": "77b16e28-1c06-4a2a-ad9c-3b1f5d745884",
+ "frames": [
+  "wan_01107_.png",
+  "wan_01108_.png",
+  "wan_01109_.png",
+  "wan_01110_.png",
+  "wan_01111_.png",
+  "wan_01112_.png",
+  "wan_01113_.png",
+  "wan_01114_.png",
+  "wan_01115_.png",
+  "wan_01116_.png",
+  "wan_01117_.png",
+  "wan_01118_.png",
+  "wan_01119_.png",
+  "wan_01120_.png",
+  "wan_01121_.png",
+  "wan_01122_.png",
+  "wan_01123_.png",
+  "wan_01124_.png",
+  "wan_01125_.png",
+  "wan_01126_.png",
+  "wan_01127_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · run4",
+ "params": {
+  "preset": "run4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "run",
+ "resolvedPrompt": "Pixel art game sprite galloping at full speed on four legs, front legs reaching far forward together and hind legs driving back together, the spine flexing and extending with each stride, all four paws leaving the ground at once in a moment of suspension, the head lowered and thrust forward, a full side-view quadruped gallop cycle, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.03,
+   0.03,
+   0.03,
+   0.04,
+   0.04,
+   0.05,
+   0.05,
+   0.03,
+   0.04,
+   0.04,
+   0.03,
+   0.03,
+   0.05,
+   0.04,
+   0.03,
+   0.03,
+   0.03,
+   0.03,
+   0.03,
+   0.02,
+   0.02
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   9.6,
+   19.25,
+   23.95,
+   21,
+   17.17,
+   14.65,
+   13.1,
+   12.57,
+   9.79,
+   10.21,
+   22.61,
+   26.66,
+   19.33,
+   19.43,
+   17.47,
+   22.14,
+   16.11,
+   13.43,
+   9.75,
+   2.92
+  ],
+  "seam": 2.03,
+  "boxes": 20,
+  "level": "usable"
+ },
+ "fade": {
+  "palette": [
+   "#05051f",
+   "#15162e",
+   "#2a2b3e",
+   "#414451",
+   "#b7b7c0"
+  ],
+  "flagged": [],
+  "level": "usable",
+  "worst": {
+   "drop": 0.3184094860052184,
+   "colour": "#414451",
+   "frame": 10
+  }
+ }
+}

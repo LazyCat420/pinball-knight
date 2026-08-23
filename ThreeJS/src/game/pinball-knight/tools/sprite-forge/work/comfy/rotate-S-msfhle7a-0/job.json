@@ -1,0 +1,20 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "rotate",
+ "label": "rotate-S",
+ "startedAt": 1785898059815,
+ "params": {
+  "facing": "S"
+ },
+ "resolvedPrompt": "Turn the character to face the camera (front view). Same character, same colors, same pixel art style, same size and position, plain white background, full body visible.",
+ "seed": 7,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "frog",
+ "promptId": "76d86290-87fa-4ceb-a360-b4a6feb41cfc",
+ "frames": [
+  "qwen_00006_.png"
+ ],
+ "tookS": 171
+}

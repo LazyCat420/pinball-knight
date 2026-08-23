@@ -1,0 +1,21 @@
+{
+ "state": "running",
+ "leg": "h3",
+ "mode": "h3",
+ "label": "minimax h3-walk",
+ "startedAt": 1786253333528,
+ "params": {
+  "preset": "walk",
+  "action": "",
+  "frames": "5",
+  "tiled": "false",
+  "tileSize": "512"
+ },
+ "resolvedPrompt": "pix3lwalk, Pixel art game sprite walking with a springy exaggerated stride, knees lifting high, consistent colors, plain white background.",
+ "seed": 471544637,
+ "fast": false,
+ "small": false,
+ "clip": "walk",
+ "project": "pinball-knight",
+ "promptId": "c24deac3-a00d-419a-854e-a8b36339672a"
+}

@@ -1,0 +1,116 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786239976873,
+ "tookS": 585,
+ "promptId": "b3b10e84-0c10-47fc-967f-bd4235b13844",
+ "frames": [
+  "wan_01233_.png",
+  "wan_01234_.png",
+  "wan_01235_.png",
+  "wan_01236_.png",
+  "wan_01237_.png",
+  "wan_01238_.png",
+  "wan_01239_.png",
+  "wan_01240_.png",
+  "wan_01241_.png",
+  "wan_01242_.png",
+  "wan_01243_.png",
+  "wan_01244_.png",
+  "wan_01245_.png",
+  "wan_01246_.png",
+  "wan_01247_.png",
+  "wan_01248_.png",
+  "wan_01249_.png",
+  "wan_01250_.png",
+  "wan_01251_.png",
+  "wan_01252_.png",
+  "wan_01253_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · run4",
+ "params": {
+  "preset": "run4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "run",
+ "resolvedPrompt": "Pixel art game sprite galloping at full speed on four legs, front legs reaching far forward together and hind legs driving back together, the spine flexing and extending with each stride, all four paws leaving the ground at once in a moment of suspension, the head lowered and thrust forward, a full side-view quadruped gallop cycle, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.11,
+   0.09,
+   0.09,
+   0.07,
+   0.09,
+   0.07,
+   0.08,
+   0.07,
+   0.09,
+   0.08,
+   0.09,
+   0.07,
+   0.08,
+   0.07,
+   0.09,
+   0.11,
+   0.11,
+   0.12,
+   0.12,
+   0.11,
+   0.12
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   17.01,
+   16.88,
+   11.28,
+   14.73,
+   15.02,
+   12.52,
+   10.79,
+   11,
+   8.96,
+   8.44,
+   16.18,
+   22.48,
+   14.42,
+   17.32,
+   17.73,
+   14.99,
+   12.49,
+   10.34,
+   11.9,
+   12.94
+  ],
+  "seam": 5.48,
+  "boxes": 19,
+  "scaleSwing": 1.69,
+  "scaleTrend": 0.013,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#040318",
+   "#15132a",
+   "#302c3a",
+   "#675f55",
+   "#c0b6a7"
+  ],
+  "flagged": [
+   19
+  ],
+  "level": "reject",
+  "worst": {
+   "drop": 0.4264974939359174,
+   "colour": "#040318",
+   "frame": 19
+  }
+ }
+}

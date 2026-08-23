@@ -1,0 +1,37 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "inbetween",
+ "label": "in-between",
+ "startedAt": 1785906209888,
+ "params": {
+  "hint": "stepping from one stride into the next",
+  "frames": "17"
+ },
+ "resolvedPrompt": "Pixel art game sprite moving smoothly from its starting pose to its final pose, stepping from one stride into the next, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "frog",
+ "promptId": "254ab051-f3ee-427e-96f3-ed9b2a18e963",
+ "frames": [
+  "wan_00119_.png",
+  "wan_00120_.png",
+  "wan_00121_.png",
+  "wan_00122_.png",
+  "wan_00123_.png",
+  "wan_00124_.png",
+  "wan_00125_.png",
+  "wan_00126_.png",
+  "wan_00127_.png",
+  "wan_00128_.png",
+  "wan_00129_.png",
+  "wan_00130_.png",
+  "wan_00131_.png",
+  "wan_00132_.png",
+  "wan_00133_.png",
+  "wan_00134_.png",
+  "wan_00135_.png"
+ ],
+ "tookS": 160
+}

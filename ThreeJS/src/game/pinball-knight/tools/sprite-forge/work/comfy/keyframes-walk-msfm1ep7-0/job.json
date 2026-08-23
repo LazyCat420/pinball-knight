@@ -1,0 +1,21 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "keyframes",
+ "label": "keyframes-walk",
+ "startedAt": 1785905525420,
+ "params": {
+  "preset": "walk"
+ },
+ "resolvedPrompt": "A pixel art sprite sheet: the same character drawn 4 times in a single horizontal row, evenly spaced on a plain white background, identical size and colors in every frame, feet on one shared baseline. The four poses, left to right: (1) right foot planted far forward, left leg trailing behind, body leaning into the step, (2) passing pose: left knee lifted high in front, standing tall on the right foot, (3) left foot planted far forward, right leg trailing behind, body leaning into the step, (4) passing pose: right knee lifted high in front, standing tall on the left foot. Large, clearly different poses — no text, no labels, no numbers in the image.",
+ "seed": 7,
+ "fast": true,
+ "clip": "walk",
+ "project": "pinball-knight",
+ "character": "frog",
+ "promptId": "761a5e97-edad-4454-9a10-7f3c80978f0f",
+ "frames": [
+  "qwen_00013_.png"
+ ],
+ "tookS": 178
+}

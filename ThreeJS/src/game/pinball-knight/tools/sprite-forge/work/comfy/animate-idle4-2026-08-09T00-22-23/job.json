@@ -1,0 +1,112 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786234944167,
+ "tookS": 448,
+ "promptId": "a10dfe0b-199c-417e-9cc3-9c8dec9440fe",
+ "frames": [
+  "wan_01065_.png",
+  "wan_01066_.png",
+  "wan_01067_.png",
+  "wan_01068_.png",
+  "wan_01069_.png",
+  "wan_01070_.png",
+  "wan_01071_.png",
+  "wan_01072_.png",
+  "wan_01073_.png",
+  "wan_01074_.png",
+  "wan_01075_.png",
+  "wan_01076_.png",
+  "wan_01077_.png",
+  "wan_01078_.png",
+  "wan_01079_.png",
+  "wan_01080_.png",
+  "wan_01081_.png",
+  "wan_01082_.png",
+  "wan_01083_.png",
+  "wan_01084_.png",
+  "wan_01085_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · idle4",
+ "params": {
+  "preset": "idle4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "idle",
+ "resolvedPrompt": "Pixel art game sprite standing still on all four legs, alert and breathing, the ribcage swelling and settling, the head lifting and lowering slightly, the tail swaying slowly, ears twitching, all four paws staying planted on the ground, a subtle looping idle animation, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.03,
+   0.02,
+   0.02,
+   0.03,
+   0.03,
+   0.03,
+   0.02,
+   0.02,
+   0.01,
+   0.03,
+   0.03,
+   0.03,
+   0.02,
+   0.02,
+   0.02,
+   0.02,
+   0.03,
+   0.02,
+   0.02,
+   0.03,
+   0.03
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   5.32,
+   4.32,
+   3.09,
+   5.16,
+   5.94,
+   7.17,
+   7.46,
+   7,
+   6.14,
+   6.1,
+   5.2,
+   3.1,
+   2.88,
+   4.62,
+   6.81,
+   6.51,
+   5.15,
+   5.4,
+   4.79,
+   4.67
+  ],
+  "seam": 12.87,
+  "boxes": 18,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#050520",
+   "#161831",
+   "#2a2d40",
+   "#404351",
+   "#b4b6bf"
+  ],
+  "flagged": [],
+  "level": "ready",
+  "worst": {
+   "drop": 0.09348735311569353,
+   "colour": "#b4b6bf",
+   "frame": 8
+  }
+ }
+}

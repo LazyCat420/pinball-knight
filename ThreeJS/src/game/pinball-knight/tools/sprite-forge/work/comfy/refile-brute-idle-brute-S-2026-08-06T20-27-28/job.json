@@ -1,0 +1,13 @@
+{
+ "source": "refile",
+ "state": "done",
+ "mode": "cli",
+ "label": "brute · prepped S cells · idle",
+ "startedAt": 1786045424052,
+ "character": "brute",
+ "clip": "idle",
+ "frames": [
+  "S-idle0.png",
+  "S-idle1.png"
+ ]
+}

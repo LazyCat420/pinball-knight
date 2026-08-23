@@ -1,0 +1,115 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786236189007,
+ "tookS": 560,
+ "promptId": "388adfbf-8e1b-4376-9bed-49562c3259dc",
+ "frames": [
+  "wan_01086_.png",
+  "wan_01087_.png",
+  "wan_01088_.png",
+  "wan_01089_.png",
+  "wan_01090_.png",
+  "wan_01091_.png",
+  "wan_01092_.png",
+  "wan_01093_.png",
+  "wan_01094_.png",
+  "wan_01095_.png",
+  "wan_01096_.png",
+  "wan_01097_.png",
+  "wan_01098_.png",
+  "wan_01099_.png",
+  "wan_01100_.png",
+  "wan_01101_.png",
+  "wan_01102_.png",
+  "wan_01103_.png",
+  "wan_01104_.png",
+  "wan_01105_.png",
+  "wan_01106_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · walk4",
+ "params": {
+  "preset": "walk4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "walk",
+ "resolvedPrompt": "pix3lwalk, Pixel art game sprite walking on four legs in a steady four-beat gait, each paw lifting clearly off the ground and planting down again, front legs and hind legs alternating on opposite sides, elbows bending backward and hocks bending forward, the spine level and the head steady, a full side-view quadruped walk cycle, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.04,
+   0.03,
+   0.03,
+   0.03,
+   0.03,
+   0.05,
+   0.03,
+   0.02,
+   0.03,
+   0.04,
+   0.03,
+   0.03,
+   0.02,
+   0.03,
+   0.03,
+   0.02,
+   0.03,
+   0.04,
+   0.03,
+   0.03,
+   0.02
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   7.82,
+   7.25,
+   16.43,
+   10.48,
+   5.19,
+   15.42,
+   8.13,
+   10.63,
+   12.94,
+   6.3,
+   11.79,
+   11.09,
+   5.17,
+   15.7,
+   12.64,
+   6.8,
+   8.55,
+   17.33,
+   10.89,
+   5.16
+  ],
+  "seam": 2.02,
+  "boxes": 20,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#060620",
+   "#171930",
+   "#2c2e40",
+   "#434652",
+   "#b5b5bf"
+  ],
+  "flagged": [
+   4,
+   5
+  ],
+  "level": "reject",
+  "worst": {
+   "drop": 0.48954191138254816,
+   "colour": "#434652",
+   "frame": 4
+  }
+ }
+}

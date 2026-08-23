@@ -1,0 +1,6 @@
+ART_FIT_H 90  ->  figure 42x56 texels, head 21 texels tall, 20 entries
+ART_FIT_H 110  ->  figure 51x70 texels, head 27 texels tall, 20 entries
+ART_FIT_H 120  ->  figure 56x77 texels, head 29 texels tall, 20 entries
+ART_FIT_H 132  ->  figure 61x84 texels, head 32 texels tall, 20 entries
+ART_FIT_H 150  ->  figure 69x95 texels, head 36 texels tall, 20 entries
+ART_FIT_H 176  ->  figure 81x112 texels, head 43 texels tall, 20 entries

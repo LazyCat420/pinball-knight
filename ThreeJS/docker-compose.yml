@@ -1,0 +1,14 @@
+services:
+  pinball-knight-web:
+    image: pinball-knight-web:latest
+    container_name: pinball-knight-web
+    restart: unless-stopped
+    ports:
+      - "${SERVICE_BIND_IP:-10.0.0.16}:8789:80"
+    volumes:
+      - /usr/share/zoneinfo/America/Los_Angeles:/etc/localtime:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

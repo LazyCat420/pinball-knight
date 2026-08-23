@@ -1,0 +1,4 @@
+A luma (legacy)        ink[0] 59%  stone[3] 19%  torch[16] 6%  skin[25] 5%  ink[1] 4%  stone[2] 3%
+B oklab                ink[0] 58%  stone[3] 20%  torch[16] 6%  skin[25] 5%  ink[1] 4%  stone[2] 3%
+C luma + ban stone     ink[0] 68%  torch[16] 7%  skin[25] 5%  ink[1] 5%  arcane[30] 4%  arcane[29] 4%
+D oklab + ban stone    ink[0] 73%  torch[16] 7%  skin[25] 6%  ink[1] 5%  arcane[29] 4%  skin[24] 3%

@@ -1,0 +1,19 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "edit",
+ "label": "edit",
+ "startedAt": 1786045925489,
+ "params": {
+  "prompt": "Make this zombie extremely muscular and bulky, like a bodybuilder who lifts at the gym: huge round shoulders, massive thick arms, a barrel chest, thick powerful legs, wearing a torn tank top. Keep the same undead rotting green-grey skin, the same face and messy hair, the same pose, the same size and position, plain white background, full body visible."
+ },
+ "resolvedPrompt": "Make this zombie extremely muscular and bulky, like a bodybuilder who lifts at the gym: huge round shoulders, massive thick arms, a barrel chest, thick powerful legs, wearing a torn tank top. Keep the same undead rotting green-grey skin, the same face and messy hair, the same pose, the same size and position, plain white background, full body visible.",
+ "seed": 713506855,
+ "fast": true,
+ "character": "brute",
+ "promptId": "abe01bbc-3819-4dae-a9c8-bc9cf6d9cd11",
+ "frames": [
+  "qwen_00032_.png"
+ ],
+ "tookS": 172
+}

@@ -1,0 +1,22 @@
+{
+ "source": "refile",
+ "state": "done",
+ "mode": "animate",
+ "label": "brute · qwen master + wan picks",
+ "startedAt": 1786042672083,
+ "character": "brute",
+ "frames": [
+  "00_master_idle.png",
+  "wan_00191_.png",
+  "wan_00194_.png",
+  "wan_00197_.png",
+  "wan_00201_.png",
+  "wan_00205_.png",
+  "wan_00206_.png",
+  "wan_00211_.png",
+  "wan_00214_.png",
+  "wan_00217_.png",
+  "wan_00219_.png",
+  "wan_00223_.png"
+ ]
+}

@@ -1,0 +1,42 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate-idle",
+ "startedAt": 1786047615516,
+ "params": {
+  "preset": "idle",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite standing in place, breathing and swaying gently, an idle animation, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 596772025,
+ "fast": true,
+ "clip": "idle",
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "3baaeff2-daf1-49aa-945f-0e19dc7861da",
+ "frames": [
+  "wan_00225_.png",
+  "wan_00226_.png",
+  "wan_00227_.png",
+  "wan_00228_.png",
+  "wan_00229_.png",
+  "wan_00230_.png",
+  "wan_00231_.png",
+  "wan_00232_.png",
+  "wan_00233_.png",
+  "wan_00234_.png",
+  "wan_00235_.png",
+  "wan_00236_.png",
+  "wan_00237_.png",
+  "wan_00238_.png",
+  "wan_00239_.png",
+  "wan_00240_.png",
+  "wan_00241_.png",
+  "wan_00242_.png",
+  "wan_00243_.png",
+  "wan_00244_.png",
+  "wan_00245_.png"
+ ],
+ "tookS": 166
+}

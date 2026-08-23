@@ -1,0 +1,21 @@
+{
+  "name": "pinball-knight",
+  "version": "1.0.0",
+  "description": "Pinball Knight — 3D Top-Down Pinball Dungeon Crawler (Rust/WebGPU & Three.js/WebGPU)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix ThreeJS run dev",
+    "dev:threejs": "npm --prefix ThreeJS run dev",
+    "dev:rust": "cd Rust && trunk serve",
+    "build": "npm --prefix ThreeJS run build",
+    "build:threejs": "npm --prefix ThreeJS run build",
+    "build:rust": "cd Rust && trunk build --release",
+    "deploy": "cd ThreeJS && ./deploy.sh",
+    "deploy:threejs": "cd ThreeJS && ./deploy.sh",
+    "test": "npm --prefix ThreeJS test",
+    "test:threejs": "npm --prefix ThreeJS test",
+    "test:rust": "cd Rust && cargo test",
+    "sprites": "npm --prefix ThreeJS run sprites"
+  }
+}

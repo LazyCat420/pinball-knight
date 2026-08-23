@@ -1,0 +1,42 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate-death",
+ "startedAt": 1786048360776,
+ "params": {
+  "preset": "death",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite dying and collapsing to the ground, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 518853094,
+ "fast": true,
+ "clip": "death",
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "fa6545b3-6540-4563-83f2-19d81cf2653d",
+ "frames": [
+  "wan_00309_.png",
+  "wan_00310_.png",
+  "wan_00311_.png",
+  "wan_00312_.png",
+  "wan_00313_.png",
+  "wan_00314_.png",
+  "wan_00315_.png",
+  "wan_00316_.png",
+  "wan_00317_.png",
+  "wan_00318_.png",
+  "wan_00319_.png",
+  "wan_00320_.png",
+  "wan_00321_.png",
+  "wan_00322_.png",
+  "wan_00323_.png",
+  "wan_00324_.png",
+  "wan_00325_.png",
+  "wan_00326_.png",
+  "wan_00327_.png",
+  "wan_00328_.png",
+  "wan_00329_.png"
+ ],
+ "tookS": 145
+}

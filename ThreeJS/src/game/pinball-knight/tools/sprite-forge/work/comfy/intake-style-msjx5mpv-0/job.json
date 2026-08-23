@@ -1,0 +1,18 @@
+{
+ "state": "done",
+ "leg": "qwen",
+ "mode": "intake-style",
+ "label": "to pixel art",
+ "startedAt": 1786166062915,
+ "params": {
+  "hint": "a lean grey wolfhound charger with a bristling blood-red spine ridge, ember eyes and a jutting fanged muzzle"
+ },
+ "resolvedPrompt": "Redraw this character as clean pixel art of a lean grey wolfhound charger with a bristling blood-red spine ridge, ember eyes and a jutting fanged muzzle, same pose, same size, same position. 16-bit game sprite style, crisp pixel clusters, hard palette, no anti-aliasing.",
+ "seed": 540353600,
+ "fast": false,
+ "promptId": "6ce4a553-67c6-40a8-8e82-0dfcdbd919e0",
+ "frames": [
+  "qwen_00043_.png"
+ ],
+ "tookS": 389
+}

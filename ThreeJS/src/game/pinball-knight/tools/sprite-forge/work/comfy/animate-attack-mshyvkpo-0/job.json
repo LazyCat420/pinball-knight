@@ -1,0 +1,42 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate-attack",
+ "startedAt": 1786048020636,
+ "params": {
+  "preset": "attack",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite attacking with its weapon, one full swing, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 565106818,
+ "fast": true,
+ "clip": "attack",
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "beae233f-0824-4f0a-837c-8f58c7d5233e",
+ "frames": [
+  "wan_00267_.png",
+  "wan_00268_.png",
+  "wan_00269_.png",
+  "wan_00270_.png",
+  "wan_00271_.png",
+  "wan_00272_.png",
+  "wan_00273_.png",
+  "wan_00274_.png",
+  "wan_00275_.png",
+  "wan_00276_.png",
+  "wan_00277_.png",
+  "wan_00278_.png",
+  "wan_00279_.png",
+  "wan_00280_.png",
+  "wan_00281_.png",
+  "wan_00282_.png",
+  "wan_00283_.png",
+  "wan_00284_.png",
+  "wan_00285_.png",
+  "wan_00286_.png",
+  "wan_00287_.png"
+ ],
+ "tookS": 157
+}

@@ -1,0 +1,16 @@
+{
+ "source": "refile",
+ "state": "done",
+ "mode": "cli",
+ "label": "brute · prepped S cells · death",
+ "startedAt": 1786045424140,
+ "character": "brute",
+ "clip": "death",
+ "frames": [
+  "S-death0.png",
+  "S-death1.png",
+  "S-death2.png",
+  "S-death3.png",
+  "S-death4.png"
+ ]
+}

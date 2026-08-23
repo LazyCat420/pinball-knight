@@ -1,0 +1,121 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786230275662,
+ "tookS": 689,
+ "promptId": "a27ee90b-875b-468a-8244-7fe4513a6111",
+ "frames": [
+  "wan_00981_.png",
+  "wan_00982_.png",
+  "wan_00983_.png",
+  "wan_00984_.png",
+  "wan_00985_.png",
+  "wan_00986_.png",
+  "wan_00987_.png",
+  "wan_00988_.png",
+  "wan_00989_.png",
+  "wan_00990_.png",
+  "wan_00991_.png",
+  "wan_00992_.png",
+  "wan_00993_.png",
+  "wan_00994_.png",
+  "wan_00995_.png",
+  "wan_00996_.png",
+  "wan_00997_.png",
+  "wan_00998_.png",
+  "wan_00999_.png",
+  "wan_01000_.png",
+  "wan_01001_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · death4",
+ "params": {
+  "preset": "death4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "death",
+ "resolvedPrompt": "Pixel art game sprite collapsing and dying, the legs giving way beneath the body, the hindquarters dropping first, the chest sinking to the ground, the head falling last, the body settling onto its side and going still, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.09,
+   0.08,
+   0.09,
+   0.07,
+   0.08,
+   0.09,
+   0.08,
+   0.09,
+   0.09,
+   0.08,
+   0.1,
+   0.08,
+   0.11,
+   0.06,
+   0.06,
+   0.07,
+   0.08,
+   0.05,
+   0.06,
+   0.06,
+   0.06
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   21.05,
+   22.26,
+   24.72,
+   23.82,
+   25.78,
+   26.7,
+   26.11,
+   26.5,
+   29.9,
+   28.23,
+   28.33,
+   27.89,
+   19.59,
+   13.16,
+   8.61,
+   5.08,
+   1.64,
+   0.31,
+   0.28,
+   0.15
+  ],
+  "seam": 55.96,
+  "boxes": 19,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#05041e",
+   "#15142b",
+   "#35333e",
+   "#666855",
+   "#bcb9b3"
+  ],
+  "flagged": [
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20
+  ],
+  "level": "reject",
+  "worst": {
+   "drop": 0.755399208622254,
+   "colour": "#666855",
+   "frame": 15
+  }
+ }
+}

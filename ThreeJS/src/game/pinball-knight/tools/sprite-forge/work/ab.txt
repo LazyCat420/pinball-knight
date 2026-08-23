@@ -1,0 +1,20 @@
+── brute (idle, walk, death) — 10 frames each
+   IMPORTED  entries 20.6  isolated 30.9%  runLen 1.46
+   PAINTED   entries 18.1  isolated 9.1%  runLen 2.79
+── jester (idle, walk, attack, stumble, death) — 17 frames each
+   IMPORTED  entries 25.1  isolated 25.6%  runLen 1.75
+   PAINTED   entries 29.8  isolated 27.4%  runLen 1.72
+── rotortail (idle, walk, attack, death) — 13 frames each
+   IMPORTED  entries 23.4  isolated 32.1%  runLen 1.52
+   PAINTED   entries 25.3  isolated 27.9%  runLen 1.59
+── zombie (walk, idle, stumble, death) — 13 frames each
+   IMPORTED  entries 14.4  isolated 20.9%  runLen 1.58
+   PAINTED   entries 15.3  isolated 13.4%  runLen 2.13
+── stiltneck (idle, walk, attack, stumble, death) — 15 frames each
+   IMPORTED  entries 24.9  isolated 47.8%  runLen 1.18
+   PAINTED   entries 22.7  isolated 23.7%  runLen 1.71
+── pinball_knight (idle, walk, run, attack, stumble, roll) — 22 frames each
+   IMPORTED  entries 15.6  isolated 5.8%  runLen 2.12
+   PAINTED   entries 26.5  isolated 27.8%  runLen 1.52
+
+Top row imported, bottom row painted, in work/ab-<name>.png

@@ -1,0 +1,111 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786229250784,
+ "tookS": 437,
+ "promptId": "ecf21f20-54fc-4595-88b3-d55827ad431d",
+ "frames": [
+  "wan_00939_.png",
+  "wan_00940_.png",
+  "wan_00941_.png",
+  "wan_00942_.png",
+  "wan_00943_.png",
+  "wan_00944_.png",
+  "wan_00945_.png",
+  "wan_00946_.png",
+  "wan_00947_.png",
+  "wan_00948_.png",
+  "wan_00949_.png",
+  "wan_00950_.png",
+  "wan_00951_.png",
+  "wan_00952_.png",
+  "wan_00953_.png",
+  "wan_00954_.png",
+  "wan_00955_.png",
+  "wan_00956_.png",
+  "wan_00957_.png",
+  "wan_00958_.png",
+  "wan_00959_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · stumble4",
+ "params": {
+  "preset": "stumble4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "stumble",
+ "resolvedPrompt": "Pixel art game sprite recoiling from a blow, the whole body flinching and twisting away, the head snapping down and to the side, the legs buckling and scrabbling for footing, the tail tucking under, hurt and staggering, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.09,
+   0.09,
+   0.1,
+   0.08,
+   0.09,
+   0.06,
+   0.09,
+   0.08,
+   0.09,
+   0.13,
+   0.17,
+   0.16,
+   0.16,
+   0.15,
+   0.1,
+   0.1,
+   0.08,
+   0.07,
+   0.09,
+   0.1,
+   0.08
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   4.44,
+   4.89,
+   10.57,
+   11.9,
+   7.54,
+   32.22,
+   23.87,
+   31.79,
+   25.61,
+   27.87,
+   27.98,
+   30.24,
+   25.67,
+   12.77,
+   9.93,
+   11.42,
+   11.48,
+   9.65,
+   7.92,
+   7.23
+  ],
+  "seam": 53.9,
+  "boxes": 20,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#05041c",
+   "#17152a",
+   "#34323e",
+   "#565754",
+   "#b8b3aa"
+  ],
+  "flagged": [
+   8,
+   9,
+   10
+  ],
+  "level": "reject"
+ }
+}

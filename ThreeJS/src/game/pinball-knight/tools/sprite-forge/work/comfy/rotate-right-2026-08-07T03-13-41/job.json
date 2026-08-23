@@ -1,0 +1,10 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786072421255,
+ "tookS": 200,
+ "promptId": "152af0e6-87ba-4a3b-a74c-17fc201fb45e",
+ "mode": "rotate",
+ "label": "rotate → right",
+ "character": "brute"
+}

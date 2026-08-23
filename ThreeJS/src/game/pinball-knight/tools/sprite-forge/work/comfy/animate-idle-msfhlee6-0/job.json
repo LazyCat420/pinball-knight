@@ -1,0 +1,20 @@
+{
+ "state": "error",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate-idle",
+ "startedAt": 1785898060062,
+ "params": {
+  "preset": "idle",
+  "action": "",
+  "frames": "17"
+ },
+ "resolvedPrompt": "Pixel art game sprite standing in place, breathing and swaying gently, an idle animation, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 7,
+ "fast": true,
+ "clip": "idle",
+ "project": "pinball-knight",
+ "character": "frog",
+ "promptId": "b94a9b75-3642-4301-9552-bf8159a926a5",
+ "error": "fetch failed"
+}

@@ -1,0 +1,42 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate",
+ "startedAt": 1786048553739,
+ "params": {
+  "preset": "custom",
+  "action": "toppling over and collapsing onto the ground, falling flat, lying still, brightly lit on a plain solid white background, no smoke, no glow, no particles",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite toppling over and collapsing onto the ground, falling flat, lying still, brightly lit on a plain solid white background, no smoke, no glow, no particles, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 999228644,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "594c5a80-94dd-4098-9c78-36efe225d72f",
+ "frames": [
+  "wan_00330_.png",
+  "wan_00331_.png",
+  "wan_00332_.png",
+  "wan_00333_.png",
+  "wan_00334_.png",
+  "wan_00335_.png",
+  "wan_00336_.png",
+  "wan_00337_.png",
+  "wan_00338_.png",
+  "wan_00339_.png",
+  "wan_00340_.png",
+  "wan_00341_.png",
+  "wan_00342_.png",
+  "wan_00343_.png",
+  "wan_00344_.png",
+  "wan_00345_.png",
+  "wan_00346_.png",
+  "wan_00347_.png",
+  "wan_00348_.png",
+  "wan_00349_.png",
+  "wan_00350_.png"
+ ],
+ "tookS": 127
+}

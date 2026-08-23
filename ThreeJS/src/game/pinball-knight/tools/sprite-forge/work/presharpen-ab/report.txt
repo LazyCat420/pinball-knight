@@ -1,0 +1,10 @@
+presharpen 0.0  luma    contrast 3.98  entries 20  despeckled 1520
+presharpen 0.0  oklab   contrast 3.97  entries 20  despeckled 1635
+presharpen 0.4  luma    contrast 4.04  entries 20  despeckled 2687
+presharpen 0.4  oklab   contrast 4.01  entries 20  despeckled 2501
+presharpen 0.8  luma    contrast 4.27  entries 20  despeckled 5804
+presharpen 0.8  oklab   contrast 4.18  entries 20  despeckled 4847
+presharpen 1.2  luma    contrast 4.61  entries 20  despeckled 7354
+presharpen 1.2  oklab   contrast 4.42  entries 20  despeckled 6255
+presharpen 1.8  luma    contrast 5.30  entries 20  despeckled 8568
+presharpen 1.8  oklab   contrast 4.82  entries 20  despeckled 8307

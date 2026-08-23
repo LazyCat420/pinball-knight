@@ -1,0 +1,42 @@
+{
+ "state": "done",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate",
+ "startedAt": 1786048193998,
+ "params": {
+  "preset": "custom",
+  "action": "walking with a springy exaggerated stride, knees lifting high, each foot clearly rising off the ground and planting down again, a full two-step side-view walk cycle",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite walking with a springy exaggerated stride, knees lifting high, each foot clearly rising off the ground and planting down again, a full two-step side-view walk cycle, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 494350663,
+ "fast": true,
+ "project": "pinball-knight",
+ "character": "brute",
+ "promptId": "3d33c449-7b9c-4f53-aa58-8d262849dc16",
+ "frames": [
+  "wan_00288_.png",
+  "wan_00289_.png",
+  "wan_00290_.png",
+  "wan_00291_.png",
+  "wan_00292_.png",
+  "wan_00293_.png",
+  "wan_00294_.png",
+  "wan_00295_.png",
+  "wan_00296_.png",
+  "wan_00297_.png",
+  "wan_00298_.png",
+  "wan_00299_.png",
+  "wan_00300_.png",
+  "wan_00301_.png",
+  "wan_00302_.png",
+  "wan_00303_.png",
+  "wan_00304_.png",
+  "wan_00305_.png",
+  "wan_00306_.png",
+  "wan_00307_.png",
+  "wan_00308_.png"
+ ],
+ "tookS": 132
+}

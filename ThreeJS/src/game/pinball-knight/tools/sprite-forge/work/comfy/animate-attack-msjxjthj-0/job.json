@@ -1,0 +1,18 @@
+{
+ "state": "error",
+ "leg": "wan",
+ "mode": "animate",
+ "label": "animate-attack",
+ "startedAt": 1786166724871,
+ "params": {
+  "preset": "attack",
+  "action": "lunging forward and biting with its jaws, one snapping bite, four legs planted",
+  "frames": "21"
+ },
+ "resolvedPrompt": "Pixel art game sprite lunging forward and biting with its jaws, one snapping bite, four legs planted, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.",
+ "seed": 256345865,
+ "fast": false,
+ "clip": "attack",
+ "promptId": "19e0796c-bbef-431a-b8c0-d6a4c571a50f",
+ "error": "[comfy] execution failed:\n[]"
+}

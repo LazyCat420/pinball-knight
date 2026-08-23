@@ -1,0 +1,112 @@
+{
+ "source": "cli",
+ "state": "done",
+ "startedAt": 1786231061124,
+ "tookS": 607,
+ "promptId": "75a6aa9f-5114-4232-8e71-77fdadf84a20",
+ "frames": [
+  "wan_01002_.png",
+  "wan_01003_.png",
+  "wan_01004_.png",
+  "wan_01005_.png",
+  "wan_01006_.png",
+  "wan_01007_.png",
+  "wan_01008_.png",
+  "wan_01009_.png",
+  "wan_01010_.png",
+  "wan_01011_.png",
+  "wan_01012_.png",
+  "wan_01013_.png",
+  "wan_01014_.png",
+  "wan_01015_.png",
+  "wan_01016_.png",
+  "wan_01017_.png",
+  "wan_01018_.png",
+  "wan_01019_.png",
+  "wan_01020_.png",
+  "wan_01021_.png",
+  "wan_01022_.png"
+ ],
+ "mode": "animate",
+ "label": "animate · attack4",
+ "params": {
+  "preset": "attack4",
+  "action": "",
+  "frames": "21"
+ },
+ "clip": "attack",
+ "resolvedPrompt": "Pixel art game sprite first coiling back on its haunches with the head drawn back and the shoulders gathering, then exploding forward off the hind legs into a full lunge, the front paws leaving the ground, the neck and spine extending straight out, the jaws opening wide and snapping shut on the target, then landing heavily on the forelegs with the head low, a single committed bite, one continuous action from start to finish, ending in a clearly different pose from the one it began in, a locked-off camera with the whole body staying inside the frame, consistent colors, plain white background.",
+ "seed": 7,
+ "character": "dog",
+ "ghost": {
+  "pct": [
+   0.07,
+   0.09,
+   0.08,
+   0.11,
+   0.1,
+   0.13,
+   0.09,
+   0.11,
+   0.16,
+   0.17,
+   0.15,
+   0.12,
+   0.15,
+   0.2,
+   0.19,
+   0.16,
+   0.16,
+   0.11,
+   0.13,
+   0.22,
+   0.24
+  ],
+  "flagged": [],
+  "soft": [],
+  "level": "ready"
+ },
+ "motion": {
+  "churn": [
+   18.98,
+   13.42,
+   23.19,
+   36.14,
+   33.49,
+   30.97,
+   27.48,
+   28.66,
+   31.32,
+   21.75,
+   33.45,
+   30.27,
+   22.03,
+   28.82,
+   34.01,
+   31.25,
+   27.92,
+   25.57,
+   26.79,
+   27.71
+  ],
+  "seam": 61.07,
+  "boxes": 21,
+  "level": "ready"
+ },
+ "fade": {
+  "palette": [
+   "#08071e",
+   "#211d2d",
+   "#443f43",
+   "#7d7655",
+   "#c1bfb8"
+  ],
+  "flagged": [],
+  "level": "usable",
+  "worst": {
+   "drop": 0.3574237368279311,
+   "colour": "#443f43",
+   "frame": 2
+  }
+ }
+}
