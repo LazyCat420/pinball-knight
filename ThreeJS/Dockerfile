@@ -3,12 +3,13 @@
 # ============================================================
 
 # Stage 1: Build static distribution with Vite
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 
-# Install build dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci
+RUN apk add --no-cache python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev pixman-dev
+
+COPY package.json pnpm-workspace.yaml* pnpm-lock.yaml* ./
+RUN corepack enable && pnpm install --frozen-lockfile=false
 
 # Copy source and config files
 COPY tsconfig.json vite.config.ts index.html ./
@@ -17,7 +18,7 @@ COPY src ./src
 COPY components ./components
 
 # Build production bundle to dist/
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Serve with Nginx Alpine
 FROM nginx:alpine
