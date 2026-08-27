@@ -1259,7 +1259,7 @@ function notePocketBounce(p: Player): void {
 function updatePinball(dt: number, input: InputHandle): boolean {
   const p = state.player;
   const g = state.grid;
-  if (!p || !g || p.momSpeed <= 0) return false;
+  if (!p || !g) return false;
 
   // DEFLECTOR GRAB-THROW hold: a corner deflector caught the knight (see
   // pinball-collide.ts `deflector`). He's pinned to the rail for a wind-up
@@ -1286,6 +1286,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     syncActorMesh(p);
     return true;
   }
+
+  if (p.momSpeed <= 0) return false;
 
   // Part 2 — TEMPO ZONES. The 0→deep combo is three acts: Launch (accelerate),
   // Cruise (flow, ball form armed, gold aura), Frenzy (edge of control, faster
@@ -1325,6 +1327,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // MARBLE MODE steers with the MOUSE: a marble is AIMED, not walked — the ride
   // bends toward the cursor. Falls back to WASD when there's no cursor (headless
   // / keyboard-only), so the old scheme still works.
+  if (steerLockT > 0) state.lockT += dt;
   steerLockT = Math.max(0, steerLockT - dt);
   // Oil kills the steering (you're on a slick); turbo sharpens it. Water marble
   // is slippery — weak grip, so momentum dominates (materialSteerMult).

@@ -540,7 +540,15 @@ export type PinballPartKind =
   | "magstrip"
   | "rollover"
   // Light-puzzle brazier: roll over it to light it; all lit opens the vault.
-  | "lamp";
+  | "lamp"
+  // Track-B runtime movers & gobbler
+  | "swingarm"
+  | "scoop"
+  | "maw";
+
+// Compile-time assertion that PartSpotKind extends PinballPartKind (D4 fix)
+export type _AssertPartSpotKindExtendsPinballPartKind = import("./maze/decorate").PartSpotKind extends PinballPartKind ? true : never;
+
 
 export interface PinballPart {
   kind: PinballPartKind;
@@ -1222,6 +1230,10 @@ export const state = {
   animFrameId: null as number | null,
   lastTime: 0,
   elapsed: 0,
+  /** Deterministic sim-clock, stepped strictly inside simulate() by FIXED_STEP (Wave B-0). */
+  simT: 0,
+  /** Steer-lock duty counter (seconds) accumulated across the floor. */
+  lockT: 0,
 
   // Style toggles (hidden debug keys Q/F/K/O)
   quantize: QUANTIZE_DEFAULT,
@@ -1538,6 +1550,8 @@ export function resetState(): void {
   state.animFrameId = null;
   state.lastTime = 0;
   state.elapsed = 0;
+  state.simT = 0;
+  state.lockT = 0;
   state.input = null;
   state.onKeyDown = null;
   state.onResize = null;

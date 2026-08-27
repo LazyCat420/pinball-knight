@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
+import { swingAngle } from "../entities/swing-arm";
 import { PALETTE_HEX } from "./palette";
 import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
@@ -815,6 +816,62 @@ function buildMagStrip(): THREE.Group {
   return gp;
 }
 
+function buildSwingArm(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const pillar = new THREE.Mesh(cylGeo(0.12, 0.16, 0.45, 8), std(C_STEEL_DK, C_ARCANE, 0.2));
+  pillar.position.y = 0.225;
+  gp.add(pillar);
+
+  const arm = new THREE.Group();
+  const blade = new THREE.Mesh(boxGeo(1.4, 0.12, 0.16), std(C_STEEL, C_GOLD, 0.4));
+  blade.position.set(0.7, 0.25, 0);
+  const edge = new THREE.Mesh(boxGeo(1.35, 0.04, 0.04), std(C_GOLD, C_GOLD, 0.8));
+  edge.position.set(0.7, 0.25, 0.09);
+  arm.add(blade, edge);
+
+  gp.add(arm);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.arm = arm;
+  return gp;
+}
+
+function buildScoop(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const ring = new THREE.Mesh(torusGeo(0.35, 0.06, 8, 16), std(C_STEEL_DK, C_ARCANE, 0.3));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.04;
+  const cupMat = stdOwn(C_STEEL_DK, C_ARCANE, 0.4);
+  const cup = new THREE.Mesh(cylGeo(0.32, 0.22, 0.08, 12), cupMat);
+  cup.position.y = 0.04;
+  gp.add(ring, cup);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.cupMat = cupMat;
+  return gp;
+}
+
+function buildMaw(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const base = new THREE.Mesh(boxGeo(0.7, 0.2, 0.7), std(C_STEEL_DK, C_STEEL_DK, 0.1));
+  base.position.y = 0.1;
+  const throatMat = stdOwn(0x3a0910, 0xeb564b, 0.6);
+  const throat = new THREE.Mesh(cylGeo(0.25, 0.15, 0.18, 10), throatMat);
+  throat.position.set(0.1, 0.15, 0);
+
+  const jaw = new THREE.Group();
+  const jawHead = new THREE.Mesh(boxGeo(0.45, 0.2, 0.5), std(C_STEEL, 0xeb564b, 0.3));
+  jawHead.position.set(0.15, 0.35, 0);
+  const teeth = new THREE.Mesh(coneGeo(0.06, 0.12, 4), std(C_GOLD, C_GOLD, 0.5));
+  teeth.rotation.z = Math.PI;
+  teeth.position.set(0.28, 0.24, 0);
+  jaw.add(jawHead, teeth);
+
+  gp.add(base, throat, jaw);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.jaw = jaw;
+  gp.userData.throatMat = throatMat;
+  return gp;
+}
+
 /** The placement heading(s) a builder needs, unpacked from the level plan spot. */
 export interface PartBuildCtx {
   /** Primary direction (launch / facing / surface line). */
@@ -864,6 +921,9 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   magstrip: () => buildMagStrip(),
   rollover: ({ dirX, dirZ }) => buildRollover(dirX, dirZ),
   lamp: () => buildLamp(),
+  swingarm: ({ dirX, dirZ }) => buildSwingArm(dirX, dirZ),
+  scoop: ({ dirX, dirZ }) => buildScoop(dirX, dirZ),
+  maw: ({ dirX, dirZ }) => buildMaw(dirX, dirZ),
 };
 
 /**
@@ -1069,6 +1129,9 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   magstrip: 0.6,
   rollover: 0.6,
   lamp: 0.6,
+  swingarm: 0.6,
+  scoop: 1.1,
+  maw: 0.8,
 };
 
 /**
@@ -1412,15 +1475,6 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   lamp: (part) => {
     // A brazier: a cold arcane flicker while unlit; a bright leaping GOLD flame
     // once lit (part.lit set by the puzzle). Bowl warms to match.
-    //
-    // DELIBERATELY NOT converted to the fire shader, unlike the torches and the
-    // vent. This bead is a STATE INDICATOR that happens to be flame-shaped: it
-    // reads cold arcane when unlit, the shot colour when aimed, and gold when
-    // lit, and that colour IS the puzzle's feedback. The fire shader bands into
-    // the torch ramp by construction — giving it a switchable ramp to serve one
-    // three-state indicator would make every other flame configurable to solve a
-    // problem only this one has. An emissive bead is the right tool for a lamp.
-
     const flameMat = part.mesh.userData.flameMat as THREE.MeshStandardMaterial | undefined;
     const bowlMat = part.mesh.userData.bowlMat as THREE.MeshStandardMaterial | undefined;
     const flame = part.mesh.userData.flame as THREE.Object3D | undefined;
@@ -1434,6 +1488,37 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
       const leap = lit ? 1 + 0.18 * Math.sin(animT * 11 + part.i) : 1;
       flame.scale.set(1, leap, 1);
       flame.position.y = 0.36 + (lit ? 0.04 * Math.sin(animT * 9) : 0);
+    }
+  },
+
+  swingarm: (part) => {
+    const arm = part.mesh.userData.arm as THREE.Group | undefined;
+    if (arm) {
+      arm.rotation.y = swingAngle(state.simT, part.i, part.j);
+    }
+  },
+
+  scoop: (part) => {
+    const cupMat = part.mesh.userData.cupMat as THREE.MeshStandardMaterial | undefined;
+    if (cupMat) {
+      const pulse = 0.4 + 0.3 * Math.sin(animT * 4 + part.i);
+      cupMat.emissiveIntensity = part.hitT >= 0 && part.hitT < 0.3 ? 1.5 : pulse;
+    }
+  },
+
+  maw: (part) => {
+    const jaw = part.mesh.userData.jaw as THREE.Group | undefined;
+    const throatMat = part.mesh.userData.throatMat as THREE.MeshStandardMaterial | undefined;
+    if (jaw) {
+      if (part.hitT >= 0 && part.hitT < 0.4) {
+        const t = part.hitT / 0.4;
+        jaw.position.y = t < 0.3 ? -0.15 * (1 - t / 0.3) : 0;
+      } else {
+        jaw.position.y = 0.03 * Math.sin(animT * 2 + part.i);
+      }
+    }
+    if (throatMat) {
+      throatMat.emissiveIntensity = 0.6 + 0.3 * Math.sin(animT * 3 + part.j);
     }
   },
 };

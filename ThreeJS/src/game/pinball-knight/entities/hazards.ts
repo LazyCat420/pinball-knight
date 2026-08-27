@@ -1,12 +1,10 @@
 /**
- * Self-firing hazard simulation — the BOXING GLOVES, the ELECTRIC GRID and the
- * FIRE VENTS. Their clocks/anim live with the other part animations in
- * render/pinball-parts.ts; this module owns the CONSEQUENCES: gloves fling +
- * haymaker whatever's in the lane, live electric plates zap whoever stands on
- * them, roaring vents burn the lane. Runs on the fixed sim step from
- * core.simulate.
+ * Self-firing hazard simulation — the BOXING GLOVES, the ELECTRIC GRID,
+ * the FIRE VENTS, and the SWINGING ARMS (pendulum bats).
+ *
+ * Runs on the fixed sim step from core.simulate, clocked on state.simT.
  */
-import { state } from "../state";
+import { state, type PinballPart, type PinballPartKind, type Player } from "../state";
 import {
   GLOVE_ACTIVE,
   GLOVE_LANE_LEN,
@@ -27,19 +25,25 @@ import {
   VENT_DAMAGE,
   VENT_BURN_COOLDOWN,
 } from "../constants";
-import { comboWindow } from "./combo-curve";
+import { comboWindow, comboSpeedCeil } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
 import { tryDiamondDischarge, waterQuenchesFire } from "./marble";
+import { onPartTrigger } from "./pinball-collide";
+import { checkSwingArmContact, SWING_DAMAGE, SWING_KNOCKBACK, SWING_LEN } from "./swing-arm";
 import { gate, sfxBumper, sfxFlame } from "../sfx";
 
-/** A shared clock the electric-plate phase reads (mirrors pinball-parts' animT). */
-let hazT = 0;
 /** Per-player re-hit lockouts so a hazard reads as ticks, not per-frame drain. */
 let elecCd = 0;
 let ventCd = 0;
 
 /** Is (x,z) inside a lane of length `len`/half-width `half` from the part along dir? */
-function inLaneOf(part: { x: number; z: number; dirX: number; dirZ: number }, x: number, z: number, len: number, half: number): boolean {
+function inLaneOf(
+  part: { x: number; z: number; dirX: number; dirZ: number },
+  x: number,
+  z: number,
+  len: number,
+  half: number,
+): boolean {
   const rx = x - part.x;
   const rz = z - part.z;
   const along = rx * part.dirX + rz * part.dirZ;
@@ -48,86 +52,141 @@ function inLaneOf(part: { x: number; z: number; dirX: number; dirZ: number }, x:
   return across <= half;
 }
 
+export type HazardSim = (part: PinballPart, p: Player | null, dt: number) => void;
+
+export const HAZARD_SIMS: Partial<Record<PinballPartKind, HazardSim>> = {
+  // ── BOXING GLOVE ── one punch sweeps its lane: player launched, horde hit.
+  glove: (part, p) => {
+    const punching = part.hitT >= 0 && part.hitT <= GLOVE_ACTIVE;
+    if (!punching || part.punchSpent) return;
+    let connected = false;
+    if (p && p.hp > 0 && p.rideT < 0 && inLaneOf(part, p.x, p.z, GLOVE_LANE_LEN, GLOVE_LANE_HALF)) {
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, GLOVE_SPEED));
+      p.bounceCombo += 1;
+      p.bounceComboT = comboWindow(p.bounceCombo);
+      state.partComboHits += 1;
+      p.iframes = Math.max(p.iframes, 0.15);
+      onPartTrigger();
+      connected = true;
+    }
+    for (const z of state.zombies) {
+      if (z.mode === "dead" || z.kind === "reaper") continue;
+      if (!inLaneOf(part, z.x, z.z, GLOVE_LANE_LEN, GLOVE_LANE_HALF)) continue;
+      damageZombie(z, GLOVE_DAMAGE, part.dirX, part.dirZ, GLOVE_KNOCKBACK);
+      connected = true;
+    }
+    part.punchSpent = true;
+    if (connected) {
+      state.vfx?.sparks(part.x + part.dirX * 0.6, 0.4, part.z + part.dirZ * 0.6, part.dirX, part.dirZ, 10);
+      state.shakeT = Math.max(state.shakeT, 0.16);
+      sfxBumper();
+    }
+  },
+
+  // ── ELECTRIC GRID ── zap whoever stands on a LIVE plate (rhythm dodge).
+  electric: (part, p) => {
+    const live = ((state.simT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) < ELEC_ON;
+    if (!live || !p || p.hp <= 0 || p.rideT >= 0 || elecCd > 0) return;
+    const dx = p.x - part.x;
+    const dz = p.z - part.z;
+    if (dx * dx + dz * dz > ELEC_RADIUS * ELEC_RADIUS) return;
+    elecCd = ELEC_ZAP_COOLDOWN;
+    // 💎 Diamond CHANNELS the plate: eats the shock and discharges it into nearby foes.
+    if (tryDiamondDischarge(p.x, p.z)) {
+      state.shakeT = Math.max(state.shakeT, 0.16);
+      return;
+    }
+    hitPlayerRanged(ELEC_DAMAGE, part.x, part.z);
+    state.vfx?.sparks(p.x, 0.5, p.z, 0, 1, 16);
+    state.shakeT = Math.max(state.shakeT, 0.2);
+  },
+
+  // ── FIRE VENT ── burn anything in the lane while the jet roars.
+  firevent: (part, p) => {
+    const roaring = part.hitT >= VENT_WARN && part.hitT <= VENT_WARN + VENT_ACTIVE;
+    if (!roaring) return;
+    if (p && p.hp > 0 && p.rideT < 0 && ventCd <= 0 && inLaneOf(part, p.x, p.z, VENT_LANE_LEN, VENT_LANE_HALF)) {
+      ventCd = VENT_BURN_COOLDOWN;
+      // 💧 Water flash-boils the jet into a harmless steam puff — no burn.
+      if (!waterQuenchesFire(p.x, p.z)) {
+        hitPlayerRanged(VENT_DAMAGE, part.x, part.z);
+        state.vfx?.ember(p.x, 0.4, p.z);
+        if (gate("vent-flame", 0.25)) sfxFlame();
+      }
+    }
+    for (const z of state.zombies) {
+      if (z.mode === "dead" || z.kind === "reaper") continue;
+      if (z.burnT > 0 || !inLaneOf(part, z.x, z.z, VENT_LANE_LEN, VENT_LANE_HALF)) continue;
+      z.burnT = VENT_BURN_COOLDOWN;
+      damageZombie(z, VENT_DAMAGE, part.dirX, part.dirZ, 0.05);
+    }
+  },
+
+  // ── SWINGING ARM ── pendulum bat that swats player and zombies with tangential impulse.
+  swingarm: (part, p) => {
+    if (p && p.hp > 0 && p.rideT < 0 && part.cooldownT <= 0) {
+      const pVx = p.momX * p.momSpeed;
+      const pVz = p.momZ * p.momSpeed;
+      const contact = checkSwingArmContact(
+        part,
+        p.x,
+        p.z,
+        p.x - pVx * 0.016,
+        p.z - pVz * 0.016,
+        pVx,
+        pVz,
+        state.simT,
+      );
+      if (contact) {
+        const rawSpeed = Math.hypot(contact.vx, contact.vz);
+        const cappedSpeed = Math.min(PINBALL_MAX_SPEED, Math.min(rawSpeed, comboSpeedCeil(p.bounceCombo + 1)));
+        const finalSpeed = Math.max(p.momSpeed, cappedSpeed);
+        p.momSpeed = finalSpeed;
+        if (rawSpeed > 0.01) {
+          p.momX = contact.vx / rawSpeed;
+          p.momZ = contact.vz / rawSpeed;
+        }
+        p.bounceCombo += 1;
+        p.bounceComboT = comboWindow(p.bounceCombo);
+        state.partComboHits += 1;
+        p.iframes = Math.max(p.iframes, 0.15);
+        onPartTrigger();
+        part.cooldownT = 0.2;
+        part.hitT = 0;
+        state.vfx?.sparks(p.x, 0.4, p.z, contact.nx, contact.nz, contact.tipHit ? 16 : 10);
+        state.shakeT = Math.max(state.shakeT, contact.tipHit ? 0.22 : 0.14);
+        sfxBumper();
+      }
+    }
+
+    // Horde swat: knock away zombies within sweep radius
+    for (const z of state.zombies) {
+      if (z.mode === "dead" || z.kind === "reaper") continue;
+      const dx = z.x - part.x;
+      const dz = z.z - part.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > (SWING_LEN + 0.3) * (SWING_LEN + 0.3)) continue;
+      const contact = checkSwingArmContact(part, z.x, z.z, z.x, z.z, 0, 0, state.simT);
+      if (contact) {
+        damageZombie(z, SWING_DAMAGE, contact.nx, contact.nz, SWING_KNOCKBACK);
+        state.vfx?.sparks(z.x, 0.4, z.z, contact.nx, contact.nz, 6);
+      }
+    }
+  },
+};
+
 export function simulateHazards(dt: number): void {
   const p = state.player;
-  hazT += dt;
   elecCd = Math.max(0, elecCd - dt);
   ventCd = Math.max(0, ventCd - dt);
   if (state.freezeT > 0) return; // the freeze-ray stops every fist, plate and vent
 
   for (const part of state.pinballParts) {
-    // ── BOXING GLOVE ── one punch sweeps its lane: player launched, horde hit.
-    if (part.kind === "glove") {
-      const punching = part.hitT >= 0 && part.hitT <= GLOVE_ACTIVE;
-      if (!punching || part.punchSpent) continue;
-      let connected = false;
-      if (p && p.hp > 0 && p.rideT < 0 && inLaneOf(part, p.x, p.z, GLOVE_LANE_LEN, GLOVE_LANE_HALF)) {
-        p.momX = part.dirX;
-        p.momZ = part.dirZ;
-        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, GLOVE_SPEED));
-        p.bounceCombo += 1;
-        p.bounceComboT = comboWindow(p.bounceCombo);
-        state.partComboHits += 1;
-        p.iframes = Math.max(p.iframes, 0.15);
-        connected = true;
-      }
-      for (const z of state.zombies) {
-        if (z.mode === "dead" || z.kind === "reaper") continue;
-        if (!inLaneOf(part, z.x, z.z, GLOVE_LANE_LEN, GLOVE_LANE_HALF)) continue;
-        damageZombie(z, GLOVE_DAMAGE, part.dirX, part.dirZ, GLOVE_KNOCKBACK);
-        connected = true;
-      }
-      part.punchSpent = true;
-      if (connected) {
-        state.vfx?.sparks(part.x + part.dirX * 0.6, 0.4, part.z + part.dirZ * 0.6, part.dirX, part.dirZ, 10);
-        state.shakeT = Math.max(state.shakeT, 0.16);
-        sfxBumper();
-      }
-    } else if (part.kind === "electric") {
-      // ── ELECTRIC GRID ── zap whoever stands on a LIVE plate (rhythm dodge).
-      const live = ((hazT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) < ELEC_ON;
-      if (!live || !p || p.hp <= 0 || p.rideT >= 0 || elecCd > 0) continue;
-      const dx = p.x - part.x;
-      const dz = p.z - part.z;
-      if (dx * dx + dz * dz > ELEC_RADIUS * ELEC_RADIUS) continue;
-      elecCd = ELEC_ZAP_COOLDOWN;
-      // 💎 Diamond CHANNELS the plate: eats the shock and discharges it into
-      // nearby foes instead of taking damage.
-      if (tryDiamondDischarge(p.x, p.z)) {
-        state.shakeT = Math.max(state.shakeT, 0.16);
-        continue;
-      }
-      hitPlayerRanged(ELEC_DAMAGE, part.x, part.z); // funnels through armor/i-frames
-      state.vfx?.sparks(p.x, 0.5, p.z, 0, 1, 16);
-      state.shakeT = Math.max(state.shakeT, 0.2);
-    } else if (part.kind === "firevent") {
-      // ── FIRE VENT ── burn anything in the lane while the jet roars.
-      const roaring = part.hitT >= VENT_WARN && part.hitT <= VENT_WARN + VENT_ACTIVE;
-      if (!roaring) continue;
-      if (p && p.hp > 0 && p.rideT < 0 && ventCd <= 0 && inLaneOf(part, p.x, p.z, VENT_LANE_LEN, VENT_LANE_HALF)) {
-        ventCd = VENT_BURN_COOLDOWN;
-        // 💧 Water flash-boils the jet into a harmless steam puff — no burn.
-        if (!waterQuenchesFire(p.x, p.z)) {
-          hitPlayerRanged(VENT_DAMAGE, part.x, part.z);
-          state.vfx?.ember(p.x, 0.4, p.z);
-          // AUDIBLE FIX. This was `if (Math.random() < 0.3) sfxFlame()`, which
-          // looked like a throttle and was not one: it sits after
-          // `ventCd = VENT_BURN_COOLDOWN` two lines up, so the burn is ALREADY
-          // rate-limited. The random was therefore a 70% chance that a vent which
-          // just damaged you made no sound at all — an unheard damage event, which
-          // reads as taking damage from nowhere.
-          //
-          // The gate is belt-and-braces against a future caller that reaches here
-          // more often than the cooldown allows.
-          if (gate("vent-flame", 0.25)) sfxFlame();
-        }
-      }
-      for (const z of state.zombies) {
-        if (z.mode === "dead" || z.kind === "reaper") continue;
-        if (z.burnT > 0 || !inLaneOf(part, z.x, z.z, VENT_LANE_LEN, VENT_LANE_HALF)) continue;
-        z.burnT = VENT_BURN_COOLDOWN;
-        damageZombie(z, VENT_DAMAGE, part.dirX, part.dirZ, 0.05);
-      }
+    const handler = HAZARD_SIMS[part.kind];
+    if (handler) {
+      handler(part, p, dt);
     }
   }
 }

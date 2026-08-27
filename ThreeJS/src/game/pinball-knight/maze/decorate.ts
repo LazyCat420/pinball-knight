@@ -87,7 +87,10 @@ export type PartSpotKind =
   | "firevent"
   | "magstrip"
   | "rollover"
-  | "lamp";
+  | "lamp"
+  | "swingarm"
+  | "scoop"
+  | "maw";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
@@ -1101,20 +1104,20 @@ const KIND_TOPOLOGY: Record<string, Topology> = {
   spring: "deadend",
   deflector: "corner",
   mirror: "corner",
+  swingarm: "straight",
+  scoop: "junction",
+  maw: "junction",
 };
 
 /** Turn a topology candidate into a concrete part spot of the dealt kind. */
 function spotForKind(kind: PartSpotKind, c: TopoSpot, rng: () => number): PinballPartSpot {
-  if (kind === "glove" || kind === "firevent") {
-    // A glove/vent mounts on one of the corridor's side walls and fires ACROSS
-    // it: direction = the perpendicular of the corridor axis (both sides are
-    // wall by construction for a strict straight), random side.
+  if (kind === "glove" || kind === "firevent" || kind === "swingarm") {
+    // Mounts on one of the corridor's side walls and fires/swings ACROSS it
     const side = rng() < 0.5 ? 1 : -1;
     return { i: c.i, j: c.j, kind, dirI: -c.dirJ * side, dirJ: c.dirI * side, dir2I: 0, dir2J: 0 };
   }
-  if (kind === "flipper" && c.topo === "junction") {
-    // A junction has no axis — aim the paddle down any open leg so it launches
-    // you somewhere (falls back to +x for a degenerate/open-room stamp).
+  if ((kind === "flipper" || kind === "scoop" || kind === "maw") && c.topo === "junction") {
+    // Aim down any open leg
     const legs: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     const d = legs[Math.floor(rng() * legs.length)];
     return { i: c.i, j: c.j, kind, dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };

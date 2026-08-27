@@ -58,6 +58,7 @@ export function simulate(dt: number): void {
   if (isSimPaused()) return;
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
+  state.simT += dt;
   state.levelT += dt;
   // FLOW — the grade's pace axis. Integrate the momentum ramp over sim time, so
   // "pace" measures the speed you actually CARRIED rather than the stopwatch.

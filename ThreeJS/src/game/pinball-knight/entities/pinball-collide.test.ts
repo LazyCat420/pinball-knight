@@ -44,6 +44,9 @@ const ALL_KINDS: PinballPartKind[] = [
   "magstrip",
   "rollover",
   "lamp",
+  "swingarm",
+  "scoop",
+  "maw",
 ];
 
 function stubPlayer(): void {
@@ -541,3 +544,39 @@ describe("magstrip", () => {
     expect(p.momSpeed).toBeGreaterThan(1);
   });
 });
+
+describe("scoop (Saucer Scoop)", () => {
+  it("holds player in place and arms eject along dir", () => {
+    const p = state.player!;
+    p.momSpeed = 10;
+    state.pinballParts = [part("scoop", { dirX: 0, dirZ: 1 })];
+
+    touchPinballParts(true, 0, deps);
+
+    expect(p.grabT).toBeGreaterThan(0);
+    expect(p.throwDirZ).toBe(1);
+    expect(p.throwSpeed).toBeGreaterThanOrEqual(14.0);
+  });
+});
+
+describe("maw (Monster Mouth)", () => {
+  it("swallows on fast forward entry and calls startDrop", () => {
+    let dropped = false;
+    const testDeps: PinballDeps = {
+      ...deps,
+      startDrop: () => {
+        dropped = true;
+      },
+    };
+    const p = state.player!;
+    p.momSpeed = 12;
+    p.momX = -1; // entering into mouth that faces +x
+    p.momZ = 0;
+    state.pinballParts = [part("maw", { dirX: 1, dirZ: 0 })];
+
+    touchPinballParts(true, 0, testDeps);
+
+    expect(dropped).toBe(true);
+  });
+});
+

@@ -20,6 +20,7 @@
  */
 import { PART_TOUCH_BROAD_SQ } from "../constants";
 import { state, type Player, type PinballPart, type PinballPartKind } from "../state";
+import { canMawSwallow, MAW_COOLDOWN } from "./maw";
 import {
   PLAYER_R,
   PINBALL_MAX_SPEED,
@@ -879,6 +880,51 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     hitRollover(part);
     trySkillShot(part);
     state.vfx?.sparks(part.x, 0.3, part.z, 0, 0, 4);
+  },
+
+  // ── Track-B Runtime Movers ─────────────────────────────────────────
+  swingarm: selfFiring,
+
+  scoop: ({ part, p, d2, inMomentum }) => {
+    // Saucer scoop: holds the knight for 1.1s and ejects along authored dirX, dirZ.
+    if (p.grabT > 0 || d2 > 0.6 * 0.6) return;
+    p.grabT = 1.1; // SCOOP_HOLD
+    p.grabX = part.x;
+    p.grabZ = part.z;
+    p.throwDirX = part.dirX || 1;
+    p.throwDirZ = part.dirZ || 0;
+    p.throwSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * 1.25, 14.0));
+    onPartTrigger();
+    part.cooldownT = 2.0;
+    part.hitT = 0;
+    requestHitstop(0.06);
+    requestShake(0.15);
+    state.vfx?.sparks(part.x, 0.4, part.z, 0, 0, 12);
+    sfxHeavy();
+    recordShot("bank");
+  },
+
+  maw: ({ part, p, d2, inMomentum, deps }) => {
+    if (p.rideT >= 0 || p.dropT >= 0 || p.grabT > 0) return;
+    const pSpeed = inMomentum ? p.momSpeed : Math.hypot(p.momX, p.momZ);
+    if (!canMawSwallow(part, p.x, p.z, pSpeed, p.momX, p.momZ)) {
+      // Glancing blow or slow walk: bounce off teeth
+      if (d2 <= 0.6 * 0.6) {
+        const d = Math.sqrt(d2) || 1;
+        p.momX = (p.x - part.x) / d;
+        p.momZ = (p.z - part.z) / d;
+        p.momSpeed = Math.max(p.momSpeed * 0.5, 4.0);
+        part.hitT = 0;
+        state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 4);
+      }
+      return;
+    }
+    // Swallow!
+    part.cooldownT = MAW_COOLDOWN;
+    part.hitT = 0;
+    recordShot("trapdoor");
+    onPartTrigger();
+    deps.startDrop(part.x, part.z);
   },
 };
 
