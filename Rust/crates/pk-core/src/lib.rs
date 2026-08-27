@@ -79,6 +79,7 @@ pub mod monsters;
 pub mod movement;
 pub mod net;
 pub mod pinball;
+pub mod pinball_steering;
 pub mod player;
 pub mod playtest_bot;
 pub mod profiler;

@@ -41,6 +41,7 @@ export interface AimIndicator {
     steer: { x: number; z: number } | null,
     speed: number,
     maxSpeed: number,
+    opposition?: number,
   ): void;
   /** Hide the whole thing (not rolling / menu open / headless). */
   hide(): void;
@@ -138,7 +139,7 @@ export function createAimIndicator(): AimIndicator {
 
   return {
     group,
-    update(px, pz, momX, momZ, steer, speed, maxSpeed) {
+    update(px, pz, momX, momZ, steer, speed, maxSpeed, opposition = 0) {
       group.visible = true;
       group.position.set(px, Y, pz);
 
@@ -156,6 +157,11 @@ export function createAimIndicator(): AimIndicator {
         steerArrow.visible = true;
         steerArrow.rotation.y = -steerAng;
         steerArrow.scale.set(0.9, 1, 1);
+        if (opposition > 0.35) {
+          (steerArrow.material as THREE.MeshBasicMaterial).color.setHex(0xffaa44);
+        } else {
+          (steerArrow.material as THREE.MeshBasicMaterial).color.setHex(0x6fd0e8);
+        }
         const frac = bendFraction(momX, momZ, steer.x, steer.z);
         if (frac > 0.02) {
           bend.visible = true;
@@ -163,10 +169,14 @@ export function createAimIndicator(): AimIndicator {
           writeBend(momAng, steerAng, len * 0.72, 1);
           // Stronger tint the harder the turn — the "am I fighting it" cue.
           (bend.material as THREE.MeshBasicMaterial).opacity = 0.18 + frac * 0.34;
-          // steerSign only drives colour: left/right turns read differently.
-          (bend.material as THREE.MeshBasicMaterial).color.setHex(
-            steerSign(momX, momZ, steer.x, steer.z) >= 0 ? 0x6fd0e8 : 0xb06fe8,
-          );
+          // steerSign only drives colour: left/right turns read differently, hard carve warms to amber.
+          if (opposition > 0.35) {
+            (bend.material as THREE.MeshBasicMaterial).color.setHex(0xffaa44);
+          } else {
+            (bend.material as THREE.MeshBasicMaterial).color.setHex(
+              steerSign(momX, momZ, steer.x, steer.z) >= 0 ? 0x6fd0e8 : 0xb06fe8,
+            );
+          }
         } else {
           bend.visible = false;
         }

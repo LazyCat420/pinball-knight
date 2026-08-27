@@ -49,6 +49,18 @@ export const FRICTION_OPEN = 0.35; // 3-4 open neighbours (room / junction) — 
 export const FRICTION_CORRIDOR = 1.0; // 2 open (a straight run) — normal
 export const FRICTION_TIGHT = 2.1; // ≤1 open (dead-end pocket) — bleeds you down
 export const PINBALL_STEER = 3.6; // how hard held input bends the momentum, 1/sec
+// ── Turn-radius baseline controls (high-angle turn boost & directional counter-braking) ──
+/** Maximum extra steering multiplier when aiming behind/opposite movement. */
+export const PINBALL_TURN_BOOST_MAX = 2.4;
+/** Heading vs aim dot-product threshold where enhanced turning authority begins. */
+export const PINBALL_TURN_BOOST_START_DOT = 0.15;
+/** Modest deceleration against forward travel during a strong reverse request (u/s²). */
+export const PINBALL_COUNTER_BRAKE = 4.0;
+/** Dot-product threshold below which forward counter-braking engages (avoids braking on side corrections). */
+export const PINBALL_COUNTER_BRAKE_DOT = -0.45;
+/** Caps per-frame steering influence and protects against lag spikes (1/sec). */
+export const PINBALL_TURN_MAX_DELTA = 10.0;
+
 // Slice 8 — lane glide: while railing fast and not steering, drift toward the
 // walkable centre of the corridor so you rail down the middle (pinball lane
 // feel) instead of grinding a wall. Lateral units/sec of the centring nudge.

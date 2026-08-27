@@ -199,6 +199,7 @@ import {
 import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
 import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
+import { resolvePinballSteering } from "./pinball-steering";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
 
@@ -1354,12 +1355,21 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       steerZ = wd.z / wl;
     }
   }
+  let steerOpposition = 0;
   if (steerLockT <= 0 && (steerX !== 0 || steerZ !== 0)) {
-    p.momX += steerX * PINBALL_STEER * steerMul * dt;
-    p.momZ += steerZ * PINBALL_STEER * steerMul * dt;
-    const ml = Math.hypot(p.momX, p.momZ) || 1;
-    p.momX /= ml;
-    p.momZ /= ml;
+    const steerRes = resolvePinballSteering({
+      momX: p.momX,
+      momZ: p.momZ,
+      momSpeed: p.momSpeed,
+      aimX: steerX,
+      aimZ: steerZ,
+      steerMul,
+      dt,
+    });
+    p.momX = steerRes.momX;
+    p.momZ = steerRes.momZ;
+    p.momSpeed = steerRes.momSpeed;
+    steerOpposition = steerRes.opposition;
   }
 
   // Draw the heading/steer arrows AFTER the bend is applied, so the gold arrow
@@ -1374,6 +1384,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     steerLockT <= 0 && (steerX !== 0 || steerZ !== 0) ? { x: steerX, z: steerZ } : null,
     p.momSpeed,
     PINBALL_MAX_SPEED,
+    steerOpposition,
   );
 
   // Advance and detect a wall hit: try the full step; if moveCircle clamps us

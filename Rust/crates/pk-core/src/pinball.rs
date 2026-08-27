@@ -27,6 +27,7 @@ use crate::combo::{
     combo_zone, ComboZone,
 };
 use crate::grid::{at, is_walkable, world_to_tile, Grid, T_CRACKED};
+use crate::pinball_steering::{resolve_pinball_steering, PinballSteeringInput};
 use crate::rail::{decay_overspeed, hold_strength, step_rail, try_catch_rail};
 use crate::state::{Player, SimState, PLAYER_R, PLAYER_SPEED};
 use crate::surfaces::{floor_surface, wall_surface};
@@ -725,12 +726,18 @@ pub fn update_pinball(s: &mut SimState, dt: f64, steer_in: (f64, f64)) -> bool {
         }
     }
     if s.player.steer_lock_t <= 0.0 && (steer_x != 0.0 || steer_z != 0.0) {
-        s.player.mom_x += steer_x * PINBALL_STEER * steer_mul * dt;
-        s.player.mom_z += steer_z * PINBALL_STEER * steer_mul * dt;
-        let ml = crate::jsmath::js_hypot(s.player.mom_x, s.player.mom_z);
-        let ml = if ml == 0.0 { 1.0 } else { ml };
-        s.player.mom_x /= ml;
-        s.player.mom_z /= ml;
+        let steer_res = resolve_pinball_steering(PinballSteeringInput {
+            mom_x: s.player.mom_x,
+            mom_z: s.player.mom_z,
+            mom_speed: s.player.mom_speed,
+            aim_x: steer_x,
+            aim_z: steer_z,
+            steer_mul,
+            dt,
+        });
+        s.player.mom_x = steer_res.mom_x;
+        s.player.mom_z = steer_res.mom_z;
+        s.player.mom_speed = steer_res.mom_speed;
     }
 
     // Advance and detect a wall hit. (phaseMove == move_circle until shadow.)

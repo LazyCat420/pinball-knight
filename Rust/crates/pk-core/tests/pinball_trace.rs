@@ -50,6 +50,38 @@ fn pinball_trace_replays_bit_exact() {
     s.player.mom_z = fx.launch.mom_z;
     s.player.mom_speed = fx.launch.mom_speed;
 
+    if std::env::var("UPDATE_PINBALL_TRACE").as_deref() == Ok("1") {
+        let mut new_positions = Vec::with_capacity(fx.ticks);
+        for tick in 0..fx.ticks {
+            let (ix, iz) = pinball_steer(tick);
+            let input = FrameInput {
+                move_x: ix,
+                move_z: iz,
+                sprint: false,
+                dodge: false,
+                ..Default::default()
+            };
+            s.cur_speed = pk_core::state::PLAYER_SPEED;
+            simulate(&mut s, &input);
+            new_positions.push((s.player.x, s.player.z, s.player.mom_speed));
+        }
+        let updated_fixture = serde_json::json!({
+            "seed": fx.seed,
+            "ticks": fx.ticks,
+            "launch": {
+                "momX": fx.launch.mom_x,
+                "momZ": fx.launch.mom_z,
+                "momSpeed": fx.launch.mom_speed
+            },
+            "positions": new_positions
+        });
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fixtures/pinball-trace-seed7.json"),
+            serde_json::to_string(&updated_fixture).unwrap(),
+        ).expect("write updated fixture");
+        return;
+    }
+
     let mut max_speed: f64 = 0.0;
     for (tick, &(ex, ez, espeed)) in fx.positions.iter().enumerate() {
         let (ix, iz) = pinball_steer(tick);
