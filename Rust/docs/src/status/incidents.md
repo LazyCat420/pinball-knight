@@ -2,6 +2,116 @@
 
 Diagnoses that outlive their patches. Write the reasoning, not just the fix.
 
+## 2026-08-27 — The gambler's art was function signatures with empty bodies,
+## and the test that guarded it could not fail
+
+**Status: roulette repaired and shipped. Darts, blackjack and `draw_card` are
+STILL stubs — see Open items. `tavern-one-to-one.md` corrected.**
+
+**What was claimed.** `tavern-one-to-one.md` recorded Risk Gold as
+**✅ DONE — `pk_core::gambler` + `gambler::drive` + `screens::gambler` + the
+`Cabinet` shell; all four playable, wired to the station**. Every word of that
+was true. It was also not the claim a reader takes from it.
+
+**What was there.** `pk_gui::gambler::roulette_art` carried the oracle's
+constants, its six colour ramps, `tone`, `edge_of` and `project` — 172 lines
+that look like a port. `draw_wheel`, `draw_panel` and `clear_table` had EMPTY
+BODIES. `build_wheel_layers` returned `WheelLayers { baked_width: 222,
+baked_height: 160 }` — two integers and no pixels. `paint_disc`, the scanline
+rasteriser that IS the wheel, was never written. **Nothing in the crate
+imported the module.** The same shape held in `darts_art`, `blackjack_art` and
+`cards_art`: every pure-math helper real, every `draw_*` `{}`.
+
+What actually painted was `paint_roulette` in `pk-game`, drawing a flat 19-cell
+horizontal bar with a gold blob sliding along it. Correct outcomes, correct
+payouts, a progress bar for a wheel.
+
+**Why nothing caught it.** `roulette_art_sim.rs` asserted that
+`project_isometric` followed by `unproject_isometric` returns its input:
+
+```rust
+let (sx, sy) = metrics.project_isometric(angle, norm_r, lift);
+let (r, a)   = metrics.unproject_isometric(sx, sy, lift);
+assert!((r - norm_r).abs() < 1e-4);
+```
+
+That holds for **any invertible map** — at `FLAT = 0.46`, at `FLAT = 7.0`, with
+the axes swapped. It measures the inverse, not the wheel, and **it cannot fail
+when nothing is drawn**. `RouletteWheelMetrics` does not exist in the oracle at
+all; it was invented by the port, and the only thing that ever used it was the
+test that proved it consistent with itself.
+
+The general rule this is an instance of: *a test for procedural art must be
+able to fail if the function body is deleted.* Ask it of any green art test
+before believing the art exists.
+
+**What the repair proved.** Rendered the ported wheel and the oracle's at the
+same view (theta 1.15, rotor −0.4, seated, pocket 7 flashing) and diffed,
+correcting for the `CY` shift:
+
+| | |
+| --- | --- |
+| Non-transparent pixels compared | 15 592 |
+| Identical | 15 560 — **99.79%** |
+| Differing | 32, all one cluster |
+
+**The 32 differing pixels are the ORACLE anti-aliasing itself.** Its callout
+plate is `w = label.length * 4 + 5`, so a one-character label gives `w = 9` and
+JS `w / 2` is **4.5** — `fillRect` lands on a half-pixel boundary and Canvas 2D
+feathers the edge. Its pixels there read (133,126,97), a 50% blend of
+`C_WIN_HI` over the ink halo to within one unit. That is exactly the soft
+fringe `roulette-art.ts`'s own first paragraph exists to forbid, reached by
+accident through an odd width. Rust's `w / 2` is integer division, so the port
+is crisp — and stays crisp deliberately. Matching byte-for-byte would port a
+defect the source file's stated design rule rejects.
+
+**Two claims in the oracle's own header that do not survive measurement.**
+
+1. *"the far half of the rim and lip are repainted as annuli on top — which is
+   what makes the ball genuinely disappear behind the far rim."* It does not.
+   The far annuli cover art radius 0.925..1.0, the ball never exceeds
+   `BALL_TRACK_R` = 0.9, and on screen the rim band sits 7–10px ABOVE the ball
+   at every far angle (theta = −PI/2: ball y = 13.1, rim band y = 3.8..6.1). A
+   track-radius ball is never occluded. What the three-layer split genuinely
+   buys is the ORDERING.
+2. The winner callout is composited after `far` but does not overlap it either.
+   **Code order is not screen overlap**, and only the second one is visible.
+
+Two drafts of the replacement test asserted each of those and **failed against
+correct art**. Both are now recorded next to the code, with the measurements,
+so the next reader does not re-derive them from a red suite.
+
+**What replaced the guard.** Every check is now anchored to something computed a
+different way from the code under test — the ellipse equation, the pocket
+count, a rotation the art must respond to, a digest that moves when one pixel
+does. `pk-game` carries `roulette_art_constants_match_physics`, because
+`pk-gui` cannot depend on `pk-core` and the art therefore RESTATES six physical
+constants; `DEFL_OFFSET` was made `pub` in `pk_core` rather than skipped, since
+a drift guard with a hole at the deflector phase has it precisely where the
+oracle's own warning points ("a diamond drawn somewhere the ball never scatters
+is a picture of a different wheel").
+
+**The one number the port moves.** `CY` 102 → 58, and nothing else. The wheel's
+own vertical extent is 112.5px against a 130px game area; what did not fit was
+the empty space above the rim in the oracle's 200px cabinet. Scaling `R` would
+have moved every pocket boundary off the integer grid the hand-rasterisation
+exists to hit.
+
+### Open items
+
+- **`darts_art`** — `draw_number`, `draw_dart`, `build_board`, `box_rect`,
+  `frame_rect` are all `{}`. The board renders as nested `Stroke` rectangles.
+- **`blackjack_art`** — `draw_chip`, `draw_chip_stack`, `draw_betting_circle`
+  are `{}`.
+- **`cards_art`** — `draw_card` is `{}`.
+- The plumbing is no longer the blocker: `GamePrim::Blit` carries an
+  `Arc<Pixmap>`, `im::blit_pixmap` does the integer upscale, and
+  `gambler::pixmap` is the surface. Each remaining module is a rasteriser to
+  write.
+- Audit the three modules the way this one needed auditing: check that each
+  test would fail if the function body it covers were deleted.
+
+
 ## 2026-08-16 — The ledger was gamed, and the guard test built to catch it
 ## was deleted one row at a time
 
