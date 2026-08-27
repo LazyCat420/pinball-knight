@@ -1245,6 +1245,13 @@ mod tests {
                         | GamePrim::Stroke { x, y, w, h, .. }
                         | GamePrim::Well { x, y, w, h } => (*x, *y, *w, *h),
                         GamePrim::Label { x, y, .. } => (*x, *y, 0.0, 0.0),
+                        // A blit's extent is its SURFACE, not a declared box —
+                        // which is the whole reason the wheel's `CY` had to be
+                        // re-origined for the 130px game area. This arm is what
+                        // makes that a checked constraint rather than a comment.
+                        GamePrim::Blit { x, y, img } => {
+                            (*x, *y, img.w as f64, img.h as f64)
+                        }
                     };
                     assert!(
                         x >= 0.0 && y >= 0.0 && x + pw <= GAME_W && y + ph <= GAME_H,
