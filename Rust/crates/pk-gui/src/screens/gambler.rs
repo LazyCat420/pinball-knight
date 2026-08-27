@@ -43,10 +43,12 @@
 //! their tests are, and this file stays a layout.
 
 use crate::im::{
-    button, cut_top, fill_rect, focus_ring, focusable, rect, scrim, sheet, stroke_rect, text, well,
-    Align, ButtonOpts, Rect, TextOpts, UiFrame,
+    blit_pixmap, button, cut_top, fill_rect, focus_ring, focusable, rect, scrim, sheet,
+    stroke_rect, text, well, Align, ButtonOpts, Rect, TextOpts, UiFrame,
 };
+use crate::gambler::pixmap::Pixmap;
 use crate::painter::Rgba;
+use std::sync::Arc;
 use crate::theme::{Ui, GRID};
 
 /// Which game the cabinet is showing. Mirrors `pk_core::gambler::GameId`, kept
@@ -107,6 +109,20 @@ pub enum GamePrim {
     },
     /// A sunken panel, the toolkit's own `well`.
     Well { x: f64, y: f64, w: f64, h: f64 },
+    /// A pre-rasterised RGBA surface, blitted 1:1 (times the frame's zoom).
+    ///
+    /// The escape hatch for art the four primitives above cannot express — a
+    /// roulette wheel is nothing but circles, and there is no circle here. The
+    /// game rasterises into a [`Pixmap`] at UI scale and hands it over; the
+    /// integer upscale happens in `blit_rgba`, so the pixel grid survives.
+    ///
+    /// `Arc` because a 222x110 surface is 98KB and [`GamePaint`] is rebuilt
+    /// every frame: the clone has to be a refcount bump, not a memcpy.
+    Blit {
+        x: f64,
+        y: f64,
+        img: Arc<Pixmap>,
+    },
     /// Text at `size`, anchored left or centred.
     Label {
         x: f64,
@@ -516,6 +532,13 @@ fn draw_game(f: &mut UiFrame, view: &Rect, paint: &GamePaint) {
             GamePrim::Well { x, y, w, h } => {
                 if let Some(r) = clip(*x, *y, *w, *h) {
                     well(f, &r, None);
+                }
+            }
+            GamePrim::Blit { x, y, img } => {
+                // Clipped to the viewport like every other prim, so a game that
+                // rasterises a surface bigger than its box cannot paint chrome.
+                if let Some(r) = clip(*x, *y, img.w as f64, img.h as f64) {
+                    blit_pixmap(f, view.x + x, view.y + y, img, &r);
                 }
             }
             GamePrim::Label {

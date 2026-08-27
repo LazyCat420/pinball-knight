@@ -107,60 +107,94 @@ fn main() {
         ctl("t3", "13-18", false, false),
     ];
     {
-        let mut p = vec![GamePrim::Well {
-            x: 24.0,
-            y: 54.0,
-            w: GAME_W - 48.0,
-            h: 26.0,
-        }];
-        let bar_w = GAME_W - 48.0;
-        let w = bar_w / 19.0;
-        for i in 0..19 {
-            let colour = if i == 0 {
-                0x002f_7d4f
-            } else if i % 2 == 1 {
-                WARM
+        // The real wheel, mid-spin, with the ball on the near side and the
+        // winning pocket flashing — the frame the strip used to stand in for.
+        use pk_gui::gambler::pixmap::Pixmap;
+        use pk_gui::gambler::roulette_art as art;
+        use std::sync::Arc;
+
+        let pockets: [art::PocketColor; art::POCKETS] = core::array::from_fn(|n| {
+            if n == 0 {
+                art::PocketColor::Green
+            } else if n % 2 == 1 {
+                art::PocketColor::Red
             } else {
-                0x000d_1018
-            };
-            p.push(GamePrim::Fill {
-                x: 24.0 + f64::from(i) * w + 1.0,
-                y: 55.0,
-                w: w - 2.0,
-                h: 24.0,
-                colour,
-            });
-        }
-        p.push(GamePrim::Stroke {
-            x: 24.0 + 7.0 * w,
-            y: 54.0,
-            w,
-            h: 26.0,
-            colour: GOLD,
+                art::PocketColor::Black
+            }
         });
-        p.push(GamePrim::Fill {
-            x: 24.0 + 7.4 * w,
-            y: 46.0,
-            w: 4.0,
-            h: 8.0,
-            colour: BONE,
-        });
-        p.push(GamePrim::Label {
-            x: GAME_W / 2.0,
-            y: 88.0,
-            s: "POCKET 7".into(),
-            size: 8,
-            colour: GOLD,
-            centre: true,
-        });
-        p.push(GamePrim::Label {
-            x: 24.0,
-            y: 88.0,
-            s: "ON RED".into(),
-            size: 8,
-            colour: COLD,
-            centre: false,
-        });
+        let view = art::WheelView {
+            ball: art::BallView {
+                theta: 1.15,
+                rotor: -0.4,
+                radius: art::R_POCKET,
+                height: 0.0,
+                omega: 1.2,
+                on_track: false,
+            },
+            pockets,
+            highlight: 7,
+            flash: 0.9,
+            show_ball: true,
+        };
+        let layers = art::build_wheel_layers();
+        let mut pm = Pixmap::new(art::BAKE_W, art::BAKE_H);
+        art::draw_wheel(&mut pm, &view, &layers);
+        let wheel_y = ((GAME_H - art::BAKE_H as f64) / 2.0).max(0.0).floor();
+
+        let rx = art::BAKE_W as f64 + 22.0;
+        let p = vec![
+            GamePrim::Blit {
+                x: 6.0,
+                y: wheel_y,
+                img: Arc::new(pm),
+            },
+            GamePrim::Label {
+                x: rx,
+                y: wheel_y + 14.0,
+                s: "ON RED".into(),
+                size: 8,
+                colour: COLD,
+                centre: false,
+            },
+            GamePrim::Label {
+                x: rx,
+                y: wheel_y + 34.0,
+                s: "PAYS 2x".into(),
+                size: 8,
+                colour: BONE,
+                centre: false,
+            },
+            GamePrim::Fill {
+                x: rx,
+                y: wheel_y + 59.0,
+                w: 34.0,
+                h: 16.0,
+                colour: WARM,
+            },
+            GamePrim::Stroke {
+                x: rx,
+                y: wheel_y + 59.0,
+                w: 34.0,
+                h: 16.0,
+                colour: GOLD,
+            },
+            GamePrim::Label {
+                x: rx + 17.0,
+                y: wheel_y + 63.0,
+                s: "7".into(),
+                size: 8,
+                colour: BONE,
+                centre: true,
+            },
+            GamePrim::Label {
+                x: rx + 42.0,
+                y: wheel_y + 63.0,
+                s: "POCKET".into(),
+                size: 8,
+                colour: GOLD,
+                centre: false,
+            },
+        ];
         roul.paint = GamePaint { prims: p };
     }
 

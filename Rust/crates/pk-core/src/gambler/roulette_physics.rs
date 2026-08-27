@@ -53,7 +53,12 @@ pub const R_POCKET: f64 = 0.66;
 
 /// Deflectors on the stationary bowl. Evenly spaced, per Eichberger.
 pub const DEFLECTORS: u32 = 8;
-const DEFL_OFFSET: f64 = 0.21;
+/// Angular offset of the first deflector.
+///
+/// `pub` so `pk-game`'s `roulette_art_constants_match_physics` can pin it: the
+/// art restates this number (pk-gui cannot depend on pk-core) and a diamond
+/// drawn where the ball never scatters is a picture of a different wheel.
+pub const DEFL_OFFSET: f64 = 0.21;
 
 /// Launch speed window searched for a trajectory, rad/s. ~3 to 3.9 rev/s.
 const W0_MIN: f64 = 19.0;

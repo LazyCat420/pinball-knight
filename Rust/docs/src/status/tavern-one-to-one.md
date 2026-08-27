@@ -32,7 +32,36 @@ Sources on the oracle side, all under
 | **Trade** (`bar`, the Alchemist) | shelf of 6 potions + Empty Flask; brew book over pouch + flasks | ✅ **DONE** — `economy::alchemist`; the brew book is a GRID, see below |
 | **Forge / Repair** (`forge`) | repair, add socket, the two-step upgrade gamble, insure, sacrifice | ✅ **DONE** — `economy::forge` |
 | **Cards** (`dealer`) | three pulls you cannot choose, reroll the shelf, socket/unsocket into weapons | ✅ **DONE** — `economy::dealer` + the card bake + `screens::dealer` (3 tabs, 12 tests), wired to the station: walk up and it opens |
-| **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | ✅ **DONE** — `pk_core::gambler` + `gambler::drive` + `screens::gambler` + the `Cabinet` shell; all four playable, wired to the station |
+| **Risk Gold** (`gambler`) | slots, roulette, blackjack, darts | ⚠️ **RULES DONE, ART PARTIAL** — `pk_core::gambler` + `gambler::drive` + `screens::gambler` + the `Cabinet` shell; all four playable and correctly paid, wired to the station. The **roulette wheel** is now rasterised (`gambler::roulette_art` + `GamePrim::Blit`). Darts, blackjack and the cards still paint through the flat primitives — see below |
+
+## The gambler's art layer — what is real and what is not
+
+Recorded because this row read **✅ DONE — all four playable** while
+`pk_gui::gambler` was a set of function SIGNATURES with empty bodies, and
+nothing in the crate imported it. "Playable" was true; "ported" was not, and
+the two are not the same claim.
+
+The pattern to check for, in every art module: the pure-math helpers are real
+(they have tests that can fail), and the `draw_*` entry points are `{}`.
+
+| Module | Real | Still stubbed |
+| --- | --- | --- |
+| `roulette_art` | **the whole wheel** — `paint_disc`, the skirt, three baked layers, the depth sort, the ball, the callout | — |
+| `darts_art` | `classify_dartboard_pixel`, `hit_wire`, `number_width` | `draw_number`, `draw_dart`, `build_board`, `box_rect`, `frame_rect` |
+| `blackjack_art` | `chip_ink`, `chip_stack`, `breakdown_bet`, `midpoint_circle_points`, `circle_outline` | `draw_chip`, `draw_chip_stack`, `draw_betting_circle` |
+| `cards_art` | `card_size`, `pip_layout`, `rank_bitmap_3x5`, `suit_pip_5x5` | `draw_card` |
+
+The seam that unblocks the rest is already in: `GamePrim::Blit` carries a
+rasterised `Pixmap` from a game to the screen, `im::blit_pixmap` does the
+integer upscale, and `gambler::pixmap` is the surface to paint into. Each
+remaining module is now a rasteriser to write, not a plumbing problem.
+
+⚠️ A note on how the old test passed. `roulette_art_sim.rs` asserted that
+`project_isometric` followed by `unproject_isometric` returned its input. That
+holds for any invertible map, at any `FLAT`, with the axes swapped — and it
+cannot fail when nothing is drawn. When auditing the three modules above, do
+not read a green test as evidence that art exists; check that a test would fail
+if the function body were deleted.
 
 ## Where the port DEVIATES, and why
 

@@ -25,15 +25,21 @@ use pk_core::gambler::blackjack_table::{BjPhase, BlackjackApi, BlackjackTable};
 use pk_core::gambler::darts_throw::ThrowPhase;
 use pk_core::gambler::drive::{DartsDrive, RouletteDrive, SlotsDrive};
 use pk_core::gambler::roulette::{bets, color_of, BetDef, PocketColor};
+use pk_core::gambler::roulette_physics::Phase;
 use pk_core::gambler::slots::Symbol;
 use pk_core::gambler::table::{
     can_bet, create_table_state, place_bet, rounds_left, settle, stake_options, GameId,
     RoundResult, TableDeps, TableState,
 };
 use pk_core::rng::Mulberry32;
-use pk_gui::screens::gambler::{
-    GamblerGame, GamblerView, GameControl, GamePaint, GamePrim, GAME_W,
+use pk_gui::gambler::pixmap::Pixmap;
+use pk_gui::gambler::roulette_art::{
+    self as wheel_art, BallView, PocketColor as ArtPocket, WheelLayers, WheelView,
 };
+use pk_gui::screens::gambler::{
+    GamblerGame, GamblerView, GameControl, GamePaint, GamePrim, GAME_H, GAME_W,
+};
+use std::sync::Arc;
 
 /// Ink, so the games read as one machine rather than four palettes.
 const INK: u32 = 0x000d_1018;
@@ -61,6 +67,16 @@ pub struct Cabinet {
     rng: Mulberry32,
     /// The stake the live round took, so a forfeit can name it.
     live: Option<GameId>,
+    /// The roulette wheel's static layers. Baked ONCE per cabinet — the rim,
+    /// lip, track, apron, cone, turret and skirt do not move, and re-scanning
+    /// them every frame is most of a frame budget spent on unchanged pixels.
+    wheel: WheelLayers,
+    /// Pocket colours, resolved from `pk_core` once. `pk-gui` cannot import
+    /// `pk_core`, so this array IS the conversion at the crate boundary — the
+    /// odd-red/even-black rule stays defined in exactly one place.
+    pockets: [ArtPocket; wheel_art::POCKETS],
+    /// Seconds since the cabinet opened, for the winning pocket's pulse.
+    flash_t: f64,
 }
 
 /// `DartsDrive` owns its rng, so it needs a concrete callable.
@@ -82,6 +98,13 @@ impl Cabinet {
             bet: bets()[0].clone(),
             rng: Mulberry32::new(seed),
             live: None,
+            wheel: wheel_art::build_wheel_layers(),
+            pockets: core::array::from_fn(|n| match color_of(n as i32) {
+                PocketColor::Red => ArtPocket::Red,
+                PocketColor::Black => ArtPocket::Black,
+                PocketColor::Green => ArtPocket::Green,
+            }),
+            flash_t: 0.0,
         }
     }
 
@@ -246,6 +269,7 @@ impl Cabinet {
 
     /// Advance whatever is running. Called once a frame.
     pub fn tick(&mut self, dt: f64, wallet: &mut pk_core::economy::Wallet) {
+        self.flash_t += dt;
         match self.game {
             GamblerGame::Slots => {
                 if let Some(r) = self.slots.tick(dt) {
@@ -401,7 +425,9 @@ impl Cabinet {
     fn paint(&self) -> GamePaint {
         match self.game {
             GamblerGame::Slots => paint_slots(&self.slots),
-            GamblerGame::Roulette => paint_roulette(&self.roulette),
+            GamblerGame::Roulette => {
+                paint_roulette(&self.roulette, &self.wheel, &self.pockets, self.flash_t)
+            }
             GamblerGame::Darts => paint_darts(&self.darts),
             GamblerGame::Blackjack => paint_blackjack(&self.blackjack),
         }
@@ -567,93 +593,135 @@ fn paint_slots(d: &SlotsDrive) -> GamePaint {
     GamePaint { prims }
 }
 
-fn paint_roulette(d: &RouletteDrive) -> GamePaint {
+/// THE ORBIT WHEEL, rasterised.
+///
+/// Was a flat 19-cell bar with a gold blob sliding along it — honest about the
+/// outcome, but a progress bar rather than a wheel, because the paint list had
+/// no way to say "circle". `GamePrim::Blit` is that way: `pk_gui::gambler::
+/// roulette_art` scans the wheel into a surface and this hands it over whole.
+///
+/// The wheel sits LEFT and the readout right. It is 222px of a 528px game area,
+/// so the two do not compete for room — which is why the port did not have to
+/// shrink the art to fit the shorter box (see `roulette_art::CY`).
+fn paint_roulette(
+    d: &RouletteDrive,
+    layers: &WheelLayers,
+    pockets: &[ArtPocket; wheel_art::POCKETS],
+    flash_t: f64,
+) -> GamePaint {
     let mut prims = Vec::new();
-    let bar_x = 24.0;
-    let bar_y = 54.0;
-    let bar_w = GAME_W - 48.0;
-    let bar_h = 26.0;
-    prims.push(GamePrim::Well {
-        x: bar_x,
-        y: bar_y,
-        w: bar_w,
-        h: bar_h,
+
+    // The ball rides only while a spin is live; between rounds the wheel idles
+    // with the rotor where it stopped, which is what a real table looks like.
+    let f = d.frame();
+    let settled = f.is_some() && !d.busy();
+    let ball = f.map(|b| BallView {
+        theta: b.theta,
+        rotor: b.rotor,
+        radius: b.radius,
+        height: b.height,
+        omega: b.omega,
+        on_track: b.phase == Phase::Track,
     });
 
-    // 19 pockets, 0..18, coloured as the wheel is.
-    let n = 19.0;
-    for p in 0..19 {
-        let w = bar_w / n;
-        let x = bar_x + p as f64 * w;
-        let colour = match color_of(p) {
-            PocketColor::Green => 0x002f_7d4f,
-            PocketColor::Red => WARM,
-            PocketColor::Black => INK,
-        };
-        prims.push(GamePrim::Fill {
-            x: x + 1.0,
-            y: bar_y + 1.0,
-            w: w - 2.0,
-            h: bar_h - 2.0,
-            colour,
-        });
-        prims.push(GamePrim::Label {
-            x: x + w / 2.0,
-            y: bar_y + 8.0,
-            s: format!("{p}"),
-            size: 8,
-            colour: BONE,
-            centre: true,
-        });
-    }
+    // Flash only once the ball has SEATED. Pulsing a pocket while the ball is
+    // still travelling would announce the result early — the animation would be
+    // disagreeing with itself rather than with the payout.
+    let flash = if settled {
+        (flash_t * 6.0).sin() * 0.5 + 0.5
+    } else {
+        0.0
+    };
 
-    // The ball, and the resting pocket once it is down.
-    if let Some(f) = d.frame() {
-        let w = bar_w / n;
-        let frac = (f.theta.rem_euclid(std::f64::consts::TAU)) / std::f64::consts::TAU;
-        let ball_x = bar_x + frac * bar_w;
-        // Motion streak
-        prims.push(GamePrim::Fill {
-            x: ball_x - 3.0,
-            y: bar_y - 8.0,
-            w: 6.0,
-            h: 8.0,
-            colour: GOLD,
-        });
-        prims.push(GamePrim::Fill {
-            x: ball_x - 1.5,
-            y: bar_y - 6.0,
-            w: 3.0,
-            h: 6.0,
-            colour: BONE,
-        });
-        if !d.busy() {
-            let p = d.pocket().clamp(0, 18) as f64;
-            prims.push(GamePrim::Stroke {
-                x: bar_x + p * w,
-                y: bar_y,
-                w,
-                h: bar_h,
-                colour: GOLD,
-            });
-            prims.push(GamePrim::Label {
-                x: GAME_W / 2.0,
-                y: bar_y + bar_h + 8.0,
-                s: format!("POCKET {}", d.pocket()),
-                size: 8,
-                colour: GOLD,
-                centre: true,
-            });
-        }
-    }
+    let view = WheelView {
+        ball: ball.unwrap_or_default(),
+        pockets: *pockets,
+        highlight: if settled { d.pocket() as i64 } else { -1 },
+        flash,
+        show_ball: ball.is_some(),
+    };
+
+    let mut pm = Pixmap::new(wheel_art::BAKE_W, wheel_art::BAKE_H);
+    wheel_art::draw_wheel(&mut pm, &view, layers);
+    let wheel_y = ((GAME_H - wheel_art::BAKE_H as f64) / 2.0).max(0.0).floor();
+    prims.push(GamePrim::Blit {
+        x: 6.0,
+        y: wheel_y,
+        img: Arc::new(pm),
+    });
+
+    // ── Readout ── to the right of the wheel, where nothing overlaps it.
+    let rx = wheel_art::BAKE_W as f64 + 22.0;
+    let mut ry = wheel_y + 14.0;
     prims.push(GamePrim::Label {
-        x: bar_x,
-        y: bar_y + bar_h + 8.0,
+        x: rx,
+        y: ry,
         s: format!("ON {}", d.bet().label.to_uppercase()),
         size: 8,
         colour: COLD,
         centre: false,
     });
+    ry += 20.0;
+    prims.push(GamePrim::Label {
+        x: rx,
+        y: ry,
+        s: format!("PAYS {}x", d.bet().pays),
+        size: 8,
+        colour: BONE,
+        centre: false,
+    });
+
+    if settled {
+        ry += 26.0;
+        let p = d.pocket();
+        let colour = match color_of(p) {
+            PocketColor::Green => 0x002f_7d4f,
+            PocketColor::Red => WARM,
+            PocketColor::Black => DIM,
+        };
+        // A swatch, so the colour bets can be read without knowing the rule.
+        prims.push(GamePrim::Fill {
+            x: rx,
+            y: ry - 1.0,
+            w: 34.0,
+            h: 16.0,
+            colour,
+        });
+        prims.push(GamePrim::Stroke {
+            x: rx,
+            y: ry - 1.0,
+            w: 34.0,
+            h: 16.0,
+            colour: GOLD,
+        });
+        prims.push(GamePrim::Label {
+            x: rx + 17.0,
+            y: ry + 3.0,
+            s: format!("{p}"),
+            size: 8,
+            colour: BONE,
+            centre: true,
+        });
+        prims.push(GamePrim::Label {
+            x: rx + 42.0,
+            y: ry + 3.0,
+            s: "POCKET".to_string(),
+            size: 8,
+            colour: GOLD,
+            centre: false,
+        });
+    } else if d.busy() {
+        ry += 26.0;
+        prims.push(GamePrim::Label {
+            x: rx,
+            y: ry,
+            s: "NO MORE BETS".to_string(),
+            size: 8,
+            colour: GOLD,
+            centre: false,
+        });
+    }
+
     GamePaint { prims }
 }
 

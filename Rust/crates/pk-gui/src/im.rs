@@ -592,6 +592,56 @@ fn draw_icon_inner(
     );
 }
 
+/// Blit a rasterised RGBA surface into the frame at UI position `(x, y)`.
+///
+/// The escape hatch for art the widget toolkit cannot express — a roulette
+/// wheel is nothing but circles, and there is no circle primitive here. The
+/// caller rasterises at UI scale (see `gambler::pixmap`) and this does the
+/// integer upscale, which is what keeps the pixel grid the hand-rasterisation
+/// exists to hit.
+///
+/// `clip` is in CONTENT space and is intersected with the frame's own clip, so
+/// a surface larger than its box cannot paint over the chrome around it.
+///
+/// Lives here rather than in the caller because `shift` and `device_clip` are
+/// the frame's private business — same reason `draw_face` below does.
+pub fn blit_pixmap(
+    f: &mut UiFrame,
+    x: f64,
+    y: f64,
+    img: &crate::gambler::pixmap::Pixmap,
+    clip: &Rect,
+) {
+    if img.w == 0 || img.h == 0 {
+        return;
+    }
+    let z = f.zoom as i64;
+    let mut c = (
+        px(clip.x) * z,
+        (px(clip.y) - f.shift) * z,
+        px(clip.x + clip.w) * z,
+        (px(clip.y + clip.h) - f.shift) * z,
+    );
+    if let Some((ax, ay, bx, by)) = f.device_clip {
+        c = (c.0.max(ax), c.1.max(ay), c.2.min(bx), c.3.min(by));
+    }
+    if c.2 <= c.0 || c.3 <= c.1 {
+        return;
+    }
+    f.p.blit_rgba(
+        img.bytes(),
+        img.w as u32,
+        img.h as u32,
+        px(x) * z,
+        (px(y) - f.shift) * z,
+        img.w as i64 * z,
+        img.h as i64 * z,
+        f.global_alpha,
+        None,
+        Some(c),
+    );
+}
+
 /// Blit a procedural Doom-style knight mugshot face into the frame.
 pub fn draw_face(f: &mut UiFrame, face: &crate::hud_face::FaceState, face_box: &Rect) {
     let z = f.zoom as i64;
