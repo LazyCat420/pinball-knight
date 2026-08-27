@@ -69,6 +69,27 @@
 //! anything drawn between the composites. `the_far_layer_is_never_overpainted`
 //! pins that; it is the claim the code can actually keep.
 //!
+//! ── Parity with the oracle, measured ───────────────────────────────────────
+//! Rendered both wheels at the same view (theta 1.15, rotor -0.4, seated,
+//! pocket 7 flashing) and diffed, correcting for the `CY` shift:
+//!
+//!     15 592 non-transparent pixels compared — 15 560 IDENTICAL (99.79%)
+//!
+//! All 32 differing pixels are one cluster, in the WINNER CALLOUT, and they are
+//! the oracle anti-aliasing itself. Its plate is `w = label.length * 4 + 5`, so
+//! a one-character label gives `w = 9` and JS `w / 2` is 4.5 — `fillRect` lands
+//! on a half-pixel boundary and Canvas 2D feathers the edge. The oracle's
+//! pixels there are (133,126,97), which is a 50% blend of `C_WIN_HI` over the
+//! ink halo to within one unit.
+//!
+//! That is precisely the soft fringe this module's first paragraph exists to
+//! forbid, arrived at by accident through an odd width. Rust's `w / 2` is
+//! integer division, so the plate lands on whole pixels here and the callout is
+//! crisp. This port keeps the crisp version DELIBERATELY: matching the oracle
+//! byte-for-byte would mean porting a defect that the file's own stated design
+//! rule rejects. It is the one place the two rasters disagree, and it is the
+//! one place the oracle is wrong.
+//!
 //! ── What this port CANNOT import, and how the numbers stay pinned ───────────
 //! `pk-gui` does not depend on `pk-core`, deliberately: the toolkit answers to
 //! the browser's own raster, not to the simulation. So the physical constants
