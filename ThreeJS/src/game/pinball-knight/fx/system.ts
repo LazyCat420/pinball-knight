@@ -28,7 +28,7 @@ import { SMOKE, STEAM, makeSmokePool, makeSteamPool } from "./puffs";
 import { linColor } from "./color";
 import { C_BLOOD_G, C_BLOOD_R, C_DUST, C_EMBER, C_SPARK, C_SPARK2, rnd } from "./pools/shared";
 import { ParticlePool } from "./pools/particle-pool";
-import { slashTexture, type SlashOpts } from "./pools/slash-pool";
+import { type SlashOpts } from "./pools/slash-pool";
 import { type RingOpts } from "./pools/ring-pool";
 import { TRAIL_CAPACITY, TRAIL_PUSH_RATE, type TrailStyleName } from "./pools/trail-ribbon";
 import { SlashPool } from "./pools/slash-pool";
@@ -37,7 +37,7 @@ import { TrailRibbon } from "./pools/trail-ribbon";
 import { LaserMarkField } from "./pools/laser-mark-field";
 import { RingPool } from "./pools/ring-pool";
 import { SigilPool } from "./pools/sigil-pool";
-import { BladeRing } from "./pools/blade-ring";
+import { BladeRing, shardTexture } from "./pools/blade-ring";
 
 
 
@@ -224,7 +224,9 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const trail = new TrailRibbon();
   const marks = new LaserMarkField();
   const rings = new RingPool();
-  const bladeRing = new BladeRing(slashTexture());
+  // Owns its own shard texture now — it no longer borrows the melee crescent,
+  // which was a motion smear standing in for a solid blade (see blade-ring.ts).
+  const bladeRing = new BladeRing(shardTexture());
   const sigils = new SigilPool();
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
