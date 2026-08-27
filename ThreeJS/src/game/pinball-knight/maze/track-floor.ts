@@ -28,10 +28,10 @@
  *
  * DOM- and three-free.
  */
-import { type Grid, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
+import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, sealedWalls, type TrackMask } from "./track-carve";
+import { carveTrack, carveChamber, chamberRoom, growMazeAround, publishArcs, connectAll, sealedWalls, type Chamber, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations, nearSealed } from "./track-socket";
 import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
@@ -133,6 +133,28 @@ export interface TrackFloor {
    * with no site for one, which is recorded in `relaxed` rather than passed over.
    */
   bossRoom: { ci: number; cj: number; r: number } | null;
+  /**
+   * Chambers this floor deliberately opened, as authorable ROOMS (Plaza A-1).
+   *
+   * `floor-authoring.ts` passes these to `decorateMaze` as its `rooms`, which
+   * is the whole point: before this field, a track floor passed `[]` and every
+   * room system downstream — `furnishRooms`' speedway/bumper/arena/vault
+   * archetypes, the room-scoped item and spawn drops, the map overlay's
+   * per-archetype wash — was dead code on every floor a player ever saw. The
+   * legacy branch's `carveRooms` output never reached them either; it is
+   * carved into `raw`, which the track path discards.
+   *
+   * Currently the Great Hall plaza only, and therefore non-empty on exactly
+   * one archetype (`plazaFrac > 0` is 0.29 on `greathall` and 0 on the other
+   * four — archetypes.ts). The King's Hall is the same brush on every floor
+   * and joins this list under its own flag once the plaza's density numbers
+   * land; it is already carried separately as `bossRoom` above.
+   *
+   * DISCS REPORTED AS RECTS. Each entry is a chamber's bounding square, so
+   * roughly a fifth of it is rock. Everything that reads this must clip to
+   * real floor — see `furnishRooms`.
+   */
+  chambers: Room[];
 }
 
 /**
@@ -541,6 +563,7 @@ export function buildTrackFloor(
   // site is the topological centre of the circuit and a chamber somewhere else
   // is a chamber the roads do not lead to.
   const plazaRelaxed: string[] = [];
+  const chambers: Room[] = [];
   if (prof.plazaFrac > 0 && graph.nodes.length) {
     const cx = w / 2;
     const cz = h / 2;
@@ -549,9 +572,16 @@ export function buildTrackFloor(
       if ((n.x - cx) ** 2 + (n.z - cz) ** 2 < (hub.x - cx) ** 2 + (hub.z - cz) ** 2) hub = n;
     }
     const want = Math.min(w, h) * prof.plazaFrac;
-    let carved = false;
+    // KEEP the disc. The relaxation ladder steps the radius down until one
+    // fits, so the chamber that actually landed is the last value returned —
+    // and it is the only record of it. Reconstructing the plaza later from the
+    // finished grid is not equivalent: by then the maze, the repair passes and
+    // the doorway cuts have all touched its rim, so a re-detect returns the
+    // open region, not the room that was authored.
+    let carved: Chamber | null = null;
     for (let r = want; r >= want * 0.6 && !carved; r -= 1) carved = carveChamber(grid, mask, hub.x, hub.z, r);
-    if (!carved) plazaRelaxed.push("archetype-has-its-chamber");
+    if (carved) chambers.push(chamberRoom(grid, carved));
+    else plazaRelaxed.push("archetype-has-its-chamber");
   }
   // ── THE LAUNCH CHUTE (track-launch.ts) ──────────────────────────────────
   //
@@ -1086,6 +1116,7 @@ export function buildTrackFloor(
     relaxed,
     doorways: doors.doorways,
     bossRoom,
+    chambers,
   };
 }
 

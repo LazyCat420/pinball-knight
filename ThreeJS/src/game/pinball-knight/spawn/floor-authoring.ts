@@ -161,12 +161,21 @@ export function authorFloor(level: number): AuthoredFloor {
     : null;
   let grid: Grid;
   let endpoints: { start: TilePos; stairs: TilePos } | null;
-  // Room rects and prefab anchors are authored in HALF-SCALE cell coords and
-  // scaled ×2 onto the thickened grid — a shape only the legacy branch has. A
-  // track floor is generated at final resolution from its own geometry and
-  // ships neither; decorateMaze's own sparse-region fill covers it. They
-  // default EMPTY so the track branch cannot accidentally point decoration at
+  // Prefab anchors are authored in HALF-SCALE cell coords and scaled ×2 onto
+  // the thickened grid — a shape only the legacy branch has. A track floor is
+  // generated at final resolution from its own geometry and ships none, so
+  // they default EMPTY and the track branch cannot point decoration at
   // furniture that was never carved.
+  //
+  // ROOMS USED TO DEFAULT EMPTY FOR THE SAME REASON, AND THAT WAS THE BUG
+  // (Plaza A-1). The reasoning was sound about `carveRooms`' half-scale rects
+  // and wrong about the conclusion: a track floor DOES carve rooms — the Great
+  // Hall plaza, via the same `carveChamber` brush — at final resolution, in
+  // the coords this function already speaks. Discarding them meant
+  // `furnishRooms` ran on `[]` on 100% of shipped floors, so the four room
+  // archetypes, their guards and prizes, and the map overlay's per-archetype
+  // wash were all unreachable. `buildTrackFloor` now reports them as
+  // `TrackFloor.chambers` and they are handed over below.
   let rooms: Array<{ i0: number; j0: number; w: number; h: number }> = [];
   let anchors: PrefabAnchor[] = [];
   if (track) {
@@ -176,6 +185,11 @@ export function authorFloor(level: number): AuthoredFloor {
     // Both endpoints sit ON the circuit and a lap apart, so the route between
     // them RIDES the track instead of treating it as scenery between errands.
     endpoints = { start: track.start, stairs: track.stairs };
+    // Chamber rects, already in final tile coords — no ×2 scaling, which is the
+    // legacy branch's half-scale correction and would be wrong here. Non-empty
+    // on `greathall` only for now (plazaFrac > 0 on exactly that archetype);
+    // the King's Hall follows under its own flag.
+    rooms = track.chambers;
   } else {
     // ── THE LEGACY FALLBACK, BUILT ONLY WHEN IT IS ACTUALLY USED ───────────
     //

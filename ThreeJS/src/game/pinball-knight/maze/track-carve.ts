@@ -211,14 +211,67 @@ export function carveTrack(g: Grid, path: TrackPath): TrackMask {
  *
  * Pinball physics need open area to chain caroms and a 4-tile lane never gives
  * them any; this is the one place per floor where that is not true. Returns
- * false if the radius does not fit, so the caller skips the archetype's plaza
+ * null if the radius does not fit, so the caller skips the archetype's plaza
  * rather than carving a clipped one against the border.
+ *
+ * RETURNS THE CARVED DISC, not a boolean (Plaza A-1). The caller needs the
+ * geometry, not the verdict: `buildTrackFloor` collects these into
+ * `TrackFloor.chambers` and `floor-authoring.ts` hands them to `decorateMaze`
+ * as its `rooms`, which is what finally gives a track floor an authored room.
+ * For four years of this generator the answer was thrown away at the call site
+ * and every downstream room system — `furnishRooms`' four archetypes, the
+ * prefab stamps, the map overlay's per-archetype wash — ran against an empty
+ * array on 100% of shipped floors.
  */
-export function carveChamber(g: Grid, mask: TrackMask, cx: number, cz: number, r: number): boolean {
-  if (r < 3) return false;
-  if (cx - r < 2 || cz - r < 2 || cx + r > g.w - 3 || cz + r > g.h - 3) return false;
+export function carveChamber(g: Grid, mask: TrackMask, cx: number, cz: number, r: number): Chamber | null {
+  if (r < 3) return null;
+  if (cx - r < 2 || cz - r < 2 || cx + r > g.w - 3 || cz + r > g.h - 3) return null;
   disc(g, mask, cx, cz, r);
-  return true;
+  return { cx, cz, r };
+}
+
+/**
+ * A carved chamber: centre and radius, in final tile coords.
+ *
+ * A DISC, deliberately — `chamberRoom` below converts it to the bounding
+ * `Room` rect the decorator's API takes, and everything that emits into it has
+ * to clip to real floor because the rect's corners are rock. See
+ * `furnishRooms`.
+ */
+export interface Chamber {
+  cx: number;
+  cz: number;
+  r: number;
+}
+
+/**
+ * The bounding rect of a chamber, as the `Room` the decorator speaks.
+ *
+ * INTEGER TILES, and that is the whole reason this is a function rather than
+ * an object literal at the call site. A chamber's centre and radius are FLOATS
+ * — `hub.x`/`hub.z` are graph-node coordinates and the radius comes off
+ * `Math.min(w, h) * prof.plazaFrac`, stepped down the relaxation ladder. `disc`
+ * copes (it walks integer tiles and distance-tests against the float centre),
+ * but a `Room` is an index range: hand `furnishRooms` a rect starting at
+ * i0 = 23.3019 and every `room.i0 + 1` it computes is a fractional tile index
+ * that addresses nothing. The first version of this shipped the raw floats and
+ * the probe printed `36.379999999999995x36.379999999999995` — the rooms were
+ * furnished with exactly zero parts because every emission missed the grid.
+ *
+ * The bounds mirror `disc`'s own loop, so the rect is exactly the tile range
+ * the carve touched — no wider, and clamped off the border the same way.
+ *
+ * Still LOSSY, and safe only because of the clip downstream: a disc inscribed
+ * in its bounding square leaves ~21% of that square as rock, concentrated in
+ * the corners. `furnishRooms` clips every emission to `T_FLOOR` for exactly
+ * this reason — do not add a consumer that skips that step.
+ */
+export function chamberRoom(g: Grid, c: Chamber): { i0: number; j0: number; w: number; h: number } {
+  const i0 = Math.max(1, Math.floor(c.cx - c.r));
+  const i1 = Math.min(g.w - 2, Math.ceil(c.cx + c.r));
+  const j0 = Math.max(1, Math.floor(c.cz - c.r));
+  const j1 = Math.min(g.h - 2, Math.ceil(c.cz + c.r));
+  return { i0, j0, w: i1 - i0 + 1, h: j1 - j0 + 1 };
 }
 
 /**

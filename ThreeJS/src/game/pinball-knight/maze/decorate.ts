@@ -1154,6 +1154,22 @@ function furnishRooms(
   const spawns: TilePos[] = [];
   const items: ItemDrop[] = [];
   const parts: PinballPartSpot[] = [];
+  // A ROOM'S RECT IS NOT ITS FLOOR (Plaza A-1).
+  //
+  // Every archetype below indexes off `room.i0/j0/w/h` with a one-tile wall
+  // margin, which is exact for the legacy branch's `carveRooms` rects — the
+  // whole rect is carved, so an edge inset by 1 is always floor. It is NOT
+  // exact for a track floor's chambers, which are DISCS reported as their
+  // bounding square: ~21% of that square is rock, concentrated in precisely
+  // the corners the arena/vault guards and the orbit rails aim at. Unclipped,
+  // a plaza would ship about a fifth of its furniture inside a wall — parts
+  // you cannot hit, guards you cannot fight, rails that break their own orbit.
+  //
+  // Clipping here rather than at each of the eleven emission sites is what
+  // makes this safe to extend: a future archetype inherits the guard by
+  // construction. On the legacy branch every tile it rejects was already a bug.
+  const onFloor = (i: number, j: number): boolean =>
+    i >= 0 && j >= 0 && i < g.w && j < g.h && at(g, i, j) === T_FLOOR;
   let orbitNext = 0; // D2 — circuit ids, one per room that gets a full ring of rails
   // Slice 9 — THREE-ZONE floors: a room's archetype is chosen by how far it sits
   // from the start (the stairs live at the far end), so a floor reads as a loop:
@@ -1163,7 +1179,27 @@ function furnishRooms(
   // Corridor width/friction/enemy-density gradients already ride distance (Slices
   // 2/4 + BFS spawn weighting), so this ties the spatial pacing together.
   const roomDist = rooms.map((r) => Math.abs(r.i0 + Math.floor(r.w / 2) - start.i) + Math.abs(r.j0 + Math.floor(r.h / 2) - start.j));
-  const maxDist = Math.max(1, ...roomDist);
+  // ONE ROOM CANNOT BE NORMALISED AGAINST ITSELF.
+  //
+  // `maxDist` is the observed maximum, so the farthest room always scores
+  // frac = 1 — deliberate on the legacy branch, where the stairs sit at the far
+  // end and the last room should read as the drain lane. With a SINGLE room it
+  // degenerates: the sole room is trivially the farthest, so frac is 1 whatever
+  // its actual position and the ladder below can only ever return arena or
+  // vault. A track floor's Great Hall is one room, and it is carved at the
+  // graph hub nearest the floor's centre — the machine core, not the drain —
+  // so the degenerate rule labelled the floor's centrepiece a loot closet on
+  // every greathall floor the probe sampled (18/18, all arena or vault).
+  //
+  // Normalising a lone room against the floor's own span restores the intent:
+  // a central chamber scores mid-band and gets the bumper field
+  // PLAZA_PLAN's whole complaint asks for ("the plaza gets texture, not
+  // machines"), while a chamber that genuinely sits out by the stairs still
+  // scores high and still becomes an arena.
+  //
+  // Multi-room floors keep the old denominator exactly, so the legacy branch
+  // is untouched.
+  const maxDist = rooms.length > 1 ? Math.max(1, ...roomDist) : Math.max(1, Math.floor((g.w + g.h) / 2));
   // A bonus floor earns a GUARANTEED vault: the last-carved room (the +1 the
   // grade unlocked in core.ts) is dealt vault outright, bypassing the doorstep
   // demotion so the reward always actually shows up.
@@ -1182,6 +1218,7 @@ function furnishRooms(
     planned.push({ ...room, kind });
 
     const part = (p: Omit<PinballPartSpot, "dir2I" | "dir2J">): void => {
+      if (!onFloor(p.i, p.j)) return; // rect corner over rock — see onFloor
       parts.push({ dir2I: 0, dir2J: 0, ...p });
     };
 
@@ -1192,7 +1229,38 @@ function furnishRooms(
       // spine lane is left CLEAR so the booster route runs straight through the
       // middle, flanked by bumpers — the room becomes a station ON the path
       // rather than a wall of pins you wander into and stall in.
-      const STEP = 3;
+      //
+      // SPACING SCALES WITH THE ROOM, because the COUNT otherwise scales with
+      // its AREA (Plaza A-1). At a fixed STEP = 3 this stamps one bumper per 9
+      // tiles: about 9 in a legacy 10x10 room, and 138 to 711 in a Great Hall
+      // plaza, which run 37x37 to 86x86. Measured across 90 floors, that put
+      // every greathall floor at 48-63 parts per 1k walkable against
+      // `DEFAULT_DENSITY.maxPartsPer1k: 34` — 1.4x to 1.9x over, on every
+      // floor the plaza touches.
+      //
+      // The additive-budget note in PLAZA_PLAN A-1 does NOT cover this, and is
+      // backwards: `corridorBudget = partBudget + parts.length - circuitPartCount`
+      // (:2471) is the count at which corridor filling STOPS, and room parts are
+      // already in `parts.length` when it is computed — so the corridor still
+      // gets its full `partBudget` and room parts are pure addition on top.
+      // Circuits are debited (they subtract); rooms never were. Harmless while
+      // rooms were small; not harmless at plaza scale.
+      //
+      // So an oversized room gets a spacing derived from a DENSITY target
+      // instead of the fixed 1-per-9-tiles, and every room the legacy branch
+      // can produce keeps STEP = 3 exactly — bit-identical, no regression risk
+      // on `floor-pipeline.test.ts`, which exercises that branch and only that
+      // branch.
+      //
+      // The threshold is derived, not chosen: `carveRooms` is called with
+      // ROOM_MAX_CELLS = 6 (constants/maze.ts:65) and sizes a room
+      // `cw * 2 - 1` = 11 raw tiles, which `floor-authoring.ts:251` doubles
+      // onto the thickened grid — so 22 final tiles is the widest room that
+      // branch has ever been able to author. Anything wider is a chamber.
+      const LEGACY_MAX_SPAN = 22;
+      const PLAZA_BUMPER_PER_1K = 10; // 1 per 100 tiles: machines in a hall, not a carpet
+      const oversized = room.w > LEGACY_MAX_SPAN || room.h > LEGACY_MAX_SPAN;
+      const STEP = oversized ? Math.round(Math.sqrt(1000 / PLAZA_BUMPER_PER_1K)) : 3;
       const m = 1; // margin from the walls
       let row = 0;
       for (let gy = room.j0 + m; gy <= room.j0 + room.h - 1 - m; gy += STEP, row++) {
@@ -1246,15 +1314,26 @@ function furnishRooms(
         { i: room.i0 + room.w - 2, j: room.j0 + room.h - 2 },
         { i: room.i0 + room.w - 2, j: room.j0 + 1 },
         { i: room.i0 + 1, j: room.j0 + room.h - 2 },
-      ].filter((c, idx2, arr) => arr.findIndex((o) => o.i === c.i && o.j === c.j) === idx2);
+      ]
+        .filter((c, idx2, arr) => arr.findIndex((o) => o.i === c.i && o.j === c.j) === idx2)
+        // The corners are the disc's worst case: on a chamber all four are
+        // rock. Filter BEFORE the arena/vault split so `slice(0, 2)` takes two
+        // guards that exist rather than two slots that may not.
+        .filter((c) => onFloor(c.i, c.j));
+      // The centre of a disc is always floor, so the prize needs no guard —
+      // but `cx - 1` on a radius-3 chamber is one tile from the rim, and the
+      // legacy branch can hand a 2-wide room here too.
+      const prizeAt = (drop: ItemDrop): void => {
+        if (onFloor(drop.i, drop.j)) items.push(drop);
+      };
       if (kind === "arena") {
         spawns.push(...corners);
         const prize = shuffled(["health", "gold", "rage", "haste", "shield"], rng)[0];
-        items.push({ kind: "potion", id: prize, i: cx, j: cy });
+        prizeAt({ kind: "potion", id: prize, i: cx, j: cy });
       } else {
         spawns.push(...corners.slice(0, 2));
-        items.push({ kind: "weapon", id: shuffled(WEAPON_POOL, rng)[0], i: cx, j: cy });
-        if (room.w > 2) items.push({ kind: "potion", id: "gold", i: cx - 1, j: cy });
+        prizeAt({ kind: "weapon", id: shuffled(WEAPON_POOL, rng)[0], i: cx, j: cy });
+        if (room.w > 2) prizeAt({ kind: "potion", id: "gold", i: cx - 1, j: cy });
       }
       // Even the fight/reward rooms get pinball furniture on their wall midpoints
       // (bumpers) so a big arena/vault isn't a bare box — clear of the centre
@@ -1293,6 +1372,11 @@ function furnishRooms(
       ];
       let placedRails = 0;
       for (const r of rails) {
+        // These push DIRECTLY rather than through `part()`, so they need the
+        // clip restating. A chamber's four rect corners are all rock, which is
+        // the case that matters: `placedRails` then stays 0 and the block below
+        // strips the tags, so a plaza gets no orbit rather than a broken one.
+        if (!onFloor(r.i, r.j)) continue;
         if (parts.some((q) => q.i === r.i && q.j === r.j)) continue;
         parts.push(r);
         placedRails++;
