@@ -90,17 +90,39 @@ describe("plaza rooms reach the decorator (A-1)", () => {
     }
   });
 
-  it("a furnished plaza is actually furnished — the rect is not enough", () => {
-    // Guards the integer regression from the other side: a rect can be integral
-    // and still address rock if the clip is too aggressive. At least one part
-    // must stand inside each authored room.
+  it("the plaza is the MACHINE CORE, not the drain lane", () => {
+    // furnishRooms picks an archetype from distance-to-start normalised over
+    // the OBSERVED maximum, so with a single room that room is trivially the
+    // farthest and always scores frac = 1 — the drain band, arena or vault. The
+    // Great Hall is carved at the graph hub nearest the floor's centre, so
+    // labelling it a loot closet is exactly wrong, and PLAZA_PLAN's complaint
+    // is that the plaza gets texture rather than machines. Before the lone-room
+    // normalisation fix this was arena/vault on 18 of 18 sampled floors.
+    //
+    // Asserted as "not the drain band" rather than "always bumper": a chamber
+    // that genuinely sits out by the stairs SHOULD score high and become an
+    // arena. The claim is that the band is now derived from where the room
+    // actually is, and a central hub does not land in it.
     for (const s of WITH_ROOMS) {
       for (const r of s.rooms) {
-        const inside = s.parts.filter((p) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
-        expect(inside.length, `no parts in ${r.kind} ${r.w}x${r.h} @ seed ${s.seed} L${s.level}`).toBeGreaterThan(0);
+        expect(["speedway", "bumper", "arena", "vault"]).toContain(r.kind);
       }
     }
+    const drain = WITH_ROOMS.flatMap((s) => s.rooms).filter((r) => r.kind === "arena" || r.kind === "vault");
+    const all = WITH_ROOMS.flatMap((s) => s.rooms);
+    expect(drain.length / all.length, `${drain.length}/${all.length} plazas scored as drain-lane`).toBeLessThan(0.5);
   });
+
+  // NOT ASSERTED, deliberately: "furnishRooms emitted these parts". Nothing in
+  // `plan` can carry that claim — `polishParts` (:2039) independently stamps
+  // bumper diamonds into any large open region and pushes the same centres as
+  // `plazas`, so parts stand inside the rect whether or not furnishRooms ran.
+  // An earlier version of this file asserted `parts inside the rect > 0` and
+  // called it proof of furnishing; it survived sabotage of BOTH the integer
+  // rect and the T_FLOOR clip, which is what a tautology looks like from the
+  // outside. The wiring is pinned by the first test and the emission rules by
+  // the two below it; a claim about which pass authored a given part needs a
+  // unit test on furnishRooms, not this sweep.
 
   it("nothing is emitted onto rock — a disc's bounding rect has corners", () => {
     // The main correctness risk PLAZA_PLAN:440 names. `furnishRooms` indexes off
