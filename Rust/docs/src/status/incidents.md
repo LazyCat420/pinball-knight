@@ -97,6 +97,35 @@ the empty space above the rim in the oracle's 200px cabinet. Scaling `R` would
 have moved every pocket boundary off the integer grid the hand-rasterisation
 exists to hit.
 
+### A trap this work walked into, twice over
+
+**An indented block in a Rust doc comment is a compiled doctest.** The oracle's
+header carries its formulas as indented prose; ported verbatim into `//!` and
+`///` comments, rustdoc turned four of them into Rust source and the `test` leg
+went red on `main`:
+
+```text
+x = CX + R*r*cos(a)                     -> expected one of `!` or `::`
+15 592 pixels compared - 15 560 ...     -> unknown start of token: \u{2014}
+BAKE_W = ceil(CX + R) + 4               -> expected one of `!` or `::`
+```
+
+The workspace has **zero** doctests otherwise, so nothing had ever exercised
+this path and no existing file demonstrates the hazard. Fence any indented
+block as ` ```text `.
+
+**And the reason it reached `main`:** `cargo check -p pk-game` does not compile
+that crate's tests, so a `match` left non-exhaustive by the new `GamePrim::Blit`
+variant said nothing. It lived in the BIN target, which `--lib` also misses.
+Use `--all-targets`, and remember that the suite's own `test` leg is the only
+thing that reaches doctests at all.
+
+Both were masked one step further by running the suite as
+`full-suite.sh | tail -40`: a pipeline's exit status is the LAST command's, so
+`tail`'s success was reported while the suite printed `2 LEG(S) FAILED`. The
+pipe also discarded the diagnostics. `full-suite.sh`'s own header says the exit
+code is sacred — piping it is how you desecrate it.
+
 ### Open items
 
 - **`darts_art`** — `draw_number`, `draw_dart`, `build_board`, `box_rect`,

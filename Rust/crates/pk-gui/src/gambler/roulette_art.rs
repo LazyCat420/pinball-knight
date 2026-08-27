@@ -21,8 +21,10 @@
 //! Straight axonometric squash. A point at wheel-space angle `a` and normalised
 //! radius `r` lands at
 //!
+//! ```text
 //!     x = CX + R*r*cos(a)
 //!     y = CY + R*r*sin(a)*FLAT - lift
+//! ```
 //!
 //! with `FLAT` the vertical foreshortening and `lift` the height of that part of
 //! the wheel above the pocket floor in screen pixels. Inverting it
@@ -73,7 +75,9 @@
 //! Rendered both wheels at the same view (theta 1.15, rotor -0.4, seated,
 //! pocket 7 flashing) and diffed, correcting for the `CY` shift:
 //!
+//! ```text
 //!     15 592 non-transparent pixels compared — 15 560 IDENTICAL (99.79%)
+//! ```
 //!
 //! All 32 differing pixels are one cluster, in the WINNER CALLOUT, and they are
 //! the oracle anti-aliasing itself. Its plate is `w = label.length * 4 + 5`, so
@@ -125,7 +129,9 @@ pub const CX: f64 = 124.0;
 ///
 /// The wheel itself was never 200 tall. Its actual vertical extent is
 ///
+/// ```text
 ///     2*R*FLAT + RIM_LIFT + SKIRT + 2  =  86.5 + 11 + 13 + 2  =  112.5
+/// ```
 ///
 /// so it fits 130 with room to spare; what did not fit was the EMPTY SPACE the
 /// oracle's `CY = 102` puts above the rim. Re-origining is therefore the whole
@@ -164,13 +170,17 @@ pub const TURRET_LIFT: f64 = 15.0;
 /// different quantities and both are correct:
 ///
 ///   · `R_BALL_TRACK = 1` is the physics model's NORMALISATION. The simulator
+/// ```text
 ///     works in units where the track is the unit circle, because that is what
 ///     makes the centripetal-support term read as `omega^2 * r` with no scale
 ///     factor smeared through it.
+/// ```
 ///   · `BALL_TRACK_R = 0.9` is where that maps to on screen. Art radius 1.0 is
+/// ```text
 ///     the outer edge of the RIM, and the groove the ball actually runs in is
 ///     the band `APRON_R..TRACK_R` (0.855..0.925). A ball drawn at art radius
 ///     1.0 would be riding the mahogany rim, outside the bowl.
+/// ```
 ///
 /// [`draw_wheel`] is where they meet: it remaps physics `[R_POCKET, 1]` onto art
 /// `[R_POCKET, BALL_TRACK_R]`. So this is one source of truth for the physical
@@ -209,8 +219,10 @@ pub const DEFL_OFFSET: f64 = 0.21;
 ///
 /// Derived, not chosen — `bake_box_matches_its_derivation` re-computes both:
 ///
+/// ```text
 ///     BAKE_W = ceil(CX + R) + 4                      = 222
 ///     BAKE_H = ceil(CY - RIM_LIFT + R*FLAT) + SKIRT + 6 = 110
+/// ```
 pub const BAKE_W: usize = 222;
 pub const BAKE_H: usize = 110;
 
