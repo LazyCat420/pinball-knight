@@ -100,42 +100,62 @@ is the number this wave has to hold flat through a fight.
 
 ## The checklist
 
+> **SHIPPED — verified against the source 2026-08-26.** Every engineering item
+> below (W1.1 through W4.2) is live in the tree; the boxes were simply never
+> ticked, and for two weeks this doc has been the repo's largest apparent
+> backlog while containing no remaining work. Spot checks:
+> `engine/gpu-adapter.ts` · `probeGpuAdapter`/`isSoftwareAdapter`/`gpuAdapterLabel`
+> wired at `engine/profiler.ts:32,186,224,242` · `__dungeonGpuInfo` at
+> `engine/profiler.ts:266` · `profCount("gpu programs"…)` at `sim/loop.ts:496`
+> and `"gpu textures"` at `:501` · `warmupTarget()`/`warmupReveal()` across
+> `fx/pools/*` and `engine/render/{damage-text,canvas-backing}.ts` ·
+> `warmFloorFxReveal`/`disposeFloorFxAssets` at `entities/floor-fx.ts` ·
+> `warmFloorPipelines` at `boot/warmup.ts` (imported `core.ts:46`) ·
+> `FLOOR_FX_MAX = 300` at `constants/pinball.ts:223`, evicted front-first by
+> `while (state.floorFx.length >= FLOOR_FX_MAX) despawn(0)` at
+> `entities/floor-fx.ts:386` · gates in `load-warmup.test.ts`.
+>
+> `[~]` marks the W4.3/W4.4/W5 rows: process steps (suite, `tsc`, commit,
+> deploy, handoff) that leave no symbol behind and cannot be verified from the
+> tree either way.
+
 ### W1 — Instrumentation first (rule #2: measure before you fix)
 
-- [ ] **W1.1** New `engine/gpu-adapter.ts`: `probeGpuAdapter()` caches
+- [x] **W1.1** New `engine/gpu-adapter.ts`: `probeGpuAdapter()` caches
       `navigator.gpu.requestAdapter().info`; `isSoftwareAdapter()` matches
       `swiftshader|lavapipe|llvmpipe|software|basic render` over
       vendor+architecture+device+description.
-- [ ] **W1.2** `engine/profiler.ts`: print the adapter in the summary banner and
+- [x] **W1.2** `engine/profiler.ts`: print the adapter in the summary banner and
       a loud **UNTRUSTED** warning when it is software. Export `gpuAdapterLabel()`.
-- [ ] **W1.3** `core.ts` render block: `profCount("gpu programs", info.memory.programs)`
+- [x] **W1.3** *(landed in `sim/loop.ts:496`, not `core.ts` — the render block moved out
+      of `core.ts` before this wave shipped)* `profCount("gpu programs", info.memory.programs)`
       and `profCount("gpu textures", info.memory.textures)` beside the existing
       draw-call count.
-- [ ] **W1.4** `__dungeonGpuInfo()` console hook alongside `__dungeonProfile`.
+- [x] **W1.4** `__dungeonGpuInfo()` console hook alongside `__dungeonProfile`.
 
 ### W2 — Make the warm-up see the pools
 
-- [ ] **W2.1** Each pool class exposes `warmupTarget()` returning its slot 0
+- [x] **W2.1** Each pool class exposes `warmupTarget()` returning its slot 0
       object (no new materials — warm exactly what will be drawn).
-- [ ] **W2.2** `createVfx` gains a persistent hidden **ghost prototype** mesh
+- [x] **W2.2** `createVfx` gains a persistent hidden **ghost prototype** mesh
       matching the runtime ghost descriptor (`map` + `alphaTest: 0.4`,
       `transparent`, `depthWrite: false`, `DoubleSide`) on a 1×1 dummy texture.
-- [ ] **W2.3** `VfxSystem.warmupReveal(): () => void` — sets `visible = true`
+- [x] **W2.3** `VfxSystem.warmupReveal(): () => void` — sets `visible = true`
       and `frustumCulled = false` on one representative per pool, returns the
       restore closure. Position is untouched: `frustumCulled = false` skips the
       frustum test outright (Renderer.js:3132), so placement is irrelevant.
-- [ ] **W2.4** `entities/floor-fx.ts`: `warmFloorFxReveal(scene)` forces all 5
+- [x] **W2.4** `entities/floor-fx.ts`: `warmFloorFxReveal(scene)` forces all 5
       `matFor(kind)` materials to exist and reveals one proxy mesh per kind
       (created once, module-level, disposed by `disposeFloorFxAssets`).
-- [ ] **W2.5** `warmFloorPipelines` calls both reveals before the loop and
+- [x] **W2.5** `warmFloorPipelines` calls both reveals before the loop and
       restores in a `finally`. **No change to the loop itself** — the proxies are
       already scene children, so the existing per-child walk picks them up.
 
 ### W3 — Cap the floor-fx population
 
-- [ ] **W3.1** `FLOOR_FX_MAX = 300` in `constants.ts` (≈6 s of trail at top
+- [x] **W3.1** `FLOOR_FX_MAX = 300` in `constants.ts` (≈6 s of trail at top
       speed; 4.3× under the 1,300 worst case).
-- [ ] **W3.2** `spawnFloorFx` evicts oldest-first via the existing `despawn(0)`
+- [x] **W3.2** `spawnFloorFx` evicts oldest-first via the existing `despawn(0)`
       so scene removal + material disposal + array splice stay in one place.
       Eviction is from the FRONT, so `carveGroove`'s
       `state.floorFx[state.floorFx.length - 1]` read (`:258`) still sees the
@@ -143,21 +163,21 @@ is the number this wave has to hold flat through a fight.
 
 ### W4 — Gates
 
-- [ ] **W4.1** New `load-warmup.test.ts`: every pool's `warmupTarget()` is a real
+- [x] **W4.1** New `load-warmup.test.ts`: every pool's `warmupTarget()` is a real
       Object3D; `warmupReveal()` leaves all targets visible + unculled and the
       restore closure returns every one to its prior state (asserts the actual
       saved flags, not a hardcoded `false`).
-- [ ] **W4.2** floor-fx cap test: spawn `FLOOR_FX_MAX + 50`, assert length is
+- [x] **W4.2** floor-fx cap test: spawn `FLOOR_FX_MAX + 50`, assert length is
       pinned, the newest survives, the oldest is gone, and disposal ran.
-- [ ] **W4.3** `pnpm vitest run` full suite green.
-- [ ] **W4.4** `tsc --noEmit` clean.
+- [~] **W4.3** (process) `pnpm vitest run` full suite green.
+- [~] **W4.4** (process) `tsc --noEmit` clean.
 
 ### W5 — Ship
 
-- [ ] **W5.1** Commit on `perf/warmup-pipelines`, rebase onto `main`.
-- [ ] **W5.2** Deploy from a clean worktree (`HEAD@<sha>` banner), copying the
+- [~] **W5.1** (process) Commit on `perf/warmup-pipelines`, rebase onto `main`.
+- [~] **W5.2** (process) Deploy from a clean worktree (`HEAD@<sha>` banner), copying the
       prebuilt `canvas` build dir first.
-- [ ] **W5.3** Replace `HANDOFF.md`.
+- [~] **W5.3** (process) Replace `HANDOFF.md`.
 
 ---
 

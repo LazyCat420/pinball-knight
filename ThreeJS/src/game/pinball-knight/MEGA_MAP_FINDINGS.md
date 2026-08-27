@@ -130,10 +130,21 @@ third of all of them. Orphan launchers (a shove that lands on nothing) are
 
 ## What the tool says the work is, in order
 
+> **Re-verified 2026-08-26: 1 of 4 done.** Item 2 was already shipped before
+> this doc was written. Item 1 is still the highest-value work in the map area
+> and is still pure plumbing. Items 3 and 4 are untouched.
+
 1. **Call `placeAssemblies`.** The library is written, routed and tested. This is
    plumbing, not design, and it moves "0.0% in a machine" first.
-2. **A second curve primitive** — the along-a-corridor bank `arc-sweeps.ts` asks
-   for by name. Three shapes is the vocabulary; this is the only way to widen it.
+2. ~~**A second curve primitive** — the along-a-corridor bank `arc-sweeps.ts` asks
+   for by name.~~ **ALREADY DONE when this list was written (2026-08-05).**
+   `maze/artery-banks.ts` shipped it: `findBends`/`chainBends`/`arcForBend`,
+   `planArteryBanks:268`, `authorArteryBanks:425`, wired on BOTH paths
+   (`maze/decorate.ts:2130` and `maze/track-floor.ts:808`) and named as one of
+   the three floor→wall authors at `maze/arc-sweeps.ts:631`. Note the fillet
+   vocabulary itself is unchanged — `FILLET_RADII = [3, 2]` at
+   `maze/arc-sweeps.ts:60` — so Finding 2's "three shapes" still stands; banks
+   are additive, not a fourth shape.
 3. **A feed rule for curves**, gated the way `piece-rules.ts` gates pieces: a
    curve end must reach a part, a doorway or a runway. `curveCensus` already
    computes the predicate; it is a census today and could be a gate.

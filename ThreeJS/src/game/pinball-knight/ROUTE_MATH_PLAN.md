@@ -209,7 +209,18 @@ and every QA harness in this repo is poll-based.
 
 ---
 
-## Part 10 — 4× floors **[SHIPPED in this commit]**
+## Part 10 — 4× floors **[SHIPPED in this commit — ON THE LEGACY BRANCH ONLY]**
+
+> **Correction 2026-08-26.** This heading is true of `generateMaze`'s branch and
+> false of the floor players actually get. `buildTrackFloor` computes
+> `w = cellsW * 2 + 1` — the pre-`thickenWalls` size — so a level-1 TRACK floor
+> is 75×53 where the legacy floor is 150×106. `TRACK_FIRST` routes around this
+> work; see `MAZE_OVERHAUL_PLAN.md:256`, which has carried the same finding as
+> an open item. **Every budget riding `cfg.floorTiles` is therefore calibrated
+> for 4× the area the live floor has.** Do not tune a `floorTiles`-derived
+> budget until these two docs are reconciled; quadrupling the track floor's area
+> is a balance and perf decision (the flow field is O(tiles), each zombie is a
+> mesh), not a generator fix.
 
 "4× larger" = 4× area = 2× per side (a further ×4 is a knob turn, not a
 redesign). Tile grids are `(2·cells+1)·2` per side after thickening:

@@ -982,16 +982,22 @@ Per wave, in order:
 
 ## Status
 
+> **Re-verified against the source 2026-08-26.** This table had claimed B-0
+> through B-3 were "not started" while all four were live in the tree — half
+> the runtime track read as backlog. Every row below now cites the symbol that
+> settles it, in either direction. When a wave lands, move its row in the same
+> commit.
+
 | Wave | State |
 |---|---|
 | A-0 measure the hole | **SHIPPED** 2026-07-31 — `maze/open-space.ts`, `dev/open-space-census.ts`, `scripts/open-space-census.mjs`, `dev/headless-floor.ts buildHeadlessPlan`, 18 tests. Bands armed off 180 measured floors. **Result revises the plan — see above.** |
 | A-1 chambers become rooms | **blocked on a scoping decision** (the defect is depth-wide, not Great-Hall-only) |
-| A-2 library correctness | not started |
-| A-3 island placer | not started |
-| A-4 islands + archetype dial | not started |
-| B-0 make additions safe | not started |
-| B-1 `swingarm` | not started |
-| B-2 `scoop` | not started |
-| B-3 `maw` | not started |
-| B-4 `gate` + `diverter` | not started |
-| B-5 `magpost` | not started |
+| A-2 library correctness | not started — **verified**: `assembly-check.ts` has no `internal-duel` / `no-gutter` / `one-sided-island` rule. |
+| A-3 island placer | not started — **verified**: `placeAssemblies` (`maze/assembly-place.ts:286`) has no non-test caller anywhere, so the whole library/placer/checker trio is unreachable. |
+| A-4 islands + archetype dial | not started — **verified**: no `machinesPer1k` on `TrackProfile`. |
+| B-0 make additions safe | **SHIPPED** — `PartSpotKind extends PinballPartKind` static assertion in `state.ts`; `HAZARD_SIMS: Partial<Record<PinballPartKind, HazardSim>>` at `entities/hazards.ts:57`, dispatched at `:187` (the if-chain is gone); the private `hazT` is retired in favour of `state.simT` (`state.ts:1234`); `state.lockT` at `:1236`, incremented at `entities/player.ts:1331`. |
+| B-1 `swingarm` | **SHIPPED** 2026-08-26 — `entities/swing-arm.ts` (`SWING_RATE`, `SWING_ARC`, `SWING_LEN`, `checkSwingArmContact`, `MAX_SWEEP_OCCUPANCY`), consumed at `entities/hazards.ts:32`, mesh `buildSwingArm` at `render/pinball-parts.ts:924` animated via `swingAngle(state.simT, …)` at `:1497`. Tests: `entities/swing-arm.test.ts`. |
+| B-2 `scoop` | **SHIPPED** 2026-08-26 — handler at `entities/pinball-collide.ts:888` (holds 1.1 s, ejects along the authored `dirX`/`dirZ`), mesh at `render/pinball-parts.ts:925`, topology at `maze/decorate.ts:1107-1119`. Tests: `entities/pinball-collide.test.ts:548`. |
+| B-3 `maw` | **SHIPPED** 2026-08-26 — `entities/maw.ts` (`MAW_SWALLOW_SPEED`, `MAW_SPIT_SPEED`, `MAW_PHI_DROP_MAX`, `MAW_COOLDOWN`). Tests: `entities/maw.test.ts`. |
+| B-4 `gate` + `diverter` | not started — **verified**: `diverter` appears in zero source files. |
+| B-5 `magpost` | not started — **verified**: `magpost` appears in zero source files. |

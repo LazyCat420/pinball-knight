@@ -280,8 +280,15 @@ the impact frame** for weight; idles read better at 4-6 fps with 3+ frames.
 
 ## 6. Known open items
 
-- **Non-integer RESKIN scales remain** on golem 1.12, chomper 1.1, hound 1.05,
-  rotortail 0.95, pin 0.85 (`spawn/factory.ts`). Each breaks
+- **Non-integer RESKIN scales remain — TWELVE of them as of 2026-08-26, not the
+  five listed when this was written.** Core roster: golem 1.12
+  (`spawn/factory.ts:113`), chomper 1.1 (`:114`), hound 1.05 (`:110`),
+  webspinner 1.05 (`:116`), magnet 0.95 (`:115`), rotortail 0.95 (`:121`),
+  pin 0.85 (`:112`). Expansion roster, added after this item was filed:
+  crystalback 1.12 (`:72`), necromancer 1.05 (`:69`), warden 1.05 (`:69`),
+  sapper 0.95 (`:71`), wisp 0.9 (`:70`). **The list grew while the item sat
+  open** — a roster addition inherits the defect for free, so this wants a test
+  that fails on any non-1.0 scale, not another hand-maintained list. Each breaks
   `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` and duplicates roughly every 8th
   texel row — "uneven pixels", visible as crawl under camera motion. Fix by
   setting 1.0 and resizing **in the art**. Cheap, mechanical, do it during Wave 1.
@@ -385,7 +392,7 @@ reference while `clips` keeps the duplicate index.
 | Per-sprite palette lock, cap 20 | **shipped** |
 | `beats` — clips gain in-betweens without retiming | **shipped** (mechanism) |
 | 6-8 frame walks on the stiffest monsters | **open** — art work |
-| `detail()` sub-texel floor, 7 non-1.0 RESKIN scales, 6 rgba washes | **open** |
+| `detail()` sub-texel floor, **12** non-1.0 RESKIN scales (§6 said 5, this row said 7 — both stale; the roster grew), 6 rgba washes | **open** |
 | AI-generated sprites vs painters | **open** — generator + judge landed, service unreachable |
 
 **Roster noise, before → after:** entries 22.9 → 20.1 (and capped at 20 by the
