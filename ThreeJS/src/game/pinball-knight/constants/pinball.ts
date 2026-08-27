@@ -48,10 +48,10 @@ export const PINBALL_FRICTION = 0.9; // u/s² (was 2.0; Sonic keeps its speed)
 export const FRICTION_OPEN = 0.35; // 3-4 open neighbours (room / junction) — fast
 export const FRICTION_CORRIDOR = 1.0; // 2 open (a straight run) — normal
 export const FRICTION_TIGHT = 2.1; // ≤1 open (dead-end pocket) — bleeds you down
-export const PINBALL_STEER = 3.6; // baseline angular turn rate when aiming forward/side, rad/sec (~206 deg/sec)
+export const PINBALL_STEER = 5.5; // baseline angular turn rate when aiming forward/side, rad/sec (~315 deg/sec)
 // ── Turn-radius baseline controls (angular slew, opposition boost & directional counter-braking) ──
-/** Maximum angular steering rate when aiming behind/opposite movement (rad/sec, ~515 deg/sec). */
-export const PINBALL_TURN_BOOST_MAX = 9.0;
+/** Maximum angular steering rate when aiming behind/opposite movement (rad/sec, ~544 deg/sec). */
+export const PINBALL_TURN_BOOST_MAX = 9.5;
 /** Heading vs aim dot-product threshold where enhanced turning authority begins. */
 export const PINBALL_TURN_BOOST_START_DOT = 0.25;
 /** Deceleration against forward travel during a strong reverse U-turn request (u/s²). */
@@ -60,6 +60,7 @@ export const PINBALL_COUNTER_BRAKE = 12.0;
 export const PINBALL_COUNTER_BRAKE_DOT = -0.20;
 /** Caps per-frame angular steering influence and protects against lag spikes (rad/sec). */
 export const PINBALL_TURN_MAX_DELTA = 16.0;
+
 
 
 // Slice 8 — lane glide: while railing fast and not steering, drift toward the
