@@ -21,6 +21,34 @@
         color: #f3f4f6;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
+      /*
+        THE ON-SCREEN PAD DOES NOT WORK WITHOUT THIS.
+
+        `gui/touch.ts` tracks a thumb across pointerdown -> pointermove, and the
+        browser owns that gesture until told otherwise. Measured on an emulated
+        iPhone against the deployed build, dragging the movement stick:
+
+            pointerdown 1, pointermove 1, pointercancel 1, pointerup 0
+
+        One sample, then the browser claimed the touch as a pan and CANCELLED
+        it — so the stick moved once and froze, and because `pointerup` never
+        arrived, anything held stayed held. `e.preventDefault()` in the handler
+        cannot fix that: for touch the decision is made by `touch-action`
+        before the listener is consulted.
+
+        `none` on the scroll container is the whole cure. The rest close the
+        other gestures a phone browser applies to a full-screen canvas:
+        `overscroll-behavior` kills Android pull-to-refresh, and the two
+        -webkit- rules kill iOS's long-press callout and the double-tap
+        highlight flash (iOS has ignored `user-scalable=no` since iOS 10, so
+        the meta tag above is not enough on its own).
+      */
+      html, body, #application-container, canvas {
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
       #application-container {
         width: 100%;
         height: 100%;
