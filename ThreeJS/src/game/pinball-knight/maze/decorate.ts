@@ -325,7 +325,13 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
       const d = rng() < 0.5 ? a : b;
       return { ...p, topo: "straight", dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };
     }
-    return { ...p, topo: "corner", dirI: a[0], dirJ: a[1], dir2I: b[0], dir2J: b[1] };
+    // A true corner crook must have solid wall stone in its backing diagonal
+    const diagI = p.i - (a[0] + b[0]);
+    const diagJ = p.j - (a[1] + b[1]);
+    if (at(g, diagI, diagJ) === T_WALL) {
+      return { ...p, topo: "corner", dirI: a[0], dirJ: a[1], dir2I: b[0], dir2J: b[1] };
+    }
+    return { ...p, topo: "junction", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
   }
   if (open.length >= 3) {
     return { ...p, topo: "junction", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
