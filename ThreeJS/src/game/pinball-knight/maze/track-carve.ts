@@ -70,7 +70,7 @@ export interface TrackMask {
 }
 
 /** Is this lane tile one nothing may tap into? Bounds-safe, like `onLane`. */
-function isSealed(g: Grid, mask: TrackMask, i: number, j: number): boolean {
+export function isSealed(g: Grid, mask: TrackMask, i: number, j: number): boolean {
   if (i < 0 || j < 0 || i >= g.w || j >= g.h) return false;
   return mask.sealed[idx(g, i, j)] === 1;
 }
@@ -367,7 +367,7 @@ export function growMazeAround(
   // uniform graph paper — a lattice that fills EVERY pocket makes the track
   // look like it was dropped onto a sheet of grid rather than built into a
   // place. Also: fewer corridors means each on-ramp matters more.
-  const fill = opts.fill ?? 0.72;
+  const fill = opts.fill ?? 0.50;
 
   // A cell may be carved only if it is clear of the track by `margin`.
   const clearOfTrack = (i: number, j: number): boolean => {
@@ -511,65 +511,128 @@ export function growMazeAround(
         const y = j + dj;
         if (isWalkable(g, x, y) && !onLane(g, mask, x, y)) mazeSide = true;
       }
-      if (mazeSide && rng() < linkChance) setTile(g, i, j, T_FLOOR);
+      if (mazeSide && rng() < linkChance) {
+        // Carve on-ramp with guaranteed 3-wide threshold
+        const isHoriz =
+          onLane(g, mask, i, j - 1) ||
+          onLane(g, mask, i, j + 1) ||
+          isWalkable(g, i, j - 1) ||
+          isWalkable(g, i, j + 1);
+        const candidates = isHoriz
+          ? [
+              [i - 1, j],
+              [i, j],
+              [i + 1, j],
+            ]
+          : [
+              [i, j - 1],
+              [i, j],
+              [i, j + 1],
+            ];
+        for (const [cx, cy] of candidates) {
+          if (cx < 1 || cy < 1 || cx >= g.w - 1 || cy >= g.h - 1) continue;
+          if (
+            isSealed(g, mask, cx, cy) ||
+            isSealed(g, mask, cx - 1, cy) ||
+            isSealed(g, mask, cx + 1, cy) ||
+            isSealed(g, mask, cx, cy - 1) ||
+            isSealed(g, mask, cx, cy + 1)
+          ) {
+            continue;
+          }
+          if (g.arcIdx && g.arcIdx[idx(g, cx, cy)] >= 0) continue;
+          setTile(g, cx, cy, T_FLOOR);
+        }
+      }
     }
   }
 
-  widenMazeCorridors(g, mask, rng);
   connectAll(g, rng, sealedWalls(g, mask));
 }
 
 /**
- * WIDEN the maze from 1-wide slots into 2-wide corridors and small chambers.
+ * WIDEN the maze from 1-wide slots into >= 3-wide corridors and small chambers.
  *
- * The maze is grown on the odd-coordinate cell lattice, so its corridors are
- * one tile wide. At this floor's final resolution that reads as graph paper —
- * spindly passages where every tile is walled on three sides — and it is why
- * a dead-end census reported 38.3 maze dead ends per floor while the track
- * itself had 0.1.
- *
- * Deleting them was tried first and is the wrong tool: an unbounded dead-end
- * cascade unravels a 1-wide corridor completely (each tile becomes a dead end
- * as soon as the one ahead is filled), which reduced off-track floor to 1.5%
- * of the grid — the maze vanished and the level read as one track blob.
- *
- * Widening fixes the cause instead. A 2-wide corridor has no 3-walled tiles by
- * construction, so the same passages stop reading as spindly WITHOUT deleting
- * any of the layout. It also matches the renderer's low-rim/tall-back
- * assumption, which is why the legacy generator ran `thickenWalls` at all.
+ * The maze is grown on the odd-coordinate cell lattice, so its initial corridors
+ * are one tile wide. Widening thickens them symmetrically to at least 3 tiles
+ * wide, eliminating all 1-wide and 2-wide choke points while maintaining the
+ * maze's winding paths and circuit separation.
  *
  * Only carves wall→floor (connectivity can only improve) and never touches the
  * track's keep-out margin, so the circuit keeps its shape.
  */
-function widenMazeCorridors(g: Grid, mask: TrackMask, rng: () => number, chance = 0.72): void {
-  const add: number[] = [];
-  for (let j = 1; j < g.h - 1; j++) {
-    for (let i = 1; i < g.w - 1; i++) {
-      if (!isWalkable(g, i, j) || onLane(g, mask, i, j)) continue;
-      // Widen toward a solid neighbour that is itself clear of the track, so
-      // corridors thicken into the rock rather than eating into the lane's
-      // shoulder.
-      for (const [di, dj] of [
-        [1, 0],
-        [0, 1],
-      ] as const) {
-        const x = i + di;
-        const y = j + dj;
-        if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
-        if (isWalkable(g, x, y)) continue;
-        if (onLane(g, mask, x, y)) continue;
-        // Keep off the lane's immediate shoulder (and any published arc rim).
-        let nearLane = false;
-        for (let dj2 = -1; dj2 <= 1 && !nearLane; dj2++)
-          for (let di2 = -1; di2 <= 1; di2++) if (onLane(g, mask, x + di2, y + dj2)) nearLane = true;
-        if (nearLane) continue;
-        if (g.arcIdx && g.arcIdx[idx(g, x, y)] >= 0) continue;
-        if (rng() < chance) add.push(idx(g, x, y));
+export function widenMazeCorridors(g: Grid, mask: TrackMask, rng?: () => number, doorGuard?: ReadonlySet<number>): void {
+  const isProtected = (x: number, y: number): boolean => {
+    if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) return true;
+    if (onLane(g, mask, x, y)) return true;
+    if (doorGuard && doorGuard.has(idx(g, x, y))) return true;
+    if (isSealed(g, mask, x, y)) return true;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (isSealed(g, mask, x + di, y + dj)) return true;
       }
     }
+    if (g.arcIdx) {
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const nx = x + di;
+          const ny = y + dj;
+          if (nx >= 0 && ny >= 0 && nx < g.w && ny < g.h && g.arcIdx[idx(g, nx, ny)] >= 0) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  for (let round = 0; round < 2; round++) {
+    const add: number[] = [];
+    for (let j = 1; j < g.h - 1; j++) {
+      for (let i = 1; i < g.w - 1; i++) {
+        if (!isWalkable(g, i, j) || onLane(g, mask, i, j)) continue;
+
+        // 1-wide vertical slot (walls at i-1 and i+1) -> widen horizontally into dead rock
+        if (at(g, i - 1, j) === T_WALL && at(g, i + 1, j) === T_WALL) {
+          // Do not delete 1-tile partition walls (walls with floor on the other side)
+          const isPartL = i >= 2 && isWalkable(g, i - 2, j);
+          const isPartR = i <= g.w - 3 && isWalkable(g, i + 2, j);
+          if (!isPartR && !isProtected(i + 1, j)) {
+            add.push(idx(g, i + 1, j));
+            if (i <= g.w - 4 && !isWalkable(g, i + 3, j) && !isProtected(i + 2, j)) add.push(idx(g, i + 2, j));
+          } else if (!isPartL && !isProtected(i - 1, j)) {
+            add.push(idx(g, i - 1, j));
+            if (i >= 3 && !isWalkable(g, i - 3, j) && !isProtected(i - 2, j)) add.push(idx(g, i - 2, j));
+          } else if (!isProtected(i + 1, j)) {
+            add.push(idx(g, i + 1, j));
+          } else if (!isProtected(i - 1, j)) {
+            add.push(idx(g, i - 1, j));
+          }
+        }
+
+        // 1-wide horizontal slot (walls at j-1 and j+1) -> widen vertically into dead rock
+        if (at(g, i, j - 1) === T_WALL && at(g, i, j + 1) === T_WALL) {
+          const isPartT = j >= 2 && isWalkable(g, i, j - 2);
+          const isPartB = j <= g.h - 3 && isWalkable(g, i, j + 2);
+          if (!isPartB && !isProtected(i, j + 1)) {
+            add.push(idx(g, i, j + 1));
+            if (j <= g.h - 4 && !isWalkable(g, i, j + 3) && !isProtected(i, j + 2)) add.push(idx(g, i, j + 2));
+          } else if (!isPartT && !isProtected(i, j - 1)) {
+            add.push(idx(g, i, j - 1));
+            if (j >= 3 && !isWalkable(g, i, j - 3) && !isProtected(i, j - 2)) add.push(idx(g, i, j - 2));
+          } else if (!isProtected(i, j + 1)) {
+            add.push(idx(g, i, j + 1));
+          } else if (!isProtected(i, j - 1)) {
+            add.push(idx(g, i, j - 1));
+          }
+        }
+      }
+    }
+    if (add.length === 0) break;
+    for (const k of add) {
+      setTile(g, k % g.w, Math.floor(k / g.w), T_FLOOR);
+    }
   }
-  // Applied after the scan so the result doesn't depend on scan order.
-  for (const k of add) setTile(g, k % g.w, (k - (k % g.w)) / g.w, T_FLOOR);
 }
 
 /**
@@ -702,11 +765,14 @@ export function connectAll(g: Grid, rng: () => number, avoid?: Uint8Array): void
     if (r.hit < 0 && avoid) r = search(undefined);
     if (r.hit < 0) return; // nothing reachable at all — leave it rather than loop
     for (let k = r.hit; k !== -1 && k !== target; k = r.prev[k]) {
-      setTile(g, k % g.w, (k - (k % g.w)) / g.w, T_FLOOR);
+      const cx = k % g.w;
+      const cy = (k - cx) / g.w;
+      setTile(g, cx, cy, T_FLOOR);
     }
   }
 }
 
+/** Every tile the circuit claimed — used to keep later passes off the track. */
 /** Every tile the circuit claimed — used to keep later passes off the track. */
 export function laneTiles(g: Grid, mask: TrackMask): TilePos[] {
   const out: TilePos[] = [];
@@ -715,3 +781,86 @@ export function laneTiles(g: Grid, mask: TrackMask): TilePos[] {
   }
   return out;
 }
+
+/**
+ * Sweeps the grid to eliminate all 1-wide and 2-wide bottleneck passages,
+ * ensuring every gap, doorway, and corridor is at least 3 squares wide.
+ */
+export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
+  let cleared = 0;
+  const isProtected = (x: number, y: number): boolean => {
+    if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) return true;
+    if (mask && isSealed(g, mask, x, y)) return true;
+    if (g.arcIdx && g.arcIdx[idx(g, x, y)] >= 0) return true;
+    return false;
+  };
+
+  for (let iter = 0; iter < 2; iter++) {
+    let clearedThisRound = 0;
+    for (let j = 1; j < g.h - 1; j++) {
+      for (let i = 1; i < g.w - 1; i++) {
+        if (!isWalkable(g, i, j)) continue;
+
+        // 1-wide vertical slit (wall at i-1 and i+1)
+        if (at(g, i - 1, j) === T_WALL && at(g, i + 1, j) === T_WALL) {
+          if (!isProtected(i - 1, j) && !isProtected(i + 1, j)) {
+            setTile(g, i - 1, j, T_FLOOR);
+            setTile(g, i + 1, j, T_FLOOR);
+            clearedThisRound += 2;
+          } else if (!isProtected(i + 1, j)) {
+            setTile(g, i + 1, j, T_FLOOR);
+            if (!isProtected(i + 2, j)) setTile(g, i + 2, j, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i - 1, j)) {
+            setTile(g, i - 1, j, T_FLOOR);
+            if (!isProtected(i - 2, j)) setTile(g, i - 2, j, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+
+        // 1-wide horizontal slit (wall at j-1 and j+1)
+        if (at(g, i, j - 1) === T_WALL && at(g, i, j + 1) === T_WALL) {
+          if (!isProtected(i, j - 1) && !isProtected(i, j + 1)) {
+            setTile(g, i, j - 1, T_FLOOR);
+            setTile(g, i, j + 1, T_FLOOR);
+            clearedThisRound += 2;
+          } else if (!isProtected(i, j + 1)) {
+            setTile(g, i, j + 1, T_FLOOR);
+            if (!isProtected(i, j + 2)) setTile(g, i, j + 2, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i, j - 1)) {
+            setTile(g, i, j - 1, T_FLOOR);
+            if (!isProtected(i, j - 2)) setTile(g, i, j - 2, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+
+        // 2-wide vertical slot: span of 2 floor tiles bounded by walls (i-1 wall, i floor, i+1 floor, i+2 wall)
+        if (at(g, i - 1, j) === T_WALL && isWalkable(g, i + 1, j) && at(g, i + 2, j) === T_WALL) {
+          if (!isProtected(i + 2, j)) {
+            setTile(g, i + 2, j, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i - 1, j)) {
+            setTile(g, i - 1, j, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+
+        // 2-wide horizontal slot: span of 2 floor tiles bounded by walls (j-1 wall, j floor, j+1 floor, j+2 wall)
+        if (at(g, i, j - 1) === T_WALL && isWalkable(g, i, j + 1) && at(g, i, j + 2) === T_WALL) {
+          if (!isProtected(i, j + 2)) {
+            setTile(g, i, j + 2, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i, j - 1)) {
+            setTile(g, i, j - 1, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+      }
+    }
+    cleared += clearedThisRound;
+    if (clearedThisRound === 0) break;
+  }
+  return cleared;
+}
+

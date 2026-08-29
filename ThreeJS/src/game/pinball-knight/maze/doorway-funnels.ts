@@ -555,11 +555,13 @@ export function authorDoorwayFunnels(
     // Arc geometry lives in GRID coords, where tile (i,j) spans [i,i+1]; the
     // mouth's middle is therefore the tile CENTRE, not its corner.
     const focus: Pt = { x: d.i + 0.5, z: d.j + 0.5 };
-    // The threshold row: tiles within half a tile of the doorway's own plane.
+    // The threshold row: tiles within the doorway's own throat.
     // `measureDoorway` reads across exactly this line, so it is the line the
     // flare must leave alone.
-    const sealed = (i: number, j: number): boolean =>
-      Math.abs((i - d.i) * d.ai + (j - d.j) * d.aj) <= THRESHOLD_KEEPOUT;
+    const sealed = (i: number, j: number): boolean => {
+      const along = (i - d.i) * d.ai + (j - d.j) * d.aj;
+      return along >= -Math.max(d.back, THRESHOLD_KEEPOUT) && along <= Math.max(d.fwd, THRESHOLD_KEEPOUT);
+    };
     let jawsHere = 0;
 
     // Both approaches. `Doorway.ai/aj` names the passage axis but not which end

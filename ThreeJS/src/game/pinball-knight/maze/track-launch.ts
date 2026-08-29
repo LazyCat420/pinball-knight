@@ -279,10 +279,9 @@ export function carveLaunchChute(
     score:
       c.len +
       2 * Math.min(12, runoutPast(g, c.mouth.i, c.mouth.j, c.dirI, c.dirJ)) +
-      // Scored at the BASE, which is the tile the player actually stands on —
-      // the mouth is by definition further in, so scoring there would reward a
-      // chute pointing at the wall from inside the map.
-      bias * PERIMETER_WEIGHT * perimeterScore(g, c.base.i, c.base.j),
+      (bias >= 0.5
+        ? bias * perimeterScore(g, c.base.i, c.base.j)
+        : (1 - bias) * (1 - perimeterScore(g, c.base.i, c.base.j))) * PERIMETER_WEIGHT,
   }));
   scored.sort((a, b) => b.score - a.score);
   const band = scored.slice(0, Math.max(1, Math.ceil(scored.length * BAND_FRAC)));
@@ -309,8 +308,11 @@ export function carveLaunchChute(
   // The rng then picks among the most peripheral slice of that, so variety
   // survives: a floor still has several genuinely different openings to choose
   // between, they are just all out at the edge.
-  const byEdge = bias > 0 ? [...band].sort((x, y) => perimeterScore(g, y.c.base.i, y.c.base.j) - perimeterScore(g, x.c.base.i, x.c.base.j)) : band;
-  const edgeCut = bias > 0 ? Math.max(1, Math.ceil(byEdge.length * (1 - bias * EDGE_NARROW))) : byEdge.length;
+  const byEdge =
+    bias >= 0.5
+      ? [...band].sort((x, y) => perimeterScore(g, y.c.base.i, y.c.base.j) - perimeterScore(g, x.c.base.i, x.c.base.j))
+      : [...band].sort((x, y) => perimeterScore(g, x.c.base.i, x.c.base.j) - perimeterScore(g, y.c.base.i, y.c.base.j));
+  const edgeCut = Math.max(1, Math.ceil(byEdge.length * (bias < 0.5 ? 0.35 : 1 - bias * EDGE_NARROW)));
   let pool = byEdge.slice(0, edgeCut);
   // ── RELAX ONLY WHEN FORCED ───────────────────────────────────────────────
   //

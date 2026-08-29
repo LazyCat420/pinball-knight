@@ -312,9 +312,9 @@ export function breakFlowLoops(g: Grid, phi: Int32Array, parts: FlowPart[]): num
         changed = true;
         continue;
       }
-      // 2) demote where a bumper legitimately lives
+      // 2) demote where a bumper legitimately lives, or if it's a circuit link
       const legs = CARDS.filter(([di, dj]) => open(g, p.i + di, p.j + dj)).length;
-      if (legs >= 3) {
+      if (legs >= 3 || (p as any).circuit !== undefined) {
         p.kind = "bumper";
         p.dirI = 0;
         p.dirJ = 0;

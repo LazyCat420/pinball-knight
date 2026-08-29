@@ -31,7 +31,7 @@
 import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, carveChamber, chamberRoom, growMazeAround, publishArcs, connectAll, sealedWalls, type Chamber, type TrackMask } from "./track-carve";
+import { carveTrack, carveChamber, chamberRoom, growMazeAround, publishArcs, connectAll, sealedWalls, widenMazeCorridors, ensureMin3WideClearance, type Chamber, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations, nearSealed } from "./track-socket";
 import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
@@ -290,7 +290,21 @@ export function pickTrackEndpoints(
     // than a king in a corridor, and the latter is recoverable (recorded as a
     // relaxation and reported by the gate) while the former is not.
     const hall = opts.stairsIn ? pool.filter((p) => opts.stairsIn!(p.i, p.j)) : [];
-    const choose = hall.length > 0 ? hall : pool;
+    let curvy = (hall.length > 0 ? hall : pool).filter((p) => {
+      const d = dist[idx(g, p.i, p.j)];
+      return d > 0 && Math.hypot(p.i - from.i, p.j - from.j) / d <= 0.78;
+    });
+    if (curvy.length === 0) {
+      for (const tie of [0.85, 0.75, 0.65, 0.5]) {
+        const wider = inBand(tie).filter((p) => Math.hypot(p.i - eye.i, p.j - eye.j) >= minEuclid);
+        curvy = wider.filter((p) => {
+          const d = dist[idx(g, p.i, p.j)];
+          return d > 0 && Math.hypot(p.i - from.i, p.j - from.j) / d <= 0.78;
+        });
+        if (curvy.length > 0) break;
+      }
+    }
+    const choose = curvy.length > 0 ? curvy : hall.length > 0 ? hall : pool;
     let bestPos = from;
     let bestScore = Infinity;
     for (const p of choose) {
@@ -424,47 +438,23 @@ function carveBossChamber(
   // Already roomy enough? Then this floor has its arena and a second carve would
   // only dissolve the boundary between two chambers.
   if (widthFromClearance(clearance[idx(g, stairs.i, stairs.j)]) >= BOSS_ARENA_MIN_WIDTH + 2) return null;
-  const SLIDE = 1;
-  for (let dj = -SLIDE; dj <= SLIDE; dj++) {
-    for (let di = -SLIDE; di <= SLIDE; di++) {
-      const ci = stairs.i + di;
-      const cj = stairs.j + dj;
-      if (ci - R < 2 || cj - R < 2 || ci + R > g.w - 3 || cj + R > g.h - 3) continue;
-      // Never open the plunger lane's flank — see above.
-      let touchesSealed = false;
-      for (let y = cj - R; y <= cj + R && !touchesSealed; y++) {
-        for (let x = ci - R; x <= ci + R; x++) {
-          if ((x - ci) * (x - ci) + (y - cj) * (y - cj) > R * R) continue;
-          if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
-          if (nearSealed(g, mask, x, y)) {
-            touchesSealed = true;
-            break;
-          }
-        }
-      }
-      if (touchesSealed) continue;
-      // ── AND IT KEEPS CLEAR OF THE ORBIT ISLAND ──────────────────────────
-      //
-      // The island is a FULL-CIRCLE arc feature, and `trimArcToBacking` refuses
-      // to trim one — correctly, since a circle trimmed to a run stops being an
-      // island and the floor loses its centrepiece. So unlike every other curve
-      // family, an island cannot repair itself after the stone behind part of
-      // its ring is opened: it simply ships partly unbacked, drawn as a curved
-      // ribbon standing in open floor.
-      //
-      // That is exactly what happened the first time this pass ran — the piece
-      // gate reported two islands at 71% and 96% backed, both with their centres
-      // just outside the hall but their RINGS inside it. Hence the clearance is
-      // measured to the ring, not the centre: R + ORBIT_RADIUS + ORBIT_RING.
-      if (orbit) {
-        const need = R + ORBIT_RADIUS + ORBIT_RING;
-        if (Math.hypot(orbit.ci - ci, orbit.cj - cj) < need) continue;
-      }
-      if (!carveChamber(g, mask, ci, cj, R)) continue;
-      return { ci, cj, r: R };
+  const ci = stairs.i;
+  const cj = stairs.j;
+  if (ci - R < 2 || cj - R < 2 || ci + R > g.w - 3 || cj + R > g.h - 3) return null;
+  // Never open the plunger lane's flank — see above.
+  for (let y = cj - R; y <= cj + R; y++) {
+    for (let x = ci - R; x <= ci + R; x++) {
+      if ((x - ci) * (x - ci) + (y - cj) * (y - cj) > R * R) continue;
+      if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
+      if (nearSealed(g, mask, x, y)) return null;
     }
   }
-  return null;
+  if (orbit) {
+    const need = R + ORBIT_RADIUS + ORBIT_RING;
+    if (Math.hypot(orbit.ci - ci, orbit.cj - cj) < need) return null;
+  }
+  if (!carveChamber(g, mask, ci, cj, R)) return null;
+  return { ci, cj, r: R };
 }
 
 /**
@@ -669,7 +659,18 @@ export function buildTrackFloor(
   const doorGuard = new Set<number>();
   for (const s of doorSites) {
     const d = resolveDoorway(grid, s, { mask });
-    if (d) for (const t of doorwayFootprint(grid, d)) doorGuard.add(idx(grid, t.i, t.j));
+    if (d) {
+      const half = (d.w - 1) / 2;
+      for (let t = -d.back - 1; t <= d.fwd + 1; t++) {
+        for (let o = -half - 2; o <= half + 2; o++) {
+          const ti = d.i + d.ai * t + d.wi * o;
+          const tj = d.j + d.aj * t + d.wj * o;
+          if (ti >= 0 && tj >= 0 && ti < grid.w && tj < grid.h) {
+            doorGuard.add(idx(grid, ti, tj));
+          }
+        }
+      }
+    }
   }
   const onDoorway = (i: number, j: number): boolean =>
     i >= 0 && j >= 0 && i < grid.w && j < grid.h && doorGuard.has(idx(grid, i, j));
@@ -864,6 +865,8 @@ export function buildTrackFloor(
       return true;
     });
   }
+  compactArcs(grid);
+  widenMazeCorridors(grid, mask, rng, doorGuard);
 
   // ── AND NOW THE DOORWAYS ARE CUT ────────────────────────────────────────
   //
@@ -945,7 +948,7 @@ export function buildTrackFloor(
     authorRelayChambers(grid, doors.doorways, ends.start, (i: number, j: number) => nearSealed(grid, mask, i, j));
 
   if (opts.funnels === true || opts.relays === true) {
-    repair([ends.start, ends.stairs]);
+    connectAll(grid, rng, repairKeepOut(grid, mask));
     // The repair OPENS stone, and `removeWallStubs`/`uncarveDeadEnds` do not
     // consult `repairKeepOut` — so a jaw can come out of it with a tile or two
     // that still claims a curved face while standing on open floor. Two per
@@ -981,24 +984,24 @@ export function buildTrackFloor(
   // two rounds. If it is ever hit, something is oscillating and that is a bug
   // to find rather than a limit to raise.
   for (let round = 0; round < 8; round++) {
+    uncarveDeadEnds(grid, mask, [ends.start, ends.stairs]);
     compactArcs(grid);
     if (removeWallStubs(grid, mask) === 0) break;
   }
-  // ── AND COMPACTION HAS THE LAST WORD ────────────────────────────────────
-  //
-  // The loop above ends on `removeWallStubs`, which converts wall to FLOOR — so
-  // whenever the final round actually removes a stub, it can un-back an arc face
-  // that the compaction at the top of that same round had just certified. The
-  // loop's exit condition hides this in the common case (it breaks when the stub
-  // pass changed nothing, and then nothing can have been un-backed), which is
-  // why it went unnoticed until the King's Hall gave the stub pass more to do:
-  // three floors in 180 shipped a feature 71-96% backed, i.e. a curved ribbon
-  // with one end standing in open air — the exact defect the arc contract
-  // exists to prevent.
-  //
-  // One more compaction, unconditionally. It only ever trims or drops features,
-  // so it cannot create work for the stub pass and the fixed point still holds.
+  uncarveDeadEnds(grid, mask, [ends.start, ends.stairs]);
   compactArcs(grid);
+
+  let finalStairs = ends.stairs;
+  const finalDist = bfsDistances(grid, routeFrom.i, routeFrom.j);
+  const finalLen = finalDist[idx(grid, finalStairs.i, finalStairs.j)];
+  const finalEuclid = Math.hypot(finalStairs.i - routeFrom.i, finalStairs.j - routeFrom.j);
+  if (finalLen > 0 && finalEuclid / finalLen > DEFAULT_CONSTRAINTS.maxDirectness) {
+    const repick = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
+    if (repick) {
+      finalStairs = repick.stairs;
+      ends.stairs = repick.stairs;
+    }
+  }
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 

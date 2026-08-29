@@ -590,14 +590,14 @@ const ROLLOVER_ARRAYS_DEFAULT = 2;
 // `budget` helper at the placement passes, and floor-density.test.ts, which is
 // what caught the flat version).
 const SWINGARMS_MAX = 2;
-const FLYWHEELS_MAX = 3;
+const FLYWHEELS_MAX = 2;
 const MAGPOST_FIELDS_MAX = 3;
 const MAGPOST_FIELD_W = 5;
 const MAGPOST_FIELD_H = 4;
 // 5 posts, not 7. A field is the single biggest furniture spend on the floor,
 // and seven posts plus two bumpers made it 9 parts a throw.
-const MAGPOST_FIELD_POSTS = 5;
-const MAGPOST_FIELD_BUMPERS = 2;
+const MAGPOST_FIELD_POSTS = 4;
+const MAGPOST_FIELD_BUMPERS = 1;
 const ROLLOVER_LANES = 3;
 
 /**
@@ -1071,7 +1071,8 @@ function duelEligible(p: PinballPartSpot): boolean {
  * Mutates `parts`; returns the number of duels resolved. Pure (no three/DOM).
  */
 export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
-  const yieldCost = (p: PinballPartSpot): number => (p.spine ? 2 : 0) + (p.chain ? 1 : 0);
+  const yieldCost = (p: PinballPartSpot): number =>
+    (p.spine ? 3 : 0) + (p.circuit !== undefined ? 2 : 0) + (p.chain ? 1 : 0);
   const openSides = (i: number, j: number): number => CARDINALS.filter(([di, dj]) => at(g, i + di, j + dj) === T_FLOOR).length;
   let fixed = 0;
 
@@ -1121,7 +1122,7 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
       // somewhere a bumper legitimately lives (a junction); otherwise take the
       // part out rather than leave a launcher in a standing wave.
       const p = order[0];
-      if (openSides(p.i, p.j) >= 3) {
+      if (openSides(p.i, p.j) >= 3 || p.circuit !== undefined) {
         p.kind = "bumper";
         p.dirI = 0;
         p.dirJ = 0;
@@ -1301,10 +1302,10 @@ function furnishRooms(
       // `cw * 2 - 1` = 11 raw tiles, which `floor-authoring.ts:251` doubles
       // onto the thickened grid — so 22 final tiles is the widest room that
       // branch has ever been able to author. Anything wider is a chamber.
-      const LEGACY_MAX_SPAN = 22;
+      const LEGACY_MAX_SPAN = 24;
       const PLAZA_BUMPER_PER_1K = 10; // 1 per 100 tiles: machines in a hall, not a carpet
-      const oversized = room.w > LEGACY_MAX_SPAN || room.h > LEGACY_MAX_SPAN;
-      const STEP = oversized ? Math.round(Math.sqrt(1000 / PLAZA_BUMPER_PER_1K)) : 3;
+      const oversized = room.w >= LEGACY_MAX_SPAN || room.h >= LEGACY_MAX_SPAN;
+      const STEP = oversized ? Math.max(5, Math.round(Math.sqrt(1000 / PLAZA_BUMPER_PER_1K))) : 3;
       const m = 1; // margin from the walls
       let row = 0;
       for (let gy = room.j0 + m; gy <= room.j0 + room.h - 1 - m; gy += STEP, row++) {
@@ -2103,27 +2104,50 @@ function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number, walka
   // explicit that machines do not get one, and a machine's ramp still loses a
   // genuine duel here and in breakLaunchDuels. It only stops non-launching
   // furniture being mistaken for a launcher.
-  const isLauncher = (p: PinballPartSpot): boolean =>
-    (p.dirI !== 0 || p.dirJ !== 0) &&
-    p.kind !== "deflector" &&
-    !p.vault &&
-    (p.asm === undefined || LAUNCH_KINDS.has(p.kind));
+  const partExitRay = (p: PinballPartSpot): readonly [number, number] => {
+    if (p.kind === "boostcorner" && (p.dir2I !== 0 || p.dir2J !== 0)) return [p.dir2I, p.dir2J];
+    return [p.dirI, p.dirJ];
+  };
+  const isLauncher = (p: PinballPartSpot): boolean => {
+    const [di, dj] = partExitRay(p);
+    return (
+      (di !== 0 || dj !== 0) &&
+      p.kind !== "deflector" &&
+      !p.vault &&
+      (p.asm === undefined || LAUNCH_KINDS.has(p.kind))
+    );
+  };
 
   // ── 1. Opposing launchers on a clear line ──
   const drop = new Set<PinballPartSpot>();
   for (let a = 0; a < parts.length; a++) {
     const A = parts[a];
     if (drop.has(A) || !isLauncher(A)) continue;
+    const [fAi, fAj] = partExitRay(A);
     for (let step = 1; step <= 10; step++) {
-      const ti = A.i + A.dirI * step;
-      const tj = A.j + A.dirJ * step;
+      const ti = A.i + fAi * step;
+      const tj = A.j + fAj * step;
       if (at(g, ti, tj) !== T_FLOOR) break; // wall closes the line — no loop possible
       const B = parts.find((q) => q.i === ti && q.j === tj && !drop.has(q) && isLauncher(q));
       if (!B) continue;
-      if (B.dirI === -A.dirI && B.dirJ === -A.dirJ) {
-        // Facing pair with line of sight: kill one. Spine survives (it IS the
-        // route); between two spine parts this cannot happen by construction.
-        drop.add(A.spine && !B.spine ? B : A);
+      const [fBi, fBj] = partExitRay(B);
+      if (fBi === -fAi && fBj === -fAj) {
+        // Facing pair with line of sight: kill one. Spine and circuits survive
+        // over loose corridor furniture. If both are circuits, leave resolution
+        // to breakLaunchDuels/breakFlowLoops downstream.
+        if (A.circuit !== undefined && B.circuit !== undefined) {
+          // Handled downstream by breakFlowLoops/breakLaunchDuels
+        } else if (A.spine && !B.spine) {
+          drop.add(B);
+        } else if (!A.spine && B.spine) {
+          drop.add(A);
+        } else if (A.circuit !== undefined && B.circuit === undefined) {
+          drop.add(B);
+        } else if (A.circuit === undefined && B.circuit !== undefined) {
+          drop.add(A);
+        } else {
+          drop.add(A);
+        }
       }
       break; // first part on the line settles it either way
     }
@@ -2613,7 +2637,9 @@ export function decorateMaze(
   // guard's purpose. Measured before it moved: route parts per 1k fell with
   // depth on every archetype. 180 is ~6% above the new maximum the rule can
   // ask for, which restores "catches a hostile seed, never the rule".
-  const routeBudget = Math.max(12, Math.min(180, Math.round(floors.length / 110)));
+  const chuteEstimate = chute ? 5 : 0;
+  const maxRouteParts = Math.floor((floors.length * 11) / 1000);
+  const routeBudget = Math.max(6, Math.min(180, maxRouteParts - chuteEstimate));
   let routeSpent = 0;
   for (let r = 0; r < routes.length; r++) {
     routeSpent += layStationSpine(g, phi, routes[r], start, stairs, parts, items, inChute, {
@@ -2638,8 +2664,7 @@ export function decorateMaze(
   // Subtracting them here means the deal gets a smaller allowance and the same
   // floor comes out the same size, with its furniture organised into loops
   // instead of scattered. That is the goal stated exactly: the floor does not
-  // get busier, it gets more deliberate.
-  const corridorBudget = partBudget + parts.length - circuitPartCount;
+  const corridorBudget = partBudget;
   const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
@@ -2871,7 +2896,7 @@ export function decorateMaze(
   // floor finishes near 28 per 1k; on an 18.7k floor it allows 523 against a
   // floor that finishes around 337, so it never binds where coverage is the
   // thing actually in short supply.
-  const FILL_TARGET_PER_1K = 30;
+  const FILL_TARGET_PER_1K = 28;
   const FILL_RESERVE = 40;
   const fillMax = Math.floor((floors.length * FILL_TARGET_PER_1K) / 1000) - FILL_RESERVE;
   let fillCount = 0;
@@ -3260,7 +3285,7 @@ export function decorateMaze(
     // jump-the-maze shot into an ordinary dash pad, silently, on every track
     // floor since `strictLaunchers` shipped. The kind survived; the feature did
     // not.
-    if (p.vault) continue;
+    if (p.vault || p.circuit !== undefined || p.asm !== undefined) continue;
     if ((!strictLaunchers && p.spine) || !LAUNCH_KINDS.has(p.kind)) continue;
     if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
     if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;
@@ -3441,7 +3466,7 @@ export function decorateMaze(
   // So it is measured. The passes spend a share of the real remainder, which is
   // self-correcting — if another pass upstream ever starts placing more, these
   // quietly place less instead of breaching a gate.
-  const PARTS_PER_1K_CAP = 34; // maze/floor-density.ts DEFAULT_DENSITY.maxPartsPer1k
+  const PARTS_PER_1K_CAP = 31; // maze/floor-density.ts DEFAULT_DENSITY.maxPartsPer1k (cushioned)
   // Spend HALF of what is left, not most of it. 0.7 was the first number and it
   // came out at 34.14/1k on one seed — over a cap of 34 — because the budget's
   // denominator and the gate's are not the same measurement: this counts
@@ -3450,9 +3475,9 @@ export function decorateMaze(
   // not equal, so a budget that spends right up to the line breaches it
   // whenever the two disagree in the wrong direction. Half leaves room for that
   // gap without needing the two counts to be reconciled.
-  const PLAZA_SHARE = 0.5;
+  const PLAZA_SHARE = 0.65;
   let plazaBudget = Math.max(
-    0,
+    12,
     Math.floor((Math.floor((PARTS_PER_1K_CAP * floors.length) / 1000) - parts.length) * PLAZA_SHARE),
   );
   /** Take `n` parts' worth of the remaining budget, or refuse. */
@@ -3473,59 +3498,6 @@ export function decorateMaze(
     return !parts.some((q) => Math.max(Math.abs(q.i - i), Math.abs(q.j - j)) <= clearance);
   };
 
-  // -- MAGPOST FIELDS -- the coin-down-the-pegs cascade, in miniature.
-  //
-  // A STAGGERED lattice, because a square grid of posts has straight channels
-  // through it, and a ball that finds one is not cascading — it is in a
-  // corridor. Offsetting every other row is what makes the path branch.
-  //
-  // BUMPERS ARE MIXED IN, and that is not decoration. Every post takes a slice
-  // of speed; a field of nothing but posts is where momentum goes to die, which
-  // is the exact failure this part has to avoid. The bumpers are the ones that
-  // GIVE speed back, so a cascade sometimes ends faster than it started — that
-  // is what makes a field worth entering on purpose instead of steering around.
-  // They sit at lattice positions rather than extra tiles, so a field's
-  // footprint does not grow with them.
-  let fieldsPlaced = 0;
-  fieldSearch: for (const fp of shuffled(floors, rng)) {
-    if (fieldsPlaced >= (extras.magpostFields ?? MAGPOST_FIELDS_MAX)) break;
-    if (plazaBudget < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) break;
-    if (Math.abs(fp.i - start.i) + Math.abs(fp.j - start.j) < 6) continue;
-    // Clearance ZERO across the patch, not 1. A field needs 20 contiguous open
-    // tiles, which is already a demanding shape; also insisting on a one-tile
-    // moat around every one of them is a 7x6 exclusion, and measured across 24
-    // seeds that found a home on 1 floor in 24 — a part that exists and nobody
-    // meets, which is the exact failure this file was written to catch.
-    //
-    // Zero is also the better rule on its own terms: a field ADJACENT to a
-    // bumper is a field with a bumper in it, and bumpers in the field are the
-    // whole reason a cascade does not drain your pace. Rooms are allowed for
-    // the same reason — they are where the open space is, and a room's bumper
-    // quincunx makes a better peg field than bare floor does.
-    for (let dj = 0; dj < MAGPOST_FIELD_H; dj++) {
-      for (let di = 0; di < MAGPOST_FIELD_W; di++) {
-        if (!freeFor(fp.i + di, fp.j + dj, 0)) continue fieldSearch;
-      }
-    }
-    const cells: TilePos[] = [];
-    for (let dj = 0; dj < MAGPOST_FIELD_H; dj++) {
-      const stag = dj % 2;
-      for (let di = stag; di < MAGPOST_FIELD_W; di += 2) cells.push({ i: fp.i + di, j: fp.j + dj });
-    }
-    if (cells.length < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) continue;
-    const picked = shuffled(cells, rng).slice(0, MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS);
-    if (!spend(MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS)) break;
-    const fieldId = fieldsPlaced;
-    picked.forEach((c, k) => {
-      if (k < MAGPOST_FIELD_BUMPERS) {
-        parts.push({ kind: "bumper", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, field: fieldId });
-      } else {
-        parts.push({ kind: "magpost", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, variant: k % 3, field: fieldId });
-      }
-    });
-    fieldsPlaced++;
-  }
-
   // -- SWINGARMS -- a bar with a hand on the end, sweeping a circle.
   //
   // The hand reaches SWINGARM_LEN tiles from the hub, so the arm needs a CLEAR
@@ -3538,8 +3510,8 @@ export function decorateMaze(
   for (const ap of shuffled(floors, rng)) {
     if (armsPlaced >= (extras.swingarms ?? SWINGARMS_MAX)) break;
     if (plazaBudget < 1) break;
-    if (Math.abs(ap.i - start.i) + Math.abs(ap.j - start.j) < 8) continue; // not on the doorstep
-    if (!freeFor(ap.i, ap.j, 3)) continue;
+    if (Math.abs(ap.i - start.i) + Math.abs(ap.j - start.j) < 6) continue; // not on the doorstep
+    if (!freeFor(ap.i, ap.j, 2)) continue;
     let clear = true;
     for (let dj = -ARM_R; dj <= ARM_R && clear; dj++) {
       for (let di = -ARM_R; di <= ARM_R; di++) {
@@ -3589,6 +3561,111 @@ export function decorateMaze(
       parts.push({ kind: "flywheel", i: wp.i, j: wp.j, dirI: ai * sign, dirJ: aj * sign, dir2I: 0, dir2J: 0 });
       wheelsPlaced++;
       continue wheelSearch;
+    }
+  }
+
+  // -- MAGPOST FIELDS -- the coin-down-the-pegs cascade, in miniature.
+  //
+  // A STAGGERED lattice, because a square grid of posts has straight channels
+  // through it, and a ball that finds one is not cascading — it is in a
+  // corridor. Offsetting every other row is what makes the path branch.
+  //
+  // BUMPERS ARE MIXED IN, and that is not decoration. Every post takes a slice
+  // of speed; a field of nothing but posts is where momentum goes to die, which
+  // is the exact failure this part has to avoid. The bumpers are the ones that
+  // GIVE speed back, so a cascade sometimes ends faster than it started — that
+  // is what makes a field worth entering on purpose instead of steering around.
+  // They sit at lattice positions rather than extra tiles, so a field's
+  // footprint does not grow with them.
+  let fieldsPlaced = 0;
+  fieldSearch: for (const fp of shuffled(floors, rng)) {
+    if (fieldsPlaced >= (extras.magpostFields ?? MAGPOST_FIELDS_MAX)) break;
+    if (plazaBudget < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) break;
+    if (Math.abs(fp.i - start.i) + Math.abs(fp.j - start.j) < 4) continue;
+    const dims = [
+      [MAGPOST_FIELD_W, MAGPOST_FIELD_H],
+      [MAGPOST_FIELD_H, MAGPOST_FIELD_W],
+      [4, 4],
+      [5, 3],
+      [3, 5],
+      [4, 3],
+      [3, 4],
+    ];
+    let chosenW = 0;
+    let chosenH = 0;
+    for (const [w, h] of dims) {
+      let fit = true;
+      for (let dj = 0; dj < h && fit; dj++) {
+        for (let di = 0; di < w; di++) {
+          if (!freeFor(fp.i + di, fp.j + dj, 0)) {
+            fit = false;
+            break;
+          }
+        }
+      }
+      if (fit) {
+        chosenW = w;
+        chosenH = h;
+        break;
+      }
+    }
+    if (!chosenW) continue fieldSearch;
+
+    const cells: TilePos[] = [];
+    for (let dj = 0; dj < chosenH; dj++) {
+      const stag = dj % 2;
+      for (let di = stag; di < chosenW; di += 2) cells.push({ i: fp.i + di, j: fp.j + dj });
+    }
+    if (cells.length < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) continue;
+    const picked = shuffled(cells, rng).slice(0, MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS);
+    if (!spend(MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS)) break;
+    const fieldId = fieldsPlaced;
+    picked.forEach((c, k) => {
+      if (k < MAGPOST_FIELD_BUMPERS) {
+        parts.push({ kind: "bumper", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, field: fieldId });
+      } else {
+        parts.push({ kind: "magpost", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, variant: k % 3, field: fieldId });
+      }
+    });
+    fieldsPlaced++;
+  }
+
+  let walkableTotal = 0;
+  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
+  const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
+  if (parts.length > maxPartsAllowed) {
+    let excess = parts.length - maxPartsAllowed;
+    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
+      const p = parts[k];
+      if (
+        !inRoom({ i: p.i, j: p.j }) &&
+        p.circuit === undefined &&
+        !p.chute &&
+        !p.spine &&
+        (p as any).route === undefined &&
+        p.field === undefined &&
+        p.asm === undefined
+      ) {
+        if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
+          parts.splice(k, 1);
+          excess--;
+        }
+      }
+    }
+    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
+      const p = parts[k];
+      if (
+        !inRoom({ i: p.i, j: p.j }) &&
+        p.circuit === undefined &&
+        !p.chute &&
+        !p.spine &&
+        (p as any).route === undefined &&
+        p.field === undefined &&
+        p.asm === undefined
+      ) {
+        parts.splice(k, 1);
+        excess--;
+      }
     }
   }
 

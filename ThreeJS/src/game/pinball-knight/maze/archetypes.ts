@@ -187,8 +187,8 @@ export const DEFAULT_TRACK_PROFILE: TrackProfile = {
 export function trackNodeCounts(p: TrackProfile, w: number, h: number): { foods: number; relays: number } {
   const k = (w * h) / 1000;
   return {
-    foods: Math.max(6, Math.min(44, Math.round(p.foodPer1k * k))),
-    relays: Math.max(8, Math.min(64, Math.round(p.relayPer1k * k))),
+    foods: Math.max(4, Math.min(44, Math.round(p.foodPer1k * k))),
+    relays: Math.max(5, Math.min(64, Math.round(p.relayPer1k * k))),
   };
 }
 
@@ -407,7 +407,7 @@ export const ARCHETYPES: FloorArchetype[] = [
       // opening hard to an edge so the run reads as burrowing INWARD.
       rules: { perimeterBias: 0.9 },
       laneScale: 0.85,
-      fill: 0.86,
+      fill: 0.60,
       linkChance: 0.34,
       plazaFrac: 0,
       maxLenFrac: 0.34,
@@ -444,15 +444,15 @@ export const ARCHETYPES: FloorArchetype[] = [
     // and long chords allowed so the boulevard runs the floor's length.
     track: {
       layout: "spine",
-      foodPer1k: 3.2,
-      relayPer1k: 5.0,
+      foodPer1k: 2.4,
+      relayPer1k: 3.6,
       minLoops: 1,
       // The spine is one long stadium circuit. Starting at an END of it means
       // the boulevard is ahead of you; starting halfway along wastes half the
       // floor's only real straight.
       rules: { perimeterBias: 0.8 },
       laneScale: 1.25,
-      fill: 0.7,
+      fill: 0.60,
       linkChance: 0.22,
       plazaFrac: 0,
       maxLenFrac: 0.55,
@@ -486,8 +486,8 @@ export const ARCHETYPES: FloorArchetype[] = [
     // the lanes are the widest of any archetype — this is the TABLE floor.
     track: {
       layout: "hub",
-      foodPer1k: 3.9,
-      relayPer1k: 4.4,
+      foodPer1k: 2.8,
+      relayPer1k: 3.4,
       minLoops: 2,
       // ── THE EXEMPTION, and the reason `perimeterBias` is a weight rather
       // than a global boolean. A Great Hall IS its central chamber — the hub
@@ -497,7 +497,7 @@ export const ARCHETYPES: FloorArchetype[] = [
       // case, made explicit instead of being an unstated exception.
       rules: { perimeterBias: 0.15 },
       laneScale: 1.35,
-      fill: 0.62,
+      fill: 0.50,
       linkChance: 0.3,
       // 0.16 was not enough to make the name true. Censused over 36 floors per
       // archetype, the Great Hall's largest fully-open blob covered 0.153 of
@@ -540,15 +540,15 @@ export const ARCHETYPES: FloorArchetype[] = [
     // floor with no through-route, only choices.
     track: {
       layout: "scatter",
-      foodPer1k: 5.0,
-      relayPer1k: 7.0,
+      foodPer1k: 3.6,
+      relayPer1k: 4.8,
       minLoops: 4,
       // A cave has no architecture to respect, so the edge is as good a mouth
       // as any — but less insistently than a warren, because a cavern's centre
       // is not a landmark you would be missing out on.
       rules: { perimeterBias: 0.7 },
       laneScale: 0.95,
-      fill: 0.68,
+      fill: 0.55,
       linkChance: 0.4,
       plazaFrac: 0,
       maxLenFrac: 0.3,
@@ -585,8 +585,8 @@ export const ARCHETYPES: FloorArchetype[] = [
       // Concentric galleries: the whole progression is working INWARD ring by
       // ring, which only reads if you start on the outermost one.
       rules: { perimeterBias: 0.85 },
-      foodPer1k: 3.6,
-      relayPer1k: 5.2,
+      foodPer1k: 2.8,
+      relayPer1k: 4.0,
       // Every gallery is a closed loop and every gate between two of them adds
       // another, so a Ring Keep that measures 2 independent cycles is a Ring
       // Keep with one ring. Raised 3 -> 4 once the relay keep-out stopped the
@@ -596,7 +596,7 @@ export const ARCHETYPES: FloorArchetype[] = [
       // "long straight roads, few loops").
       minLoops: 4,
       laneScale: 1.05,
-      fill: 0.74,
+      fill: 0.58,
       linkChance: 0.2,
       plazaFrac: 0,
       maxLenFrac: 0.4,

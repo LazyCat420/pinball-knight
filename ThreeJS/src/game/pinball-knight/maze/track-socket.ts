@@ -122,7 +122,8 @@ export function socketAt(g: Grid, mask: TrackMask | null, i: number, j: number):
  * the seal from being a single tile thick — and a one-tile membrane is exactly
  * what `removeWallStubs` is built to delete.
  */
-export function nearSealed(g: Grid, mask: TrackMask, i: number, j: number): boolean {
+export function nearSealed(g: Grid, mask: TrackMask | null | undefined, i: number, j: number): boolean {
+  if (!mask || !mask.sealed) return false;
   for (let dj = -2; dj <= 2; dj++) {
     for (let di = -2; di <= 2; di++) {
       const x = i + di;

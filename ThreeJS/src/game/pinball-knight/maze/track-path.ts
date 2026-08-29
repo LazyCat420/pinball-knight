@@ -251,7 +251,7 @@ export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[];
       // Conductivity IS traffic, so the busiest tube becomes the widest road.
       // This is the visual payoff of the growth model: highway hierarchy comes
       // out of the simulation instead of being assigned arbitrarily.
-      half: (rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur) * laneScale,
+      half: Math.max(1.5, (rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur) * laneScale),
     });
   }
 
@@ -297,7 +297,7 @@ export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[];
     });
   }
 
-  return { legs, arcs, arcHalf: 2 * laneScale };
+  return { legs, arcs, arcHalf: Math.max(1.5, 2 * laneScale) };
 }
 
 /** Total rideable straight length — a sanity metric for tests. */

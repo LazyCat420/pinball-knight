@@ -64,7 +64,7 @@ const MIN_RUNWAY = 3;
  * ~2.5 seconds at BOOSTER_SPEED. Below that a "lap" reads as a corner you
  * happened to come back around, which is the opposite of the intended feeling.
  */
-const MIN_RING = 40;
+const MIN_RING = 20;
 
 /**
  * How far apart, ALONG THE ARTERY, a detour's two ends must be before the loop
@@ -73,7 +73,7 @@ const MIN_RING = 40;
  * Without this the search returns thousands of two-tile pockets: any corridor
  * one tile wider than a lane technically closes a cycle.
  */
-const MIN_ARTERY_SEP = 12;
+const MIN_ARTERY_SEP = 4;
 
 const CARDS: ReadonlyArray<readonly [number, number]> = [
   [1, 0],

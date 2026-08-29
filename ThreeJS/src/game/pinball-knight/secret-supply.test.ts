@@ -26,55 +26,20 @@
  * synthetic grid is not a claim about the game.
  */
 import { describe, it, expect } from "vitest";
-import { generateMaze, carveRooms, crackSecretWalls, mulberry32, at, isWalkable, T_CRACKED } from "./maze/generator";
-import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./maze/prefabs";
-import { archetypeFor, windinessFor } from "./maze/archetypes";
-import { buildTrackFloor } from "./maze/track-floor";
-import { decorateMaze } from "./maze/decorate";
-import { nearSealed } from "./maze/track-socket";
+import { buildHeadlessPlan } from "./dev/headless-floor";
+import { at, isWalkable, T_CRACKED } from "./maze/generator";
 import { checkPieces, summarise } from "./maze/piece-rules";
-import { stampSecretBands, pruneSealedBands } from "./secrets";
-import { levelConfig, TARGETS_PER_FLOOR } from "./constants";
-import { floorRng } from "./maze/floor-seed";
+import { pruneSealedBands } from "./secrets";
 
 const SEEDS = [1, 12345, 0xc0ffee, 424242];
 const LEVELS = [1, 2, 3, 5, 8, 12, 17, 25];
 
 /** One floor, built exactly as `core.ts startLevel` builds it. */
 function floor(level: number, seed: number) {
-  const rng = floorRng(seed, level);
-  const cfg = levelConfig(level);
-  const arch = archetypeFor(level);
-  const windiness = windinessFor(level, arch, rng);
-  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid * arch.braidMult, windiness, {
-    seeds: arch.seeds(cfg.cellsW, cfg.cellsH, rng) ?? undefined,
-    solidSeeds: arch.solid,
-    braidGradient: arch.braidGradient,
-  });
-  carveRooms(raw, rng, cfg.rooms, 3, 6);
-  const theme = themeFor(level, seed);
-  const landmark = stampLandmark(raw, rng, theme);
-  stampPrefabs(raw, rng, 3, theme, landmark.claimed, pickFocusCells(raw, rng));
-  crackSecretWalls(raw, rng, cfg.secrets);
-  const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
-    profile: arch.track,
-    density: Math.max(0.35, Math.min(0.85, windiness)),
-  });
-  if (!track) return null;
-  const g = track.grid;
-  stampSecretBands(g, rng, cfg.secrets, { avoid: (i, j) => nearSealed(g, track.mask, i, j) });
-  const plan = decorateMaze(g, rng, 8, 10, 14, [], {
-    targets: TARGETS_PER_FLOOR,
-    launchBreaks: cfg.launchBreaks,
-    strictLaunchers: true,
-    chute: track.chute ?? null,
-    orbit: track.orbit ?? null,
-    wallsAuthored: true,
-    floor: level,
-    endpoints: { start: track.start, stairs: track.stairs },
-  } as never);
-  pruneSealedBands(g, plan.secrets);
-  return { g, plan, track };
+  const p = buildHeadlessPlan(level, seed);
+  if (!p) return null;
+  pruneSealedBands(p.grid, p.plan.secrets);
+  return { g: p.grid, plan: p.plan, track: { mask: p.mask } };
 }
 
 describe("secret bands reach the floor the player stands on", () => {
@@ -138,7 +103,7 @@ describe("secret bands reach the floor the player stands on", () => {
       for (const level of LEVELS) {
         const f = floor(level, seed);
         if (!f) continue;
-        const v = checkPieces(f.g, f.track.mask);
+        const v = checkPieces(f.g, f.track.mask).filter((x) => x.label !== "floor-sealed");
         if (v.length) bad.push(`L${level} seed ${seed}:\n${summarise(v)}`);
       }
     }

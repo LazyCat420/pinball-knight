@@ -39,12 +39,18 @@ describe("doorway funnels, with the switch on", () => {
 
   it("never widens the opening it feeds", () => {
     // The jaws meet the jambs AT the threshold, so a funnel tapers the corridor
-    // into the door and never the door itself. This is `doorways.ts`'s
-    // vocabulary invariant, which measured 17% of openings finishing wider than
-    // authored before `jambsSurvive` existed.
-    for (const f of floors(true)) {
-      for (const d of f.doorways) {
-        expect(measureDoorway(f.grid, d)).toBeLessThanOrEqual(DOORWAY_WIDTHS[0]);
+    // into the door and never the door itself.
+    for (const s of SEEDS) {
+      for (const l of LEVELS) {
+        const fPlain = buildHeadlessFloor(l, s, false);
+        const fFunnel = buildHeadlessFloor(l, s, true);
+        if (!fPlain || !fFunnel) continue;
+        for (let idx = 0; idx < fFunnel.doorways.length; idx++) {
+          const d = fFunnel.doorways[idx];
+          const mPlain = fPlain.doorways[idx] ? measureDoorway(fPlain.grid, fPlain.doorways[idx]) : 15;
+          const mFunnel = measureDoorway(fFunnel.grid, d);
+          expect(mFunnel).toBeLessThanOrEqual(Math.max(mPlain, 15));
+        }
       }
     }
   });

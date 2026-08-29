@@ -53,6 +53,7 @@ import {
   HAZARDS_MAX,
 } from "../constants";
 import type { Doorway } from "../maze/doorways";
+import type { TrackMask } from "../maze/track-carve";
 
 export interface HeadlessFloor {
   grid: Grid;
@@ -63,6 +64,7 @@ export interface HeadlessFloor {
   level: number;
   runSeed: number;
   relaxed: string[];
+  mask?: TrackMask;
 }
 
 /** Build one floor exactly as `core.ts startLevel` does. Null if the generator declined. */
@@ -97,6 +99,7 @@ export function buildHeadlessFloor(
     level,
     runSeed,
     relaxed: track.relaxed,
+    mask: track.mask,
   };
 }
 
@@ -198,6 +201,7 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
     level,
     runSeed,
     relaxed: track.relaxed,
+    mask: track.mask,
     plan,
     walkable,
     modifier: modifier.id,
