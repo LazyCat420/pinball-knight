@@ -2,7 +2,8 @@
  * Input for the dungeon: keyboard + mouse, GAMEPAD, and the on-screen TOUCH pad.
  *
  * WASD / arrows to move, LEFT-CLICK to attack (hold = heavy) toward the cursor,
- * SPACE or right-click to dodge, Shift to sprint. The room's own input is
+ * SPACE or right-click to dodge, Shift to sprint, F for THE FLIPPER BUTTON (tap
+ * to swing the nearest paddle, hold to cradle). The room's own input is
  * already muted while we run (core calls setInputOwner), so listening on window
  * here is safe.
  *
@@ -45,6 +46,17 @@ export interface InputHandle {
   consumeDodge(): boolean;
   /** True while the dodge key/button (Space / right-click) is HELD — the plunger pull. */
   dodgeHeld(): boolean;
+  /**
+   * True once if THE FLIPPER BUTTON (F / pad B) was freshly pressed — a queued
+   * tap edge, same contract as consumeDodge.
+   */
+  consumeFlip(): boolean;
+  /**
+   * True while the flipper button is HELD. Separate from the tap because the
+   * hold is its own verb: a held paddle stays up and CRADLES the knight rather
+   * than launching, and releasing it fires. See entities/flippers.ts.
+   */
+  flipHeld(): boolean;
   /**
    * Turn axis for the FPS ultimate: -1 (turn left) .. +1 (turn right), from Q/E
    * on the keyboard OR the right stick's X on a pad. Lets rampage be driven with
@@ -110,6 +122,10 @@ export const MOVE_KEYS: Record<string, [number, number]> = {
 // mouse owns aiming + attacking, which is what an iso ARPG wants.
 const ATTACK_KEYS = new Set<string>();
 const DODGE_KEYS = new Set([" "]);
+// THE FLIPPER BUTTON. F was free: Space is dodge AND the plunger pull AND the
+// lane change, the mouse owns attack and aim, Q/E are the abilities, R is
+// rampage, Shift is sprint, 1-4 the belt, Tab the weapon swap, M the map.
+const FLIP_KEYS = new Set(["f"]);
 // FPS look-turn keys: q/e ONLY.
 //
 // The left/right arrows used to be in here as well as in MOVE_KEYS. Both sets
@@ -143,6 +159,8 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   let attackHeld = false;
   let dodgeQueued = false;
   let dodgeDown = false; // held state of Space / right-click (the plunger pull)
+  let flipQueued = false;
+  let flipDown = false; // held state of F / pad B (the flipper cradle)
   let sprint = false;
   let mouseDx = 0;
   let mouseDy = 0;
@@ -152,7 +170,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
 
   const onKeyDown = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
-    if (MOVE_KEYS[key] || ATTACK_KEYS.has(key) || DODGE_KEYS.has(key) || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) e.preventDefault();
+    if (MOVE_KEYS[key] || ATTACK_KEYS.has(key) || DODGE_KEYS.has(key) || FLIP_KEYS.has(key) || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) e.preventDefault();
     if (MOVE_KEYS[key] || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) down.add(key);
     if (ATTACK_KEYS.has(key)) {
       if (!e.repeat) attackQueued = true;
@@ -162,6 +180,10 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       if (!e.repeat) dodgeQueued = true;
       dodgeDown = true; // held → the plunger pull
     }
+    if (FLIP_KEYS.has(key)) {
+      if (!e.repeat) flipQueued = true;
+      flipDown = true; // held → the paddle stays up, and cradles
+    }
     if (e.key === "Shift") sprint = true;
   };
 
@@ -170,6 +192,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     down.delete(key);
     if (ATTACK_KEYS.has(key)) attackHeld = false;
     if (DODGE_KEYS.has(key)) dodgeDown = false;
+    if (FLIP_KEYS.has(key)) flipDown = false;
     if (e.key === "Shift") sprint = false;
   };
 
@@ -213,6 +236,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     down.clear();
     attackHeld = false;
     dodgeDown = false;
+    flipDown = false;
     sprint = false;
     resetPad(pad);
     resetPad(gp);
@@ -282,6 +306,16 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     dodgeHeld() {
       return dodgeDown || pad.dodge || gp.dodge;
     },
+    consumeFlip() {
+      const want = flipQueued || pad.flipTap || gp.flipTap;
+      flipQueued = false;
+      pad.flipTap = false;
+      gp.flipTap = false;
+      return want;
+    },
+    flipHeld() {
+      return flipDown || pad.flip || gp.flip;
+    },
     turnAxis() {
       let t = 0;
       for (const key of down) {
@@ -325,10 +359,13 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     clearTransient() {
       attackQueued = false;
       dodgeQueued = false;
+      flipQueued = false;
       pad.attackTap = false;
       pad.dodgeTap = false;
+      pad.flipTap = false;
       gp.attackTap = false;
       gp.dodgeTap = false;
+      gp.flipTap = false;
       mouseDx = 0;
       mouseDy = 0;
     },

@@ -60,8 +60,7 @@ import {
   STILTNECK_BLAST_DAMAGE,
   JESTER_SPRING_KICK,
   CROAKER_BEAM_DAMAGE,
-  PINBALL_MAX_SPEED,
-} from "../constants";
+  PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { MOMENTUM_GATES } from "./enemy-rules";
@@ -853,6 +852,14 @@ function tallyKill(z: Zombie): void {
     return n;
   };
   bump(z.kind);
+  // ── A BOSS IS CREDITED AS ITSELF ──
+  //
+  // Every boss is a `brute` under the hood (it reuses the enemy pipeline), so
+  // this used to record a brute kill and nothing else: four distinct guardians
+  // all counted as the same mob, and the tally could not tell you which ones
+  // you had actually beaten. Namespaced like the zombie sub-types next door,
+  // for the same reasons the comment below gives.
+  if (z.bossKind) bump(`boss:${z.bossKind}`);
   // ── HOW you killed it, not just how many (DECLONE §6.5) ──
   // Namespaced into the SAME record rather than two new state fields, and that
   // is deliberate: `killsByKind` is already reset in every place a run resets,
@@ -1047,7 +1054,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // Melee fallback only — the bomb's blast carries STILTNECK_BLAST_DAMAGE.
   stiltneck: STILTNECK_BLAST_DAMAGE,
-  fish_feet: ZOMBIE_DAMAGE,
+  // "heavy kick strikes", per its bestiary line — it had ZOMBIE_DAMAGE.
+  fish_feet: FISH_FEET_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,

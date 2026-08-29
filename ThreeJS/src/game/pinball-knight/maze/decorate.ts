@@ -22,6 +22,9 @@ import { chuteTiles, type LaunchChute } from "./track-launch";
 export { traceArtery };
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 import { buildFlowField, descend, flowDrop, isDownhill, openRunway, phiAt, steepestDown, UNREACHED } from "./flow-orient";
+import { placeAssemblies, partsOf } from "./assembly-place";
+import { MACHINES } from "./assembly-lib";
+import { mulberry32 } from "../../../utils/rng";
 import { breakFlowLoops, findFlowCycles, type FlowPart } from "./flow-loops";
 import type { AssemblyRef } from "./assembly";
 import { authorCircuits, type Circuit } from "./circuit";
@@ -82,14 +85,18 @@ export type PartSpotKind =
   | "trapdoor"
   | "flipper"
   | "mirror"
+  // The PLAZA parts (see constants/pinball.ts). Each gets its OWN placement
+  // pass at the very end of buildParts rather than joining `deal` — see the
+  // note on RNG stream order there.
+  | "swingarm"
+  | "flywheel"
+  | "magpost"
   | "pit"
   | "electric"
   | "firevent"
   | "magstrip"
   | "rollover"
   | "lamp"
-  | "swingarm"
-  | "scoop"
   | "maw";
 
 export interface PinballPartSpot extends TilePos {
@@ -101,6 +108,13 @@ export interface PinballPartSpot extends TilePos {
   /** TARGET BANK (Slice 6): a drop-target's bank id + its order in the bank. */
   bank?: number;
   seq?: number;
+  /** SWINGARM: rotation direction (+1/-1) and the phase seed. */
+  spin?: number;
+  phase?: number;
+  /** MAGPOST: which of the three post caps this one wears. Cosmetic only. */
+  variant?: number;
+  /** PEG FIELD id — on the posts AND on the bumpers seeded among them. */
+  field?: number;
   /**
    * VAULT RAMP: this part is aimed at a wall BAND ON PURPOSE, to fling the
    * knight over it into the corridor beyond. The launch-target invariant below
@@ -525,6 +539,23 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * sparse floor spend properly; the hard `CIRCUIT_PARTS_MAX` is the backstop for
  * a pathological ring that would otherwise eat the whole allowance.
  */
+/**
+ * How many authored MACHINES a floor may carry (maze/assembly-lib.ts).
+ *
+ * START SMALL AND KEEP THE OFF SWITCH. `placeAssemblies` early-returns an
+ * empty report on `budget <= 0`, so 0 here restores the pre-2026-08-27 floor
+ * exactly — the rollback for a generator change whose blast radius is every
+ * floor of every run.
+ *
+ * 2 is deliberately below what a floor could hold. A machine reserves its whole
+ * footprint from every later placer, so each one is spent against the corridor
+ * deal; this number decides how much of a floor is AUTHORED rather than dealt,
+ * not how busy the floor gets.
+ */
+const ASSEMBLY_BUDGET = 2;
+/** Tiles between candidate origins when scanning a route for machine sites.
+ *  Matches the circuit layer's stride — both walk the same roads. */
+const ASSEMBLY_STRIDE = 8;
 const CIRCUITS_DEFAULT = 3;
 /** Share of the corridor budget the loops may take. The rest stays loose
  *  furniture, so a floor keeps pockets that are not on a highway. */
@@ -552,6 +583,21 @@ const VAULT_MAX_REACH = 4; // landing must sit inside this many tiles — under 
 const VAULT_RAMPS_DEFAULT = 3;
 /** D3 rollover lane arrays: how many banks per floor, and lanes per bank. */
 const ROLLOVER_ARRAYS_DEFAULT = 2;
+/** How many of each PLAZA part a floor gets, and the peg field's footprint.
+ *  Placement budgets, so they live here rather than in constants/pinball.ts —
+ *  which owns what the parts DO. */
+// CEILINGS, not counts — the actual number rides the floor's area (see the
+// `budget` helper at the placement passes, and floor-density.test.ts, which is
+// what caught the flat version).
+const SWINGARMS_MAX = 2;
+const FLYWHEELS_MAX = 3;
+const MAGPOST_FIELDS_MAX = 3;
+const MAGPOST_FIELD_W = 5;
+const MAGPOST_FIELD_H = 4;
+// 5 posts, not 7. A field is the single biggest furniture spend on the floor,
+// and seven posts plus two bumpers made it 9 parts a throw.
+const MAGPOST_FIELD_POSTS = 5;
+const MAGPOST_FIELD_BUMPERS = 2;
 const ROLLOVER_LANES = 3;
 
 /**
@@ -1104,19 +1150,17 @@ const KIND_TOPOLOGY: Record<string, Topology> = {
   spring: "deadend",
   deflector: "corner",
   mirror: "corner",
-  swingarm: "straight",
-  scoop: "junction",
   maw: "junction",
 };
 
 /** Turn a topology candidate into a concrete part spot of the dealt kind. */
 function spotForKind(kind: PartSpotKind, c: TopoSpot, rng: () => number): PinballPartSpot {
-  if (kind === "glove" || kind === "firevent" || kind === "swingarm") {
+  if (kind === "glove" || kind === "firevent") {
     // Mounts on one of the corridor's side walls and fires/swings ACROSS it
     const side = rng() < 0.5 ? 1 : -1;
     return { i: c.i, j: c.j, kind, dirI: -c.dirJ * side, dirJ: c.dirI * side, dir2I: 0, dir2J: 0 };
   }
-  if ((kind === "flipper" || kind === "scoop" || kind === "maw") && c.topo === "junction") {
+  if ((kind === "flipper" || kind === "maw") && c.topo === "junction") {
     // Aim down any open leg
     const legs: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     const d = legs[Math.floor(rng() * legs.length)];
@@ -2037,8 +2081,33 @@ function layLaunchChute(
  *     drops a monster pack on the same centres (returned as `plazas`).
  */
 function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number, walkable: number): TilePos[] {
+  // ⚠️ TWO PREDICATES FOR "LAUNCHER", AND THEY DISAGREE. `duelEligible` (the
+  // pass that guards the same soft-lock at the end of decorateMaze) requires
+  // `LAUNCH_KINDS.has(p.kind)`; this one asks only "does it have a heading and
+  // is it not a deflector". A drop TARGET has a heading — which way it faces —
+  // and launches nothing, so it passes here and fails there.
+  //
+  // For loose corridor furniture that over-breadth is long-standing and
+  // untouched here: narrowing it would change every existing floor, which is a
+  // measurement job, not a side effect of this change. It is filed in
+  // OPEN_WORK.md.
+  //
+  // For a MACHINE part it is not survivable. An authored machine is a fixed
+  // arrangement — a target bank IS three targets in a row — so a predicate that
+  // counts a target as a launcher deletes the middle of the bank and ships half
+  // a machine. Measured: target-bank lost seq 1, orbit and ramp-return lost
+  // seq 0, across 4 of 36 floors.
+  //
+  // So machine parts are held to LAUNCH_KINDS, the same bar `duelEligible`
+  // uses. This is NOT an exemption from the soft-lock guard — `assembly.ts` is
+  // explicit that machines do not get one, and a machine's ramp still loses a
+  // genuine duel here and in breakLaunchDuels. It only stops non-launching
+  // furniture being mistaken for a launcher.
   const isLauncher = (p: PinballPartSpot): boolean =>
-    (p.dirI !== 0 || p.dirJ !== 0) && p.kind !== "deflector" && !p.vault;
+    (p.dirI !== 0 || p.dirJ !== 0) &&
+    p.kind !== "deflector" &&
+    !p.vault &&
+    (p.asm === undefined || LAUNCH_KINDS.has(p.kind));
 
   // ── 1. Opposing launchers on a clear line ──
   const drop = new Set<PinballPartSpot>();
@@ -2124,7 +2193,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -2437,6 +2506,77 @@ export function decorateMaze(
   /** A tile a circuit has claimed — reserved from every later placer, so
    *  nothing drops a booster across a highway's lane. */
   const inCircuit = (i: number, j: number): boolean => circuitTiles.has(idx(g, i, j));
+
+  // ── AUTHORED MACHINES: the assembly library, finally called ─────────────
+  //
+  // `maze/assembly.ts` names its own consumer — "the router in
+  // `assembly-place.ts` is what matches them up" — and that router then sat
+  // with ZERO callers. Eight machines with authored relative facings and
+  // chainable ports, ~1,250 lines, tested and green and never run. The
+  // `asm?: AssemblyRef` field below was declared and only ever read, so the two
+  // `p.asm === undefined` exemptions in polishParts were constants.
+  //
+  // AFTER CIRCUITS, BEFORE EVERYTHING ELSE — and the ordering was measured,
+  // not assumed. assembly.ts asks to be placed EARLY, and it is right about
+  // WHY: parts landing late get de-clumped and re-aimed by the polish passes,
+  // "so a machine authored with two bumpers a tile apart was silently pulled
+  // apart". But that protection comes from the `p.asm === undefined`
+  // exemptions in polishParts, which key off the PART, not off when it was
+  // placed — so a machine is just as safe here as it would be three layers up.
+  //
+  // Running it ahead of circuits was tried first and cost 15 floors of 36
+  // their highway loop (circuit.test.ts: 21/36 against a 36/36 invariant).
+  // Machines and rings want the same wide route-adjacent ground, and the ring
+  // is the floor's through-line while a machine is a set piece hanging off it.
+  // So circuits claim first and the machines fill in around them; everything
+  // downstream — the station spine, the corridor deal, chains, hazards — then
+  // fills in around BOTH.
+  //
+  // ⚠️ ITS OWN RNG STREAM, never the floor's. A draw from `rng` here would
+  // reshuffle every downstream pass and reroll every existing floor for every
+  // player. `PlaceOpts` says so at its first field; `surface-paint.ts` is the
+  // precedent. The seed comes from the caller (which holds the real one) and
+  // falls back to a value derived from geometry, so a harness that passes no
+  // seed still gets a deterministic floor rather than a shared-stream draw.
+  const assemblySeed = extras.assemblySeed ?? ((g.w * 73856093) ^ (g.h * 19349663) ^ ((extras.floor ?? 1) * 83492791)) >>> 0;
+  // ⚠️ SLING_PAIR IS WITHHELD, and it is the library's problem rather than the
+  // guard's. It is two slingshots facing each other across a lane (E and W,
+  // assembly-lib.ts) — which is the definition of a LAUNCH DUEL, the
+  // unrecoverable ping-pong `breakLaunchDuels` exists to break, and which
+  // assembly.ts explicitly does NOT exempt machines from: "Aesthetics yield to
+  // authoring; the soft-lock guard does not."
+  //
+  // So on the first floor that placed one, the guard removed a part and the
+  // machine shipped half-built. Handing it to the router anyway would mean
+  // authoring a soft-lock and relying on a later pass to half-dismantle it.
+  // The fix is to re-author the pair at an angle so the two rebounds do not
+  // fire down each other's throat; that is an art call on a mechanism nobody
+  // has played yet, so it is filed rather than guessed at. See OPEN_WORK.md.
+  const PLACEABLE = MACHINES.filter((m) => m.name !== "sling-pair");
+  const assemblyReport = placeAssemblies(g, phi, {
+    machines: PLACEABLE,
+    rng: mulberry32((assemblySeed ^ 0x9d2c5681) >>> 0),
+    routes,
+    start,
+    stairs,
+    occupied: (i, j) =>
+      inChute(i, j) ||
+      inRoom({ i, j }) ||
+      inCircuit(i, j) ||
+      items.some((it) => it.i === i && it.j === j) ||
+      parts.some((q) => q.i === i && q.j === j),
+    budget: extras.assemblies ?? ASSEMBLY_BUDGET,
+    stride: ASSEMBLY_STRIDE,
+  });
+  const assemblyTiles = new Set<number>();
+  for (const placed of assemblyReport.placed) {
+    for (const t of placed.tiles) assemblyTiles.add(t);
+    parts.push(...partsOf(placed));
+  }
+  /** A tile an authored machine has claimed — reserved from every later placer,
+   *  the same contract `inCircuit` has one layer down. */
+  const inAssembly = (i: number, j: number): boolean => assemblyTiles.has(idx(g, i, j));
+
   // ── STATION SPINE (path-first): string the connected booster route down the
   // main artery FIRST, so the floor has one legible "boosters feed into each
   // other" route before anything else fills in. It is its OWN LAYER (like the
@@ -2506,7 +2646,7 @@ export function decorateMaze(
     if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 4) continue; // calm start
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
     if (inRoom(p)) continue;
-    if (inCircuit(p.i, p.j)) continue;
+    if (inCircuit(p.i, p.j) || inAssembly(p.i, p.j)) continue;
     const spot = classifyTopology(g, p, rng);
     if (spot) byTopo[spot.topo].push(spot);
   }
@@ -2526,6 +2666,7 @@ export function decorateMaze(
     !items.some((it) => it.i === c.i && it.j === c.j) &&
     !inRoom(c) &&
     !inCircuit(c.i, c.j) &&
+    !inAssembly(c.i, c.j) &&
     !parts.some((q) => q.i === c.i && q.j === c.j);
 
   for (let chain = 0; chain < chainCount && parts.length < corridorBudget; chain++) {
@@ -3250,6 +3391,205 @@ export function decorateMaze(
   for (const it of items) {
     if (it.kind === "potion") continue;
     it.rarity = rollItemRarity(floorNo, rng);
+  }
+
+  // === THE PLAZA PARTS =====================================================
+  //
+  // These three passes run LAST, after `rollItemRarity`, and that position is
+  // the design — not tidiness.
+  //
+  // `buildLevel` draws every placement phase from ONE rng stream, so inserting
+  // a draw anywhere changes every draw after it: a completely different floor
+  // that renders fine and breaks no test. The floor-census script under
+  // scripts/ exists for exactly that hazard. Adding three kinds to `deal` would
+  // have re-rolled the whole floor from that point on, and made "what did the
+  // new parts change?" unanswerable, because everything would have changed.
+  //
+  // Placed at the very end, every existing phase — down to which weapons rolled
+  // rare — is bit-identical to before. The only difference between a floor
+  // built now and the same seed built yesterday is the new furniture itself.
+  //
+  // The cost of sitting after the launch-chute sweep is that these passes have
+  // to honour `inChute` themselves, which `freeFor` does. That is one explicit
+  // check, against re-rolling every floor in the game.
+
+  // ── HOW MANY: WHAT THIS FLOOR CAN STILL TAKE, MEASURED. ────────────────
+  //
+  // The first version placed 2 arms + 3 wheels + 3 nine-part fields on every
+  // floor — 32 parts, flat. `maze/floor-density.test.ts` caps parts at 34 per
+  // 1000 walkable tiles for legibility (the number is derived: at 34/1k the
+  // mean spacing is 2.7 tiles, one part crossing your line every 0.18 s at
+  // booster speed, already at the edge of reading as an event rather than a
+  // texture). The flat version breached it on 30 of 60 sampled floors, peaking
+  // at 41.2/1k.
+  //
+  // The obvious second attempt — scale the counts by floor AREA, the way
+  // `plazaCap` and the alt-route count do — got it down to 7 of 60 and no
+  // further, because AREA IS NOT THE CONSTRAINT. Measured spare capacity under
+  // the cap, per floor:
+  //
+  //     ringkeep/L1   2234 walkable   30.4/1k    7 parts spare
+  //     ringkeep/L6   4367 walkable   32.1/1k    8 parts spare   <- twice the
+  //     warrens/L20  17773 walkable   19.0/1k  267 parts spare      area, same
+  //
+  // A dense small floor has less room than a sparse one twice its size, so any
+  // divisor tuned to satisfy the tight floors starves the big ones and vice
+  // versa. What the passes actually need to know is how much room is LEFT, and
+  // by this point in the function that is simply readable: every other part is
+  // already placed.
+  //
+  // So it is measured. The passes spend a share of the real remainder, which is
+  // self-correcting — if another pass upstream ever starts placing more, these
+  // quietly place less instead of breaching a gate.
+  const PARTS_PER_1K_CAP = 34; // maze/floor-density.ts DEFAULT_DENSITY.maxPartsPer1k
+  // Spend HALF of what is left, not most of it. 0.7 was the first number and it
+  // came out at 34.14/1k on one seed — over a cap of 34 — because the budget's
+  // denominator and the gate's are not the same measurement: this counts
+  // `floors.length`, the candidate tiles this pass may build on, while
+  // `floor-density.ts` counts `walkableCount(grid)`. They are close and they are
+  // not equal, so a budget that spends right up to the line breaches it
+  // whenever the two disagree in the wrong direction. Half leaves room for that
+  // gap without needing the two counts to be reconciled.
+  const PLAZA_SHARE = 0.5;
+  let plazaBudget = Math.max(
+    0,
+    Math.floor((Math.floor((PARTS_PER_1K_CAP * floors.length) / 1000) - parts.length) * PLAZA_SHARE),
+  );
+  /** Take `n` parts' worth of the remaining budget, or refuse. */
+  const spend = (n: number): boolean => {
+    if (plazaBudget < n) return false;
+    plazaBudget -= n;
+    return true;
+  };
+
+  /** Free floor: not the ends, not the plunger lane, nothing already placed. */
+  const freeFor = (i: number, j: number, clearance: number): boolean => {
+    if (at(g, i, j) !== T_FLOOR) return false;
+    if (i === stairs.i && j === stairs.j) return false;
+    if (i === start.i && j === start.j) return false;
+    if (inChute(i, j)) return false;
+    if (items.some((it) => it.i === i && it.j === j)) return false;
+    if (torches.some((t) => t.i === i && t.j === j)) return false;
+    return !parts.some((q) => Math.max(Math.abs(q.i - i), Math.abs(q.j - j)) <= clearance);
+  };
+
+  // -- MAGPOST FIELDS -- the coin-down-the-pegs cascade, in miniature.
+  //
+  // A STAGGERED lattice, because a square grid of posts has straight channels
+  // through it, and a ball that finds one is not cascading — it is in a
+  // corridor. Offsetting every other row is what makes the path branch.
+  //
+  // BUMPERS ARE MIXED IN, and that is not decoration. Every post takes a slice
+  // of speed; a field of nothing but posts is where momentum goes to die, which
+  // is the exact failure this part has to avoid. The bumpers are the ones that
+  // GIVE speed back, so a cascade sometimes ends faster than it started — that
+  // is what makes a field worth entering on purpose instead of steering around.
+  // They sit at lattice positions rather than extra tiles, so a field's
+  // footprint does not grow with them.
+  let fieldsPlaced = 0;
+  fieldSearch: for (const fp of shuffled(floors, rng)) {
+    if (fieldsPlaced >= (extras.magpostFields ?? MAGPOST_FIELDS_MAX)) break;
+    if (plazaBudget < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) break;
+    if (Math.abs(fp.i - start.i) + Math.abs(fp.j - start.j) < 6) continue;
+    // Clearance ZERO across the patch, not 1. A field needs 20 contiguous open
+    // tiles, which is already a demanding shape; also insisting on a one-tile
+    // moat around every one of them is a 7x6 exclusion, and measured across 24
+    // seeds that found a home on 1 floor in 24 — a part that exists and nobody
+    // meets, which is the exact failure this file was written to catch.
+    //
+    // Zero is also the better rule on its own terms: a field ADJACENT to a
+    // bumper is a field with a bumper in it, and bumpers in the field are the
+    // whole reason a cascade does not drain your pace. Rooms are allowed for
+    // the same reason — they are where the open space is, and a room's bumper
+    // quincunx makes a better peg field than bare floor does.
+    for (let dj = 0; dj < MAGPOST_FIELD_H; dj++) {
+      for (let di = 0; di < MAGPOST_FIELD_W; di++) {
+        if (!freeFor(fp.i + di, fp.j + dj, 0)) continue fieldSearch;
+      }
+    }
+    const cells: TilePos[] = [];
+    for (let dj = 0; dj < MAGPOST_FIELD_H; dj++) {
+      const stag = dj % 2;
+      for (let di = stag; di < MAGPOST_FIELD_W; di += 2) cells.push({ i: fp.i + di, j: fp.j + dj });
+    }
+    if (cells.length < MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS) continue;
+    const picked = shuffled(cells, rng).slice(0, MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS);
+    if (!spend(MAGPOST_FIELD_POSTS + MAGPOST_FIELD_BUMPERS)) break;
+    const fieldId = fieldsPlaced;
+    picked.forEach((c, k) => {
+      if (k < MAGPOST_FIELD_BUMPERS) {
+        parts.push({ kind: "bumper", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, field: fieldId });
+      } else {
+        parts.push({ kind: "magpost", i: c.i, j: c.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, variant: k % 3, field: fieldId });
+      }
+    });
+    fieldsPlaced++;
+  }
+
+  // -- SWINGARMS -- a bar with a hand on the end, sweeping a circle.
+  //
+  // The hand reaches SWINGARM_LEN tiles from the hub, so the arm needs a CLEAR
+  // DISC around it or it sweeps through rock — an arm that spends most of its
+  // rotation inside a wall only works from one side, which is the opposite of
+  // what a sweeping hazard is for. Radius 2 covers the reach plus the hand's
+  // own radius with a tile to spare.
+  let armsPlaced = 0;
+  const ARM_R = 2;
+  for (const ap of shuffled(floors, rng)) {
+    if (armsPlaced >= (extras.swingarms ?? SWINGARMS_MAX)) break;
+    if (plazaBudget < 1) break;
+    if (Math.abs(ap.i - start.i) + Math.abs(ap.j - start.j) < 8) continue; // not on the doorstep
+    if (!freeFor(ap.i, ap.j, 3)) continue;
+    let clear = true;
+    for (let dj = -ARM_R; dj <= ARM_R && clear; dj++) {
+      for (let di = -ARM_R; di <= ARM_R; di++) {
+        if (di * di + dj * dj > ARM_R * ARM_R) continue;
+        if (at(g, ap.i + di, ap.j + dj) !== T_FLOOR) {
+          clear = false;
+          break;
+        }
+      }
+    }
+    if (!clear) continue;
+    // Both directions on a floor, and a phase seed per arm, so two of these in
+    // one region read as a rhythm you time rather than as a matched pair.
+    if (!spend(1)) break;
+    parts.push({
+      kind: "swingarm",
+      i: ap.i,
+      j: ap.j,
+      dirI: 0,
+      dirJ: 0,
+      dir2I: 0,
+      dir2J: 0,
+      spin: rng() < 0.5 ? 1 : -1,
+      phase: rng() * Math.PI * 2,
+    });
+    armsPlaced++;
+  }
+
+  // -- FLYWHEELS -- two counter-rotating wheels you shoot through.
+  //
+  // Needs a straight run: floor two tiles back to enter from and two ahead to
+  // be thrown down, or the barrel fires into a wall. Aimed DOWN-FLOW off the
+  // flow field for the same reason the speedway lanes are — a launcher that
+  // throws you back toward the door is the "speed up that sends you back" bug.
+  let wheelsPlaced = 0;
+  wheelSearch: for (const wp of shuffled(floors, rng)) {
+    if (wheelsPlaced >= (extras.flywheels ?? FLYWHEELS_MAX)) break;
+    if (plazaBudget < 1) break;
+    if (!freeFor(wp.i, wp.j, 2)) continue;
+    for (const [ai, aj] of shuffled([[1, 0], [0, 1]] as Array<[number, number]>, rng)) {
+      const run = [-2, -1, 1, 2].every((k) => at(g, wp.i + ai * k, wp.j + aj * k) === T_FLOOR);
+      if (!run) continue;
+      const fwd = phiAt(g, phi, wp.i + ai * 2, wp.j + aj * 2);
+      const bwd = phiAt(g, phi, wp.i - ai * 2, wp.j - aj * 2);
+      const sign = fwd <= bwd ? 1 : -1;
+      if (!spend(1)) break wheelSearch;
+      parts.push({ kind: "flywheel", i: wp.i, j: wp.j, dirI: ai * sign, dirJ: aj * sign, dir2I: 0, dir2J: 0 });
+      wheelsPlaced++;
+      continue wheelSearch;
+    }
   }
 
   return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas, circuits: committed };

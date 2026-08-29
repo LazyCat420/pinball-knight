@@ -72,30 +72,13 @@ export function disposeAll(): void {
   state.playerSheets.clear();
   state.zombieVariantSheets.forEach((sheet) => sheet.texture.dispose());
   state.zombieVariantSheets = [];
-  state.zombieSheet = null;
-  state.spiderSheet?.texture.dispose();
-  state.spiderSheet = null;
-  state.bruteSheet?.texture.dispose();
-  state.bruteSheet = null;
-  state.wardenSheet?.texture.dispose();
-  state.wardenSheet = null;
-  state.spitterSheet?.texture.dispose();
-  state.spitterSheet = null;
-  state.ghostSheet?.texture.dispose();
-  state.ghostSheet = null;
-  state.batSheet?.texture.dispose();
-  state.batSheet = null;
-  state.slimeSheet?.texture.dispose();
-  state.slimeSheet = null;
-  state.bossSheet?.texture.dispose();
-  state.bossSheet = null;
-  for (const s of [state.goblinSheet, state.pinSheet, state.golemSheet, state.chomperSheet, state.magnetSheet, state.webspinnerSheet]) s?.texture.dispose();
-  state.goblinSheet = state.pinSheet = state.golemSheet = state.chomperSheet = state.magnetSheet = state.webspinnerSheet = null;
-  // The bespoke sheets that arrived AFTER this block was written were never
-  // added to it — six atlases (~4131x81 canvas textures each) leaked per
-  // launch/exit cycle, found 2026-07-30 while adding the baked tints below.
-  for (const s of [state.sporelingSheet, state.jesterSheet, state.croakerSheet, state.rotortailSheet, state.stiltneckSheet, state.houndSheet, state.fishFeetSheet]) s?.texture.dispose();
-  state.sporelingSheet = state.jesterSheet = state.croakerSheet = state.rotortailSheet = state.stiltneckSheet = state.houndSheet = state.fishFeetSheet = null;
+  // EVERY monster atlas, from the map. This block used to name each sheet by
+  // hand and it drifted twice: six bespoke atlases went un-disposed for months
+  // (~4131x81 canvas textures each, leaked per launch/exit cycle, found
+  // 2026-07-30), and `resetState` was missing a different seven. A loop over
+  // `state.sheets` cannot be short of an entry the way a list can.
+  for (const s of Object.values(state.sheets)) s?.texture.dispose();
+  state.sheets = {};
   // The baked TINTED expansion atlases (spawn/factory.ts makeExpansion) — each
   // owns its own CanvasTexture over its own canvas, distinct from the base
   // sheet it was dyed from, so each is its own leak if skipped here.

@@ -8,6 +8,7 @@
  *   right stick  aim: the bow points where you push, and in the FPS rampage it
  *                turns the camera
  *   A / cross    dodge roll — and HOLD is the plunger pull, same as Space
+ *   B / circle   THE FLIPPER BUTTON — tap to swing, hold to cradle (same as F)
  *   X / square   attack (hold = heavy charge, same as holding LMB)
  *   RT           attack alias, because a trigger is where a shoulder-shooter
  *                player's finger already is
@@ -113,6 +114,11 @@ export function readPad(pad: PadLike | null | undefined, out: VirtualPad, prev: 
   out.attack ||= attack;
   out.dodge ||= dodge;
   out.sprint ||= pressed(pad, BTN.LT);
+  // B/circle is the flipper button. It lives HERE and not in TAP_BINDINGS
+  // because it needs its HELD state as well as its edge — a held flipper stays
+  // up and cradles — and TAP_BINDINGS only ever synthesises a keydown+keyup
+  // pair, which cannot express a hold.
+  out.flip ||= pressed(pad, BTN.B);
 
   // Rising edges — see the `prev: null` contract above.
   const buttons: boolean[] = [];
@@ -121,6 +127,7 @@ export function readPad(pad: PadLike | null | undefined, out: VirtualPad, prev: 
 
   if (edge(BTN.X) || edge(BTN.RT)) out.attackTap = true;
   if (edge(BTN.A)) out.dodgeTap = true;
+  if (edge(BTN.B)) out.flipTap = true;
 
   const taps: string[] = [];
   for (const b of TAP_BINDINGS) if (edge(b.btn)) taps.push(b.key);

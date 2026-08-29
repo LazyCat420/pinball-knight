@@ -38,6 +38,7 @@ import { resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
 import { installTouchControls, isTouchDevice, type TouchControls } from "./gui/touch";
 import { updateShots } from "./shots";
+import { resetTilt } from "./entities/nudge";
 import { createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
 import { installEngine } from "./GameEngine";
@@ -479,6 +480,7 @@ function buildLevel(level: number): void {
   state.targetsHit = 0;
   state.partComboHits = 0;
   state.frenzyPaid = false;
+  resetTilt(); // the tilt meter is FLOOR-scoped, like the frenzy meter above it
   state.freezeT = 0;
   state.magicianT = rollMagicianClock();
   state.witchSpawned = false;

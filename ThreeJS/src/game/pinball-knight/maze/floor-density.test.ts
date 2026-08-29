@@ -10,56 +10,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { mulberry32, isWalkable } from "./generator";
-import { buildTrackFloor } from "./track-floor";
-import { decorateMaze } from "./decorate";
-import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
-import { walkableCount } from "./floor-metrics";
+import { ARCHETYPES } from "./archetypes";
 import { measureDensity, checkDensity, formatDensity, DEFAULT_DENSITY } from "./floor-density";
-import { floorRng } from "./floor-seed";
-import {
-  levelConfig,
-  floorBudgets,
-  PARTS_BASE,
-  PARTS_PER_LEVEL,
-  PARTS_MAX,
-  TARGETS_PER_FLOOR,
-  TRAPDOORS_PER_FLOOR,
-  VAULT_RAMPS_PER_FLOOR,
-  HAZARDS_BASE,
-  HAZARDS_PER_LEVEL,
-  HAZARDS_MAX,
-} from "../constants";
-
-/** A finished floor: geometry, then content, the way core.ts builds one. */
-function liveFloor(level: number, seed: number, archIndex?: number) {
-  const cfg = levelConfig(level);
-  const arch = archIndex === undefined ? archetypeFor(level) : ARCHETYPES[archIndex];
-  const rng = floorRng(seed, level);
-  const windiness = windinessFor(level, arch, rng);
-  const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
-    profile: arch.track,
-    density: Math.max(0.35, Math.min(0.85, windiness)),
-  });
-  if (!track) return null;
-  const grid = track.grid;
-  const walkable = walkableCount(grid);
-  const budget = floorBudgets(level, walkable);
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + budget.partsArea;
-  const plan = decorateMaze(grid, rng, budget.zombies, budget.torches, partBudget, [], {
-    targets: TARGETS_PER_FLOOR,
-    trapdoors: TRAPDOORS_PER_FLOOR,
-    vaultRamps: VAULT_RAMPS_PER_FLOOR,
-    hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
-    launchBreaks: cfg.launchBreaks,
-    endpoints: { start: track.start, stairs: track.stairs },
-    strictLaunchers: true,
-    chute: track.chute ?? null,
-    orbit: track.orbit ?? null,
-    wallsAuthored: true,
-    floor: level,
-  });
-  return { grid, plan, arch, walkable };
-}
+import { liveFloor } from "../testkit/live-floor";
 
 describe("floor density", () => {
   it("every archetype at every depth stays inside the legibility bands", () => {

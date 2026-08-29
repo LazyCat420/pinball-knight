@@ -7,7 +7,6 @@
  * injection purely because it lived in core; now they can import it.
  */
 import { state } from "../state";
-import { spawnBoss } from "../boss";
 import { showToast } from "../ui";
 import { tileCenter } from "../maze/generator";
 import { REAPER_HP, REAPER_SCALE, REAPER_SPEED_BASE, REAPER_TINT } from "../constants";

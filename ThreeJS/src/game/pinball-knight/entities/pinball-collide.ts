@@ -89,6 +89,21 @@ import {
   FRENZY_PART_HITS,
   FRENZY_GOLD,
   FLIPPER_SPEED,
+  FLIPPER_PASSIVE_SPEED,
+  SWINGARM_LEN,
+  SWINGARM_HAND_R,
+  SWINGARM_SPEED,
+  SWINGARM_COOLDOWN,
+  swingArmPhase,
+  FLYWHEEL_RADIUS,
+  FLYWHEEL_SPEED,
+  FLYWHEEL_COOLDOWN,
+  FLYWHEEL_STEER_LOCK,
+  MAGPOST_RADIUS,
+  MAGPOST_KEEP,
+  MAGPOST_MIN_EXIT,
+  MAGPOST_SCATTER,
+  MAGPOST_COOLDOWN,
   FLIPPER_COOLDOWN,
   FLIPPER_RADIUS,
   MIRROR_RADIUS,
@@ -110,7 +125,8 @@ import { moveCircle } from "../engine/collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { PALETTE_HEX } from "../render/palette";
-import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
+import { recordShot, hitOrbitRail, hitRollover, trySkillShot, payTimedFlip } from "../shots";
+import { swingIsLive, isHeldUp, releaseCradle, noteCradled } from "./flippers";
 import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../engine/camera";
 import { syncActorMesh, damageZombie } from "./combat";
@@ -132,6 +148,9 @@ export interface PinballDeps {
   setSteerLock(t: number): void;
   /** Extend the no-steer window to at least `t`, never shortening it (boosters). */
   raiseSteerLock(t: number): void;
+  /** Where the player is pointing this frame, or null. The flipper CRADLE aims
+   *  its launch off this — see entities/flippers.ts. */
+  aimHint(): { x: number; z: number } | null;
 }
 
 /** Everything a handler needs about one player↔part contact. */
@@ -770,12 +789,72 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     deps.startDrop(part.x, part.z);
   },
 
-  flipper: ({ part, p, d2, inMomentum }) => {
-    // The big paddle CATAPULTS you along its swing at the hardest speed in the
-    // machine (walking or riding). Slice 7 — AIM-ASSIST: the exit is the paddle
+  flipper: ({ part, p, d2, inMomentum, deps }) => {
+    // The big paddle CATAPULTS you along its swing. What it is WORTH depends on
+    // the button (entities/flippers.ts owns the button and the swing clock):
+    //
+    //   held      → CRADLE. Caught, parked, aimable. Release fires.
+    //   live      → the timed shot: FLIPPER_SPEED, a named shot, a payout.
+    //   otherwise → passive contact at FLIPPER_PASSIVE_SPEED.
+    //
+    // Slice 7 AIM-ASSIST still applies to a moving entry: the exit is the paddle
     // angle BLENDED with your approach line, so a skilled entry angle lets you
     // aim off the flipper (paddle still dominates, so it can't reverse you).
-    if (d2 > FLIPPER_RADIUS * FLIPPER_RADIUS) return;
+    const inReach = d2 <= FLIPPER_RADIUS * FLIPPER_RADIUS;
+
+    // ── The cradle, before the radius gate: a cradled knight who walked off
+    // the bat has to be let go even though they are no longer in reach. ──
+    if (part.cradled) {
+      if (!isHeldUp(part) || !inReach) {
+        const fired = inReach; // walked away = escaped, released = launched
+        releaseCradle(part, fired);
+        if (!fired) return;
+        // A cradled launch is AIMED: the move stick bends the exit off the
+        // paddle line. This is the whole reason to trap instead of taking the
+        // angle you arrived at, so the blend leans further than the aim-assist
+        // above (0.55/0.45 rather than 0.72/0.38) while the paddle still wins.
+        const a = deps.aimHint?.() ?? null;
+        let cx = part.dirX;
+        let cz = part.dirZ;
+        if (a && (a.x !== 0 || a.z !== 0)) {
+          const bx = part.dirX * 0.55 + a.x * 0.45;
+          const bz = part.dirZ * 0.55 + a.z * 0.45;
+          const bl = Math.hypot(bx, bz) || 1;
+          cx = bx / bl;
+          cz = bz / bl;
+        }
+        p.momX = cx;
+        p.momZ = cz;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, FLIPPER_SPEED);
+        onPartTrigger();
+        part.hitT = 0;
+        state.vfx?.sparks(part.x, 0.5, part.z, cx, cz, 20);
+        requestShake(0.26);
+        sfxSpring();
+        recordShot("flipper");
+        payTimedFlip();
+        return;
+      }
+      // Still held and still on the bat: stay parked. Killing momentum every
+      // frame is what makes the cradle a hold rather than a slow slide off.
+      p.momSpeed = 0;
+      return;
+    }
+
+    if (!inReach) return;
+
+    // ── Caught by a paddle that is up and waiting: cradle it. ──
+    if (isHeldUp(part)) {
+      part.cradled = true;
+      p.momSpeed = 0;
+      part.hitT = 0;
+      onPartTrigger();
+      noteCradled();
+      sfxSpring();
+      return;
+    }
+
+    const timed = swingIsLive(part);
     let ex = part.dirX;
     let ez = part.dirZ;
     if (inMomentum && p.momSpeed > 0.5) {
@@ -787,14 +866,112 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     }
     p.momX = ex;
     p.momZ = ez;
-    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, FLIPPER_SPEED));
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, timed ? FLIPPER_SPEED : FLIPPER_PASSIVE_SPEED));
     onPartTrigger();
     part.cooldownT = FLIPPER_COOLDOWN;
     part.hitT = 0;
-    state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, 16);
-    requestShake(0.22);
+    part.swingT = undefined; // the shot spent this swing, timed or not
+    state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, timed ? 22 : 12);
+    requestShake(timed ? 0.28 : 0.18);
     sfxSpring();
     recordShot("flipper");
+    if (timed) payTimedFlip();
+  },
+
+  swingarm: ({ part, p, deps }) => {
+    // ⚠️ THE HAND, NOT THE HUB. `d2` is the distance to the part's TILE — for
+    // every other kind that is the thing you touch, but a swingarm's business
+    // end is a metre and a bit away and moving. So this recomputes the hand's
+    // world position from `swingArmPhase`, the SAME function the renderer draws
+    // it with, and tests against that. Using `d2` here would make the part hit
+    // you at the hub, where there is visibly nothing.
+    const a = swingArmPhase(state.elapsed, part.spin ?? 1, part.phase ?? 0);
+    const hx = part.x + Math.cos(a) * SWINGARM_LEN;
+    const hz = part.z + Math.sin(a) * SWINGARM_LEN;
+    const hdx = p.x - hx;
+    const hdz = p.z - hz;
+    const r = SWINGARM_HAND_R + PLAYER_R * 0.5;
+    if (hdx * hdx + hdz * hdz > r * r) return;
+
+    // Thrown along the hand's TANGENT — the direction it was actually
+    // travelling — so the exit depends on WHEN you met it. That is the whole
+    // part: a swingarm is a shot you wait for rather than one you aim.
+    const spin = part.spin ?? 1;
+    const ex = -Math.sin(a) * spin;
+    const ez = Math.cos(a) * spin;
+    p.momX = ex;
+    p.momZ = ez;
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SWINGARM_SPEED));
+    onPartTrigger();
+    part.cooldownT = SWINGARM_COOLDOWN;
+    part.hitT = 0;
+    deps.raiseSteerLock(0.16); // you were HIT; you do not get to steer out of it
+    state.vfx?.sparks(hx, 0.4, hz, ex, ez, 18);
+    requestShake(0.3);
+    sfxHeavy();
+    recordShot("swingarm");
+  },
+
+  flywheel: ({ part, p, d2, deps }) => {
+    // Fed between the wheels and spat out the far side. The exit speed does NOT
+    // read `p.momSpeed` — the wheels are doing the work, not your momentum — so
+    // walking into one at a standstill still throws you at FLYWHEEL_SPEED. That
+    // makes it the RECOVERY part: the one thing on the floor that can restart a
+    // dead run, which a `Math.max` against your current speed would not do.
+    if (d2 > FLYWHEEL_RADIUS * FLYWHEEL_RADIUS) return;
+    p.momX = part.dirX;
+    p.momZ = part.dirZ;
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, FLYWHEEL_SPEED);
+    onPartTrigger();
+    part.cooldownT = FLYWHEEL_COOLDOWN;
+    part.hitT = 0;
+    deps.setSteerLock(FLYWHEEL_STEER_LOCK); // committed to the barrel, briefly
+    state.vfx?.sparks(part.x, 0.45, part.z, part.dirX, part.dirZ, 20);
+    requestShake(0.24);
+    sfxSpin();
+    recordShot("flywheel");
+  },
+
+  magpost: ({ part, p, dx, dz, d2, inMomentum }) => {
+    // A post DEFLECTS. Momentum only: a walking player threading a peg field
+    // should be able to walk through it, or the field becomes a wall.
+    if (!inMomentum || p.momSpeed <= 0) return;
+    const r = MAGPOST_RADIUS + PLAYER_R;
+    if (d2 > r * r) return;
+    const dist = Math.sqrt(d2) || 1;
+    // Reflect off the post's surface normal — the line from post to player.
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const dot = p.momX * nx + p.momZ * nz;
+    if (dot > 0) return; // already travelling away; do not re-bounce a graze
+    let rx = p.momX - 2 * dot * nx;
+    let rz = p.momZ - 2 * dot * nz;
+    // A little jitter, because a perfectly elastic lattice is DETERMINISTIC —
+    // and a pachinko field whose cascade is predictable is just a corridor with
+    // extra steps. Derived from the post's own tile so a floor still replays
+    // identically from its seed.
+    const jitter = (((part.i * 73856093) ^ (part.j * 19349663)) % 1000) / 1000 - 0.5;
+    const ja = jitter * MAGPOST_SCATTER;
+    const jc = Math.cos(ja);
+    const js = Math.sin(ja);
+    const jx = rx * jc - rz * js;
+    const jz = rx * js + rz * jc;
+    const l = Math.hypot(jx, jz) || 1;
+    rx = jx / l;
+    rz = jz / l;
+    p.momX = rx;
+    p.momZ = rz;
+    // Barely any speed is taken, and never below the floor. A cascade of seven
+    // posts at even 0.9 each would land you at 48% of what you came in with —
+    // the "you just lose momentum in the pegs" failure. 0.94 with a hard floor
+    // keeps a field a scramble rather than a sand trap.
+    p.momSpeed = Math.max(MAGPOST_MIN_EXIT, p.momSpeed * MAGPOST_KEEP);
+    onPartTrigger();
+    part.cooldownT = MAGPOST_COOLDOWN;
+    part.hitT = 0;
+    state.vfx?.sparks(part.x, 0.4, part.z, rx, rz, 4);
+    sfxRoll();
+    recordShot("post");
   },
 
   mirror: ({ part, p, d2, inMomentum }) => {
@@ -880,28 +1057,6 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     hitRollover(part);
     trySkillShot(part);
     state.vfx?.sparks(part.x, 0.3, part.z, 0, 0, 4);
-  },
-
-  // ── Track-B Runtime Movers ─────────────────────────────────────────
-  swingarm: selfFiring,
-
-  scoop: ({ part, p, d2, inMomentum }) => {
-    // Saucer scoop: holds the knight for 1.1s and ejects along authored dirX, dirZ.
-    if (p.grabT > 0 || d2 > 0.6 * 0.6) return;
-    p.grabT = 1.1; // SCOOP_HOLD
-    p.grabX = part.x;
-    p.grabZ = part.z;
-    p.throwDirX = part.dirX || 1;
-    p.throwDirZ = part.dirZ || 0;
-    p.throwSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * 1.25, 14.0));
-    onPartTrigger();
-    part.cooldownT = 2.0;
-    part.hitT = 0;
-    requestHitstop(0.06);
-    requestShake(0.15);
-    state.vfx?.sparks(part.x, 0.4, part.z, 0, 0, 12);
-    sfxHeavy();
-    recordShot("bank");
   },
 
   maw: ({ part, p, d2, inMomentum, deps }) => {

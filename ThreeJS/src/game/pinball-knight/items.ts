@@ -72,7 +72,9 @@ export interface WeaponDef {
    */
   momentumScaling?: boolean;
   /** Ranged only — extra enemies a shot passes THROUGH before dying. Baseline
-   *  for the weapon; STACKS with the Piercer/Railgun cards (cards.ts pierce).
+   *  for the weapon; STACKS with any card carrying `pierce` (cards.ts) — today
+   *  `venomgland` and `webspinnersilk`. This line used to name "the
+   *  Piercer/Railgun cards", which have never existed under those names.
    *  This is the bow's niche: the gun out-ranges and out-paces it, but only the
    *  bow threads a whole corridor queue with one arrow. */
   pierce?: number;

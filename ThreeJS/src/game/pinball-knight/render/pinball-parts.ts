@@ -20,12 +20,11 @@ import * as THREE from "three";
 import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
-import { swingAngle } from "../entities/swing-arm";
 import { PALETTE_HEX } from "./palette";
 import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
 import type { ElementMaterial } from "../fx/elements/element";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -101,9 +100,11 @@ function geo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
 }
 
 // Primitive shorthands that key the cache off the constructor arguments, so
-// two calls with identical numbers get the identical buffer. ExtrudeGeometry
-// is deliberately absent: both of its uses `.translate()` the result, and a
-// shared geometry translated once per part would walk away from the origin.
+// two calls with identical numbers get the identical buffer. Two INLINE uses of
+// ExtrudeGeometry stay out of this cache on purpose: both `.translate()` the
+// result, and a shared geometry translated once per part would walk away from
+// the origin. `flipperGeo` below is cached because it does not — it is built at
+// the origin and oriented by rotating the MESH, which is per-instance state.
 const boxGeo = (...a: ConstructorParameters<typeof THREE.BoxGeometry>): THREE.BoxGeometry =>
   geo(`box|${a.join()}`, () => new THREE.BoxGeometry(...a));
 const cylGeo = (...a: ConstructorParameters<typeof THREE.CylinderGeometry>): THREE.CylinderGeometry =>
@@ -633,22 +634,192 @@ function buildTrapdoor(): THREE.Group {
 
 // ── Wave-G parts + Wave-H hazards ───────────────────────────────
 
+/**
+ * THE FLIPPER OUTLINE — the silhouette from an actual pinball machine.
+ *
+ * A flipper bat is not a rectangle. It is TWO CIRCLES joined by their external
+ * tangents: a fat pivot end (`r0`) and a narrow tip (`r1`) a bat-length `L`
+ * apart. That is the whole shape, and it is the taper plus the two round ends
+ * that make it read as a flipper — a box has neither, which is why the old
+ * `boxGeo(0.9, 0.12, 0.24)` bat read as a plank with a gold cap.
+ *
+ *   phi = asin((r0 - r1) / L)   how far the tangent tilts off the centre line
+ *   a   = PI/2 + phi            the angle, on BOTH circles, where it touches
+ *
+ * Traced in the XY plane and extruded along +Z, then laid flat by rotating the
+ * MESH (see `buildFlipper`) — never the geometry, which is shared.
+ */
+function flipperShape(r0: number, r1: number, L: number): THREE.Shape {
+  const a = Math.PI / 2 + Math.asin((r0 - r1) / L);
+  const s = new THREE.Shape();
+  s.moveTo(r0 * Math.cos(a), r0 * Math.sin(a)); // upper tangent, at the pivot
+  s.lineTo(L + r1 * Math.cos(a), r1 * Math.sin(a)); // ...running out to the tip
+  s.absarc(L, 0, r1, a, -a, true); // round the tip, over the front
+  s.lineTo(r0 * Math.cos(-a), r0 * Math.sin(-a)); // lower tangent, back to the pivot
+  s.absarc(0, 0, r0, -a, a - Math.PI * 2, true); // round the butt, behind the pivot
+  return s;
+}
+
+/**
+ * A flipper body, cached like the primitive shorthands above. Inflating the
+ * outline by `e` is just `r0 + e, r1 + e` at the same `L` — the offset of a
+ * tangent hull is the same hull with fatter circles — which is how the rubber
+ * sleeve is built from the same function as the bat it wraps.
+ */
+const flipperGeo = (r0: number, r1: number, L: number, depth: number): THREE.ExtrudeGeometry =>
+  geo(
+    `flipper|${r0},${r1},${L},${depth}`,
+    () =>
+      new THREE.ExtrudeGeometry(flipperShape(r0, r1, L), {
+        depth,
+        curveSegments: 6, // low-poly on purpose: the quantize pass eats the rest
+        bevelEnabled: true,
+        bevelThickness: 0.018,
+        bevelSize: 0.014,
+        bevelSegments: 1,
+      }),
+  );
+
+const FLIP_R0 = 0.135; // pivot-end radius
+const FLIP_R1 = 0.06; // tip radius
+const FLIP_LEN = 0.72; // pivot centre → tip centre
+const FLIP_RUBBER = 0.035; // how far the sleeve stands proud of the bat
+
 function buildFlipper(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
-  // A pivoting paddle: a wide steel bat with a gold striking edge + a hub.
+  // A pivoting paddle: the tapered steel bat, a gold rubber sleeve around it,
+  // and the pivot post through the fat end. The paddle group's ORIGIN is the
+  // pivot, so the swing is a plain rotation about it.
   const paddle = new THREE.Group();
-  const bat = new THREE.Mesh(boxGeo(0.9, 0.12, 0.24), std(C_STEEL, C_ARCANE, 0.2));
-  bat.position.x = 0.35;
-  const edge = new THREE.Mesh(boxGeo(0.12, 0.14, 0.26), stdOwn(C_GOLD, C_GOLD, 0.7));
-  edge.position.x = 0.78;
-  paddle.add(bat, edge);
-  paddle.position.y = 0.12;
-  const hub = new THREE.Mesh(cylGeo(0.14, 0.16, 0.14, 12), std(C_STEEL_DK));
-  hub.position.y = 0.07;
+
+  const bat = new THREE.Mesh(flipperGeo(FLIP_R0, FLIP_R1, FLIP_LEN, 0.15), std(C_STEEL, C_ARCANE, 0.2));
+  bat.rotation.x = -Math.PI / 2; // shape's XY → the floor plane; extrusion → +Y
+  bat.position.y = 0.02;
+
+  // The sleeve: the same outline inflated, short, and sitting inside the bat's
+  // height so it shows as a band around the sides — the striking surface, and
+  // the part the animator flares. It OWNS its material (stdOwn) for that.
+  const sleeve = new THREE.Mesh(
+    flipperGeo(FLIP_R0 + FLIP_RUBBER, FLIP_R1 + FLIP_RUBBER, FLIP_LEN, 0.07),
+    stdOwn(C_GOLD, C_GOLD, 0.7),
+  );
+  sleeve.rotation.x = -Math.PI / 2;
+  sleeve.position.y = 0.055;
+
+  paddle.add(bat, sleeve);
+
+  const hub = new THREE.Mesh(cylGeo(0.075, 0.085, 0.22, 10), std(C_STEEL_DK));
+  hub.position.y = 0.11; // the post stands proud of the bat it hinges
   gp.add(hub, paddle);
   gp.rotation.y = yawFor(dirX, dirZ);
+  paddle.rotation.y = FLIPPER_REST; // cocked back until it fires
   gp.userData.paddle = paddle;
-  gp.userData.edgeMat = edge.material as THREE.MeshStandardMaterial;
+  gp.userData.edgeMat = sleeve.material as THREE.MeshStandardMaterial;
+  return gp;
+}
+
+/**
+ * SWINGARM — a bar with a hand on the end, and a hub it spins about.
+ *
+ * The whole arm is one child group rotated about Y by the animator; the hub
+ * stays put. The HAND is deliberately the loudest thing on it (gold, emissive,
+ * bigger than the bar is thick) because the hand is the only part that
+ * connects — a player has to be able to see WHICH END will hit them, and from
+ * the iso view a uniform bar reads as a wall sweeping the room.
+ */
+function buildSwingArm(): THREE.Group {
+  const gp = new THREE.Group();
+  const post = new THREE.Mesh(cylGeo(0.16, 0.19, 0.34, 10), std(C_STEEL_DK));
+  post.position.y = 0.17;
+
+  const arm = new THREE.Group();
+  const bar = new THREE.Mesh(boxGeo(SWINGARM_LEN, 0.09, 0.14), std(C_STEEL, C_ARCANE, 0.25));
+  bar.position.set(SWINGARM_LEN / 2, 0.3, 0);
+  // The hand: a fist-sized block with a stubby thumb, so it reads as a HAND
+  // from above rather than as a lump on a stick.
+  const hand = new THREE.Group();
+  const palm = new THREE.Mesh(boxGeo(0.3, 0.2, 0.34), stdOwn(C_GOLD, C_GOLD, 0.75));
+  const thumb = new THREE.Mesh(boxGeo(0.16, 0.14, 0.12), stdOwn(C_GOLD, C_GOLD, 0.55));
+  thumb.position.set(0.05, 0.02, 0.2);
+  hand.add(palm, thumb);
+  hand.position.set(SWINGARM_LEN, 0.3, 0);
+  arm.add(bar, hand);
+  gp.add(post, arm);
+  gp.userData.arm = arm;
+  gp.userData.handMat = palm.material as THREE.MeshStandardMaterial;
+  return gp;
+}
+
+/**
+ * FLYWHEEL — two counter-rotating wheels with a shooting gap between them.
+ *
+ * Both wheels sit ACROSS the launch direction with the gap on the part's axis,
+ * so the silhouette says "go through here" from above. Each wheel owns its own
+ * material because the animator spins them opposite ways and flares them on a
+ * shot; sharing one would put every flywheel on the floor in lockstep.
+ */
+function buildFlywheel(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const rig = new THREE.Group();
+  const wheels: THREE.Mesh[] = [];
+  for (const side of [1, -1]) {
+    const w = new THREE.Mesh(cylGeo(0.34, 0.34, 0.13, 12), stdOwn(C_STEEL, C_ARCANE, 0.4));
+    // Lying in the floor plane, spinning about Y — the axis a top-down player
+    // reads as "these are gripping something passing between them".
+    w.position.set(0, 0.34, side * 0.42);
+    wheels.push(w);
+    // Tread blocks, so a spinning wheel actually LOOKS like it is spinning.
+    // Without them a smooth cylinder rotating about its own axis of symmetry is
+    // visually identical to a stationary one, and the part reads as dead.
+    for (let k = 0; k < 4; k++) {
+      const t = new THREE.Mesh(boxGeo(0.1, 0.16, 0.08), stdOwn(C_GOLD, C_GOLD, 0.5));
+      const a = (k / 4) * Math.PI * 2;
+      t.position.set(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3);
+      t.rotation.y = -a;
+      w.add(t);
+    }
+    const mount = new THREE.Mesh(cylGeo(0.09, 0.11, 0.34, 8), std(C_STEEL_DK));
+    mount.position.set(0, 0.17, side * 0.42);
+    rig.add(w, mount);
+  }
+  rig.rotation.y = yawFor(dirX, dirZ);
+  gp.add(rig);
+  gp.userData.wheels = wheels;
+  return gp;
+}
+
+/**
+ * MAGPOST — a pachinko post. Three looks, one behaviour.
+ *
+ * "Different types of posts" varies the CAP only: a dome, a ring and a spike
+ * over the same slim shaft. The collision radius is identical for all three on
+ * purpose — a field where some posts are secretly bigger than others is a
+ * field the player cannot read, and the whole appeal of a peg cascade is that
+ * you can see the geometry and still not predict it.
+ */
+function buildMagPost(variant: number): THREE.Group {
+  const gp = new THREE.Group();
+  const shaft = new THREE.Mesh(cylGeo(0.1, 0.12, 0.42, 8), std(C_STEEL_DK));
+  shaft.position.y = 0.21;
+  gp.add(shaft);
+  const v = ((variant % 3) + 3) % 3;
+  if (v === 0) {
+    const dome = new THREE.Mesh(sphereGeo(0.15, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), stdOwn(C_ARCANE, C_ARCANE, 0.7));
+    dome.position.y = 0.42;
+    gp.add(dome);
+    gp.userData.cap = dome.material;
+  } else if (v === 1) {
+    const ring = new THREE.Mesh(torusGeo(0.14, 0.045, 6, 12), stdOwn(C_GOLD, C_GOLD, 0.6));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.44;
+    gp.add(ring);
+    gp.userData.cap = ring.material;
+  } else {
+    const spike = new THREE.Mesh(coneGeo(0.13, 0.24, 6), stdOwn(C_SHOT, C_SHOT, 0.55));
+    spike.position.y = 0.53;
+    gp.add(spike);
+    gp.userData.cap = spike.material;
+  }
   return gp;
 }
 
@@ -816,39 +987,6 @@ function buildMagStrip(): THREE.Group {
   return gp;
 }
 
-function buildSwingArm(dirX: number, dirZ: number): THREE.Group {
-  const gp = new THREE.Group();
-  const pillar = new THREE.Mesh(cylGeo(0.12, 0.16, 0.45, 8), std(C_STEEL_DK, C_ARCANE, 0.2));
-  pillar.position.y = 0.225;
-  gp.add(pillar);
-
-  const arm = new THREE.Group();
-  const blade = new THREE.Mesh(boxGeo(1.4, 0.12, 0.16), std(C_STEEL, C_GOLD, 0.4));
-  blade.position.set(0.7, 0.25, 0);
-  const edge = new THREE.Mesh(boxGeo(1.35, 0.04, 0.04), std(C_GOLD, C_GOLD, 0.8));
-  edge.position.set(0.7, 0.25, 0.09);
-  arm.add(blade, edge);
-
-  gp.add(arm);
-  gp.rotation.y = yawFor(dirX, dirZ);
-  gp.userData.arm = arm;
-  return gp;
-}
-
-function buildScoop(dirX: number, dirZ: number): THREE.Group {
-  const gp = new THREE.Group();
-  const ring = new THREE.Mesh(torusGeo(0.35, 0.06, 8, 16), std(C_STEEL_DK, C_ARCANE, 0.3));
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.04;
-  const cupMat = stdOwn(C_STEEL_DK, C_ARCANE, 0.4);
-  const cup = new THREE.Mesh(cylGeo(0.32, 0.22, 0.08, 12), cupMat);
-  cup.position.y = 0.04;
-  gp.add(ring, cup);
-  gp.rotation.y = yawFor(dirX, dirZ);
-  gp.userData.cupMat = cupMat;
-  return gp;
-}
-
 function buildMaw(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   const base = new THREE.Mesh(boxGeo(0.7, 0.2, 0.7), std(C_STEEL_DK, C_STEEL_DK, 0.1));
@@ -880,6 +1018,13 @@ export interface PartBuildCtx {
   /** Second leg — only the deflector's corner bank uses it. */
   dir2X: number;
   dir2Z: number;
+  /**
+   * Cosmetic variant index — only the magpost uses it, to pick one of three
+   * caps. OPTIONAL so the three non-placement call sites (the instancer's two
+   * orientation probes and the dev art-QA spawn) need not invent one; a post
+   * built without it still gets a look, just always the same one.
+   */
+  variant?: number;
 }
 
 type PartBuilder = (c: PartBuildCtx) => THREE.Group;
@@ -913,6 +1058,9 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   target: ({ dirX, dirZ }) => buildTarget(dirX, dirZ),
   trapdoor: () => buildTrapdoor(),
   flipper: ({ dirX, dirZ }) => buildFlipper(dirX, dirZ),
+  swingarm: () => buildSwingArm(),
+  flywheel: ({ dirX, dirZ }) => buildFlywheel(dirX, dirZ),
+  magpost: ({ variant }) => buildMagPost(variant ?? 0),
   mirror: ({ dirX, dirZ }) => buildMirror(dirX, dirZ),
   pit: () => buildPit(),
   gravepit: () => buildGravePit(),
@@ -921,8 +1069,6 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   magstrip: () => buildMagStrip(),
   rollover: ({ dirX, dirZ }) => buildRollover(dirX, dirZ),
   lamp: () => buildLamp(),
-  swingarm: ({ dirX, dirZ }) => buildSwingArm(dirX, dirZ),
-  scoop: ({ dirX, dirZ }) => buildScoop(dirX, dirZ),
   maw: ({ dirX, dirZ }) => buildMaw(dirX, dirZ),
 };
 
@@ -987,7 +1133,7 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       inst.place(index, x, z, yawFor(dirX, dirZ));
       mesh = instancedHandle(x, z, inst.userDataFor(index, Math.random() * Math.PI * 2));
     } else {
-      mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z });
+      mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z, variant: s.variant });
       mesh.position.set(x, 0, z);
       // NAMED, and not for debugging alone. A part is a Group of 3-13 meshes and
       // nothing else in the scene says so, which means a draw-call census can
@@ -1019,8 +1165,14 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       bank: s.bank,
       seq: s.seq,
       lit: s.bank !== undefined ? false : undefined,
-      // Electric plates share a clock but stagger phase so a room pulses as a wave.
-      phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : undefined,
+      // Electric plates share a clock but stagger phase so a room pulses as a
+      // wave. A SWINGARM's phase is its authored seed instead — it comes from
+      // the level plan rather than from Math.random, because the physics reads
+      // it too and a floor has to replay identically from its seed.
+      phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : s.kind === "swingarm" ? (s.phase ?? 0) : undefined,
+      spin: s.kind === "swingarm" ? (s.spin ?? 1) : undefined,
+      variant: s.kind === "magpost" ? (s.variant ?? 0) : undefined,
+      field: s.field,
       orbit: s.orbit,
       orbitSeq: s.orbitSeq,
       lane: s.lane,
@@ -1121,6 +1273,11 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   target: 0.6,
   trapdoor: TRAPDOOR_DROP + 1.6,
   flipper: 0.6,
+  swingarm: 0.6,
+  flywheel: 0.6,
+  // A post is glanced off many times in one cascade; a long flash would smear
+  // the whole field into one lit blur instead of showing the path taken.
+  magpost: 0.25,
   mirror: 0.6,
   pit: 0.6,
   gravepit: 0.6,
@@ -1129,8 +1286,6 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   magstrip: 0.6,
   rollover: 0.6,
   lamp: 0.6,
-  swingarm: 0.6,
-  scoop: 1.1,
   maw: 0.8,
 };
 
@@ -1375,20 +1530,77 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   },
 
   flipper: (part) => {
-    // the paddle SNAPS up on a hit, then eases back down
+    // The paddle SNAPS through its arc, then eases back to rest.
+    //
+    // It sweeps about Y — ACROSS the floor, the way a flipper does — and not
+    // about Z, which is what this used to do: rotating the bat about its own
+    // long axis' perpendicular tipped it UP like a drawbridge, a motion no
+    // pinball table has and one the iso camera reads as the part falling over.
+    // The arc carries it THROUGH the launch direction (rest is negative, the
+    // top of the swing positive) so the follow-through is visible.
+    //
+    // The clock is `swingT` when the BUTTON drove this paddle and `hitT` when
+    // something merely ran into it. Both exist: a commanded swing has to be
+    // visible from the moment it is pressed, before anything has touched the
+    // part, and `hitT` alone cannot show that — it is stamped by contact.
+    // `held` parks the paddle at the top for as long as the button is down,
+    // which is what a cradle looks like.
     const paddle = part.mesh.userData.paddle as THREE.Group | undefined;
     let up = 0;
     if (paddle) {
-      if (part.hitT >= 0) {
-        const t = part.hitT;
-        up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
+      if (part.held) {
+        up = 1;
+      } else {
+        const t = part.swingT ?? part.hitT;
+        if (t !== undefined && t >= 0) {
+          up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
+        }
       }
-      paddle.rotation.z = up * 0.9;
+      paddle.rotation.y = FLIPPER_REST + up * FLIPPER_ARC;
     }
     // Slice 7 telegraph: the gold striking edge breathes so the flipper reads
     // "live/ready", and flares bright the instant it swings.
     const edge = part.mesh.userData.edgeMat as THREE.MeshStandardMaterial | undefined;
     if (edge) edge.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 4 + part.i) + up * 1.8;
+  },
+
+  swingarm: (part) => {
+    // ⚠️ THE ARM IS DRAWN FROM `swingArmPhase`, THE SAME FUNCTION THE COLLISION
+    // READS. Not from an animator-local accumulator, and not from `animT`.
+    //
+    // The hand is the only part of this that connects, so the mesh's angle and
+    // the hit test's angle ARE the same fact. Two clocks that agree today drift
+    // the first time one of them is paused, reset or frame-gated — and the
+    // failure is a part that hits you on empty air, which reads as a physics
+    // bug and is actually a rendering one. `updatePinballParts` skips distant
+    // parts' animators, so an accumulator here would additionally stop while
+    // you walked away and the arm would teleport on your return.
+    const arm = part.mesh.userData.arm as THREE.Group | undefined;
+    if (arm) arm.rotation.y = -swingArmPhase(state.elapsed, part.spin ?? 1, part.phase ?? 0);
+    const hand = part.mesh.userData.handMat as THREE.MeshStandardMaterial | undefined;
+    if (hand) hand.emissiveIntensity = 0.75 + (part.hitT >= 0 && part.hitT < 0.25 ? 1.6 : 0);
+  },
+
+  flywheel: (part) => {
+    // Counter-rotating, which is the whole read: two wheels turning the same
+    // way would look like a conveyor, and a conveyor does not say "shoot".
+    const wheels = part.mesh.userData.wheels as THREE.Mesh[] | undefined;
+    if (wheels) {
+      const a = state.elapsed * FLYWHEEL_SPIN_RATE + part.i;
+      wheels.forEach((w, k) => {
+        w.rotation.y = k === 0 ? a : -a;
+        const m = w.material as THREE.MeshStandardMaterial;
+        m.emissiveIntensity = 0.4 + (part.hitT >= 0 && part.hitT < 0.3 ? 1.5 : 0);
+      });
+    }
+  },
+
+  magpost: (part) => {
+    // A post lights only when you actually clip it, and briefly. That flicker
+    // IS the feedback a cascade gives: the lit posts behind you are the path
+    // you just took through the field.
+    const cap = part.mesh.userData.cap as THREE.MeshStandardMaterial | undefined;
+    if (cap) cap.emissiveIntensity = 0.55 + (part.hitT >= 0 && part.hitT < 0.18 ? 1.8 : 0);
   },
 
   mirror: (part) => {
@@ -1488,21 +1700,6 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
       const leap = lit ? 1 + 0.18 * Math.sin(animT * 11 + part.i) : 1;
       flame.scale.set(1, leap, 1);
       flame.position.y = 0.36 + (lit ? 0.04 * Math.sin(animT * 9) : 0);
-    }
-  },
-
-  swingarm: (part) => {
-    const arm = part.mesh.userData.arm as THREE.Group | undefined;
-    if (arm) {
-      arm.rotation.y = swingAngle(state.simT, part.i, part.j);
-    }
-  },
-
-  scoop: (part) => {
-    const cupMat = part.mesh.userData.cupMat as THREE.MeshStandardMaterial | undefined;
-    if (cupMat) {
-      const pulse = 0.4 + 0.3 * Math.sin(animT * 4 + part.i);
-      cupMat.emissiveIntensity = part.hitT >= 0 && part.hitT < 0.3 ? 1.5 : pulse;
     }
   },
 

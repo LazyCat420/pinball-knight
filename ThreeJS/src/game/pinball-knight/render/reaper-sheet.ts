@@ -1,18 +1,20 @@
 /**
- * The reaper's atlas, built on FIRST USE and cached for the session.
+ * The reaper's atlas.
  *
- * Lives on the game side rather than in `engine/render/sprite.ts`, where it
- * used to sit: the reaper is a specific monster in a specific game, and an
- * engine that knows about it is not an engine. The lazy-build mechanism is
- * generic and stayed behind as `lazySheet`.
+ * This used to own a SECOND lazy-sheet cache of its own (`lazySheet(
+ * makeReaperPaints)`), built and held outside `state.sheets` — so it survived
+ * `resetState`, was invisible to `dispose.ts`, and made `reaper` the one
+ * EnemyKind that `sheetKeyForKind` could not resolve. Every consumer carried a
+ * `kind === "reaper" ?` special case to compensate.
  *
- * Every other actor's sheet is built up-front in core.ts's init, but the reaper
- * appears at most once per floor and only after REAPER_AFTER seconds — most
- * runs never see one. Building it lazily keeps the level boot cost unchanged
- * and means adding bespoke reaper art needs one line changed at the call site
- * instead of a new field threaded through state/init/dispose.
+ * `reaper` is a SheetKey now, so this is a delegate kept only because a dozen
+ * call sites read better as `reaperSheet()` than as `sheetFor("reaper")`. It
+ * builds on first use exactly as before — `sheetFor` is itself lazy — and now
+ * shares the one cache, the one teardown, and the one registry.
  */
-import { lazySheet } from "../engine/render/sprite";
-import { makeReaperPaints } from "./cel-painter";
+import { sheetFor } from "../boot/sheets";
+import type { SpriteSheet } from "../engine/render/sprite";
 
-export const reaperSheet = lazySheet(makeReaperPaints);
+export function reaperSheet(): SpriteSheet {
+  return sheetFor("reaper");
+}

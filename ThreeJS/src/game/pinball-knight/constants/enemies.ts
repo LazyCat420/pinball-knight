@@ -473,6 +473,48 @@ export const JESTER_GATE_SOFT = 0.5;
  */
 export const GHOST_VULN_TIME = 2.5;
 
+// ── Fish Feet ───────────────────────────────────────────────────
+/**
+ * FISH FEET — a smoking fish walking on white Converse sneakers.
+ *
+ * ⚠️ THIS MONSTER COULD NOT SPAWN UNTIL 2026-08-27. It had all nine
+ * compile-enforced registries, a bespoke painter (render/monsters/fish_feet.ts),
+ * a forge-imported atlas, a card style, a reagent drop and a bestiary row — and
+ * its atlas was built at idle on EVERY floor via BACKFILL — while being absent
+ * from `spawnHordeMember` and from all four biome tables. The debug panel was
+ * the only way to meet it.
+ *
+ * The gap was visible in this file, as an absence: it was the one kind with no
+ * constants at all. Its HP was a bare `35` inline in spawn/factory.ts — four
+ * times a BRUTE, twelve times a zombie, and plainly a placeholder nobody had to
+ * defend because nothing ever read it in anger. Sized here against its actual
+ * neighbours instead.
+ */
+export const FISH_FEET_HP = 4; // a step above the zombie's 3; it is a bruiser, not a wall
+export const FISH_FEET_R = 0.32; // as the croaker — same footprint class
+/** It waddles. Slightly quicker than a zombie because the kick wants to reach you. */
+export const FISH_FEET_SPEED_FACTOR = 1.15;
+/**
+ * Ratio 15 / residue 7 is a fresh pair — no other kind uses ratio 15 (see
+ * spawn/factory.ts, where every kind claims a distinct `hash % RATIO === n`).
+ */
+export const FISH_FEET_RATIO = 15;
+/** Floor 2, with the croaker it shares the Rotting Warren with. NOT floor 1:
+ *  registry-drift check D would then require its atlas in ESSENTIAL. */
+export const FISH_FEET_FROM_LEVEL = 2;
+/**
+ * "Heavy kick strikes", per its bestiary line. It had ZOMBIE_DAMAGE, so the
+ * blurb was a claim the code did not make.
+ *
+ * 2 puts it with the golem and the chomper — the other things that hit hard on
+ * contact — rather than with the nibblers. The DISTINCT kick (a telegraph, a
+ * wind-up, a shove) is still unbuilt: `entities/zombie.ts` gates the goblin's
+ * bumper-pop on `z.kind === "goblin"`, and that pop is the GOBLIN's identity,
+ * not a heavy strike, so borrowing it would have been the wrong lie in place of
+ * the current one. Filed in OPEN_WORK.md.
+ */
+export const FISH_FEET_DAMAGE = 2;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;

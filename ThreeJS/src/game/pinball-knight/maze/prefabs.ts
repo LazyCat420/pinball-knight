@@ -354,7 +354,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     landmarks: ["nest", "grinder"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
-    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2, hound: 2, sapper: 1, croaker: 2 },
+    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2, hound: 2, sapper: 1, croaker: 2, fish_feet: 2 },
   },
   {
     // The Bloodworks — the punch factory.

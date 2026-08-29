@@ -840,6 +840,152 @@ export const FLIPPER_COOLDOWN = 0.7;
 export const FLIPPER_RADIUS = 0.6; // contact trigger radius
 export const FLIPPER_SWING = 0.22; // seconds the paddle takes to snap up
 /**
+ * The swing, in radians about Y — the paddle sweeps ACROSS the floor plane.
+ * It RESTS cocked back off the launch line and finishes past it, so the arc
+ * carries through the direction it throws you rather than stopping on it.
+ */
+export const FLIPPER_REST = -0.62;
+export const FLIPPER_ARC = 0.95;
+
+/**
+ * ── THE FLIPPER BUTTON (F on the keyboard, B/circle on a pad) ───────────────
+ *
+ * Until this existed the flipper was a radial trigger that auto-fired on
+ * contact — a kicker with aim-assist wearing a flipper's name. There was no
+ * button, no hold and no timing, which is the entire verb set a pinball player
+ * has. The three constants below are that verb set.
+ *
+ * PASSIVE contact still fires a flipper, at `FLIPPER_PASSIVE_SPEED` rather than
+ * `FLIPPER_SPEED`. That is deliberate and load-bearing: `flipper` is in
+ * `LAUNCH_KINDS` and `FORWARD_FLOW_KINDS` in maze/decorate.ts, so level-gen
+ * counts flippers when it guarantees a floor's routes are traversable under
+ * momentum. A press-only flipper would silently invalidate every one of those
+ * guarantees on every floor already generated. So the button does not turn the
+ * part on — it turns it UP, from 12 to 18, which is 1.5x for a timed hit.
+ */
+/** Contact with no button: still launches, at two thirds of a timed one. */
+export const FLIPPER_PASSIVE_SPEED = 12;
+/** How far the button reaches to find a paddle, world units (TILE = 1). */
+export const FLIPPER_REACH = 3.2;
+/**
+ * Seconds of the swing that count as LIVE. Shorter than FLIPPER_SWING (0.22),
+ * because the window you have to hit is the paddle ACCELERATING, not the whole
+ * travel — the back half of the arc is follow-through and should not pay.
+ */
+export const FLIPPER_ACTIVE = 0.16;
+/** A timed hit is a named shot; this is what it pays. */
+export const FLIPPER_TIMED_GOLD = 12;
+
+/**
+ * ── THE NUDGE, AND THE TILT ────────────────────────────────────────────────
+ *
+ * SHIFT (keyboard) or LT (pad) plus a direction, while momentum is live —
+ * the sprint modifier, which is inert while riding and was the only binding
+ * free on BOTH devices. See entities/nudge.ts for why a nudge is an impulse
+ * with a price rather than a stronger steer.
+ */
+/** Radians the heading rotates toward the push. One shove, one fixed angle. */
+export const NUDGE_BEND = 0.42;
+/** The shove adds a little pace as well as a lot of direction. */
+export const NUDGE_SPEED_ADD = 1.5;
+/** Re-shove guard: one held Shift is one nudge, not sixty a second. */
+export const NUDGE_COOLDOWN = 0.35;
+/**
+ * Meter cost per shove, and the rate it drains at.
+ *
+ * These three numbers are ONE decision and must be read together, because what
+ * matters is the NET gain per shove at the fastest rate `NUDGE_COOLDOWN`
+ * allows — not the cost on its own:
+ *
+ *     net = TILT_PER_NUDGE - TILT_DECAY * NUDGE_COOLDOWN
+ *         = 0.5            - 0.4        * 0.35            = 0.36
+ *
+ * So a player shoving as fast as the game lets them reaches 0.5, then 0.86,
+ * then 1.0 — fine, WARNING, TILT. That is exactly a real machine's two-warnings
+ * -then-out, and it is why `TILT_WARN` sits at 0.66: it has to fall between the
+ * second and third rungs of that ladder.
+ *
+ * An earlier pass had 0.34 and 0.5, whose net is 0.165 — seven shoves to tilt,
+ * not three, while the comment beside it claimed three. `nudge.test.ts` drives
+ * the real function at the real cadence rather than trusting the arithmetic.
+ */
+export const TILT_PER_NUDGE = 0.5;
+export const TILT_DECAY = 0.4;
+/** The warning light: one note per floor, between the second and third shove. */
+export const TILT_WARN = 0.66;
+/** Seconds after a tilt during which a shove does nothing and the meter is
+ *  frozen full. This IS the penalty, alongside the lost combo. */
+export const TILT_LOCKOUT = 2.0;
+
+// ── THE PLAZA PARTS ────────────────────────────────────────────────────────
+//
+// Three kinds the PLAZA_PLAN named and never defined. The plan was retired on
+// 2026-08-27 with these still nowhere in `PinballPartKind`; what they actually
+// DO was specified by the user on 2026-08-28, and that specification is what is
+// built here. Two of the plan's five are deliberately absent: `gate` was
+// dropped outright, and `maw` was never defined by anyone — inventing it would
+// be exactly the kind of unsourced content the plan itself became.
+
+/**
+ * SWINGARM — a bar with a hand on the end, spinning in a circle.
+ *
+ * Continuous rotation, direction per part (both ways exist on a floor). The
+ * HAND is the business end: the hub is harmless furniture and only the hand
+ * connects, which is what makes the part a moving TIMING problem rather than a
+ * radius you avoid. It throws you along its TANGENT — the direction the hand
+ * was actually travelling — so where you end up depends on when you arrived,
+ * and a swingarm is a shot you wait for.
+ */
+export const SWINGARM_LEN = 1.15; // hub → hand centre, world units
+export const SWINGARM_RATE = 2.1; // radians/sec
+export const SWINGARM_HAND_R = 0.42; // the hand's own contact radius
+export const SWINGARM_SPEED = 16; // tangential launch
+export const SWINGARM_COOLDOWN = 0.55;
+/** The hand's phase at time `t`. `spin` is +1 or -1; `seed` de-syncs the floor
+ *  so two arms in one room are not a matched pair. Shared by the physics and
+ *  the renderer, which is the only way they can agree about where the hand is —
+ *  a mesh drawn from one clock and a hit tested against another is a part that
+ *  connects on empty air. */
+export function swingArmPhase(elapsed: number, spin: number, seed: number): number {
+  return seed + spin * elapsed * SWINGARM_RATE;
+}
+
+/**
+ * FLYWHEEL — two counter-rotating wheels with a gap you shoot through.
+ *
+ * Not a scoop: the ball is not picked up and dropped, it is FED between two
+ * spinning wheels and spat out the far side faster than it went in, the way a
+ * pitching machine works. So it is a booster whose speed does not depend on
+ * what you arrived with — the wheels are doing the work, not your momentum —
+ * which is what makes it the recovery part. Walk into one at a standstill and
+ * you still come out at speed.
+ */
+export const FLYWHEEL_RADIUS = 0.55; // the gap's catch radius
+export const FLYWHEEL_SPEED = 21; // out the far side, faster than a flipper
+export const FLYWHEEL_COOLDOWN = 0.6;
+export const FLYWHEEL_STEER_LOCK = 0.22; // committed to the barrel, briefly
+export const FLYWHEEL_SPIN_RATE = 9.5; // radians/sec, for the wheels' spin
+
+/**
+ * MAGPOST — a pachinko post. Scattered in small fields, with bumpers mixed in.
+ *
+ * A post DEFLECTS rather than launches: you glance off it and keep going, so a
+ * field of them turns a straight run into a cascade you cannot fully predict —
+ * the coin-down-the-pegs game. That only works if the cascade does not eat your
+ * pace, which is why `MAGPOST_KEEP` is so close to 1 and why the placement
+ * seeds bumpers into every field: a post takes a little speed, a bumper gives
+ * it back, and the field stays a scramble instead of becoming a sand trap.
+ */
+export const MAGPOST_RADIUS = 0.34; // small — you thread between them
+export const MAGPOST_KEEP = 0.94; // speed retained per glance
+export const MAGPOST_MIN_EXIT = 6; // …and never below this, so a field cannot stall you
+export const MAGPOST_SCATTER = 0.3; // radians of jitter on the bounce
+export const MAGPOST_COOLDOWN = 0.12; // low: a cascade is MANY posts in a row
+// How MANY of each a floor gets, and how big a peg field is, live in
+// maze/decorate.ts beside KICKBACK_CHANCE and ROLLOVER_ARRAYS_DEFAULT — that
+// module owns placement budgets, and one number with two homes is one number
+// that drifts.
+/**
  * ANGLE MIRROR — a fixed 45°/90° reflector: momentum entering it REFLECTS
  * across the mirror's surface line (unlike the deflector, which banks around
  * a corner). Turns a straight into a bank shot — the puzzle-ricochet piece.

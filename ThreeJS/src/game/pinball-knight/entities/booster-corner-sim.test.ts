@@ -112,6 +112,7 @@ beforeEach(() => {
     setSteerLock: (t) => {
       steerLockT = t;
     },
+    aimHint: () => null,
     raiseSteerLock: (t) => {
       steerLockT = Math.max(steerLockT, t);
     },

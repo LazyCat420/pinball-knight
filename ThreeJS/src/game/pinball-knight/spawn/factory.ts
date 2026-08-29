@@ -3,16 +3,17 @@
  * `Zombie` in `state.zombies`.
  *
  * Extracted verbatim from core.ts. Four spawn routes share one set of stat
- * tables (HP_BY_KIND / EXPANSION_SKIN / RESKIN) and one nid sequence, so they
- * belong together: the bespoke families (spawnKind), the tinted expansion
- * skins, the Wave-B reskins, and the baseline horde with its zombie SUB-TYPES.
+ * tables (HP_BY_KIND / KIND_SKIN) and one nid sequence, so they belong
+ * together: the bespoke families (spawnKind), every skinned kind (bespoke
+ * atlas or borrowed-and-dyed, one table since 2026-08-27), and the baseline
+ * horde with its zombie SUB-TYPES.
  *
  * The two deferred queues are here for the reason the comments below give:
  * spawning mid-iteration over `state.zombies` would invalidate the loop, so a
  * slime split or a necromancer summon is queued and drained at a safe point.
  */
 import { peers } from "../../../net/presence";
-import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL, BLOATER_HP, BLOATER_SPEED_FACTOR, BRUTE_FROM_LEVEL, BRUTE_HP, BRUTE_RATIO, BRUTE_SPEED_FACTOR, CHOMPER_FROM_LEVEL, CHOMPER_HP, CHOMPER_RATIO, CRAWLER_PITCH, CRYSTAL_FROM_LEVEL, CRYSTAL_HP, GHOST_FROM_LEVEL, GHOST_HP, GHOST_RATIO, GHOST_SPEED_FACTOR, GOBLIN_FROM_LEVEL, GOBLIN_HP, GOBLIN_RATIO, GOBLIN_SPEED_FACTOR, JESTER_FROM_LEVEL, JESTER_HP, JESTER_RATIO, JESTER_SPEED_FACTOR, CROAKER_FROM_LEVEL, CROAKER_HP, CROAKER_RATIO, CROAKER_SPEED_FACTOR, ROTORTAIL_FROM_LEVEL, ROTORTAIL_HP, ROTORTAIL_RATIO, ROTORTAIL_SPEED_FACTOR, STILTNECK_FROM_LEVEL, STILTNECK_HP, STILTNECK_RATIO, STILTNECK_SPEED_FACTOR, SPORELING_FROM_LEVEL, SPORELING_RATIO, SPORELING_SPEED_FACTOR, GOLEM_FROM_LEVEL, GOLEM_HP, GOLEM_RATIO, HOUND_FROM_LEVEL, HOUND_HP, HOUND_SPEED_FACTOR, HULK_MIN_OPEN_NEIGHBOURS, MAGNET_FROM_LEVEL, MAGNET_HP, MAGNET_RATIO, MAGNET_SPEED_FACTOR, MIMIC_FROM_LEVEL, MIMIC_HP, MIMIC_SPEED_FACTOR, NECRO_FROM_LEVEL, NECRO_HP, NECRO_SPEED_FACTOR, PIN_CREW_SIZE, PIN_HP, REAPER_HP, SAPPER_FROM_LEVEL, SAPPER_HP, SAPPER_SPEED_FACTOR, SLIME_FROM_LEVEL, SLIME_HP, SLIME_MINI_HP, SLIME_MINI_SCALE, SLIME_MINI_SPEED_MULT, SLIME_RATIO, SLIME_SPEED_FACTOR, SPIDER_FROM_LEVEL, SPIDER_HP, SPIDER_RATIO, SPIDER_SPEED_FACTOR, SPITTER_FROM_LEVEL, SPITTER_HP, SPITTER_RATIO, SPITTER_SPEED_FACTOR, THEME_HORDE_BIAS, WARDEN_FROM_LEVEL, WARDEN_HP, WARDEN_SPEED_FACTOR, WEBSPIN_FROM_LEVEL, WEBSPIN_HP, WEBSPIN_RATIO, WEBSPIN_SPEED_FACTOR, WISP_FROM_LEVEL, WISP_HP, WISP_SPEED_FACTOR, ZOMBIE_HP, ZOMBIE_R, levelConfig } from "../constants";
+import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL, BLOATER_HP, BLOATER_SPEED_FACTOR, BRUTE_FROM_LEVEL, BRUTE_HP, BRUTE_RATIO, BRUTE_SPEED_FACTOR, CHOMPER_FROM_LEVEL, CHOMPER_HP, CHOMPER_RATIO, CRAWLER_PITCH, CRYSTAL_FROM_LEVEL, CRYSTAL_HP, GHOST_FROM_LEVEL, GHOST_HP, GHOST_RATIO, GHOST_SPEED_FACTOR, GOBLIN_FROM_LEVEL, GOBLIN_HP, GOBLIN_RATIO, GOBLIN_SPEED_FACTOR, JESTER_FROM_LEVEL, JESTER_HP, JESTER_RATIO, JESTER_SPEED_FACTOR, CROAKER_FROM_LEVEL, CROAKER_HP, CROAKER_RATIO, CROAKER_SPEED_FACTOR, FISH_FEET_FROM_LEVEL, FISH_FEET_HP, FISH_FEET_RATIO, FISH_FEET_SPEED_FACTOR, ROTORTAIL_FROM_LEVEL, ROTORTAIL_HP, ROTORTAIL_RATIO, ROTORTAIL_SPEED_FACTOR, STILTNECK_FROM_LEVEL, STILTNECK_HP, STILTNECK_RATIO, STILTNECK_SPEED_FACTOR, SPORELING_FROM_LEVEL, SPORELING_RATIO, SPORELING_SPEED_FACTOR, GOLEM_FROM_LEVEL, GOLEM_HP, GOLEM_RATIO, HOUND_FROM_LEVEL, HOUND_HP, HOUND_SPEED_FACTOR, HULK_MIN_OPEN_NEIGHBOURS, MAGNET_FROM_LEVEL, MAGNET_HP, MAGNET_RATIO, MAGNET_SPEED_FACTOR, MIMIC_FROM_LEVEL, MIMIC_HP, MIMIC_SPEED_FACTOR, NECRO_FROM_LEVEL, NECRO_HP, NECRO_SPEED_FACTOR, PIN_CREW_SIZE, PIN_HP, REAPER_HP, SAPPER_FROM_LEVEL, SAPPER_HP, SAPPER_SPEED_FACTOR, SLIME_FROM_LEVEL, SLIME_HP, SLIME_MINI_HP, SLIME_MINI_SCALE, SLIME_MINI_SPEED_MULT, SLIME_RATIO, SLIME_SPEED_FACTOR, SPIDER_FROM_LEVEL, SPIDER_HP, SPIDER_RATIO, SPIDER_SPEED_FACTOR, SPITTER_FROM_LEVEL, SPITTER_HP, SPITTER_RATIO, SPITTER_SPEED_FACTOR, THEME_HORDE_BIAS, WARDEN_FROM_LEVEL, WARDEN_HP, WARDEN_SPEED_FACTOR, WEBSPIN_FROM_LEVEL, WEBSPIN_HP, WEBSPIN_RATIO, WEBSPIN_SPEED_FACTOR, WISP_FROM_LEVEL, WISP_HP, WISP_SPEED_FACTOR, ZOMBIE_HP, ZOMBIE_R, levelConfig } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -22,7 +23,8 @@ import { themeFor } from "../maze/prefabs";
 import { Animator } from "../engine/render/animator";
 import { ZOMBIE_VARIANTS } from "../render/cel-painter";
 import { bakeTintedSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
-import { sheetFor } from "../boot/sheets";
+import { sheetFor, skinSheet } from "../boot/sheets";
+import { KIND_SKIN } from "./kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { ZOMBIE_TYPES, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "../zombie-types";
 
@@ -47,7 +49,7 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   croaker: CROAKER_HP,
   rotortail: ROTORTAIL_HP,
   stiltneck: STILTNECK_HP,
-  fish_feet: 35,
+  fish_feet: FISH_FEET_HP,
   hound: HOUND_HP,
   bloater: BLOATER_HP,
   necromancer: NECRO_HP,
@@ -58,82 +60,17 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   mimic: MIMIC_HP,
 };
 
-/** Expansion-roster reused-sheet map: which existing atlas + tint + scale each
- *  new kind borrows (art is placeholder; behavior in zombie.ts carries identity). */
-export const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
-  // NB `hound` used to live here as a red-tinted SPIDER. It now has a bespoke
-  // atlas (render/monsters/hound.ts) and so belongs in RESKIN below — its art
-  // carries its own identity and must not be recoloured.
-  bloater: { sheet: () => sheetFor("slime"), tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
-  necromancer: { sheet: () => sheetFor("spitter"), tint: 0x8a5cd0, scale: 1.05 }, // purple caster
-  warden: { sheet: () => sheetFor("warden"), tint: 0x4f8fdb, scale: 1.05 }, // blue guardian — its OWN key, see sheets.ts
-  wisp: { sheet: () => sheetFor("ghost"), tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
-  sapper: { sheet: () => sheetFor("magnet"), tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
-  crystalback: { sheet: () => sheetFor("golem"), tint: 0x8fdfff, scale: 1.12 }, // crystalline golem
-  mimic: { sheet: () => sheetFor("golem"), tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
-};
+export { skinSheet };
 
 /**
- * Spawn an expansion enemy from its borrowed sheet, re-dyed by BAKING.
- *
- * This used to `setTint(skin.tint)` — a live GPU multiply that pushed every
- * palette-exact texel OFF the palette, for the screen quantizer to reassign
- * per pixel (the sapper read as flat yellow mush, the necromancer as blood
- * red). The tint is now baked into a palette-snapped copy of the atlas once
- * per kind (`bakeTintedSheet`), so an expansion monster is as palette-true as
- * a hand-painted one. `baseTint` stays unset on purpose: the dye lives in the
- * art now, so a damage flash restores to null instead of re-applying it.
+ * Spawn any skinned enemy — bespoke atlas or borrowed-and-dyed, one path.
+ * Returns null if the kind has no skin row, or its atlas could not be built.
  */
-export function makeExpansion(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
-  const skin = EXPANSION_SKIN[kind];
+export function makeSkinned(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
+  const skin = KIND_SKIN[kind];
   if (!skin) return null;
-  let sheet = state.expansionSheets[kind];
-  if (!sheet) {
-    const base = skin.sheet();
-    if (!base) return null;
-    sheet = bakeTintedSheet(base, skin.tint);
-    state.expansionSheets[kind] = sheet;
-  }
-  const z2 = makeZombie(sheet, x, z, speed, { kind });
-  z2.sprite.mesh.scale.multiplyScalar(skin.scale);
-  return z2;
-}
-
-/**
- * The Wave-B roster now has BESPOKE atlases (was tinted reskins). Each maps to
- * its own sheet + a display scale; no resting tint (the art carries identity).
- * `RESKIN` keeps its name so the debug ring + spawn table read unchanged.
- */
-export const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; scale: number }>> = {
-  // A long low quadruped: scaled up slightly so its LENGTH reads at gameplay
-  // distance, which is the cue you dodge a charge by.
-  hound: { sheet: () => sheetFor("hound"), scale: 1.05 },
-  goblin: { sheet: () => sheetFor("goblin"), scale: 1.0 },
-  pin: { sheet: () => sheetFor("pin"), scale: 0.85 },
-  golem: { sheet: () => sheetFor("golem"), scale: 1.12 },
-  chomper: { sheet: () => sheetFor("chomper"), scale: 1.1 },
-  magnet: { sheet: () => sheetFor("magnet"), scale: 0.95 },
-  webspinner: { sheet: () => sheetFor("webspinner"), scale: 1.05 },
-  jester: { sheet: () => sheetFor("jester"), scale: 1.0 },
-  croaker: { sheet: () => sheetFor("croaker"), scale: 1.0 },
-  // Slightly under size: the rotor makes the sprite wide, and at 1.0 the disc
-  // read as the creature's body rather than as the thing bolted on top of it.
-  rotortail: { sheet: () => sheetFor("rotortail"), scale: 0.95 },
-  // 1.0, and the 1.12 it shipped with is worth an epitaph: any non-integer mesh
-  // scale breaks the sprite identity (1 stored texel = 1 render pixel, see
-  // constants/render.ts SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID), so every
-  // ~8th texel row/column rendered doubled — "uneven pixels", visible as
-  // moiré crawling on the coat. The tall read never needed the multiplier;
-  // the creature already fills its cel to the margins.
-  stiltneck: { sheet: () => sheetFor("stiltneck"), scale: 1.0 },
-  fish_feet: { sheet: () => sheetFor("fish_feet"), scale: 1.0 },
-};
-
-/** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
-export function makeReskin(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
-  const skin = RESKIN[kind];
-  const sheet = skin?.sheet();
-  if (!skin || !sheet) return null;
+  const sheet = skinSheet(kind);
+  if (!sheet) return null;
   const z2 = makeZombie(sheet, x, z, speed, { kind });
   z2.sprite.mesh.scale.multiplyScalar(skin.scale);
   return z2;
@@ -174,7 +111,7 @@ const pendingSummons: Array<{ x: number; z: number }> = [];
 export function drainPendingSummons(): void {
   if (!pendingSummons.length) return;
   const speed = levelConfig(state.level).zombieSpeed;
-  const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
+  const sheet = state.zombieVariantSheets[0] ?? state.sheets.zombie;
   for (const spec of pendingSummons) {
     if (!sheet) break;
     const add = makeZombie(sheet, spec.x + (Math.random() - 0.5) * 0.6, spec.z + (Math.random() - 0.5) * 0.6, speed, { kind: "zombie" });
@@ -318,42 +255,42 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
     case "sporeling":
       return level >= SPORELING_FROM_LEVEL ? makeZombie(sheetFor("sporeling"), x, z, baseSpeed * SPORELING_SPEED_FACTOR, { kind: "sporeling" }) : null;
     case "jester":
-      return level >= JESTER_FROM_LEVEL ? makeReskin("jester", x, z, baseSpeed * JESTER_SPEED_FACTOR) : null;
+      return level >= JESTER_FROM_LEVEL ? makeSkinned("jester", x, z, baseSpeed * JESTER_SPEED_FACTOR) : null;
     case "croaker":
-      return level >= CROAKER_FROM_LEVEL ? makeReskin("croaker", x, z, baseSpeed * CROAKER_SPEED_FACTOR) : null;
+      return level >= CROAKER_FROM_LEVEL ? makeSkinned("croaker", x, z, baseSpeed * CROAKER_SPEED_FACTOR) : null;
     case "rotortail":
-      return level >= ROTORTAIL_FROM_LEVEL ? makeReskin("rotortail", x, z, baseSpeed * ROTORTAIL_SPEED_FACTOR) : null;
+      return level >= ROTORTAIL_FROM_LEVEL ? makeSkinned("rotortail", x, z, baseSpeed * ROTORTAIL_SPEED_FACTOR) : null;
     case "stiltneck":
-      return level >= STILTNECK_FROM_LEVEL ? makeReskin("stiltneck", x, z, baseSpeed * STILTNECK_SPEED_FACTOR) : null;
+      return level >= STILTNECK_FROM_LEVEL ? makeSkinned("stiltneck", x, z, baseSpeed * STILTNECK_SPEED_FACTOR) : null;
     case "fish_feet":
-      return makeReskin("fish_feet", x, z, baseSpeed * 1.15);
+      return level >= FISH_FEET_FROM_LEVEL ? makeSkinned("fish_feet", x, z, baseSpeed * FISH_FEET_SPEED_FACTOR) : null;
     case "goblin":
-      return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
+      return level >= GOBLIN_FROM_LEVEL ? makeSkinned("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
     case "chomper":
-      return level >= CHOMPER_FROM_LEVEL ? makeReskin("chomper", x, z, 0) : null;
+      return level >= CHOMPER_FROM_LEVEL ? makeSkinned("chomper", x, z, 0) : null;
     case "golem":
-      return level >= GOLEM_FROM_LEVEL ? makeReskin("golem", x, z, 0) : null;
+      return level >= GOLEM_FROM_LEVEL ? makeSkinned("golem", x, z, 0) : null;
     case "magnet":
-      return level >= MAGNET_FROM_LEVEL ? makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR) : null;
+      return level >= MAGNET_FROM_LEVEL ? makeSkinned("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR) : null;
     case "webspinner":
-      return level >= WEBSPIN_FROM_LEVEL ? makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
+      return level >= WEBSPIN_FROM_LEVEL ? makeSkinned("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
     case "hound":
-      return level >= HOUND_FROM_LEVEL ? makeReskin("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
+      return level >= HOUND_FROM_LEVEL ? makeSkinned("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
     case "bloater":
-      return level >= BLOATER_FROM_LEVEL ? makeExpansion("bloater", x, z, baseSpeed * BLOATER_SPEED_FACTOR) : null;
+      return level >= BLOATER_FROM_LEVEL ? makeSkinned("bloater", x, z, baseSpeed * BLOATER_SPEED_FACTOR) : null;
     case "necromancer":
-      return level >= NECRO_FROM_LEVEL ? makeExpansion("necromancer", x, z, baseSpeed * NECRO_SPEED_FACTOR) : null;
+      return level >= NECRO_FROM_LEVEL ? makeSkinned("necromancer", x, z, baseSpeed * NECRO_SPEED_FACTOR) : null;
     case "warden":
-      return level >= WARDEN_FROM_LEVEL ? makeExpansion("warden", x, z, baseSpeed * WARDEN_SPEED_FACTOR) : null;
+      return level >= WARDEN_FROM_LEVEL ? makeSkinned("warden", x, z, baseSpeed * WARDEN_SPEED_FACTOR) : null;
     case "wisp":
-      return level >= WISP_FROM_LEVEL ? makeExpansion("wisp", x, z, baseSpeed * WISP_SPEED_FACTOR) : null;
+      return level >= WISP_FROM_LEVEL ? makeSkinned("wisp", x, z, baseSpeed * WISP_SPEED_FACTOR) : null;
     case "sapper":
-      return level >= SAPPER_FROM_LEVEL ? makeExpansion("sapper", x, z, baseSpeed * SAPPER_SPEED_FACTOR) : null;
+      return level >= SAPPER_FROM_LEVEL ? makeSkinned("sapper", x, z, baseSpeed * SAPPER_SPEED_FACTOR) : null;
     case "crystalback":
-      return level >= CRYSTAL_FROM_LEVEL ? makeExpansion("crystalback", x, z, 0) : null;
+      return level >= CRYSTAL_FROM_LEVEL ? makeSkinned("crystalback", x, z, 0) : null;
     case "mimic": {
       if (level < MIMIC_FROM_LEVEL) return null;
-      const m = makeExpansion("mimic", x, z, baseSpeed * MIMIC_SPEED_FACTOR);
+      const m = makeSkinned("mimic", x, z, baseSpeed * MIMIC_SPEED_FACTOR);
       if (m) { m.dormant = true; m.aggro = false; }
       return m;
     }
@@ -402,44 +339,48 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4) {
     return makeZombie(sheetFor("slime"), x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
   }
-  // ── The Wave-B pinball roster (reskins; see RESKIN) ──
+  // ── The Wave-B pinball roster (bespoke atlases; see KIND_SKIN) ──
   if (level >= GOBLIN_FROM_LEVEL && hash % GOBLIN_RATIO === 1) {
-    const zb = makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR);
+    const zb = makeSkinned("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= SPORELING_FROM_LEVEL && hash % SPORELING_RATIO === 3) {
     return makeZombie(sheetFor("sporeling"), x, z, baseSpeed * SPORELING_SPEED_FACTOR, { kind: "sporeling" });
   }
   if (level >= CHOMPER_FROM_LEVEL && hash % CHOMPER_RATIO === 5) {
-    const zb = makeReskin("chomper", x, z, 0); // rooted — it IS the chokepoint
+    const zb = makeSkinned("chomper", x, z, 0); // rooted — it IS the chokepoint
     if (zb) return zb;
   }
   if (level >= GOLEM_FROM_LEVEL && hash % GOLEM_RATIO === 5) {
-    const zb = makeReskin("golem", x, z, 0);
+    const zb = makeSkinned("golem", x, z, 0);
     if (zb) return zb;
   }
   if (level >= MAGNET_FROM_LEVEL && hash % MAGNET_RATIO === 6) {
-    const zb = makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR);
+    const zb = makeSkinned("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= ROTORTAIL_FROM_LEVEL && hash % ROTORTAIL_RATIO === 6) {
-    const zb = makeReskin("rotortail", x, z, baseSpeed * ROTORTAIL_SPEED_FACTOR);
+    const zb = makeSkinned("rotortail", x, z, baseSpeed * ROTORTAIL_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= STILTNECK_FROM_LEVEL && hash % STILTNECK_RATIO === 9) {
-    const zb = makeReskin("stiltneck", x, z, baseSpeed * STILTNECK_SPEED_FACTOR);
+    const zb = makeSkinned("stiltneck", x, z, baseSpeed * STILTNECK_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= CROAKER_FROM_LEVEL && hash % CROAKER_RATIO === 8) {
-    const zb = makeReskin("croaker", x, z, baseSpeed * CROAKER_SPEED_FACTOR);
+    const zb = makeSkinned("croaker", x, z, baseSpeed * CROAKER_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= FISH_FEET_FROM_LEVEL && hash % FISH_FEET_RATIO === 7) {
+    const zb = makeSkinned("fish_feet", x, z, baseSpeed * FISH_FEET_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= JESTER_FROM_LEVEL && hash % JESTER_RATIO === 4) {
-    const zb = makeReskin("jester", x, z, baseSpeed * JESTER_SPEED_FACTOR);
+    const zb = makeSkinned("jester", x, z, baseSpeed * JESTER_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= WEBSPIN_FROM_LEVEL && hash % WEBSPIN_RATIO === 2) {
-    const zb = makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR);
+    const zb = makeSkinned("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR);
     if (zb) return zb;
   }
   // ── Baseline zombie — but WHICH zombie (zombie-types.ts) ──
@@ -453,7 +394,7 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   // legs is a lie the player notices immediately.
   const allowed = variantIndicesFor(ztype, ZOMBIE_VARIANTS);
   const vi = allowed[hash % allowed.length];
-  const sheet = variantSheets[vi] ?? variantSheets[0] ?? state.zombieSheet!;
+  const sheet = variantSheets[vi] ?? variantSheets[0] ?? state.sheets.zombie!;
   return makeZombie(sheet, x, z, baseSpeed, { ztype });
 }
 
@@ -501,7 +442,7 @@ export function spawnPinCrew(g: Grid, centre: TilePos): void {
       const open = nearestOpenTile(g, centre.i, centre.j, k + 1);
       return open ? tileCenter(g, open.i, open.j) : c;
     })();
-    const pin = makeReskin("pin", spot.x, spot.z, 0);
+    const pin = makeSkinned("pin", spot.x, spot.z, 0);
     if (pin) state.zombies.push(pin);
   }
 }

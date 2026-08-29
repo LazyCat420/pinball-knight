@@ -35,6 +35,9 @@ const ALL_KINDS: PinballPartKind[] = [
   "target",
   "trapdoor",
   "flipper",
+  "swingarm",
+  "flywheel",
+  "magpost",
   "mirror",
   "pit",
   "gravepit",
@@ -43,8 +46,6 @@ const ALL_KINDS: PinballPartKind[] = [
   "magstrip",
   "rollover",
   "lamp",
-  "swingarm",
-  "scoop",
   "maw",
 ];
 

@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields, type PinballPart, type PinballPartKind } from "../state";
 import { PART_HANDLERS, touchPinballParts, type PinballDeps } from "./pinball-collide";
-import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, BOOSTER_JAM_HITS, BOOSTER_JAM_COOLDOWN, FLIPPER_SPEED, GRAVEPIT_RADIUS } from "../constants";
+import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, BOOSTER_JAM_HITS, BOOSTER_JAM_COOLDOWN, FLIPPER_SPEED, FLIPPER_PASSIVE_SPEED, FLIPPER_ACTIVE, GRAVEPIT_RADIUS } from "../constants";
 
 /** Every kind the game can place. Kept literal so adding one fails here too. */
 const ALL_KINDS: PinballPartKind[] = [
@@ -36,6 +36,9 @@ const ALL_KINDS: PinballPartKind[] = [
   "target",
   "trapdoor",
   "flipper",
+  "swingarm",
+  "flywheel",
+  "magpost",
   "mirror",
   "pit",
   "gravepit",
@@ -44,8 +47,6 @@ const ALL_KINDS: PinballPartKind[] = [
   "magstrip",
   "rollover",
   "lamp",
-  "swingarm",
-  "scoop",
   "maw",
 ];
 
@@ -78,6 +79,7 @@ let deps: PinballDeps;
 let rampHops: number;
 let drops: number;
 let steerLock: number;
+let aimHint: { x: number; z: number } | null;
 
 beforeEach(() => {
   stubPlayer();
@@ -93,6 +95,7 @@ beforeEach(() => {
   rampHops = 0;
   drops = 0;
   steerLock = 0;
+  aimHint = null;
   deps = {
     startRampHop: () => {
       rampHops += 1;
@@ -106,6 +109,7 @@ beforeEach(() => {
     raiseSteerLock: (t) => {
       steerLock = Math.max(steerLock, t);
     },
+    aimHint: () => aimHint,
   };
 });
 
@@ -385,14 +389,95 @@ describe("launchers", () => {
     });
   });
 
-  it("a flipper catapults a walking player too", () => {
+  // ── THE FLIPPER, all three verbs ──────────────────────────────────────
+  //
+  // The button lives in entities/flippers.ts; what a contact is WORTH lives
+  // here. These four pin the difference, which is the whole feature: a paddle
+  // you did not command is worth two thirds of one you timed.
+
+  it("a flipper catapults a walking player too, at the PASSIVE speed", () => {
+    // No button was pressed, so this is bare contact. It still launches —
+    // `flipper` is in LAUNCH_KINDS and level-gen counts on that — but it is the
+    // dribble, not the shot.
     const p = state.player!;
     p.momSpeed = 0;
     state.pinballParts = [part("flipper", { dirX: 1, dirZ: 0 })];
 
     touchPinballParts(false, 0, deps);
 
+    expect(p.momSpeed).toBe(FLIPPER_PASSIVE_SPEED);
+    expect(FLIPPER_PASSIVE_SPEED).toBeLessThan(FLIPPER_SPEED); // the point of it
+  });
+
+  it("a flipper caught inside its commanded swing launches at FULL speed", () => {
+    const p = state.player!;
+    p.momSpeed = 0;
+    const f = part("flipper", { dirX: 1, dirZ: 0 });
+    f.swingT = 0.05; // inside FLIPPER_ACTIVE — the button was pressed and timed
+    state.pinballParts = [f];
+
+    touchPinballParts(false, 0, deps);
+
     expect(p.momSpeed).toBe(FLIPPER_SPEED);
+  });
+
+  it("a swing caught AFTER its live window is only worth the passive launch", () => {
+    // The follow-through half of the arc. The paddle is visibly moving, which
+    // is exactly why this needs pinning: it looks like a hit and must not pay
+    // like one, or the timing window is decorative.
+    const p = state.player!;
+    p.momSpeed = 0;
+    const f = part("flipper", { dirX: 1, dirZ: 0 });
+    f.swingT = FLIPPER_ACTIVE + 0.01;
+    state.pinballParts = [f];
+
+    touchPinballParts(false, 0, deps);
+
+    expect(p.momSpeed).toBe(FLIPPER_PASSIVE_SPEED);
+  });
+
+  it("a HELD paddle cradles instead of launching, and the release fires", () => {
+    const p = state.player!;
+    p.momSpeed = 9;
+    const f = part("flipper", { dirX: 1, dirZ: 0 });
+    f.held = true;
+    f.swingT = FLIPPER_ACTIVE;
+    state.pinballParts = [f];
+
+    touchPinballParts(true, 0, deps);
+    expect(f.cradled).toBe(true);
+    expect(p.momSpeed).toBe(0); // caught, not thrown
+
+    // Still held: it stays caught, however many sweeps run.
+    touchPinballParts(true, 0, deps);
+    expect(p.momSpeed).toBe(0);
+
+    // Button released (entities/flippers.ts clears `held`) — the next sweep
+    // fires the trapped knight off the bat at full speed.
+    f.held = false;
+    touchPinballParts(true, 0, deps);
+    expect(p.momSpeed).toBe(FLIPPER_SPEED);
+    expect(f.cradled).toBe(false);
+  });
+
+  it("a cradled launch is AIMED by the stick, not by the paddle alone", () => {
+    // The reason to trap rather than take the angle you arrived at. The paddle
+    // still dominates the blend, so an aim can bend the exit but never reverse
+    // it — the exit must stay on the paddle's side of perpendicular.
+    const p = state.player!;
+    const f = part("flipper", { dirX: 1, dirZ: 0 });
+    f.held = true;
+    f.swingT = FLIPPER_ACTIVE;
+    state.pinballParts = [f];
+    touchPinballParts(true, 0, deps);
+
+    aimHint = { x: 0, z: 1 }; // pushing hard across the paddle line
+    f.held = false;
+    touchPinballParts(true, 0, deps);
+
+    expect(f.cradled).toBe(false);
+    expect(p.momZ).toBeGreaterThan(0.2); // the aim actually bent it
+    expect(p.momX).toBeGreaterThan(0); // ...but the paddle still won
   });
 
   it("a trapdoor hands off to the drop, and only once", () => {
@@ -542,20 +627,6 @@ describe("magstrip", () => {
     touchPinballParts(true, 0, deps);
 
     expect(p.momSpeed).toBeGreaterThan(1);
-  });
-});
-
-describe("scoop (Saucer Scoop)", () => {
-  it("holds player in place and arms eject along dir", () => {
-    const p = state.player!;
-    p.momSpeed = 10;
-    state.pinballParts = [part("scoop", { dirX: 0, dirZ: 1 })];
-
-    touchPinballParts(true, 0, deps);
-
-    expect(p.grabT).toBeGreaterThan(0);
-    expect(p.throwDirZ).toBe(1);
-    expect(p.throwSpeed).toBeGreaterThanOrEqual(14.0);
   });
 });
 

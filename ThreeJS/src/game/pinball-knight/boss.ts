@@ -1,5 +1,15 @@
 /**
- * ☠ THE REAPER KING — the end-of-run boss that gates the exit portal.
+ * THE BOSSES — one guardian per biome, each gating its floor's exit portal.
+ *
+ * WHO the bosses are lives in `boss-kinds.ts`; HOW their attacks behave lives
+ * in `boss-moves.ts`. This module is the encounter: the leash, the phase flip,
+ * the fairness scaling, the portal, and the co-op mirror.
+ *
+ * Until 2026-08-28 there was one boss and every floor was gated on him — floor
+ * 1 and floor 17 were the same fight, and `BOSS_EVERY` only doubled his HP.
+ * The King is now the CRYPT's guardian and three others hold the other biomes.
+ *
+ * ── ☠ THE REAPER KING, for continuity ──────────────────────────────────────
  *
  * Reuses the dungeon's own enemy pipeline (`makeZombie`) so it chases, takes
  * damage, and dies through the same combat path as everything else — but it is
@@ -12,7 +22,7 @@
  *   • TENTACLE SLAM — a telegraphed ground-pound: a growing ring marks where it
  *     will land, then it SLAMS, damaging + launching anyone still inside.
  *
- * While the king lives the floor's stairs won't descend (`state.exitLocked`).
+ * While a boss lives the floor's stairs won't descend (`state.exitLocked`).
  * On its death the lock lifts and a PORTAL blooms over the stairs — "kill the
  * boss to reach the portal". All meshes here are procedural (no art pipeline),
  * so the module is self-contained and safe to dispose on any level change.
@@ -31,6 +41,31 @@ import { moveCircle } from "./engine/collision";
 import { hitPlayerRanged, syncActorMesh } from "./entities/combat";
 import { facingFromWorld } from "./entities/zombie";
 import { peers } from "../../net/presence";
+import { BOSSES, BOSS_KINDS, movesAt, type BossKind, type BossSpec } from "./boss-kinds";
+import {
+  chargeHoldsMovement,
+  freshBarrage,
+  freshCharge,
+  freshNova,
+  freshSlam,
+  freshSummon,
+  makeOrbiter,
+  syncOrbit,
+  updateBarrage,
+  updateCharge,
+  updateNova,
+  updateShots,
+  updateSlam,
+  updateSummon,
+  type BarrageRt,
+  type BossShot,
+  type ChargeRt,
+  type MoveCtx,
+  type NovaRt,
+  type Orbiter,
+  type SlamRt,
+  type SummonRt,
+} from "./boss-moves";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
 // (King HP now arrives as a spawn parameter — core scales it by floor, see
@@ -45,7 +80,7 @@ const KING_SCALE = REAPER_SCALE * 1.55; // looms over the horde
  * 2-wide gap that looks passable — a boss that reads as fitting but does not
  * is just as frustrating as one embedded in stone.
  */
-export const KING_BODY_R = BRUTE_R * KING_SCALE * 0.86;
+export const KING_BODY_R = BRUTE_R * Math.max(...BOSS_KINDS.map((k) => BOSSES[k].art.scale)) * 0.86;
 /**
  * ── THE LEASH ─────────────────────────────────────────────────────────────
  *
@@ -92,20 +127,36 @@ const KING_LEASH_TILES = 34; // world distance from the anchor before he returns
 export const KING_HOME_TILES = 2.5;
 /** He walks home at a fraction of his hunting speed — a stalk back, not a sprint. */
 const KING_RETURN_SPEED = 0.75;
-const SKULL_COUNT = 5;
-const SKULL_ORBIT_R = 1.5;
-const SKULL_ORBIT_SPEED = 1.1; // rad/s
+/** Mirrored from boss-moves.ts — the replica draws its own copies of these. */
+const SHOT_Y = 1.5;
+const SHOT_HIT_R = 0.55;
 const SKULL_Y = 1.5;
-const SLAM_INTERVAL = 4.2; // seconds between slams
-const SLAM_TELEGRAPH = 1.1; // windup the ring is visible before impact
-export const SLAM_RADIUS = 2.6;
-const SLAM_DAMAGE = 2;
-const SLAM_LAUNCH = 16; // u/s knockback on hit
-const BARRAGE_INTERVAL = 2.6; // seconds between skull throws
-const BONE_SPEED = 9; // u/s projectile
-const BONE_DAMAGE = 1;
-export const BONE_MAX_DIST = 16;
-const BONE_HIT_R = 0.55;
+/**
+ * The widest thing you must WALK OUT OF — every boss's slam, and every echo.
+ *
+ * Derived from the roster rather than named, so a new boss's ground-pound is
+ * measured against the hall instead of quietly outgrowing it. It is read by
+ * `maze/floor-rules.test.ts`, which pins BOSS_ARENA_R to it.
+ *
+ * ⚠️ THE NOVA IS DELIBERATELY NOT IN HERE, and the distinction is geometric,
+ * not an oversight. A slam is centred on YOU: the hall must be big enough that
+ * you can travel out of the crater, so its radius drives the arena. A nova is
+ * centred on the BOSS: you escape it by being far from HIM, which the hall
+ * already allows, or by rolling through the front. Feeding it into this number
+ * would demand 10-tile halls to solve a problem the player solves by moving
+ * away from the thing they were already moving away from.
+ */
+export const SLAM_RADIUS = Math.max(
+  ...BOSS_KINDS.flatMap((k) => {
+    const b = BOSSES[k];
+    return [b.moves, b.phase2.moves].flatMap((m) => [m.slam?.radius ?? 0, m.slam?.echo?.radius ?? 0]);
+  }),
+);
+/** The longest a boss can throw. The arena must be no WIDER than this, or the
+ *  hall is one you kite him around instead of fighting him in. */
+export const BONE_MAX_DIST = Math.max(
+  ...BOSS_KINDS.flatMap((k) => [BOSSES[k].moves.barrage?.maxDist ?? 0, BOSSES[k].phase2.moves.barrage?.maxDist ?? 0]),
+);
 
 /**
  * Nearest knight to (x,z) among OUR player and every pool-mate on this floor —
@@ -153,6 +204,8 @@ interface Bone {
   dist: number;
 }
 interface BossState {
+  /** WHICH boss this is — the row in `boss-kinds.ts` that drives everything. */
+  spec: BossSpec;
   z: Zombie;
   /**
    * His LAIR — the world position he was spawned at, i.e. the exit he guards.
@@ -163,22 +216,46 @@ interface BossState {
   anchor: { x: number; z: number };
   /** True while hunting. Owned by `updateBoss`, which writes `z.aggro` from it. */
   engaged: boolean;
-  skulls: Skull[];
-  bones: Bone[];
-  slamT: number;
-  slamPhase: "idle" | "telegraph";
-  slamX: number;
-  slamZ: number;
-  telegraph: THREE.Mesh | null;
-  barrageT: number;
+  /** 1 until the HP threshold in `spec.phase2.at`, then 2. Never goes back. */
+  phase: 1 | 2;
+
+  // ── Attack runtimes. Present only for the moves this boss actually has;
+  // created lazily so a phase-2-only move (the Archivist's orbit) can appear
+  // mid-fight without every boss carrying a null for it from the start.
+  orbiters: Orbiter[];
   orbitT: number;
+  shots: BossShot[];
+  barrage: BarrageRt | null;
+  slam: SlamRt | null;
+  charge: ChargeRt | null;
+  summon: SummonRt | null;
+  nova: NovaRt | null;
+
+  /** Adds this boss has produced, so the cap can be enforced against reality. */
+  adds: Zombie[];
+  /** Injected by the spawner — `boss.ts` must not import the monster factory. */
+  spawnAdd: ((x: number, z: number) => Zombie | null) | null;
+
   portal: THREE.Mesh | null;
   opened: boolean;
-  /** How many knights the king's HP is currently scaled for (fairness). */
+  /** How many knights the boss's HP is currently scaled for (fairness). */
   scaledFor: number;
 }
 
 let boss: BossState | null = null;
+
+/**
+ * WHICH boss is on this floor — the authority's own, or the kind the last aux
+ * snapshot named on a replica. Null when there is no boss.
+ *
+ * The HUD reads it for the name on the bar. It used to say "BOSS", which was
+ * accurate while there was exactly one; with four of them the bar was the only
+ * place the game never told you what you were fighting.
+ */
+export function bossLabel(): string | null {
+  if (boss) return boss.spec.label;
+  return replica ? BOSSES[replica.kind].label : null;
+}
 
 /** True while a boss is alive and holding the exit shut. */
 export function bossActive(): boolean {
@@ -186,39 +263,8 @@ export function bossActive(): boolean {
 }
 
 // ── Procedural meshes ─────────────────────────────────────────────────────────
-function makeSkull(): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(0.2, 10, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xe8e2d0 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.renderOrder = 12;
-  // Two hollow eyes so it reads as a skull, not a pearl.
-  const eyeGeo = new THREE.SphereGeometry(0.055, 6, 5);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1a0e12 });
-  for (const dx of [-0.07, 0.07]) {
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(dx, 0.02, 0.17);
-    mesh.add(eye);
-  }
-  return mesh;
-}
 
-function makeBone(): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(0.14, 8, 6);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xd8c8a8 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.renderOrder = 12;
-  return mesh;
-}
 
-function makeTelegraph(): THREE.Mesh {
-  const geo = new THREE.RingGeometry(SLAM_RADIUS * 0.9, SLAM_RADIUS, 32);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff3050, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.04;
-  mesh.renderOrder = 5;
-  return mesh;
-}
 
 function makePortal(): THREE.Mesh {
   const geo = new THREE.TorusGeometry(0.95, 0.22, 12, 32);
@@ -245,32 +291,31 @@ export function spawnBoss(
   grid: Grid,
   spot: TilePos,
   hp: number,
+  spec: BossSpec,
   makeZombie: (x: number, z: number, hp: number) => Zombie,
+  spawnAdd: ((x: number, z: number) => Zombie | null) | null = null,
 ): void {
   if (boss || !state.scene || !state.player) return;
   const c = tileCenter(grid, spot.i, spot.j);
-  const z = makeZombie(c.x, c.z, hp);
-  z.baseTint = REAPER_TINT;
-  z.sprite.setTint(REAPER_TINT);
-  z.sprite.mesh.scale.multiplyScalar(KING_SCALE);
+  const z = makeZombie(c.x, c.z, Math.max(1, Math.round(hp * spec.hpMult)));
+  z.baseTint = spec.art.tint;
+  z.sprite.setTint(spec.art.tint);
+  z.sprite.mesh.scale.multiplyScalar(spec.art.scale);
+  z.speed *= spec.speedMult;
   // The collider must grow WITH the mesh, from the same constant, or the two
   // drift apart. They did: the king rendered ~2.17x wide while colliding as a
   // plain brute (0.42), so he walked half his visible body into 1-tile
-  // corridors and read as stuck in the wall. Derived, never hand-tuned.
-  z.bodyR = KING_BODY_R;
+  // corridors and read as stuck in the wall. Derived, never hand-tuned — and
+  // now from the SPEC's scale, so a new boss cannot reintroduce the drift.
+  z.bodyR = BRUTE_R * spec.art.scale * 0.86;
   // NOT `aggro = true`. That single line is what made him leave his post the
   // instant the floor existed — see THE LEASH above. `updateBoss` now owns this
   // flag and writes it from `engaged` every tick.
   z.aggro = false;
-
-  const skulls: Skull[] = [];
-  for (let i = 0; i < SKULL_COUNT; i++) {
-    const mesh = makeSkull();
-    state.scene.add(mesh);
-    skulls.push({ mesh, phase: (i / SKULL_COUNT) * Math.PI * 2 });
-  }
+  z.bossKind = spec.kind;
 
   boss = {
+    spec,
     z,
     // His post IS where he was sited — the exit. Captured from the spawn
     // position rather than re-derived from `state.stairs` later, because the
@@ -278,24 +323,55 @@ export function spawnBoss(
     // from the tile he actually stands on.
     anchor: { x: c.x, z: c.z },
     engaged: false,
-    skulls,
-    bones: [],
-    slamT: SLAM_INTERVAL,
-    slamPhase: "idle",
-    slamX: 0,
-    slamZ: 0,
-    telegraph: null,
-    barrageT: BARRAGE_INTERVAL,
+    phase: 1,
+    orbiters: [],
     orbitT: 0,
+    shots: [],
+    barrage: null,
+    slam: null,
+    charge: null,
+    summon: null,
+    nova: null,
+    adds: [],
+    spawnAdd,
     portal: null,
     opened: false,
     // Spawn hp is the 1-knight value; the first updateBoss tick rescales to
     // however many knights are actually on the floor.
     scaledFor: 1,
   };
+  syncOrbiters();
   state.exitLocked = true;
-  showToast("☠ THE REAPER KING ☠", "slay it — only then does the portal open");
+  showToast(spec.title, spec.tagline);
   state.shakeT = Math.max(state.shakeT, 0.4);
+}
+
+/**
+ * Match the orbiter meshes to whatever the CURRENT phase asks for.
+ *
+ * Called on spawn and again on the phase flip, because a phase can add a ring
+ * that was not there before (the Archivist gains one at half health) or change
+ * its colour. Rebuilds rather than diffs: five spheres is not worth the
+ * bookkeeping, and a rebuild cannot leave a stale colour behind.
+ */
+function syncOrbiters(): void {
+  if (!boss) return;
+  const spec = movesAt(boss.spec, hpFrac()).orbit;
+  for (const o of boss.orbiters) disposeMesh(o.mesh);
+  boss.orbiters = [];
+  if (!spec || !state.scene) return;
+  for (let i = 0; i < spec.count; i++) {
+    const mesh = makeOrbiter(spec.color);
+    state.scene.add(mesh);
+    boss.orbiters.push({ mesh, phase: (i / spec.count) * Math.PI * 2 });
+  }
+}
+
+/** Current HP as a fraction of max — the phase clock. */
+function hpFrac(): number {
+  if (!boss) return 1;
+  const max = boss.z.maxHp ?? boss.z.hp;
+  return max > 0 ? boss.z.hp / max : 1;
 }
 
 // ── Per-frame update (HOST authority — caller gates on !isReplica) ─────────────
@@ -310,7 +386,8 @@ export function updateBoss(dt: number): void {
 
   if (boss.opened) {
     updatePortal(dt);
-    updateBones(dt); // let any in-flight bones finish
+    // Let anything already in flight finish; the target is irrelevant now.
+    updateShots(boss.shots, makeCtx(dt, { x: boss.z.x, z: boss.z.z }));
     return;
   }
 
@@ -336,6 +413,7 @@ export function updateBoss(dt: number): void {
   const bz = boss.z.z;
   // The king menaces whichever knight is CLOSEST — ours or a pool-mate's.
   const target = nearestKnight(bx, bz) ?? { x: p.x, z: p.z };
+  const ctx = makeCtx(dt, target);
 
   // ── THE LEASH ── decided here, once, and everything below reads `engaged`.
   //
@@ -377,7 +455,7 @@ export function updateBoss(dt: number): void {
   // this he would simply stand wherever the leash tripped — which is worse than
   // chasing, because the exit ends up unguarded AND he is loitering in a
   // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
-  if (!boss.engaged && homeD > KING_HOME_TILES && g) {
+  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge))) {
     const step = boss.z.speed * KING_RETURN_SPEED * dt;
     const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
     boss.z.x = res.x;
@@ -389,112 +467,152 @@ export function updateBoss(dt: number): void {
 
   // ── DISENGAGED: no ranged pressure ──
   //
-  // The barrage and the slam both aim at `target` with no range test of their
-  // own, so a leashed king would snipe bones and drop ground-pounds on a player
-  // halfway across the floor — the leash would have removed the chase and left
-  // the harassment, which is the worse half. Skulls keep wheeling (he is
-  // visibly alive and dangerous), the projectiles do not fire, and the timers
-  // are HELD rather than ticked down so re-entering his hall doesn't eat an
-  // instant slam from a countdown that expired while you were away.
+  // Every attack aims at `target` with no range test of its own, so a leashed
+  // boss would snipe and drop ground-pounds on a player halfway across the
+  // floor — the leash would have removed the chase and left the harassment,
+  // which is the worse half. The ring keeps wheeling (he is visibly alive and
+  // dangerous), nothing fires, and the timers are HELD rather than ticked down
+  // so re-entering his hall doesn't eat an instant slam from a countdown that
+  // expired while you were away.
   if (!boss.engaged) {
-    updateBones(dt); // let anything already in flight land
+    updateShots(boss.shots, ctx); // let anything already in flight land
     return;
   }
 
-  // ── Skull ring wheels around the king ──
-  boss.orbitT += dt * SKULL_ORBIT_SPEED;
-  for (const s of boss.skulls) {
-    const a = boss.orbitT + s.phase;
-    s.mesh.position.set(bx + Math.cos(a) * SKULL_ORBIT_R, SKULL_Y + Math.sin(a * 2) * 0.12, bz + Math.sin(a) * SKULL_ORBIT_R);
-  }
-
-  // ── Skull barrage: fling a bone at the player on a cadence ──
-  boss.barrageT -= dt;
-  if (boss.barrageT <= 0 && boss.skulls.length > 0) {
-    boss.barrageT = BARRAGE_INTERVAL;
-    fireBone(bx, bz, target.x, target.z);
-  }
-  updateBones(dt);
-
-  // ── Tentacle slam cycle ──
-  boss.slamT -= dt;
-  if (boss.slamPhase === "idle" && boss.slamT <= SLAM_TELEGRAPH) {
-    // Commit the landing spot to the NEAREST knight's current position.
-    boss.slamPhase = "telegraph";
-    boss.slamX = target.x;
-    boss.slamZ = target.z;
-    boss.telegraph = makeTelegraph();
-    boss.telegraph.position.set(target.x, 0.04, target.z);
-    state.scene?.add(boss.telegraph);
-  }
-  if (boss.slamPhase === "telegraph") {
-    // Pulse the ring as it winds up.
-    if (boss.telegraph) {
-      const m = boss.telegraph.material as THREE.MeshBasicMaterial;
-      m.opacity = 0.35 + Math.abs(Math.sin(boss.slamT * 10)) * 0.4;
+  // ── THE PHASE FLIP ──
+  //
+  // HP-threshold, one-way, and it ADDS A PATTERN LAYER or swaps the movement
+  // mode rather than reskinning — the shape `enter-the-gungeon.md` §5.2
+  // describes. The runtimes whose spec changed are re-seeded so the new
+  // cadence starts from a full interval instead of inheriting a countdown
+  // measured against the old one.
+  if (boss.phase === 1 && hpFrac() <= boss.spec.phase2.at) {
+    boss.phase = 2;
+    const p2 = boss.spec.phase2;
+    if (p2.moves.barrage) boss.barrage = freshBarrage(p2.moves.barrage);
+    if (p2.moves.slam) boss.slam = freshSlam(p2.moves.slam);
+    if (p2.moves.charge) boss.charge = freshCharge(p2.moves.charge);
+    if (p2.moves.summon) {
+      const alive = boss.summon?.alive ?? 0;
+      boss.summon = freshSummon(p2.moves.summon);
+      boss.summon.alive = alive; // the brood does not vanish at the threshold
     }
-    if (boss.slamT <= 0) doSlam();
+    if (p2.moves.nova) boss.nova = freshNova(p2.moves.nova);
+    if (p2.speedMult) boss.z.speed *= p2.speedMult;
+    syncOrbiters();
+    showToast(p2.title, boss.spec.tagline);
+    state.shakeT = Math.max(state.shakeT, 0.5);
+    state.hudDirty = true;
+  }
+
+  const moves = movesAt(boss.spec, hpFrac());
+
+  // ── The ring wheels ──
+  if (moves.orbit) {
+    boss.orbitT += dt * moves.orbit.speed;
+    syncOrbit(boss.orbiters, moves.orbit, bx, bz, boss.orbitT);
+  }
+
+  // ── The moveset. A boss runs only the moves its row names. ──
+  if (moves.barrage) {
+    boss.barrage ??= freshBarrage(moves.barrage);
+    updateBarrage(boss.barrage, moves.barrage, ctx, boss.shots);
+  }
+  updateShots(boss.shots, ctx);
+
+  if (moves.slam) {
+    boss.slam ??= freshSlam(moves.slam);
+    updateSlam(boss.slam, moves.slam, ctx);
+  }
+
+  if (moves.charge) {
+    boss.charge ??= freshCharge(moves.charge);
+    updateCharge(boss.charge, moves.charge, ctx);
+  }
+
+  if (moves.summon) {
+    boss.summon ??= freshSummon(moves.summon);
+    // The cap is measured against what is ALIVE, not against what was ever
+    // spawned — a boss you have been out-killing should keep summoning.
+    boss.adds = boss.adds.filter((a) => a.hp > 0 && state.zombies.includes(a));
+    boss.summon.alive = boss.adds.length;
+    const spawnAdd = boss.spawnAdd;
+    updateSummon(boss.summon, moves.summon, ctx, (x, z) => {
+      const a = spawnAdd?.(x, z) ?? null;
+      if (a) boss!.adds.push(a);
+      return a !== null;
+    });
+  }
+
+  if (moves.nova) {
+    boss.nova ??= freshNova(moves.nova);
+    updateNova(boss.nova, moves.nova, ctx);
   }
 }
 
-function fireBone(bx: number, bz: number, px: number, pz: number): void {
-  const dx = px - bx;
-  const dz = pz - bz;
-  const len = Math.hypot(dx, dz) || 1;
-  const mesh = makeBone();
-  mesh.position.set(bx, SKULL_Y, bz);
-  state.scene?.add(mesh);
-  boss!.bones.push({ mesh, x: bx, z: bz, vx: (dx / len) * BONE_SPEED, vz: (dz / len) * BONE_SPEED, dist: 0 });
+/**
+ * The context every attack primitive gets.
+ *
+ * `hitAt` is the single door damage goes through, so a primitive cannot invent
+ * its own damage rule, and `moveTo` is the only way one can move the boss —
+ * which is what lets `chargeHoldsMovement` take the wheel for a dash without
+ * the generic chase AI fighting it for the same frame.
+ */
+function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
+  const b = boss!;
+  return {
+    dt,
+    x: b.z.x,
+    z: b.z.z,
+    target,
+    grid: state.grid,
+    bodyR: b.z.bodyR ?? BRUTE_R,
+    hitAt(x, z, r, damage, launch) {
+      const p = state.player;
+      if (!p || p.hp <= 0) return false;
+      if (Math.hypot(p.x - x, p.z - z) > r) return false;
+      hitPlayerRanged(damage, x, z);
+      if (launch > 0) {
+        // Reuse the pinball momentum channel, so being hit by a boss reads in
+        // the same language as being hit by the table.
+        const len = Math.hypot(p.x - x, p.z - z) || 1;
+        p.momX = (p.x - x) / len;
+        p.momZ = (p.z - z) / len;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, launch));
+        p.iframes = Math.max(p.iframes, 0.2);
+      }
+      return true;
+    },
+    moveTo(x, z) {
+      b.z.x = x;
+      b.z.z = z;
+      syncActorMesh(b.z);
+    },
+  };
 }
 
-function updateBones(dt: number): void {
+/** Drop every telegraph mesh a move might be holding. */
+function clearTelegraphs(): void {
   if (!boss) return;
-  const p = state.player;
-  for (let i = boss.bones.length - 1; i >= 0; i--) {
-    const b = boss.bones[i];
-    b.x += b.vx * dt;
-    b.z += b.vz * dt;
-    b.dist += Math.hypot(b.vx, b.vz) * dt;
-    b.mesh.position.set(b.x, SKULL_Y, b.z);
-    b.mesh.rotation.y += dt * 8;
-    const hit = p && Math.hypot(p.x - b.x, p.z - b.z) < BONE_HIT_R;
-    if (hit) {
-      hitPlayerRanged(BONE_DAMAGE, b.x, b.z);
-      state.vfx?.burst(b.x, SKULL_Y, b.z, 0xe8e2d0, 8, 4);
-    }
-    if (hit || b.dist > BONE_MAX_DIST) {
-      disposeMesh(b.mesh);
-      boss.bones.splice(i, 1);
-    }
+  if (boss.barrage?.tell) {
+    disposeMesh(boss.barrage.tell);
+    boss.barrage.tell = null;
   }
-}
-
-function doSlam(): void {
-  if (!boss) return;
-  const { slamX, slamZ } = boss;
-  if (boss.telegraph) {
-    disposeMesh(boss.telegraph);
-    boss.telegraph = null;
+  if (boss.slam?.ring) {
+    disposeMesh(boss.slam.ring);
+    boss.slam.ring = null;
   }
-  boss.slamPhase = "idle";
-  boss.slamT = SLAM_INTERVAL;
-
-  state.vfx?.burst(slamX, 0.2, slamZ, 0xff3050, 26, 7);
-  state.shakeT = Math.max(state.shakeT, 0.35);
-  state.hitstopT = Math.max(state.hitstopT, 0.06);
-
-  const p = state.player;
-  if (!p) return;
-  const dx = p.x - slamX;
-  const dz = p.z - slamZ;
-  if (Math.hypot(dx, dz) <= SLAM_RADIUS) {
-    hitPlayerRanged(SLAM_DAMAGE, slamX, slamZ);
-    // Launch the knight out of the crater, reusing the pinball momentum channel.
-    const len = Math.hypot(dx, dz) || 1;
-    p.momX = dx / len;
-    p.momZ = dz / len;
-    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SLAM_LAUNCH));
-    p.iframes = Math.max(p.iframes, 0.2);
+  if (boss.charge?.lane) {
+    disposeMesh(boss.charge.lane);
+    boss.charge.lane = null;
+  }
+  if (boss.summon?.ring) {
+    disposeMesh(boss.summon.ring);
+    boss.summon.ring = null;
+  }
+  if (boss.nova?.ring) {
+    disposeMesh(boss.nova.ring);
+    boss.nova.ring = null;
   }
 }
 
@@ -504,16 +622,14 @@ function openPortal(): void {
   boss.opened = true;
   state.exitLocked = false;
 
-  // Skulls shatter.
-  for (const s of boss.skulls) {
-    state.vfx?.burst(s.mesh.position.x, s.mesh.position.y, s.mesh.position.z, 0xe8e2d0, 10, 5);
-    disposeMesh(s.mesh);
+  // The ring shatters, and every telegraph in flight is dropped — a boss dying
+  // mid-wind-up must not leave a ring on the floor that never resolves.
+  for (const o of boss.orbiters) {
+    state.vfx?.burst(o.mesh.position.x, o.mesh.position.y, o.mesh.position.z, 0xe8e2d0, 10, 5);
+    disposeMesh(o.mesh);
   }
-  boss.skulls = [];
-  if (boss.telegraph) {
-    disposeMesh(boss.telegraph);
-    boss.telegraph = null;
-  }
+  boss.orbiters = [];
+  clearTelegraphs();
 
   // Bloom the portal over the stairs (the exit the king was guarding).
   if (state.scene && state.grid && state.stairs) {
@@ -541,16 +657,30 @@ function updatePortal(dt: number): void {
 // ── Co-op: the king over the wire ─────────────────────────────────────────────
 /** The boss aux state a floor authority streams to replicas each snapshot. */
 export interface BossAux {
-  /** Bone projectiles in flight. */
-  bones: Array<{ x: number; z: number }>;
-  /** A slam telegraph in progress: where, and seconds until impact. */
-  slam: { x: number; z: number; t: number } | null;
-  /** The opened portal's position, once the king is dead. */
-  portal: { x: number; z: number } | null;
-  /** King alive → replicas keep their skull ring + exit lock. */
-  alive: boolean;
+  /** Which boss — replicas need it for the name on the bar and the death toast. */
+  kind: BossKind;
+  /** Projectiles in flight (was `bones`; every boss that throws uses this). */
+  shots: Array<{ x: number; z: number }>;
   /**
-   * Is he HUNTING (see THE LEASH)? Streamed so a replica's boss bar appears at
+   * Ground telegraphs in progress: where, how big, and seconds until impact.
+   *
+   * Was a single `slam` field. It is a LIST now because a boss can telegraph a
+   * slam, a summon or a nova, and a replica that only knew about slams would
+   * render an Archivist's nova as nothing at all — the attack would land on a
+   * replica's knight with no warning whatsoever, which is the one thing the
+   * telegraph rule exists to prevent.
+   */
+  rings: Array<{ x: number; z: number; r: number; t: number; kind: "slam" | "nova" | "summon" }>;
+  /** A charge lane being telegraphed: origin, unit heading, length. */
+  lane: { x: number; z: number; dx: number; dz: number; len: number } | null;
+  /** The opened portal's position, once the boss is dead. */
+  portal: { x: number; z: number } | null;
+  /** Boss alive → replicas keep their ring + exit lock. */
+  alive: boolean;
+  /** Second half of the fight — replicas re-colour their mirrored ring. */
+  phase: 1 | 2;
+  /**
+   * Is it HUNTING (see THE LEASH)? Streamed so a replica's boss bar appears at
    * the same moment the authority's does. Without it a replica would either
    * show the bar from floor-build — the exact "the boss is at my spawn" read
    * this whole change removes — or not until someone landed a hit.
@@ -561,11 +691,27 @@ export interface BossAux {
 /** Authority side: serialize the aux threats for the snapshot. Null = no boss. */
 export function bossNetState(): BossAux | null {
   if (!boss) return null;
+  const moves = movesAt(boss.spec, hpFrac());
+  const rings: BossAux["rings"] = [];
+  if (boss.slam && boss.slam.phase !== "idle" && moves.slam) {
+    const r = boss.slam.phase === "echo" ? (moves.slam.echo?.radius ?? moves.slam.radius) : moves.slam.radius;
+    rings.push({ x: boss.slam.x, z: boss.slam.z, r, t: boss.slam.phase === "echo" ? boss.slam.echoT : boss.slam.t, kind: "slam" });
+  }
+  if (boss.nova && boss.nova.phase !== "idle" && moves.nova) {
+    rings.push({ x: boss.nova.x, z: boss.nova.z, r: moves.nova.radius, t: boss.nova.t, kind: "nova" });
+  }
+  if (boss.summon && boss.summon.phase === "telegraph") {
+    rings.push({ x: boss.z.x, z: boss.z.z, r: 1.8, t: boss.summon.t, kind: "summon" });
+  }
+  const charging = boss.charge && boss.charge.phase === "telegraph" && moves.charge;
   return {
-    bones: boss.bones.map((b) => ({ x: Math.round(b.x * 50) / 50, z: Math.round(b.z * 50) / 50 })),
-    slam: boss.slamPhase === "telegraph" ? { x: boss.slamX, z: boss.slamZ, t: boss.slamT } : null,
+    kind: boss.spec.kind,
+    shots: boss.shots.map((b) => ({ x: Math.round(b.x * 50) / 50, z: Math.round(b.z * 50) / 50 })),
+    rings,
+    lane: charging ? { x: boss.z.x, z: boss.z.z, dx: boss.charge!.dx, dz: boss.charge!.dz, len: moves.charge!.distance } : null,
     portal: boss.portal ? { x: boss.portal.position.x, z: boss.portal.position.z } : null,
     alive: !boss.opened,
+    phase: boss.phase,
     engaged: boss.engaged,
   };
 }
@@ -586,17 +732,22 @@ export function bossEngaged(): boolean {
 interface ReplicaAux {
   /** Last streamed `BossAux.engaged` — the replica's copy of THE LEASH state. */
   engaged: boolean;
-  skulls: THREE.Mesh[];
-  bones: THREE.Mesh[];
-  telegraph: THREE.Mesh | null;
-  slamPos: { x: number; z: number } | null;
+  /** Which boss the authority says this is; drives colour, reach and damage. */
+  kind: BossKind;
+  orbiters: THREE.Mesh[];
+  shots: THREE.Mesh[];
+  /** Mirrored ground telegraphs, one mesh per streamed ring. */
+  rings: THREE.Mesh[];
+  /** What the rings were LAST frame — a ring that vanishes has just landed. */
+  lastRings: BossAux["rings"];
+  lane: THREE.Mesh | null;
   portal: THREE.Mesh | null;
   orbitT: number;
 }
 let replica: ReplicaAux | null = null;
 
 function ensureReplica(): ReplicaAux {
-  if (!replica) replica = { engaged: false, skulls: [], bones: [], telegraph: null, slamPos: null, portal: null, orbitT: 0 };
+  if (!replica) replica = { engaged: false, kind: "reaper_king", orbiters: [], shots: [], rings: [], lastRings: [], lane: null, portal: null, orbitT: 0 };
   return replica;
 }
 
@@ -609,63 +760,105 @@ function ensureReplica(): ReplicaAux {
 export function applyRemoteBossAux(aux: BossAux | null): void {
   const r = ensureReplica();
   r.engaged = !!aux?.engaged;
+  if (aux) r.kind = aux.kind;
+  const spec = BOSSES[r.kind];
+  const moves = aux?.phase === 2 ? { ...spec.moves, ...spec.phase2.moves } : spec.moves;
 
-  // Skull ring: cosmetic, orbits whatever boss-flagged zombie the snapshot gave us.
+  // Orbit ring: cosmetic, wheels around whatever boss-flagged zombie we were given.
   const king = state.zombies.find((z) => z.boss && z.mode !== "dead");
-  const wantSkulls = aux?.alive && king ? SKULL_COUNT : 0;
-  while (r.skulls.length < wantSkulls) {
-    const m = makeSkull();
+  const want = aux?.alive && king && moves.orbit ? moves.orbit.count : 0;
+  while (r.orbiters.length < want) {
+    const m = makeOrbiter(moves.orbit!.color);
     state.scene?.add(m);
-    r.skulls.push(m);
+    r.orbiters.push(m);
   }
-  while (r.skulls.length > wantSkulls) disposeMesh(r.skulls.pop()!);
+  while (r.orbiters.length > want) disposeMesh(r.orbiters.pop()!);
 
-  // Bones: match mesh count to the snapshot, park them on the reported spots.
-  const bones = aux?.bones ?? [];
-  while (r.bones.length < bones.length) {
-    const m = makeBone();
+  // Projectiles: match mesh count to the snapshot, park them on the reported spots.
+  const shots = aux?.shots ?? [];
+  while (r.shots.length < shots.length) {
+    const geo = new THREE.SphereGeometry(0.14, 8, 6);
+    const mat = new THREE.MeshBasicMaterial({ color: moves.barrage?.color ?? 0xd8c8a8 });
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = 12;
     state.scene?.add(m);
-    r.bones.push(m);
+    r.shots.push(m);
   }
-  while (r.bones.length > bones.length) disposeMesh(r.bones.pop()!);
-  for (let i = 0; i < bones.length; i++) r.bones[i].position.set(bones[i].x, SKULL_Y, bones[i].z);
+  while (r.shots.length > shots.length) disposeMesh(r.shots.pop()!);
+  for (let i = 0; i < shots.length; i++) r.shots[i].position.set(shots[i].x, SHOT_Y, shots[i].z);
 
-  // Bone hits against OUR knight (the authority only guards its own).
+  // Projectile hits against OUR knight (the authority only guards its own).
   const p = state.player;
   if (p) {
-    for (const b of bones) {
-      if (Math.hypot(p.x - b.x, p.z - b.z) < BONE_HIT_R + 0.15 && p.iframes <= 0) {
-        hitPlayerRanged(BONE_DAMAGE, b.x, b.z);
+    for (const b of shots) {
+      if (Math.hypot(p.x - b.x, p.z - b.z) < SHOT_HIT_R + 0.15 && p.iframes <= 0) {
+        hitPlayerRanged(moves.barrage?.damage ?? 1, b.x, b.z);
       }
     }
   }
 
-  // Slam: ring while telegraphed; when it VANISHES, the authority fired it.
-  const slam = aux?.slam ?? null;
-  if (slam) {
-    if (!r.telegraph) {
-      r.telegraph = makeTelegraph();
-      state.scene?.add(r.telegraph);
-    }
-    r.telegraph.position.set(slam.x, 0.04, slam.z);
-    r.slamPos = { x: slam.x, z: slam.z };
-  } else if (r.telegraph) {
-    disposeMesh(r.telegraph);
-    r.telegraph = null;
-    const at = r.slamPos;
-    r.slamPos = null;
-    if (at) {
-      state.vfx?.burst(at.x, 0.2, at.z, 0xff3050, 26, 7);
-      state.shakeT = Math.max(state.shakeT, 0.35);
-      if (p && Math.hypot(p.x - at.x, p.z - at.z) <= SLAM_RADIUS) {
-        hitPlayerRanged(SLAM_DAMAGE, at.x, at.z);
-        const len = Math.hypot(p.x - at.x, p.z - at.z) || 1;
-        p.momX = (p.x - at.x) / len;
-        p.momZ = (p.z - at.z) / len;
-        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SLAM_LAUNCH));
+  // ── Ground telegraphs, and the impacts they imply ──
+  //
+  // A ring that was in the last snapshot and is gone from this one has LANDED.
+  // That is how the slam has always been detected here; it now covers the nova
+  // too, because a replica that mirrored only slams would let an Archivist's
+  // nova hit its knight with no warning at all — the one thing the telegraph
+  // rule exists to prevent.
+  const rings = aux?.rings ?? [];
+  for (const was of r.lastRings) {
+    if (rings.some((n) => n.kind === was.kind && Math.abs(n.x - was.x) < 0.01 && Math.abs(n.z - was.z) < 0.01)) continue;
+    if (was.kind === "summon") continue; // adds arrive as ordinary streamed monsters
+    const color = was.kind === "nova" ? (moves.nova?.color ?? 0xb070ff) : (moves.slam?.color ?? 0xff3050);
+    state.vfx?.burst(was.x, 0.2, was.z, color, 26, 7);
+    state.shakeT = Math.max(state.shakeT, 0.35);
+    if (p && Math.hypot(p.x - was.x, p.z - was.z) <= was.r) {
+      const dmg = was.kind === "nova" ? (moves.nova?.damage ?? 2) : (moves.slam?.damage ?? 2);
+      hitPlayerRanged(dmg, was.x, was.z);
+      const launch = was.kind === "nova" ? 0 : (moves.slam?.launch ?? 0);
+      if (launch > 0) {
+        const len = Math.hypot(p.x - was.x, p.z - was.z) || 1;
+        p.momX = (p.x - was.x) / len;
+        p.momZ = (p.z - was.z) / len;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, launch));
         p.iframes = Math.max(p.iframes, 0.2);
       }
     }
+  }
+  r.lastRings = rings.map((x) => ({ ...x }));
+
+  while (r.rings.length > rings.length) disposeMesh(r.rings.pop()!);
+  for (let i = 0; i < rings.length; i++) {
+    const ring = rings[i];
+    // Rebuilt each frame rather than scaled: a ring's radius changes between a
+    // slam and its wider echo, and a stale geometry would lie about reach.
+    if (r.rings[i]) disposeMesh(r.rings[i]);
+    const color = ring.kind === "nova" ? (moves.nova?.color ?? 0xb070ff) : ring.kind === "summon" ? (moves.summon?.color ?? 0x7fdc6a) : (moves.slam?.color ?? 0xff3050);
+    const geo = new THREE.RingGeometry(ring.r * 0.9, ring.r, 40);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(ring.x, 0.04, ring.z);
+    mesh.renderOrder = 5;
+    state.scene?.add(mesh);
+    r.rings[i] = mesh;
+  }
+
+  // Charge lane.
+  if (aux?.lane) {
+    if (r.lane) disposeMesh(r.lane);
+    const l = aux.lane;
+    const geo = new THREE.PlaneGeometry(1.4, l.len);
+    const mat = new THREE.MeshBasicMaterial({ color: moves.charge?.color ?? 0xff5a2a, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
+    const lane = new THREE.Mesh(geo, mat);
+    lane.rotation.x = -Math.PI / 2;
+    lane.rotation.z = -Math.atan2(l.dz, l.dx) + Math.PI / 2;
+    lane.position.set(l.x + l.dx * l.len * 0.5, 0.045, l.z + l.dz * l.len * 0.5);
+    lane.renderOrder = 5;
+    state.scene?.add(lane);
+    r.lane = lane;
+  } else if (r.lane) {
+    disposeMesh(r.lane);
+    r.lane = null;
   }
 
   // Portal: bloom it once; the coop layer clears state.exitLocked via the lock flag.
@@ -674,24 +867,28 @@ export function applyRemoteBossAux(aux: BossAux | null): void {
     r.portal.position.set(aux.portal.x, 1.0, aux.portal.z);
     state.scene?.add(r.portal);
     state.vfx?.burst(aux.portal.x, 1.0, aux.portal.z, 0xa050e0, 30, 6);
-    showToast("THE REAPER KING FALLS", "the portal opens — step into it to descend");
+    showToast(`${spec.label} FALLS`, "the portal opens — step into it to descend");
   }
 }
 
-/** Replica per-frame smoothing: skulls orbit the king, the portal spins. */
+/** Replica per-frame smoothing: the ring orbits the boss, the portal spins. */
 export function updateBossReplica(dt: number): void {
   if (!replica) return;
   const king = state.zombies.find((z) => z.boss && z.mode !== "dead");
-  replica.orbitT += dt * SKULL_ORBIT_SPEED;
-  if (king) {
-    for (let i = 0; i < replica.skulls.length; i++) {
-      const a = replica.orbitT + (i / SKULL_COUNT) * Math.PI * 2;
-      replica.skulls[i].position.set(king.x + Math.cos(a) * SKULL_ORBIT_R, SKULL_Y + Math.sin(a * 2) * 0.12, king.z + Math.sin(a) * SKULL_ORBIT_R);
+  const spec = BOSSES[replica.kind];
+  const orbit = spec.moves.orbit ?? spec.phase2.moves.orbit;
+  replica.orbitT += dt * (orbit?.speed ?? 1.1);
+  if (king && orbit && replica.orbiters.length) {
+    for (let i = 0; i < replica.orbiters.length; i++) {
+      const a = replica.orbitT + (i / replica.orbiters.length) * Math.PI * 2;
+      replica.orbiters[i].position.set(king.x + Math.cos(a) * orbit.radius, SHOT_Y + Math.sin(a * 2) * 0.12, king.z + Math.sin(a) * orbit.radius);
     }
   }
-  if (replica.telegraph) {
-    const m = replica.telegraph.material as THREE.MeshBasicMaterial;
-    m.opacity = 0.35 + Math.abs(Math.sin(state.elapsed * 10)) * 0.4;
+  for (const ring of replica.rings) {
+    (ring.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.abs(Math.sin(state.elapsed * 10)) * 0.4;
+  }
+  if (replica.lane) {
+    (replica.lane.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(state.elapsed * 10)) * 0.3;
   }
   replica.portal?.rotateZ(dt * 1.5);
 }
@@ -701,16 +898,11 @@ export function updateBossReplica(dt: number): void {
  * living boss-flagged ghost. Wire the full boss module around it so slams and
  * barrages resume; replica-side mirrored meshes are dropped first.
  */
-export function adoptBoss(z: Zombie): void {
+export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void {
   if (boss || !state.scene) return;
   disposeReplicaAux();
-  const skulls: Skull[] = [];
-  for (let i = 0; i < SKULL_COUNT; i++) {
-    const mesh = makeSkull();
-    state.scene.add(mesh);
-    skulls.push({ mesh, phase: (i / SKULL_COUNT) * Math.PI * 2 });
-  }
   boss = {
+    spec,
     z,
     // AUTHORITY HANDOVER: the previous simulator's anchor did not come across
     // the wire, so the best available post is where he stands at the moment we
@@ -719,29 +911,40 @@ export function adoptBoss(z: Zombie): void {
     // a frame in the middle of a slam.
     anchor: { x: z.x, z: z.z },
     engaged: true,
-    skulls,
-    bones: [],
-    slamT: SLAM_INTERVAL,
-    slamPhase: "idle",
-    slamX: 0,
-    slamZ: 0,
-    telegraph: null,
-    barrageT: BARRAGE_INTERVAL,
+    // Re-derived from the inherited HP rather than carried over the wire: the
+    // threshold is a pure function of the health bar, so both sides agree
+    // without another field, and an adopted boss cannot resume in phase 1 with
+    // a sliver of health left.
+    phase: 1,
+    orbiters: [],
     orbitT: 0,
+    shots: [],
+    barrage: null,
+    slam: null,
+    charge: null,
+    summon: null,
+    nova: null,
+    adds: [],
+    // Adds cannot be adopted: the previous authority's brood is in
+    // `state.zombies` as ordinary monsters and stays that way.
+    spawnAdd: null,
     portal: null,
     opened: false,
     // The inherited hp was already scaled by the previous authority — seed
     // scaledFor with the CURRENT knight count so the next tick doesn't double it.
     scaledFor: knightsOnFloor(),
   };
+  if (hpFrac() <= spec.phase2.at) boss.phase = 2;
+  syncOrbiters();
   state.exitLocked = true;
 }
 
 function disposeReplicaAux(): void {
   if (!replica) return;
-  for (const m of replica.skulls) disposeMesh(m);
-  for (const m of replica.bones) disposeMesh(m);
-  if (replica.telegraph) disposeMesh(replica.telegraph);
+  for (const m of replica.orbiters) disposeMesh(m);
+  for (const m of replica.shots) disposeMesh(m);
+  for (const m of replica.rings) disposeMesh(m);
+  if (replica.lane) disposeMesh(replica.lane);
   if (replica.portal) disposeMesh(replica.portal);
   replica = null;
 }
@@ -750,9 +953,9 @@ function disposeReplicaAux(): void {
 export function disposeBoss(): void {
   disposeReplicaAux();
   if (!boss) return;
-  for (const s of boss.skulls) disposeMesh(s.mesh);
-  for (const b of boss.bones) disposeMesh(b.mesh);
-  if (boss.telegraph) disposeMesh(boss.telegraph);
+  for (const o of boss.orbiters) disposeMesh(o.mesh);
+  for (const b of boss.shots) disposeMesh(b.mesh);
+  clearTelegraphs();
   if (boss.portal) disposeMesh(boss.portal);
   boss = null;
 }

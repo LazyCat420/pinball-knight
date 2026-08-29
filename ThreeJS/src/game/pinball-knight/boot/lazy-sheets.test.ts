@@ -25,7 +25,9 @@ import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "../r
 import { setEnginePalette } from "../engine/palette-source";
 import { invalidatePaletteCaches } from "../engine/render/sprite";
 import { sheetFor, SHEET_KEY_BY_KIND, type SheetKey } from "./sheets";
-import { RESKIN } from "../spawn/factory";
+import { skinSheet } from "../spawn/factory";
+import { KIND_SKIN } from "../spawn/kind-skin";
+import type { EnemyKind } from "../state";
 import { state } from "../state";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -43,20 +45,22 @@ afterAll(() => {
 const ALL_KEYS: SheetKey[] = [
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
-  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
+  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet", "reaper",
 ];
 
-/** Put every atlas field back to null — the state a spawn sees before the
- *  backfill has reached that kind, and after a teardown. */
+/**
+ * Empty the atlas map — the state a spawn sees before the backfill has reached
+ * that kind, and after a teardown.
+ *
+ * This was itself a hand-written list of twenty-two assignments, and it was
+ * missing `warden`: the cold-state tests below never actually cleared the
+ * warden's sheet, so for that one kind they proved nothing. Same failure as
+ * the production lists this refactor replaced, in the test that exists to
+ * catch it.
+ */
 function clearAllSheets(): void {
-  state.zombieSheet = null; state.zombieVariantSheets = [];
-  state.spiderSheet = null; state.bruteSheet = null; state.spitterSheet = null;
-  state.ghostSheet = null; state.batSheet = null; state.slimeSheet = null;
-  state.bossSheet = null; state.goblinSheet = null; state.pinSheet = null;
-  state.golemSheet = null; state.chomperSheet = null; state.magnetSheet = null;
-  state.webspinnerSheet = null; state.sporelingSheet = null;
-  state.houndSheet = null; state.jesterSheet = null; state.croakerSheet = null; state.rotortailSheet = null;
-  state.stiltneckSheet = null; state.fishFeetSheet = null;
+  state.sheets = {};
+  state.zombieVariantSheets = [];
 }
 
 describe("sheetFor builds on demand", () => {
@@ -80,23 +84,28 @@ describe("sheetFor builds on demand", () => {
     expect(second).toBe(first);
   });
 
-  it("caches onto the state fields teardown already clears", () => {
-    // The memo deliberately IS `state.*Sheet`. A separate cache would survive
+  it("caches into the map teardown already clears", () => {
+    // The memo deliberately IS `state.sheets`. A separate cache would survive
     // dispose.ts and leak an atlas per floor change.
-    state.webspinnerSheet = null;
+    delete state.sheets.webspinner;
     const built = sheetFor("webspinner");
-    expect(state.webspinnerSheet).toBe(built);
+    expect(state.sheets.webspinner).toBe(built);
 
     // Simulating teardown must actually force a rebuild.
-    state.webspinnerSheet = null;
+    delete state.sheets.webspinner;
     expect(sheetFor("webspinner")).not.toBe(built);
   });
 });
 
 describe("every spawnable kind can reach art", () => {
-  it("resolves a sheet for each RESKIN kind (bespoke Wave-B atlases)", () => {
-    // RESKIN's thunks used to read `state.xSheet` directly and makeReskin
+  it("resolves a sheet for every KIND_SKIN kind, bespoke or borrowed", () => {
+    // The skin thunks used to read `state.xSheet` directly and makeSkinned
     // returns null on a falsy sheet — i.e. the enemy silently does not spawn.
+    //
+    // Since the RESKIN/EXPANSION_SKIN merge this covers the BORROWED-atlas
+    // kinds too, which had no cold-state test of their own: a bloater whose
+    // slime sheet is unbuilt must bake its dye off a freshly built base, not
+    // give up.
     //
     // ⚠️ COLD STATE IS THE WHOLE TEST. An earlier `it` in this file builds
     // these atlases, so without the reset below every thunk finds a populated
@@ -105,8 +114,8 @@ describe("every spawnable kind can reach art", () => {
     // reintroducing the raw-field read: with the reset it fails, without it
     // does not.
     clearAllSheets();
-    for (const [kind, skin] of Object.entries(RESKIN)) {
-      expect(skin!.sheet(), `RESKIN.${kind} resolved no sheet from a cold state`).toBeTruthy();
+    for (const kind of Object.keys(KIND_SKIN) as EnemyKind[]) {
+      expect(skinSheet(kind), `KIND_SKIN.${kind} resolved no sheet from a cold state`).toBeTruthy();
     }
   });
 

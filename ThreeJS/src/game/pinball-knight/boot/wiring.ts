@@ -19,7 +19,7 @@
  * `core-boundary.test.ts` — nothing under boot/ may import core.ts.
  */
 import * as THREE from "three";
-import { state, type GroundItem, type MarbleMaterial } from "../state";
+import { state, type EnemyKind, type GroundItem, type MarbleMaterial } from "../state";
 import { setDebugActionDeps, debugSpawn, debugClearEnemies } from "../dev/debug-actions";
 import { installDevHooks } from "../dev/window-hooks";
 import { setLevelUpHandler } from "../skill-runtime";
@@ -57,7 +57,7 @@ import { spawnFloorFx } from "../entities/floor-fx";
 import { MATERIAL_LIST } from "../entities/marble";
 import { createStaticSprite } from "../engine/render/sprite";
 import { reaperSheet } from "../render/reaper-sheet";
-import { sheetFor, SHEET_KEY_BY_KIND } from "./sheets";
+import { sheetFor, sheetKeyForKind, skinSheet } from "./sheets";
 import { ITEM_PAINTS } from "../render/cel-painter";
 import { cardBase } from "../cards";
 import {
@@ -131,12 +131,15 @@ export function installGameplayWiring(deps: WiringDeps): void {
       // (boot/sheets.ts), and a PEER can be a floor deeper than us — so the one
       // monster we have never met is exactly the one whose sheet the backfill
       // may not have reached. Reading the field would draw it as a zombie.
+      // `skinSheet` covers the BORROWED atlases too — a peer's bloater used to
+      // fall past SHEET_KEY_BY_KIND and land on state.sheets.zombie, drawing as
+      // a zombie: precisely the failure the paragraph above warns about, for
+      // the eight kinds that table was missing.
       const sheet =
         kind === "reaper" || boss
           ? reaperSheet()
-          : SHEET_KEY_BY_KIND[kind as string]
-            ? sheetFor(SHEET_KEY_BY_KIND[kind as string])
-            : state.zombieSheet;
+          : (skinSheet(kind as EnemyKind) ??
+            (sheetKeyForKind(kind as EnemyKind) ? sheetFor(sheetKeyForKind(kind as EnemyKind)!) : state.sheets.zombie));
       if (!sheet) return null;
       const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
       z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)

@@ -21,7 +21,8 @@ import { at, tileCenter, worldToTile } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { ITEM_PAINTS, ZOMBIE_VARIANTS } from "../render/cel-painter";
 import { createStaticSprite, type SpriteSheet } from "../engine/render/sprite";
-import { RESKIN, makeReskin, makeZombie, spawnKind } from "../spawn/factory";
+import { makeSkinned, makeZombie, skinSheet, spawnKind } from "../spawn/factory";
+import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { variantIndicesFor, type ZombieType } from "../zombie-types";
 
@@ -65,16 +66,15 @@ export function debugSpawnRing(): void {
   if (!p || !g || !state.scene) return;
   const sheets = [...state.zombieVariantSheets];
   const specs: Array<{ sheet: SpriteSheet; kind: EnemyKind }> = sheets.map((sheet) => ({ sheet, kind: "zombie" as EnemyKind }));
-  if (state.spiderSheet) specs.push({ sheet: state.spiderSheet, kind: "spider" });
-  if (state.bruteSheet) specs.push({ sheet: state.bruteSheet, kind: "brute" });
-  if (state.spitterSheet) specs.push({ sheet: state.spitterSheet, kind: "spitter" });
-  if (state.ghostSheet) specs.push({ sheet: state.ghostSheet, kind: "ghost" });
-  if (state.batSheet) specs.push({ sheet: state.batSheet, kind: "bat" });
-  if (state.slimeSheet) specs.push({ sheet: state.slimeSheet, kind: "slime" });
+  if (state.sheets.spider) specs.push({ sheet: state.sheets.spider, kind: "spider" });
+  if (state.sheets.brute) specs.push({ sheet: state.sheets.brute, kind: "brute" });
+  if (state.sheets.spitter) specs.push({ sheet: state.sheets.spitter, kind: "spitter" });
+  if (state.sheets.ghost) specs.push({ sheet: state.sheets.ghost, kind: "ghost" });
+  if (state.sheets.bat) specs.push({ sheet: state.sheets.bat, kind: "bat" });
+  if (state.sheets.slime) specs.push({ sheet: state.sheets.slime, kind: "slime" });
   // The Wave-B reskins, so the whole roster is inspectable in one ring.
   for (const kind of ["goblin", "pin", "golem", "chomper", "magnet", "webspinner"] as EnemyKind[]) {
-    const skin = RESKIN[kind];
-    const sheet = skin?.sheet();
+    const sheet = skinSheet(kind);
     if (sheet) specs.push({ sheet, kind });
   }
   // Place each enemy on the nearest WALKABLE tile stepping outward from the
@@ -86,7 +86,7 @@ export function debugSpawnRing(): void {
     const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
     const c = tileCenter(g, spot.i, spot.j);
     const zz = makeZombie(spec.sheet, c.x, c.z, 0, { kind: spec.kind });
-    const skin = RESKIN[spec.kind];
+    const skin = KIND_SKIN[spec.kind];
     if (skin) zz.sprite.mesh.scale.multiplyScalar(skin.scale);
     zz.aggro = true;
     zz.anim.setFacing("S");
@@ -121,10 +121,10 @@ export function makeDebugEnemy(kind: EnemyKind, x: number, z: number, ztype?: Zo
     // art check is looking at a shambler with a hulk's stats and passes for the
     // wrong reason.
     const allowed = ztype ? variantIndicesFor(ztype, ZOMBIE_VARIANTS) : [0];
-    const sheet = state.zombieVariantSheets[allowed[0]] ?? state.zombieVariantSheets[0] ?? state.zombieSheet;
+    const sheet = state.zombieVariantSheets[allowed[0]] ?? state.zombieVariantSheets[0] ?? state.sheets.zombie;
     return sheet ? makeZombie(sheet, x, z, speed, { kind: "zombie", ztype }) : null;
   }
-  if (RESKIN[kind]) return makeReskin(kind, x, z, speed);
+  if (KIND_SKIN[kind]) return makeSkinned(kind, x, z, speed);
   return spawnKind(kind, x, z, speed, 99); // level 99 clears every FROM_LEVEL gate
 }
 

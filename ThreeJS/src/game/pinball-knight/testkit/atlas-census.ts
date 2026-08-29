@@ -18,21 +18,10 @@ import { paintInArtSpace, crushToGrid } from "../engine/render/sprite";
 import { installPalette, PALETTE_SIZE } from "../render/palette";
 import { censusCell, declaredSet, mergeStats, type CellStats } from "../render/atlas-census";
 import type { ActorPaints, Dir, FramePaint } from "../engine/render/paint-types";
-import {
-  ZOMBIE_VARIANTS, withRecoil,
-  makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints,
-  makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints,
-  makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints,
-} from "../render/cel-painter";
-import { makeSporelingPaints } from "../render/monsters/sporeling";
-import { makeJesterPaints } from "../render/monsters/jester";
-import { makeCroakerPaints } from "../render/monsters/croaker";
-import { makeRotortailPaints } from "../render/monsters/rotortail";
-import { makeStiltneckPaints } from "../render/monsters/stiltneck";
-import { makeFishFeetPaints } from "../render/monsters/fish_feet";
-import { makeHoundPaints } from "../render/monsters/hound";
+import { withRecoil } from "../render/cel-painter";
 import { CAMERA_ZOOMS } from "../constants/render";
 import type { SheetKey } from "../boot/sheets";
+import { SHEET_PAINTERS } from "../render/sheet-painters";
 
 /**
  * The five shipped camera rungs as GRID sizes, derived — never typed out.
@@ -107,30 +96,7 @@ export function paintAtlas(f: FramePaint, grid: number = SHIPPED_GRID): ImageDat
  * by `rosterSubjects()` instead, which meant the one monster every floor-1 run
  * shows was the one this Record could not enforce.
  */
-export const ROSTER: Record<SheetKey, () => ActorPaints> = {
-  zombie: () => makeZombiePaints(ZOMBIE_VARIANTS[0]),
-  fish_feet: makeFishFeetPaints,
-  spider: makeSpiderPaints,
-  brute: makeBrutePaints,
-  warden: makeBrutePaints,
-  spitter: makeSpitterPaints,
-  ghost: makeGhostPaints,
-  bat: makeBatPaints,
-  slime: makeSlimePaints,
-  boss: makeBossPaints,
-  goblin: makeGoblinPaints,
-  pin: makePinPaints,
-  golem: makeGolemPaints,
-  chomper: makeChomperPaints,
-  magnet: makeMagnetPaints,
-  webspinner: makeWebspinnerPaints,
-  sporeling: makeSporelingPaints,
-  hound: makeHoundPaints,
-  jester: makeJesterPaints,
-  croaker: makeCroakerPaints,
-  rotortail: makeRotortailPaints,
-  stiltneck: makeStiltneckPaints,
-};
+export const ROSTER: Record<SheetKey, () => ActorPaints> = SHEET_PAINTERS;
 
 export interface Subject {
   key: string;

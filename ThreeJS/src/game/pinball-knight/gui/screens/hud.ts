@@ -28,7 +28,7 @@
 import { state } from "../../state";
 import { ABILITIES, abilityRank, canCast } from "../../abilities";
 import { canRampage } from "../../fps";
-import { bossEngaged } from "../../boss";
+import { bossEngaged, bossLabel } from "../../boss";
 import { WEAPONS } from "../../items";
 import { playerMaxHp } from "../../skill-runtime";
 import { FACE_PX, createFace, renderFace, setFaceHealth } from "../../hud-face";
@@ -343,7 +343,10 @@ export function hudScreen(): UiScreen {
       if (boss && boss.maxHp) {
         const bb = rect(f.w / 2 - 200, 16, 400, 14);
         bar(f, bb, boss.hp / boss.maxHp, UI.danger);
-        text(f, "BOSS", bb.x + bb.w / 2, bb.y + 3, { size: 8, colour: UI.text, align: "center" });
+        // The NAME, not "BOSS". With one boss the generic word was honest;
+        // with a guardian per biome the bar was the only surface that never
+        // told you which one you had walked into.
+        text(f, bossLabel() ?? "BOSS", bb.x + bb.w / 2, bb.y + 3, { size: 8, colour: UI.text, align: "center" });
       }
 
       // ── COMBO — transient, above the panel ──

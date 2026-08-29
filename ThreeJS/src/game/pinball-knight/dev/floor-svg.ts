@@ -66,8 +66,15 @@ const FAMILY: Record<PartSpotKind, "launch" | "bounce" | "bank" | "hazard" | "sc
   spring: "launch",
   ramp: "launch",
   flipper: "launch",
+  // A flywheel is a launcher whatever you arrived with; a swingarm THROWS you,
+  // so it reads as launch too even though it also hurts to meet.
+  flywheel: "launch",
+  swingarm: "launch",
   slingshot: "bounce",
   bumper: "bounce",
+  // A post deflects and keeps your pace — the same job as a slingshot's band,
+  // at a fraction of the size.
+  magpost: "bounce",
   deflector: "bank",
   mirror: "bank",
   glove: "bank",
@@ -76,6 +83,8 @@ const FAMILY: Record<PartSpotKind, "launch" | "bounce" | "bank" | "hazard" | "sc
   rollover: "score",
   lamp: "score",
   magstrip: "score",
+  // A maw eats you; it belongs with the pit it hands you to.
+  maw: "hazard",
   oil: "hazard",
   pit: "hazard",
   electric: "hazard",

@@ -11,6 +11,8 @@ import type { PixelPass } from "./engine/render/pixel-pass";
 import type { VfxSystem } from "./fx/system";
 import type { AimIndicator } from "./render/aim-indicator";
 import type { ActorSprite, SpriteSheet } from "./engine/render/sprite";
+import type { SheetKey } from "./boot/sheets";
+import type { BossKind } from "./boss-kinds";
 import type { Animator, Facing } from "./engine/render/animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { Fog } from "./fog";
@@ -351,6 +353,13 @@ export interface Zombie extends Actor {
   /** True for the stairs-guarding mini-boss: health bar + reward on death. */
   boss?: boolean;
   /**
+   * WHICH boss, when `boss` is set. Carried on the actor rather than asked of
+   * `boss.ts` because `entities/combat.ts` credits the kill and importing the
+   * boss module from there would close a cycle (boss.ts already imports combat
+   * for hitPlayerRanged). `boss-kinds.ts` is a leaf, so the TYPE is free.
+   */
+  bossKind?: BossKind;
+  /**
    * Collision radius override, when this actor's sprite was scaled away from
    * its kind's default. Absent = use the STATS table (the normal case).
    *
@@ -529,6 +538,12 @@ export type PinballPartKind =
   // Wave-G parts
   | "flipper"
   | "mirror"
+  // The PLAZA parts — named by a plan that never defined them, defined by the
+  // user 2026-08-28. A spinning bar with a hand on it, a pair of counter-
+  // rotating wheels you shoot through, and a pachinko post.
+  | "swingarm"
+  | "flywheel"
+  | "magpost"
   // Wave-H floor hazards (placed + animated like parts; no launch)
   | "pit"
   // A GRAVE PIT — torn open where a player left the pool. Unlike "pit" (climb
@@ -541,9 +556,14 @@ export type PinballPartKind =
   | "rollover"
   // Light-puzzle brazier: roll over it to light it; all lit opens the vault.
   | "lamp"
-  // Track-B runtime movers & gobbler
-  | "swingarm"
-  | "scoop"
+  // A MAW — a toothed pit that SWALLOWS a knight arriving fast enough and hands
+  // them to the trapdoor ride; arrive too slow and you bounce off its teeth.
+  //
+  // The last survivor of this repo's Track-B movers (5a021c78). Its two
+  // siblings did not make the merge with braindeadbot-client: `scoop` was
+  // replaced by `flywheel` above — the user's call on 2026-08-28, twin
+  // counter-rotating wheels rather than a saucer that holds you — and Track-B's
+  // `swingarm` was a PENDULUM, superseded by the full-circle one.
   | "maw";
 
 // Compile-time assertion that PartSpotKind extends PinballPartKind (D4 fix)
@@ -581,8 +601,20 @@ export interface PinballPart {
   bank?: number;
   seq?: number;
   lit?: boolean;
-  /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave. */
+  /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave.
+   *  SWINGARM: the arm's phase SEED — where the hand sits at t=0. */
   phase?: number;
+  /** SWINGARM only: +1 or -1. Both directions exist on a floor, so a room with
+   *  two arms in it is a rhythm rather than a matched pair. */
+  spin?: number;
+  /** MAGPOST only: which post this is (0..n), so a field can vary the posts'
+   *  look without varying what they DO. "Different types of posts." */
+  variant?: number;
+  /** PEG FIELD id, on both the posts and the bumpers seeded among them — the
+   *  same idea as `bank` and `lane`. Two fields can end up side by side, so
+   *  "which field is this part in" has to be recorded rather than inferred
+   *  from proximity. */
+  field?: number;
   /**
    * LIT SHOT: true while the knight's momentum ray points at this part — the
    * "shoot here now" light a real table has. Recomputed every frame by
@@ -606,6 +638,13 @@ export interface PinballPart {
   jamX?: number;
   jamZ?: number;
   jamT?: number;
+  /** FLIPPER only — the commanded swing: seconds since the button fired this
+   * paddle (undefined = at rest), whether the button is still down, and whether
+   * this paddle has caught the player. entities/flippers.ts owns all three and
+   * explains them. */
+  swingT?: number;
+  held?: boolean;
+  cradled?: boolean;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -1087,48 +1126,28 @@ export const state = {
   playerSheets: new Map<string, SpriteSheet>(),
   /** Which (weapon, look) key the player sprite currently shows. */
   playerArtKey: null as string | null,
-  zombieSheet: null as SpriteSheet | null,
+  /**
+   * EVERY MONSTER ATLAS, keyed by SheetKey.
+   *
+   * This was twenty-two `<kind>Sheet: SpriteSheet | null` fields, and the same
+   * fact was then written twice more: a hand-written get/set closure pair per
+   * key in `boot/sheets.ts` BUILDERS, and a hand-written clear per key here in
+   * `resetState`. Three writers per monster, none of them checkable.
+   *
+   * Both of the other two had already drifted, in the same direction:
+   *   · `dispose.ts` missed SIX atlases for months — "~4131x81 canvas textures
+   *     each, leaked per launch/exit cycle", per the epitaph it now carries;
+   *   · `resetState` below missed SEVEN (sporeling, jester, croaker, rotortail,
+   *     stiltneck, fish_feet, hound) right up until this map replaced it. Every
+   *     one of them was a bespoke atlas added AFTER the block was written —
+   *     which is the whole failure mode of a list you must remember to extend.
+   *
+   * A map has no per-key line to forget. `expansionSheets` (just below) was
+   * already doing this and is the pattern this follows.
+   */
+  sheets: {} as Partial<Record<SheetKey, SpriteSheet>>,
   /** A small pool of cosmetic zombie-variant sheets; each spawn picks one by seed. */
   zombieVariantSheets: [] as SpriteSheet[],
-  /** The giant-spider atlas — one look, built once per session. */
-  spiderSheet: null as SpriteSheet | null,
-  /** The brute (tank) atlas. */
-  bruteSheet: null as SpriteSheet | null,
-  /**
-   * The warden's atlas — the PAINTED brute, kept separate on purpose.
-   *
-   * The warden is a tinted reskin of the brute and used to call
-   * `sheetFor("brute")` directly. Once the brute could be overridden by
-   * imported art, that one call silently dragged the warden along with it:
-   * changing one creature's art changed two. It now builds from
-   * `makeBrutePaints` under its own key, so the brute's art is the brute's.
-   */
-  wardenSheet: null as SpriteSheet | null,
-  /** The spitter (ranged) atlas. */
-  spitterSheet: null as SpriteSheet | null,
-  /** The floating sheet-ghost atlas. */
-  ghostSheet: null as SpriteSheet | null,
-  /** The bat (fast flyer) atlas. */
-  batSheet: null as SpriteSheet | null,
-  /** The slime (splits on death) atlas. */
-  slimeSheet: null as SpriteSheet | null,
-  /** The overlord (mini-boss) atlas. */
-  bossSheet: null as SpriteSheet | null,
-  /** Wave-B bespoke atlases (were tinted reskins). */
-  goblinSheet: null as SpriteSheet | null,
-  pinSheet: null as SpriteSheet | null,
-  golemSheet: null as SpriteSheet | null,
-  chomperSheet: null as SpriteSheet | null,
-  magnetSheet: null as SpriteSheet | null,
-  webspinnerSheet: null as SpriteSheet | null,
-
-  sporelingSheet: null as SpriteSheet | null,
-  jesterSheet: null as SpriteSheet | null,
-  croakerSheet: null as SpriteSheet | null,
-  rotortailSheet: null as SpriteSheet | null,
-  stiltneckSheet: null as SpriteSheet | null,
-  fishFeetSheet: null as SpriteSheet | null,
-  houndSheet: null as SpriteSheet | null,
   /** Baked TINTED atlases for the expansion roster (spawn/factory.ts
    * makeExpansion): borrowed sheet × tint, re-snapped to the palette so the
    * monster is palette-exact instead of a GPU multiply the quantizer mangles.
@@ -1511,22 +1530,10 @@ export function resetState(): void {
   state.arcCorners = [];
   state.playerSheets = new Map();
   state.playerArtKey = null;
-  state.zombieSheet = null;
+  // One line, and it covers the seven atlases the twenty-two-line version
+  // never mentioned. See the `sheets` docblock.
+  state.sheets = {};
   state.zombieVariantSheets = [];
-  state.spiderSheet = null;
-  state.bruteSheet = null;
-  state.wardenSheet = null;
-  state.spitterSheet = null;
-  state.ghostSheet = null;
-  state.batSheet = null;
-  state.slimeSheet = null;
-  state.bossSheet = null;
-  state.goblinSheet = null;
-  state.pinSheet = null;
-  state.golemSheet = null;
-  state.chomperSheet = null;
-  state.magnetSheet = null;
-  state.webspinnerSheet = null;
   state.flowField = null;
   state.flowTimer = 0;
   state.camX = 0;

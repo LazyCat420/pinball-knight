@@ -14,7 +14,9 @@ import { state, freshPlayerFields } from "../state";
 import { invalidateMeterBlocks } from "../hud-meter";
 import type { AuthoredFloor } from "./floor-authoring";
 import { playerSheetFor, sheetFor } from "../boot/sheets";
+import { themeFor } from "../maze/prefabs";
 import { spawnBoss } from "../boss";
+import { bossForBiome } from "../boss-kinds";
 import { BOSS_EVERY, BOSS_SPEED_FACTOR, BRUTE_SPEED_FACTOR, KING_HP_BASE, KING_HP_PER_FLOOR, MERCHANT_FROM_LEVEL, MERCHANT_SPAWN_MIN_RING, PIN_FROM_LEVEL, PLUNGER_SKILL_RANGE } from "../constants";
 import { isReplica } from "../coop";
 import { nextItemNid } from "../economy/ground-items";
@@ -31,10 +33,9 @@ import { ITEM_PAINTS, PROP_PAINTS } from "../render/cel-painter";
 import { lookFromGear } from "../render/knight-look";
 import { playerArtKey } from "../render/knight-sheets";
 import { createPinballParts } from "../render/pinball-parts";
-import { reaperSheet } from "../render/reaper-sheet";
 import { spawnCorpsePiles } from "../run/death";
 import { playerMaxHp } from "../skill-runtime";
-import { makeZombie, spawnHordeMember, spawnPinCrew } from "../spawn/factory";
+import { makeZombie, spawnHordeMember, spawnPinCrew, spawnKind } from "../spawn/factory";
 import { armTide } from "../spawn/tide";
 import { type GroundItem, type Zombie, activeWeapon } from "../state";
 
@@ -156,23 +157,45 @@ export function populateFloor(f: AuthoredFloor): void {
     }
   }
 
-  // ── EVERY floor's exit is boss-gated: the REAPER KING guards the stairs ──
+  // ── EVERY floor's exit is boss-gated, and WHICH boss comes from the BIOME ──
+  //
   // (Live QA ask: "a boss at the end to get to the next level, even solo".)
-  // The king (boss.ts) is a killable reaper-art brute with an orbiting skull
-  // ring + a telegraphed tentacle slam; while it lives `state.exitLocked` holds
-  // the stairs shut, and its death blooms the exit PORTAL. HP scales with the
-  // floor; every BOSS_EVERY-th floor is a MEGA king at double HP. Only spawns
-  // for the floor authority — a replica renders the streamed king.
+  // Until 2026-08-28 that was the Reaper King on every floor of every run —
+  // floor 1 and floor 17 were the same fight and BOSS_EVERY only doubled his
+  // HP. `bossForBiome` reads the floor's own theme, and the themes are already
+  // permuted per run (maze/prefabs.ts themeIndexFor), so two runs meet the four
+  // guardians in a different order and the one you fight is always the one
+  // whose horde you just cut through.
+  //
+  // While it lives `state.exitLocked` holds the stairs shut, and its death
+  // blooms the exit PORTAL. HP scales with the floor and then by the boss's own
+  // multiplier; every BOSS_EVERY-th floor is a MEGA at double HP. Only spawns
+  // for the floor authority — a replica renders the streamed boss.
   if (state.stairs && scene && state.player && !isReplica()) {
     const mega = level % BOSS_EVERY === 0;
     const bhp = Math.round((KING_HP_BASE + KING_HP_PER_FLOOR * (level - 1)) * (mega ? 2 : 1));
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
     const speed = cfg.zombieSpeed * BOSS_SPEED_FACTOR;
-    spawnBoss(grid, spot, bhp, (x, z, hp) => {
-      const b = makeZombie(reaperSheet(), x, z, speed, { kind: "brute", hp, boss: true, maxHp: hp });
-      state.zombies.push(b);
-      return b;
-    });
+    const spec = bossForBiome(themeFor(level, state.runSeed).name);
+    spawnBoss(
+      grid,
+      spot,
+      bhp,
+      spec,
+      (x, z, hp) => {
+        const b = makeZombie(sheetFor(spec.art.sheetKey), x, z, speed, { kind: "brute", hp, boss: true, maxHp: hp });
+        state.zombies.push(b);
+        return b;
+      },
+      // The Broodmother's brood. Ordinary monsters of the biome's own family,
+      // so they die, drop and count like anything else — a boss that summons
+      // bespoke un-lootable adds teaches the player to ignore them.
+      (x, z) => {
+        const a = spawnKind("spider", x, z, cfg.zombieSpeed, 99);
+        if (a) state.zombies.push(a);
+        return a;
+      },
+    );
   }
 
   // ── Loot on the floor ──
@@ -241,7 +264,7 @@ export function populateFloor(f: AuthoredFloor): void {
   // original reasoning is that the king IS the set piece there, but the two do
   // not compete: the ring is what makes the arena read as an arena, and the
   // king now has a hall to fight in (maze/track-floor.ts carveBossChamber).
-  // `state.bruteSheet` used to be part of this condition. It could never be
+  // `state.sheets.brute` used to be part of this condition. It could never be
   // false when every atlas was built up front — but with lazy atlases it would
   // have deleted the whole exit arena on any floor the backfill hadn't reached
   // the brute yet. The sheet is fetched below, where it is used.

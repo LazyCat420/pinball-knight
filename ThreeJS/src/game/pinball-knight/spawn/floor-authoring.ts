@@ -27,7 +27,7 @@
  * prove it with `scripts/floor-census.mjs` — that is what it is for.
  */
 import { state } from "../state";
-import { floorRng } from "../maze/floor-seed";
+import { floorRng, floorSeed } from "../maze/floor-seed";
 import { biomeFor as biomeForSeed, type Biome } from "../boot/biomes";
 import type { Grid, TilePos } from "../maze/generator";
 import { saveBestDepth } from "../best-depth";
@@ -318,6 +318,12 @@ export function authorFloor(level: number): AuthoredFloor {
       launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
       bonusItems: modifier.bonusItems,
       endpoints: endpoints ?? undefined,
+      // The authored-machine layer draws from its OWN stream, never `rng` —
+      // a draw from the shared one would reroll every existing floor. It needs
+      // the real per-(run, level) seed to be reproducible across co-op peers;
+      // without this it falls back to a geometry hash, which is deterministic
+      // but not shared. See maze/assembly-place.ts PlaceOpts.rng.
+      assemblySeed: floorSeed(state.runSeed, level),
       // On a TRACK floor the geometry is generated, not authored, so a vault or
       // spine part facing a wall carries no intent worth preserving — re-aim it
       // or demote it to a bumper. The legacy generator keeps the exemption (its

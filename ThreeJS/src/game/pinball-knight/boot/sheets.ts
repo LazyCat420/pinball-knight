@@ -9,20 +9,16 @@
  */
 import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
-import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
-import { makeSporelingPaints } from "../render/monsters/sporeling";
-import { makeJesterPaints } from "../render/monsters/jester";
-import { makeCroakerPaints } from "../render/monsters/croaker";
-import { makeRotortailPaints } from "../render/monsters/rotortail";
-import { makeStiltneckPaints } from "../render/monsters/stiltneck";
-import { makeFishFeetPaints } from "../render/monsters/fish_feet";
-import { makeHoundPaints } from "../render/monsters/hound";
+import { ZOMBIE_VARIANTS, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
 import { lookFromGear } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet, requestKnightSheet, loadImportedKnightArt, playerArtKey } from "../render/knight-sheets";
-import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOptions, type SpriteSheet } from "../engine/render/sprite";
+import { bakeTintedSheet, buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOptions, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
-import { activeWeapon, state } from "../state";
+import { activeWeapon, state, type EnemyKind } from "../state";
+import { KIND_SKIN } from "../spawn/kind-skin";
+import { KIND_IDS } from "../bestiary";
+import { SHEET_PAINTERS } from "../render/sheet-painters";
 import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type ImportedSheet } from "../render/imported-paints";
 import { sheetCoverage } from "../tools/sprite-forge/build-plan";
 import { _clearPortraitCache } from "../render/monster-portrait";
@@ -144,7 +140,7 @@ function startMonsterSheet(paints: ActorPaints, key?: SheetKey): SheetBuild {
  * (3) is what makes this safe rather than a race: no spawn path can outrun the
  * idle queue, because asking for a sheet builds it. The spawn table already
  * reaches every atlas through a THUNK (`spawn/factory.ts` EXPANSION_SKIN /
- * RESKIN, `() => state.spiderSheet`), so the call sites did not have to change
+ * RESKIN, `() => state.sheets.spider`), so the call sites did not have to change
  * — they just have to go through `sheetFor` now instead of reading the field.
  *
  * The cache IS the existing `state.*Sheet` fields, deliberately. `state.ts`
@@ -154,52 +150,105 @@ function startMonsterSheet(paints: ActorPaints, key?: SheetKey): SheetBuild {
 export type SheetKey =
   | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
-  | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet";
+  | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
+  // The Death Dealer's atlas, and the Reaper King wears it too. It had a
+  // PRIVATE lazy-sheet path (`render/reaper-sheet.ts`) that predated this
+  // registry, so `sheetKeyForKind("reaper")` resolved to undefined and every
+  // consumer needed a `kind === "reaper" ?` special case. It is a monster with
+  // a painter like any other; it is registered like one now. Deliberately NOT
+  // in ESSENTIAL or BACKFILL — most runs never see a Death Dealer, and the
+  // Reaper King builds it on the spawn.
+  | "reaper";
 
 /**
- * EnemyKind → the atlas that kind draws with, for callers that hold a kind
- * string rather than a sheet key (the co-op ghost spawner).
+ * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
  *
- * Only the kinds with their OWN atlas are listed. The tinted expansion skins
- * (hound, wisp, mimic …) borrow one and are resolved through `EXPANSION_SKIN`
- * in spawn/factory.ts instead; anything absent falls back to the zombie sheet.
+ * This used to be a hand-written literal typed `Record<string, SheetKey>` —
+ * `string`, so nothing made it exhaustive — and it was missing EIGHT of the
+ * twenty-eight kinds: reaper, warden, bloater, necromancer, wisp, sapper,
+ * crystalback and mimic. Three live consequences, all silent:
+ *
+ *   · the re-skin loop in `rebuild()` could never hot-swap those actors when
+ *     an atlas was re-emitted — including the WARDEN, whose key was right
+ *     there in BUILDERS;
+ *   · the co-op replica spawner (`boot/wiring.ts`) fell through to
+ *     `state.sheets.zombie`, drawing a peer's bloater AS A ZOMBIE — the exact
+ *     failure its own comment warns about;
+ *   · `__dungeonAtlas` needed a second lookup to cover the difference.
+ *
+ * `spawn/kind-skin.ts` already knows which sheet each kind wears, so ask it.
+ * Every kind resolves, `reaper` included: it used to be the one exception,
+ * because its atlas lived behind a private lazy-sheet helper rather than in
+ * this registry. It is a SheetKey now.
  */
-export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
-  zombie: "zombie", spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
-  bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
-  chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
-  sporeling: "sporeling", hound: "hound", jester: "jester", croaker: "croaker", rotortail: "rotortail",
-  stiltneck: "stiltneck", fish_feet: "fish_feet",
-};
+const SHEET_KEYS = new Set<string>([
+  "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
+  "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
+  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet", "reaper",
+]);
 
-/** key → (paint the atlas, read it off state, write it back). */
-const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteSheet | null; set: (s: SpriteSheet) => void }> = {
-  zombie: { make: () => makeZombiePaints(ZOMBIE_VARIANTS[0]), get: () => state.zombieSheet, set: (s) => { state.zombieSheet = s; } },
-  spider: { make: makeSpiderPaints, get: () => state.spiderSheet, set: (s) => { state.spiderSheet = s; } },
-  brute: { make: makeBrutePaints, get: () => state.bruteSheet, set: (s) => { state.bruteSheet = s; } },
-  // The warden paints from the SAME painter and is deliberately NOT in
-  // IMPORTED_ART: it is the brute's tinted reskin, and it must keep the
-  // painted look when the brute's own art is swapped for a forged sheet.
-  warden: { make: makeBrutePaints, get: () => state.wardenSheet, set: (s) => { state.wardenSheet = s; } },
-  spitter: { make: makeSpitterPaints, get: () => state.spitterSheet, set: (s) => { state.spitterSheet = s; } },
-  ghost: { make: makeGhostPaints, get: () => state.ghostSheet, set: (s) => { state.ghostSheet = s; } },
-  bat: { make: makeBatPaints, get: () => state.batSheet, set: (s) => { state.batSheet = s; } },
-  slime: { make: makeSlimePaints, get: () => state.slimeSheet, set: (s) => { state.slimeSheet = s; } },
-  boss: { make: makeBossPaints, get: () => state.bossSheet, set: (s) => { state.bossSheet = s; } },
-  goblin: { make: makeGoblinPaints, get: () => state.goblinSheet, set: (s) => { state.goblinSheet = s; } },
-  pin: { make: makePinPaints, get: () => state.pinSheet, set: (s) => { state.pinSheet = s; } },
-  golem: { make: makeGolemPaints, get: () => state.golemSheet, set: (s) => { state.golemSheet = s; } },
-  chomper: { make: makeChomperPaints, get: () => state.chomperSheet, set: (s) => { state.chomperSheet = s; } },
-  magnet: { make: makeMagnetPaints, get: () => state.magnetSheet, set: (s) => { state.magnetSheet = s; } },
-  webspinner: { make: makeWebspinnerPaints, get: () => state.webspinnerSheet, set: (s) => { state.webspinnerSheet = s; } },
-  sporeling: { make: makeSporelingPaints, get: () => state.sporelingSheet, set: (s) => { state.sporelingSheet = s; } },
-  hound: { make: makeHoundPaints, get: () => state.houndSheet, set: (s) => { state.houndSheet = s; } },
-  jester: { make: makeJesterPaints, get: () => state.jesterSheet, set: (s) => { state.jesterSheet = s; } },
-  croaker: { make: makeCroakerPaints, get: () => state.croakerSheet, set: (s) => { state.croakerSheet = s; } },
-  rotortail: { make: makeRotortailPaints, get: () => state.rotortailSheet, set: (s) => { state.rotortailSheet = s; } },
-  stiltneck: { make: makeStiltneckPaints, get: () => state.stiltneckSheet, set: (s) => { state.stiltneckSheet = s; } },
-  fish_feet: { make: makeFishFeetPaints, get: () => state.fishFeetSheet, set: (s) => { state.fishFeetSheet = s; } },
-};
+/** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
+export function sheetKeyForKind(kind: EnemyKind): SheetKey | undefined {
+  const borrowed = KIND_SKIN[kind]?.sheetKey;
+  if (borrowed) return borrowed;
+  return SHEET_KEYS.has(kind) ? (kind as SheetKey) : undefined;
+}
+
+/**
+ * The same relation as a table, for callers that iterate rather than ask.
+ * Exhaustive by construction: every EnemyKind appears, mapping to a key or to
+ * undefined, so a new kind cannot quietly go missing from it.
+ */
+export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = Object.fromEntries(
+  KIND_IDS
+    .map((k) => [k, sheetKeyForKind(k)] as const)
+    .filter((e): e is readonly [EnemyKind, SheetKey] => e[1] !== undefined),
+) as Record<string, SheetKey>;
+
+/**
+ * The BUILT atlas a kind wears, tint BAKED in when it has one.
+ *
+ * Lives here rather than in the spawner because it is an atlas-resolution
+ * question, and because `rebuild()` below needs it: a re-emitted base sheet
+ * makes every baked copy of it stale.
+ *
+ * ── WHY THE TINT IS BAKED AND NOT `setTint` ────────────────────────────────
+ *
+ * This used to `setTint(skin.tint)` — a live GPU multiply that pushed every
+ * palette-exact texel OFF the palette, for the screen quantizer to reassign
+ * per pixel (the sapper read as flat yellow mush, the necromancer as blood
+ * red). The tint is now baked into a palette-snapped copy of the atlas once
+ * per kind, so a borrowed-art monster is as palette-true as a hand-painted
+ * one. `baseTint` stays unset on purpose: the dye lives in the art now, so a
+ * damage flash restores to null instead of re-applying it.
+ */
+export function skinSheet(kind: EnemyKind): SpriteSheet | null {
+  const skin = KIND_SKIN[kind];
+  if (!skin) return null;
+  const key = sheetKeyForKind(kind);
+  if (!key) return null;
+  if (skin.tint === undefined) return sheetFor(key);
+  const cached = state.expansionSheets[kind];
+  if (cached) return cached;
+  const base = sheetFor(key);
+  if (!base) return null;
+  const baked = bakeTintedSheet(base, skin.tint);
+  state.expansionSheets[kind] = baked;
+  return baked;
+}
+
+/**
+ * key → the painter that draws its atlas.
+ *
+ * Each row used to carry a hand-written `get`/`set` closure pair onto a
+ * dedicated `state.<kind>Sheet` field. Those fields are now one map
+ * (`state.sheets`), so the accessor pair is `state.sheets[key]` for every key
+ * and there was nothing left to write per row — sixty-six lines of closure
+ * became two subscript expressions in `sheetFor` and `rebuild` below. What was
+ * left, the painter column, is shared with the census; see
+ * `render/sheet-painters.ts` for why it lives outside both.
+ */
+const BUILDERS = SHEET_PAINTERS;
 
 /**
  * Built before the first playable frame.
@@ -240,26 +289,25 @@ const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", 
  * transparent cells in it.
  */
 export function sheetFor(key: SheetKey): SpriteSheet {
-  const b = BUILDERS[key];
-  const hit = b.get();
+  const hit = state.sheets[key];
   if (hit) return hit;
   const partial = inFlight.get(key);
   if (partial) {
     inFlight.delete(key);
     if (current?.key === key) current = null;
     const s = partial.finish();
-    b.set(s);
+    state.sheets[key] = s;
     return s;
   }
   const built = monsterSheet(paintsFor(key), key);
-  b.set(built);
+  state.sheets[key] = built;
   return built;
 }
 
 /**
  * IMPORTED ART OVERRIDES, once loaded. Empty until `applyImportedArt` resolves.
  *
- * Consulted through `paintsFor` rather than replacing `BUILDERS[key].make`,
+ * Consulted through `paintsFor` rather than replacing `BUILDERS[key]`,
  * because the painter has to stay reachable: it is the fallback when a sheet is
  * missing, when its dimensions no longer match its manifest, and when the
  * player turns imported art off.
@@ -272,7 +320,7 @@ const imported = new Map<SheetKey, ActorPaints>();
  *
  * ── THE FALLBACK THAT WASN'T ────────────────────────────────────────────────
  *
- * This was `imported.get(key) ?? BUILDERS[key].make()` — all or nothing. The
+ * This was `imported.get(key) ?? BUILDERS[key]()` — all or nothing. The
  * brute's commit (55f98e2) shipped a sheet with NO death row on the stated
  * grounds that "a clip an imported sheet does not author falls through to the
  * PAINTER by design". That is true of the PLAYER, whose `resolvePaints`
@@ -309,7 +357,7 @@ const imported = new Map<SheetKey, ActorPaints>();
  * always be dropping the painter's authored cadence for `undefined`.
  */
 export function paintsFor(key: SheetKey): ActorPaints {
-  const painted = BUILDERS[key].make();
+  const painted = BUILDERS[key]();
   const art = imported.get(key);
   if (!art) return painted;
   return {
@@ -338,7 +386,7 @@ export function buildMonsterSheets(): void {
   // not deferrable: floor 1 IS zombies, and a horde with no art is the one case
   // the on-demand path cannot hide.
   state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => monsterSheet(makeZombiePaints(v)));
-  state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
+  state.sheets.zombie = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
   startBackfill();
   // The PLAYER's imported art only. The monster half is one ~1s blocking task
@@ -483,16 +531,27 @@ export async function applyImportedMonsterArt(): Promise<void> {
  */
 function rebuild(key: SheetKey): void {
   _clearPortraitCache();
-  const b = BUILDERS[key];
   inFlight.delete(key);
   if (current?.key === key) current = null;
   const sheet = monsterSheet(paintsFor(key), key);
-  b.set(sheet);
+  state.sheets[key] = sheet;
   if (key === "zombie") {
     state.zombieVariantSheets = [sheet];
   }
+  // Every actor wearing this atlas takes the new one. A kind that BORROWS it
+  // under a dye needs its baked copy dropped first, or it would be handed the
+  // raw base and lose its colour — which is what made this loop skip the eight
+  // borrowed kinds rather than serve them wrong.
   for (const z of state.zombies) {
-    if (SHEET_KEY_BY_KIND[z.kind] === key) z.sprite.setSheet(sheet);
+    if (sheetKeyForKind(z.kind) !== key) continue;
+    if (KIND_SKIN[z.kind]?.tint !== undefined) {
+      state.expansionSheets[z.kind]?.texture.dispose();
+      delete state.expansionSheets[z.kind];
+      const rebaked = skinSheet(z.kind);
+      if (rebaked) z.sprite.setSheet(rebaked);
+    } else {
+      z.sprite.setSheet(sheet);
+    }
   }
 }
 
@@ -549,7 +608,7 @@ function startBackfill(): void {
       const key = queue.shift();
       if (!key) return;
       // `sheetFor` may have finished this one already while the queue waited.
-      if (BUILDERS[key].get()) {
+      if (state.sheets[key]) {
         backfillHandle = idle(step);
         return;
       }
@@ -558,7 +617,7 @@ function startBackfill(): void {
     }
     const { key, build } = current;
     if (build.step(Math.min(spareMs, BACKFILL_SLICE_CAP_MS))) {
-      BUILDERS[key].set(build.sheet);
+      state.sheets[key] = build.sheet;
       inFlight.delete(key);
       current = null;
     }

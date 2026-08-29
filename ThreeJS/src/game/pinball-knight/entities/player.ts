@@ -202,6 +202,8 @@ import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, co
 import { resolvePinballSteering } from "./pinball-steering";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
+import { updateFlippers } from "./flippers";
+import { updateTilt, nudgeTable } from "./nudge";
 
 /**
  * The player-owned behaviours a pinball part can trigger. Handed to the parts
@@ -216,7 +218,21 @@ const PINBALL_DEPS: PinballDeps = {
   raiseSteerLock: (t) => {
     steerLockT = Math.max(steerLockT, t);
   },
+  // Where the player is POINTING this frame, or null if they are not. Read by
+  // the flipper cradle so a trapped launch can be aimed; it is the same heading
+  // the momentum steer bends toward, computed once per frame below.
+  aimHint: () => (lastSteerX !== 0 || lastSteerZ !== 0 ? { x: lastSteerX, z: lastSteerZ } : null),
 };
+
+/**
+ * The steer heading for THIS frame — stick/cursor aim if there is one, else the
+ * movement axis in world space, else null. Written once at the top of
+ * `updatePlayer` and read by both the momentum steer and `PINBALL_DEPS.aimHint`,
+ * so a cradled launch and a mid-ride bend can never disagree about where the
+ * player is pointing.
+ */
+let lastSteerX = 0;
+let lastSteerZ = 0;
 
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
@@ -1242,6 +1258,26 @@ function aimDirection(input: InputHandle, px: number, pz: number): { x: number; 
   return cursor ? mouseAimDirection(px, pz, cursor) : null;
 }
 
+/**
+ * Where the player is asking to go: the aim stick or cursor if either is live,
+ * otherwise the movement axis converted into world space. Normalised, or null
+ * when nothing is being pushed.
+ *
+ * Extracted from `updatePinball`'s steer block so the flipper cradle aims off
+ * exactly the same heading. Two copies of this would drift, and the symptom
+ * would be a cradled launch that leaves at a slightly different angle from the
+ * arrow the game just drew.
+ */
+function steerHeading(input: InputHandle, px: number, pz: number): { x: number; z: number } | null {
+  const aim = aimDirection(input, px, pz);
+  if (aim) return aim;
+  const a = input.axis();
+  if (a.x === 0 && a.z === 0) return null;
+  const wd = screenDirToWorld(a.x, a.z);
+  const wl = Math.hypot(wd.x, wd.z) || 1;
+  return { x: wd.x / wl, z: wd.z / wl };
+}
+
 function notePocketBounce(p: Player): void {
   if (pocketT > 0 && Math.hypot(p.x - pocketAX, p.z - pocketAZ) < POCKET_RADIUS) {
     pocketN++;
@@ -1342,18 +1378,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult() * floorSurface(surfaceAt(g, steerTile.i, steerTile.j)).steerMult;
   let steerX = 0;
   let steerZ = 0;
-  const aim = aimDirection(input, p.x, p.z);
-  if (aim) {
-    steerX = aim.x;
-    steerZ = aim.z;
-  } else {
-    const a = input.axis();
-    if (a.x !== 0 || a.z !== 0) {
-      const wd = screenDirToWorld(a.x, a.z);
-      const wl = Math.hypot(wd.x, wd.z) || 1;
-      steerX = wd.x / wl;
-      steerZ = wd.z / wl;
-    }
+  const heading = steerHeading(input, p.x, p.z);
+  if (heading) {
+    steerX = heading.x;
+    steerZ = heading.z;
   }
   let steerOpposition = 0;
   if (steerLockT <= 0 && (steerX !== 0 || steerZ !== 0)) {
@@ -1960,7 +1988,31 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // rideT. An invisible knight is a lost run, so healing it must not sit behind
   // a guard that a dead player skips.
   if (p && p.rideT < 0 && p.dropT < 0) revealRider(p);
+
+  // ── THE FLIPPER BUTTON ──
+  //
+  // ABOVE the death guard, and above every owner below (roll, plunger, hop,
+  // wall-launch, the ride) that can early-return. Two reasons, both bugs that
+  // the obvious placement has:
+  //
+  //  - A flipper you pressed on the way INTO a ride has to still be swinging
+  //    when you arrive. Behind those returns the button would work only while
+  //    standing still, which is the one moment it is useless.
+  //  - `held` is latched state on the part, and only this call clears it. Put
+  //    it behind `p.hp <= 0` and a knight who dies mid-cradle leaves a paddle
+  //    up forever: the next knight on that floor is caught by a flipper
+  //    nobody is holding. Paddles must age even with no player to hold them,
+  //    which is why the tick loop reads `state.player` nowhere.
+  updateFlippers(dt, input);
+  updateTilt(dt); // the tilt meter drains on the same terms, and for the same reason
+
   if (!p || !g || p.hp <= 0) return;
+
+  // The frame's steer heading, computed ONCE before anything can consume the
+  // input, so `PINBALL_DEPS.aimHint` and the momentum steer read one value.
+  const heading = steerHeading(input, p.x, p.z);
+  lastSteerX = heading ? heading.x : 0;
+  lastSteerZ = heading ? heading.z : 0;
 
   p.cooldown = Math.max(0, p.cooldown - dt);
   p.iframes = Math.max(0, p.iframes - dt);
@@ -2017,6 +2069,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   if (p.momSpeed <= 0) state.aimIndicator?.hide();
 
   if (p.momSpeed > 0) {
+    // ── THE NUDGE ── Shift/LT + a direction, while riding. `sprintHeld` means
+    // nothing here (it is read once, far below, in the WALKING path only), so
+    // the modifier was free on the keyboard AND the pad — and the pad had no
+    // unbound button left at all. entities/nudge.ts owns the impulse, the tilt
+    // meter and the penalty; this is only the trigger.
+    if (input.sprintHeld() && (lastSteerX !== 0 || lastSteerZ !== 0)) nudgeTable(lastSteerX, lastSteerZ);
     if (input.consumeDodge()) {
       // D3 — THE LANE CHANGE: a dodge tap also rotates which rollover lanes are
       // lit, so the last lane you need is something you can line up (exactly

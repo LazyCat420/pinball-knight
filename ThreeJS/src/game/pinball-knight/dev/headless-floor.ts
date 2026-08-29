@@ -33,7 +33,7 @@ import { type Grid, type TilePos } from "../maze/generator";
 import { themeFor } from "../maze/prefabs";
 import { archetypeFor, windinessFor } from "../maze/archetypes";
 import { buildTrackFloor } from "../maze/track-floor";
-import { floorRng } from "../maze/floor-seed";
+import { floorRng, floorSeed } from "../maze/floor-seed";
 import { rollModifier } from "../maze/modifiers";
 import { decorateMaze, type LevelPlan } from "../maze/decorate";
 import { walkableCount } from "../maze/floor-metrics";
@@ -184,6 +184,9 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
       orbit: track.orbit ?? null,
       wallsAuthored: true,
       floor: level,
+      // MUST mirror spawn/floor-authoring.ts, or this harness measures a
+      // different floor's machine layer than the one that ships.
+      assemblySeed: floorSeed(runSeed, level),
     },
   );
   return {

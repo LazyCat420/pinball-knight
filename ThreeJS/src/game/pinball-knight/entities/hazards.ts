@@ -29,7 +29,6 @@ import { comboWindow, comboSpeedCeil } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
 import { tryDiamondDischarge, waterQuenchesFire } from "./marble";
 import { onPartTrigger } from "./pinball-collide";
-import { checkSwingArmContact, SWING_DAMAGE, SWING_KNOCKBACK, SWING_LEN } from "./swing-arm";
 import { gate, sfxBumper, sfxFlame } from "../sfx";
 
 /** Per-player re-hit lockouts so a hazard reads as ticks, not per-frame drain. */
@@ -124,57 +123,6 @@ export const HAZARD_SIMS: Partial<Record<PinballPartKind, HazardSim>> = {
     }
   },
 
-  // ── SWINGING ARM ── pendulum bat that swats player and zombies with tangential impulse.
-  swingarm: (part, p) => {
-    if (p && p.hp > 0 && p.rideT < 0 && part.cooldownT <= 0) {
-      const pVx = p.momX * p.momSpeed;
-      const pVz = p.momZ * p.momSpeed;
-      const contact = checkSwingArmContact(
-        part,
-        p.x,
-        p.z,
-        p.x - pVx * 0.016,
-        p.z - pVz * 0.016,
-        pVx,
-        pVz,
-        state.simT,
-      );
-      if (contact) {
-        const rawSpeed = Math.hypot(contact.vx, contact.vz);
-        const cappedSpeed = Math.min(PINBALL_MAX_SPEED, Math.min(rawSpeed, comboSpeedCeil(p.bounceCombo + 1)));
-        const finalSpeed = Math.max(p.momSpeed, cappedSpeed);
-        p.momSpeed = finalSpeed;
-        if (rawSpeed > 0.01) {
-          p.momX = contact.vx / rawSpeed;
-          p.momZ = contact.vz / rawSpeed;
-        }
-        p.bounceCombo += 1;
-        p.bounceComboT = comboWindow(p.bounceCombo);
-        state.partComboHits += 1;
-        p.iframes = Math.max(p.iframes, 0.15);
-        onPartTrigger();
-        part.cooldownT = 0.2;
-        part.hitT = 0;
-        state.vfx?.sparks(p.x, 0.4, p.z, contact.nx, contact.nz, contact.tipHit ? 16 : 10);
-        state.shakeT = Math.max(state.shakeT, contact.tipHit ? 0.22 : 0.14);
-        sfxBumper();
-      }
-    }
-
-    // Horde swat: knock away zombies within sweep radius
-    for (const z of state.zombies) {
-      if (z.mode === "dead" || z.kind === "reaper") continue;
-      const dx = z.x - part.x;
-      const dz = z.z - part.z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 > (SWING_LEN + 0.3) * (SWING_LEN + 0.3)) continue;
-      const contact = checkSwingArmContact(part, z.x, z.z, z.x, z.z, 0, 0, state.simT);
-      if (contact) {
-        damageZombie(z, SWING_DAMAGE, contact.nx, contact.nz, SWING_KNOCKBACK);
-        state.vfx?.sparks(z.x, 0.4, z.z, contact.nx, contact.nz, 6);
-      }
-    }
-  },
 };
 
 export function simulateHazards(dt: number): void {

@@ -33,13 +33,16 @@ export interface VirtualPad {
   attack: boolean;
   dodge: boolean;
   sprint: boolean;
+  /** THE FLIPPER BUTTON — held, because a held flipper cradles (flippers.ts). */
+  flip: boolean;
   /** Rising edges, consumed by InputHandle exactly like a queued key tap. */
   attackTap: boolean;
   dodgeTap: boolean;
+  flipTap: boolean;
 }
 
 export function emptyPad(): VirtualPad {
-  return { moveX: 0, moveZ: 0, aimX: 0, aimY: 0, attack: false, dodge: false, sprint: false, attackTap: false, dodgeTap: false };
+  return { moveX: 0, moveZ: 0, aimX: 0, aimY: 0, attack: false, dodge: false, sprint: false, flip: false, attackTap: false, dodgeTap: false, flipTap: false };
 }
 
 /**
@@ -60,6 +63,7 @@ export function resetPad(p: VirtualPad): void {
   p.attack = false;
   p.dodge = false;
   p.sprint = false;
+  p.flip = false;
 }
 
 /**

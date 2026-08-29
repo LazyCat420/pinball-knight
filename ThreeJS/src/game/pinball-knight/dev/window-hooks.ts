@@ -18,7 +18,8 @@
 import { state } from "../state";
 import type { EnemyKind } from "../state";
 import { SHEET_KEY_BY_KIND, sheetFor as sheetForKey } from "../boot/sheets";
-import { EXPANSION_SKIN } from "../spawn/factory";
+import { skinSheet } from "../spawn/factory";
+import { KIND_SKIN } from "../spawn/kind-skin";
 import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
@@ -54,6 +55,8 @@ import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
 import { installProfilerHooks } from "../engine/profiler";
 import { rotateLanes } from "../shots";
+import { swingNearest, swingIsLive } from "../entities/flippers";
+import { nudgeTable, tiltLevel, tiltLockRemaining } from "../entities/nudge";
 import { enterTavern, isTavernSceneOpen } from "../../../scenes/tavern";
 import { ZOMBIE_TYPE_IDS } from "../zombie-types";
 import type { SpriteSheet } from "../engine/render/sprite";
@@ -103,7 +106,7 @@ export function installDevHooks(deps: DevHookDeps): void {
   // its roster from the bestiary.
   //
   // So resolve through the SAME tables the game spawns from: SHEET_KEY_BY_KIND
-  // for the bespoke atlases, EXPANSION_SKIN for the kinds that genuinely borrow
+  // for the bespoke atlases, KIND_SKIN for the kinds that genuinely borrow
   // one. A new kind joins automatically; a kind with no art returns null
   // (an HONEST "there is nothing to look at") instead of a zombie.
     const sheetFor = (which: string): SpriteSheet | null => {
@@ -116,8 +119,7 @@ export function installDevHooks(deps: DevHookDeps): void {
       if (key) return sheetForKey(key);
       // A borrowed atlas is a real answer — it IS what that kind wears — but it
       // has to come from the skin table rather than from falling off the end.
-      const borrowed = EXPANSION_SKIN[which as EnemyKind];
-      if (borrowed) return borrowed.sheet();
+      if (KIND_SKIN[which as EnemyKind]) return skinSheet(which as EnemyKind);
       return null; // unknown name: say so, don't hand back a zombie
     };
     (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
@@ -525,6 +527,54 @@ export function installDevHooks(deps: DevHookDeps): void {
       const before = JSON.stringify(state.laneLit);
       rotateLanes();
       return JSON.stringify(state.laneLit) !== before;
+    };
+    // Dev: THE FLIPPER BUTTON, without a keyboard.
+    //
+    // `__dungeonFlip()` taps it — the nearest paddle in reach swings, and the
+    // return value says which one (or null if nothing was in reach), so a
+    // headless harness can assert the reach rule without guessing at geometry.
+    // `__dungeonFlippers()` lists every paddle on the floor with its live
+    // swing state, which is the only way to SEE a 0.16 s window: a screenshot
+    // harness shooting at ~2 fps cannot catch one, and three stills that all
+    // miss it look exactly like a button that does nothing.
+    (window as unknown as { __dungeonFlip?: () => unknown }).__dungeonFlip = () => {
+      const f = swingNearest();
+      return f ? { i: f.i, j: f.j, x: f.x, z: f.z, swingT: f.swingT } : null;
+    };
+    (window as unknown as { __dungeonFlippers?: () => unknown }).__dungeonFlippers = () =>
+      state.pinballParts
+        .filter((q) => q.kind === "flipper")
+        .map((q) => ({
+          i: q.i,
+          j: q.j,
+          dist: state.player ? Math.round(Math.hypot(state.player.x - q.x, state.player.z - q.z) * 100) / 100 : null,
+          swingT: q.swingT,
+          live: swingIsLive(q),
+          held: q.held === true,
+          cradled: q.cradled === true,
+          cooldownT: Math.round(q.cooldownT * 100) / 100,
+        }));
+    // Dev: THE NUDGE. `__dungeonNudge(0, 1)` shoves the table in world space
+    // and returns the tilt meter with it, so the ladder (fine → WARNING → TILT)
+    // can be walked from the console without three perfectly timed keypresses.
+    (window as unknown as { __dungeonNudge?: (dx?: number, dz?: number) => unknown }).__dungeonNudge = (dx = 0, dz = 1) => {
+      const landed = nudgeTable(dx, dz);
+      return { landed, tilt: Math.round(tiltLevel() * 100) / 100, lockT: Math.round(tiltLockRemaining() * 100) / 100 };
+    };
+    // Dev: THE PLAZA PARTS. `__dungeonPlaza()` counts what this floor got and
+    // where — a part that generates but never PLACES is the failure mode this
+    // whole layer has a documented history of, and a census is the only way to
+    // see it without walking every floor.
+    (window as unknown as { __dungeonPlaza?: () => unknown }).__dungeonPlaza = () => {
+      const of = (k: string) => state.pinballParts.filter((q) => q.kind === k);
+      const fields = new Map<number, number>();
+      for (const q of state.pinballParts) if (q.field !== undefined) fields.set(q.field, (fields.get(q.field) ?? 0) + 1);
+      return {
+        swingarm: of("swingarm").map((q) => ({ i: q.i, j: q.j, spin: q.spin, phase: Math.round((q.phase ?? 0) * 100) / 100 })),
+        flywheel: of("flywheel").map((q) => ({ i: q.i, j: q.j, dir: [q.dirX, q.dirZ] })),
+        magpost: of("magpost").length,
+        pegFields: [...fields.entries()].map(([id, n]) => ({ id, parts: n })),
+      };
     };
     // Dev: open the FLOOR HAUL screen on a synthetic haul, without clearing a
     // floor first. `__dungeonHaul(['spidersilk','spidersilk','spidersilk#7s'])`.

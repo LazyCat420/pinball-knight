@@ -24,7 +24,9 @@ import { createCanvas } from "canvas";
 import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "../render/palette";
 import { setEnginePalette } from "../engine/palette-source";
 import { bakeTintedSheet, invalidatePaletteCaches } from "../engine/render/sprite";
-import { EXPANSION_SKIN } from "./factory";
+import { KIND_SKIN } from "./kind-skin";
+import { skinSheetKey } from "./kind-skin";
+import { sheetFor } from "../boot/sheets";
 import { state, type EnemyKind } from "../state";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -59,10 +61,13 @@ function compareSheets(base: HTMLCanvasElement, baked: HTMLCanvasElement): Stats
 
 describe("bakeTintedSheet", () => {
   it("keeps every expansion kind's atlas 100% palette-exact, and actually dyes it", () => {
-    for (const [kind, skin] of Object.entries(EXPANSION_SKIN)) {
-      const base = skin.sheet();
+    // Only the TINTED rows: a bespoke-atlas kind has no dye to bake.
+    const dyed = (Object.entries(KIND_SKIN) as [EnemyKind, { tint?: number }][]).filter(([, s]) => s.tint !== undefined);
+    expect(dyed.length, "tinted kinds in KIND_SKIN").toBeGreaterThan(0);
+    for (const [kind, skin] of dyed) {
+      const base = sheetFor(skinSheetKey(kind));
       expect(base, `${kind}: base sheet`).toBeTruthy();
-      const baked = bakeTintedSheet(base!, skin.tint);
+      const baked = bakeTintedSheet(base!, skin.tint!);
       const stats = compareSheets(base!.texture.image as HTMLCanvasElement, baked.texture.image as HTMLCanvasElement);
       expect(stats.total, `${kind}: opaque pixels`).toBeGreaterThan(1000);
       // #1 — the whole point. One off-palette pixel is one the quantizer will
@@ -79,15 +84,15 @@ describe("bakeTintedSheet", () => {
     }
   });
 
-  it("is cached by makeExpansion — one baked atlas per kind", async () => {
-    // makeExpansion needs a scene to attach sprites to; a bare Object3D-ish
+  it("is cached by makeSkinned — one baked atlas per kind", async () => {
+    // makeSkinned needs a scene to attach sprites to; a bare Object3D-ish
     // stub is enough for the two adds this test performs.
-    const { makeExpansion } = await import("./factory");
+    const { makeSkinned } = await import("./factory");
     const added: unknown[] = [];
     state.scene = { add: (o: unknown) => added.push(o), remove: () => {} } as never;
     state.expansionSheets = {};
-    const a = makeExpansion("wisp" as EnemyKind, 1, 1, 1);
-    const b = makeExpansion("wisp" as EnemyKind, 2, 2, 1);
+    const a = makeSkinned("wisp" as EnemyKind, 1, 1, 1);
+    const b = makeSkinned("wisp" as EnemyKind, 2, 2, 1);
     expect(a).toBeTruthy();
     expect(b).toBeTruthy();
     expect(state.expansionSheets.wisp, "cached sheet").toBeTruthy();

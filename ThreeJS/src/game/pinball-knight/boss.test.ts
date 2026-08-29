@@ -14,6 +14,7 @@
 import { test, beforeEach, expect } from "vitest";
 import * as THREE from "three";
 import { spawnBoss, updateBoss, disposeBoss, bossActive } from "./boss";
+import { BOSSES } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import type { Zombie } from "./state";
@@ -58,12 +59,30 @@ beforeEach(() => {
   state.shakeT = 0;
   state.hitstopT = 0;
   state.elapsed = 0;
-  state.player = { x: 0, z: 0, hp: 6, momX: 0, momZ: 0, momSpeed: 0, iframes: 0, facing: "S" } as unknown as typeof state.player;
+  // Rich enough for the REAL damage path: `hitPlayerRanged` tints the sprite,
+  // reads the gear slots and writes the flash. A thinner stub made the boss's
+  // own hit resolution throw, which reads as a boss bug and is a harness bug.
+  state.player = {
+    x: 0,
+    z: 0,
+    hp: 6,
+    maxHp: 6,
+    momX: 0,
+    momZ: 0,
+    momSpeed: 0,
+    iframes: 0,
+    facing: "S",
+    flashT: 0,
+    shieldT: 0,
+    webbedT: 0,
+    bounceCombo: 0,
+    sprite: { setTint() {}, mesh: { position: new THREE.Vector3() } },
+  } as unknown as typeof state.player;
 });
 
 test("spawning the Reaper King seals the exit and rings it with skulls", () => {
   let king: Zombie | null = null;
-  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, BOSSES.reaper_king, (x: number, z: number, hp: number) => {
     king = fakeZombie(x, z, hp);
     state.zombies.push(king);
     return king;
@@ -78,7 +97,7 @@ test("spawning the Reaper King seals the exit and rings it with skulls", () => {
 });
 
 test("a few ticks keep the exit sealed while the king lives", () => {
-  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, BOSSES.reaper_king, (x: number, z: number, hp: number) => {
     const k = fakeZombie(x, z, hp);
     state.zombies.push(k);
     return k;
@@ -90,7 +109,7 @@ test("a few ticks keep the exit sealed while the king lives", () => {
 
 test("killing the Reaper King opens the portal and unlocks the exit", () => {
   let king: Zombie = fakeZombie(0, 0, 1);
-  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, BOSSES.reaper_king, (x: number, z: number, hp: number) => {
     king = fakeZombie(x, z, hp);
     state.zombies.push(king);
     return king;
@@ -148,7 +167,7 @@ function flatField(d: number): Int32Array {
 
 function spawnKing(at: { i: number; j: number } = { i: 3, j: 3 }): Zombie {
   let king: Zombie | null = null;
-  spawnBoss(state.grid!, at, 220, (x, z, hp) => {
+  spawnBoss(state.grid!, at, 220, BOSSES.reaper_king, (x: number, z: number, hp: number) => {
     king = fakeZombie(x, z, hp);
     state.zombies.push(king);
     return king;
@@ -226,4 +245,119 @@ test("the wake radius is strictly inside the leash, or he oscillates", () => {
   king.x = homeX + 30;
   updateBoss(0.1);
   expect(king.aggro, "gave up inside his own leash — WAKE/LEASH are inverted").toBe(true);
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// THE ROSTER, IN THE TICK LOOP
+//
+// boss-roster.test.ts checks the TABLE. These check that driving the table
+// actually produces four different fights — the failure mode of a registry
+// refactor is four rows that all behave like row one.
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Spawn a boss of `kind`, wake it, and run `secs` of ticks against a knight,
+ * SAMPLING EVERY FRAME.
+ *
+ * The per-frame trace is the point. A count taken at the end of the window
+ * measures nothing: a barrage tell lives for half a second and a shot fired at
+ * a knight half a tile away is disposed on the frame after it spawns, so the
+ * first version of this test read zero for the Broodmother and concluded she
+ * was inert. She was not — the probe was sampling between her attacks.
+ */
+function fight(kind: keyof typeof BOSSES, secs: number, opts: { hpFrac?: number } = {}): Zombie {
+  disposeBoss();
+  state.zombies = [];
+  state.scene = new THREE.Scene();
+  let z!: Zombie;
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 100, BOSSES[kind], (x: number, zz: number, hp: number) => {
+    z = fakeZombie(x, zz, hp);
+    state.zombies.push(z);
+    return z;
+  });
+  if (opts.hpFrac !== undefined) z.hp = Math.max(1, Math.round((z.maxHp ?? z.hp) * opts.hpFrac));
+  // Wake it: `engaged` is gated on path distance, which needs a flow field.
+  // Standing the knight on the boss and zeroing the field is the cheap way in.
+  state.flowField = new Int32Array(49);
+  state.player!.x = z.x;
+  state.player!.z = z.z + 0.5;
+  peakMeshes = 0;
+  damageTaken = 0;
+  const hp0 = state.player!.hp;
+  for (let t = 0; t < secs * 60; t++) {
+    updateBoss(1 / 60);
+    peakMeshes = Math.max(peakMeshes, state.scene!.children.length);
+    // The knight is a punching bag here — top it back up so a long window
+    // measures the boss's OUTPUT rather than how fast it can kill six HP.
+    if (state.player!.hp < hp0) {
+      damageTaken += hp0 - state.player!.hp;
+      state.player!.hp = hp0;
+      state.player!.iframes = 0;
+    }
+  }
+  return z;
+}
+
+/** Most meshes the boss had on the floor at once during the last `fight`. */
+let peakMeshes = 0;
+/** Total HP the boss took off the knight during the last `fight`. */
+let damageTaken = 0;
+
+test("each biome's guardian brings a different set of threats to the floor", () => {
+  // The scene's child count is a coarse but honest probe: orbiters, telegraph
+  // rings, charge lanes and projectiles are all meshes, and a boss that runs
+  // NO moves adds nothing beyond its own body. What matters is that the four
+  // are not the same number for the same reason.
+  const seen = new Map<string, { peak: number; dmg: number }>();
+  for (const kind of ["reaper_king", "broodmother", "overlord", "archivist"] as const) {
+    fight(kind, 12);
+    seen.set(kind, { peak: peakMeshes, dmg: damageTaken });
+  }
+  // None of the four is inert: each one put something on the floor AND hurt
+  // the knight standing next to it inside twelve seconds.
+  for (const [kind, r] of seen) {
+    expect(r.peak, `${kind} never put anything on the floor`).toBeGreaterThan(0);
+    expect(r.dmg, `${kind} never landed a hit in 12s`).toBeGreaterThan(0);
+  }
+  // And the King, who rings himself with five skulls, is not matched by the
+  // Overlord, who has no ring at all — proof the table is actually being read
+  // rather than four rows all running row one.
+  expect(seen.get("reaper_king")!.peak).toBeGreaterThan(seen.get("overlord")!.peak);
+});
+
+test("only the bosses whose row names an orbit get one", () => {
+  fight("reaper_king", 0.01);
+  const withRing = state.scene!.children.length;
+  fight("overlord", 0.01);
+  const without = state.scene!.children.length;
+  // 5 skulls vs none, measured at spawn before any attack has wound up.
+  expect(withRing - without).toBe(BOSSES.reaper_king.moves.orbit!.count);
+});
+
+test("the phase flip fires once, at the threshold, and speeds the Overlord up", () => {
+  // Above the threshold: phase 1, base speed.
+  const healthy = fight("overlord", 0.1, { hpFrac: 0.9 });
+  const baseSpeed = healthy.speed;
+  // At the threshold: phase 2 applies its speed multiplier exactly once, even
+  // over hundreds of ticks — a flip that re-fired would compound it away.
+  const hurt = fight("overlord", 5, { hpFrac: BOSSES.overlord.phase2.at });
+  expect(hurt.speed).toBeCloseTo(baseSpeed * BOSSES.overlord.phase2.speedMult!, 5);
+});
+
+test("a boss killed mid-telegraph leaves no ring on the floor", () => {
+  // The portal must not bloom over an orphaned telegraph that will never
+  // resolve — `clearTelegraphs` is the sweep, and this is what asks for it.
+  //
+  // The King is the subject because he is the one guaranteed to have something
+  // out: five orbiters from the first frame, plus a slam ring on its cadence.
+  const z = fight("reaper_king", 3.6);
+  expect(state.scene!.children.length, "nothing was out to clean up").toBeGreaterThan(0);
+  z.hp = 0;
+  state.zombies = [];
+  updateBoss(1 / 60);
+  expect(state.exitLocked).toBe(false);
+  // Rings lie flat (rotation.x = -PI/2) and orbiters do not; after the death
+  // the only flat thing on the floor should be gone.
+  const flat = state.scene!.children.filter((c) => Math.abs(c.rotation.x + Math.PI / 2) < 1e-6);
+  expect(flat, "a telegraph outlived the boss that cast it").toEqual([]);
 });

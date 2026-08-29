@@ -32,6 +32,7 @@ import {
   SKILL_SHOT_GOLD,
   NAMED_CHAIN_MAX,
   NAMED_COMBOS,
+  FLIPPER_TIMED_GOLD,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { showToast, showPickupNote } from "./ui";
@@ -42,6 +43,17 @@ function pay(amount: number): void {
   state.goldRun += amount;
   addGold(amount, "dungeon-game");
   state.hudDirty = true;
+}
+
+/**
+ * A TIMED FLIPPER — the flipper button's payout, for a knight who arrived
+ * inside the live window of a swing they commanded, or who fired themselves off
+ * a cradle. Routed through `pay` like every other shot so there is still exactly
+ * one place that banks gold; the caller has already recorded the shot itself.
+ */
+export function payTimedFlip(): void {
+  pay(FLIPPER_TIMED_GOLD);
+  showPickupNote(`🏏 TIMED FLIP +${FLIPPER_TIMED_GOLD}g`);
 }
 
 /**

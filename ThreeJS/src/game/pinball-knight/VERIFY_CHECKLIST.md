@@ -12,7 +12,7 @@ from depth 1.
 
 Keep it current: when a feature lands, add its check here rather than writing a
 new wave doc. (Three completed wave plans were retired 2026-07-18; the current
-forward-looking plan is `PINBALL_KNIGHT_PLAN.md` **beside this file**, not at the
+forward-looking plan is `OPEN_WORK.md` **beside this file** (`PINBALL_KNIGHT_PLAN.md` was retired 2026-08-27 and folded into it), not at the
 repo root, and the architecture is in `BLUEPRINT.md` also beside this file.)
 
 ## 0. Debug console itself

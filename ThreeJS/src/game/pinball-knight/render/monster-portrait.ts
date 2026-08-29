@@ -49,6 +49,7 @@ import { SHEET_KEY_BY_KIND, paintsFor } from "../boot/sheets";
 import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
+import { KIND_SKIN } from "../spawn/kind-skin";
 import { makeSporelingPaints } from "./monsters/sporeling";
 import { makeJesterPaints } from "./monsters/jester";
 import { makeCroakerPaints } from "./monsters/croaker";
@@ -61,51 +62,84 @@ import { makeFishFeetPaints } from "./monsters/fish_feet";
 const PX = ART_PX;
 
 /**
- * Which painter each monster wears, plus the tint and display scale that make
- * it read as ITSELF rather than as the sheet it borrows.
+ * WHICH PAINTER EACH KIND WEARS — and nothing else.
  *
- * `tint` is a multiply pass over the painted cel, matching the runtime
- * `sprite.setTint()` the spawner applies. `null` = the art already carries the
- * creature's identity and must not be recoloured.
+ * The tint and display scale used to live here too, hand-copied from the
+ * spawner's skin tables with a comment asking the next reader to keep them in
+ * step. They did not stay in step. `rotortail` read 1.0 here against the
+ * world's 0.95, and `stiltneck` read 1.1 against the world's 1.0 — the second
+ * of those putting a non-integer sprite scale back into the portrait four
+ * weeks after `spawn/kind-skin.ts` retired it from the world for causing moiré
+ * on the coat. `registry-drift.mjs` check C compared the OTHER pairing
+ * (EXPANSION_SKIN ↔ KIND_PORTRAIT) and so could not see it.
+ *
+ * Both columns are now READ from `spawn/kind-skin.ts` (see `portraitSkin`
+ * below), so the card cannot disagree with the thing you meet. What is left
+ * here is the one fact this module actually owns: the painter.
  *
  * EXHAUSTIVE by EnemyKind on purpose — same discipline as ENEMY_DROPS and
  * KIND_INFO. Adding a monster should fail to compile here.
  */
-const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number | null; scale: number }> = {
-  // ── Core roster: bespoke art, no tint ──
-  zombie: { paints: () => makeZombiePaints(ZOMBIE_VARIANTS[0]), tint: null, scale: 1.0 },
-  spider: { paints: makeSpiderPaints, tint: null, scale: 1.0 },
-  brute: { paints: makeBrutePaints, tint: null, scale: 1.05 },
-  spitter: { paints: makeSpitterPaints, tint: null, scale: 1.0 },
-  ghost: { paints: makeGhostPaints, tint: null, scale: 1.0 },
-  bat: { paints: makeBatPaints, tint: null, scale: 1.0 },
-  slime: { paints: makeSlimePaints, tint: null, scale: 1.0 },
-  sporeling: { paints: makeSporelingPaints, tint: null, scale: 1.0 },
-  jester: { paints: makeJesterPaints, tint: null, scale: 1.0 },
-  croaker: { paints: makeCroakerPaints, tint: null, scale: 1.0 },
-  rotortail: { paints: makeRotortailPaints, tint: null, scale: 1.0 },
-  stiltneck: { paints: makeStiltneckPaints, tint: null, scale: 1.1 },
-  fish_feet: { paints: makeFishFeetPaints, tint: null, scale: 1.0 },
-  hound: { paints: makeHoundPaints, tint: null, scale: 1.05 },
-  reaper: { paints: makeReaperPaints, tint: null, scale: 1.05 },
-  goblin: { paints: makeGoblinPaints, tint: null, scale: 1.0 },
-  pin: { paints: makePinPaints, tint: null, scale: 0.85 },
-  golem: { paints: makeGolemPaints, tint: null, scale: 1.12 },
-  chomper: { paints: makeChomperPaints, tint: null, scale: 1.1 },
-  magnet: { paints: makeMagnetPaints, tint: null, scale: 0.95 },
-  webspinner: { paints: makeWebspinnerPaints, tint: null, scale: 1.05 },
-
-  // ── Expansion roster: borrowed sheet + tint. These MUST stay in step with
-  //    core.ts EXPANSION_SKIN, or the card lies about what you're hunting.
-  //    (`hound` graduated to bespoke art — it sits with the core roster above.) ──
-  bloater: { paints: makeSlimePaints, tint: 0xb6c24a, scale: 1.3 },
-  necromancer: { paints: makeSpitterPaints, tint: 0x8a5cd0, scale: 1.05 },
-  warden: { paints: makeBrutePaints, tint: 0x4f8fdb, scale: 1.05 },
-  wisp: { paints: makeGhostPaints, tint: 0x6fe8e8, scale: 0.9 },
-  sapper: { paints: makeMagnetPaints, tint: 0xf0e05a, scale: 0.95 },
-  crystalback: { paints: makeGolemPaints, tint: 0x8fdfff, scale: 1.12 },
-  mimic: { paints: makeGolemPaints, tint: 0xd9a441, scale: 0.8 },
+const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
+  zombie: { paints: () => makeZombiePaints(ZOMBIE_VARIANTS[0]) },
+  spider: { paints: makeSpiderPaints },
+  brute: { paints: makeBrutePaints },
+  spitter: { paints: makeSpitterPaints },
+  ghost: { paints: makeGhostPaints },
+  bat: { paints: makeBatPaints },
+  slime: { paints: makeSlimePaints },
+  sporeling: { paints: makeSporelingPaints },
+  jester: { paints: makeJesterPaints },
+  croaker: { paints: makeCroakerPaints },
+  rotortail: { paints: makeRotortailPaints },
+  stiltneck: { paints: makeStiltneckPaints },
+  fish_feet: { paints: makeFishFeetPaints },
+  hound: { paints: makeHoundPaints },
+  reaper: { paints: makeReaperPaints },
+  goblin: { paints: makeGoblinPaints },
+  pin: { paints: makePinPaints },
+  golem: { paints: makeGolemPaints },
+  chomper: { paints: makeChomperPaints },
+  magnet: { paints: makeMagnetPaints },
+  webspinner: { paints: makeWebspinnerPaints },
+  bloater: { paints: makeSlimePaints },
+  necromancer: { paints: makeSpitterPaints },
+  warden: { paints: makeBrutePaints },
+  wisp: { paints: makeGhostPaints },
+  sapper: { paints: makeMagnetPaints },
+  crystalback: { paints: makeGolemPaints },
+  mimic: { paints: makeGolemPaints },
 };
+
+/**
+ * PORTRAIT-ONLY FRAMING, for the kinds the WORLD does not scale.
+ *
+ * A kind with a `KIND_SKIN` row is scaled on spawn, and its portrait takes
+ * that number — those two must agree or the card lies. A kind WITHOUT one
+ * spawns at 1.0, so any number here is a composition choice about filling the
+ * card's box, not a claim about the creature's size, and there is nothing for
+ * it to drift against.
+ *
+ * ⚠️ `reaper` is the honest exception and is left alone deliberately: the
+ * world scales it by `REAPER_SCALE` (1.4, constants/enemies.ts) inside
+ * `spawn/reaper.ts` rather than through a skin row, so its 1.05 here IS a
+ * disagreement — just a long-standing, purely cosmetic one, and re-framing the
+ * Death Dealer's card is an art decision rather than a refactor. Noted in
+ * OPEN_WORK.md rather than silently changed.
+ */
+const PORTRAIT_FRAMING: Partial<Record<EnemyKind, number>> = {
+  brute: 1.05,
+  reaper: 1.05,
+};
+
+/** The tint and scale a portrait paints with, read from the spawner's table. */
+function portraitSkin(kind: EnemyKind): { tint: number | null; scale: number } {
+  const skin = KIND_SKIN[kind];
+  return {
+    tint: skin?.tint ?? null,
+    scale: skin?.scale ?? PORTRAIT_FRAMING[kind] ?? 1.0,
+  };
+}
 
 /**
  * WHICH PAINTER EACH KIND WEARS — the paints half of `KIND_PORTRAIT`, exported
@@ -186,6 +220,7 @@ export function monsterPortrait(kind: EnemyKind, sub?: ZombieType): HTMLCanvasEl
   installPalette();
 
   const spec = KIND_PORTRAIT[kind];
+  const skin = portraitSkin(kind);
   const cv = spec ? scratch() : null;
   const ctx = cv?.getContext("2d") ?? null;
   if (!spec || !cv || !ctx) {
@@ -218,11 +253,11 @@ export function monsterPortrait(kind: EnemyKind, sub?: ZombieType): HTMLCanvasEl
   // `source-in` against a SEPARATE scratch layer is the honest version: fill the
   // layer with the tint, clip it to the sprite's own alpha, then multiply that
   // masked layer down. Transparent stays transparent.
-  if (spec.tint !== null) {
+  if (skin.tint !== null) {
     const tintLayer = scratch();
     const tctx = tintLayer?.getContext("2d") ?? null;
     if (tintLayer && tctx) {
-      tctx.fillStyle = `#${spec.tint.toString(16).padStart(6, "0")}`;
+      tctx.fillStyle = `#${skin.tint.toString(16).padStart(6, "0")}`;
       tctx.fillRect(0, 0, PX, PX);
       tctx.globalCompositeOperation = "destination-in";
       tctx.drawImage(cv, 0, 0);
@@ -240,7 +275,7 @@ export function monsterPortrait(kind: EnemyKind, sub?: ZombieType): HTMLCanvasEl
 
 /** The display scale a kind's portrait wants (a hulk should tower, a pin shouldn't). */
 export function portraitScale(kind: EnemyKind, sub?: ZombieType): number {
-  const base = KIND_PORTRAIT[kind]?.scale ?? 1;
+  const base = portraitSkin(kind).scale;
   // Zombie sub-types carry their own body scale, and the whole point of the
   // Hulk/Midget cards is that those two are visibly different monsters. Damped
   // toward 1 so a 1.55× hulk fills the window without clipping out of it.
