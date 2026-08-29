@@ -22,3 +22,6 @@ dist/
 # Local git worktrees & builds
 /.worktrees/
 /build-windows/
+
+# Deploy output (deploy.sh writes the test shard logs here)
+**/.deploy-logs/
