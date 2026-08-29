@@ -111,13 +111,44 @@ describe("computeRenderSizing", () => {
     expect(s.capped).toBe(false);
   });
 
-  it("picks a bigger zoom once the window is a multiple of the reference", () => {
-    expect(computeRenderSizing(2560, 1440).scale).toBe(2);
-    expect(computeRenderSizing(3840, 2160).scale).toBe(3);
-    // 3440x1440 is 2.68 x 2.0 — the SHORT axis picks the zoom.
+  it("picks the SMALLEST zoom the ceiling allows, not the biggest", () => {
+    // The zoom is chosen against MAX_RENDER_*, not against the reference. The
+    // old rule was `floor(min(w / RENDER_W, h / RENDER_H))` — the biggest zoom
+    // the window could carry — which pinned every exact multiple of the
+    // reference at the reference, i.e. at the MINIMUM field of view. A 1440p
+    // monitor rendered 1280x720 at x2 (22.9 tiles) while the 1080p monitor
+    // beside it rendered 1920x1080 at x1 (34.3). That is the "stretched, half
+    // the level is gone" report of 2026-08-29.
+    expect(computeRenderSizing(2560, 1440).scale).toBe(1);
+    expect(computeRenderSizing(2560, 1440).renderW).toBe(2560);
+    // Past the ceiling the zoom steps, and it steps ONCE: a 4K panel lands on
+    // 1920x1080 — the same framing the 1080p player gets.
+    expect(computeRenderSizing(3840, 2160).scale).toBe(2);
+    expect(computeRenderSizing(3840, 2160).renderW).toBe(1920);
+    // 3440x1440 is over the ceiling on the long axis alone.
     expect(computeRenderSizing(3440, 1440).scale).toBe(2);
-    // 3440/2 = 1720, comfortably under the 1920 cap, so the ultrawide fills.
+    // 3440/2 = 1720, comfortably under the cap, so the ultrawide fills.
     expect(computeRenderSizing(3440, 1440).renderW).toBe(1720);
+  });
+
+  it("never bumps the zoom to below the reference the floor promises", () => {
+    // The bump exists to satisfy MAX_RENDER_*, and it used to be allowed down
+    // to 1024x576 — under the 1280x720 that RENDER_W calls the floor. Two
+    // pixels past the old 2160-wide ceiling it landed on 1082x608: HALF the
+    // level of the window one pixel narrower. The bump now stops at the
+    // reference and the window letterboxes instead.
+    for (const [w, h] of [
+      [2162, 1216],
+      [2400, 1350],
+      [2561, 1441],
+      [3000, 1600],
+      [3840, 2160],
+      [5120, 2880],
+    ] as ReadonlyArray<[number, number]>) {
+      const s = computeRenderSizing(w, h);
+      expect(s.renderW, `${w}x${h}`).toBeGreaterThanOrEqual(RENDER_W);
+      expect(s.renderH, `${w}x${h}`).toBeGreaterThanOrEqual(RENDER_H);
+    }
   });
 
   it("falls back to scale 1 below the reference floor", () => {

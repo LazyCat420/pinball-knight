@@ -1108,12 +1108,22 @@ function evenCeil(v: number): number {
  * WHAT IT DOES NOW. Instead of a fixed target scaled by a fraction, we derive
  * the target from the window so the upscale is always a WHOLE number and the
  * image still fills the screen with no letterbox bars:
- *   scale   = max(1, floor(min(winW / RENDER_W, winH / RENDER_H)))
+ *   scale   = smallest s >= 1 with evenCeil(winW / s) <= MAX_RENDER_W
+ *                             and evenCeil(winH / s) <= MAX_RENDER_H
  *   renderW = evenCeil(winW / scale)   ⇒  renderW * scale >= winW
- * RENDER_W/RENDER_H are the reference FLOOR: the zoom is chosen against them,
- * so the player never sees less of the level than 1280x720 was showing. They
- * may see somewhat more (see the constants.ts note) — that is the unavoidable
- * cost of integer scale + no letterbox + fixed PPU.
+ * MAX_RENDER_* is the CEILING on how much level a window may reveal, and it is
+ * the only thing that picks the zoom. RENDER_W/RENDER_H are the FLOOR: the
+ * bump is not allowed to take the grid under them (MIN_BUMP_*), so the player
+ * never sees less of the level than 1280x720 was showing. Between the two they
+ * see as much as the ceiling allows — that is the unavoidable shape of integer
+ * scale + no letterbox + fixed PPU.
+ *
+ * The zoom used to be chosen against the FLOOR instead —
+ * `floor(min(winW / RENDER_W, winH / RENDER_H))`, the biggest zoom the window
+ * could carry — which pinned every exact multiple of the reference AT the
+ * reference. A 2560x1440 monitor therefore rendered 1280x720 at x2, 22.9 tiles
+ * across, where the 1920x1080 monitor beside it rendered 1920x1080 at x1 and
+ * got 34.3. See MAX_RENDER_W in constants/render.ts for the measured table.
  *
  * WHY EVEN. An ODD render width puts the orthographic frustum's centre on a
  * half-texel: `left = -renderW / (2 * PPU)` is then a half-pixel offset, and
@@ -1121,10 +1131,11 @@ function evenCeil(v: number): number {
  * texels. Rounding up to even costs at most one render pixel and keeps the
  * frustum centre exactly on the grid.
  *
- * WHY A CAP. renderW ≈ winW / floor(winW / 1280) is mostly self-limiting, but
- * a very wide, short window pins scale at 1 while the width runs away
- * (7680x1080 would ask for a 7680-wide target). When MAX_RENDER_* bites we
- * KEEP the integer scale and letterbox instead — crispness is the invariant.
+ * WHY A CAP. Without one, `scale` would simply be 1 and the target would be
+ * the window — a 7680x1080 ultrawide would ask for a 7680-wide target, and
+ * every big monitor would reveal an unbounded amount of level. MAX_RENDER_*
+ * bounds both; when it bites we KEEP the integer scale and letterbox rather
+ * than fall back to a fractional upscale — crispness is the invariant.
  */
 export function computeRenderSizing(winW: number, winH: number, zoom = 1): RenderSizing {
   // The window in ZOOM-CANCELLED pixels — see `cancelBrowserZoom`. `winW * zoom`
@@ -1134,7 +1145,23 @@ export function computeRenderSizing(winW: number, winH: number, zoom = 1): Rende
   const w = Math.max(1, Math.floor(winW * zoom));
   const h = Math.max(1, Math.floor(winH * zoom));
 
-  const baseScale = Math.max(1, Math.floor(Math.min(w / RENDER_W, h / RENDER_H)));
+  // ── THE UPSCALE IS THE SMALLEST ONE THAT FITS, NOT THE LARGEST (2026-08-29) ──
+  //
+  // This was `floor(min(w / RENDER_W, h / RENDER_H))` — the BIGGEST whole-number
+  // zoom the window could carry while still showing the 1280x720 reference.
+  // That reads as "as chunky as the window allows", and it pins the grid AT the
+  // reference — i.e. at the MINIMUM field of view — for every window that is a
+  // multiple of it. A 2560x1440 monitor got a 1280x720 grid, 22.9 tiles across,
+  // where the 1920x1080 monitor beside it got 34.3. See MAX_RENDER_W for the
+  // measured table and the report it came from.
+  //
+  // MAX_RENDER_* is the thing that actually decides how much level a window may
+  // reveal, and it says so in grid pixels. So let it be the ONLY thing that
+  // decides: start at x1 (grid = window — the most level, and the crispest
+  // presentation this design can give) and climb only as far as the ceiling
+  // forces. Every window at or under the ceiling is untouched — 1280x720,
+  // 1366x768 and 1920x1080 all still render x1, pixel for pixel.
+  const baseScale = 1;
 
   // ── THE FLOOR IS GONE, AND ON PURPOSE (2026-07-29) ──
   //
@@ -1231,13 +1258,16 @@ const MAX_SCALE = 8;
 /**
  * The smallest grid the scale-bump is allowed to land on.
  *
- * Below this the cure is worse than the letterbox: 4:3 of the reference, i.e.
- * the point where the level stops being readable. A window that cannot be
- * covered without going under it gets bars instead, which is what the ceiling
- * existed to do before it started producing them in the ordinary case.
+ * It is the REFERENCE ITSELF, 1280x720. Below that the cure is worse than the
+ * letterbox, and worse than that it is incoherent: RENDER_W's contract is that
+ * the player never sees less than 1280x720 worth of level, and a bump the
+ * ceiling forced was the one path that broke it (2162x1216 landed on 1082x608
+ * before 2026-08-29). A window that cannot be covered without going under the
+ * reference gets bars instead — which is what the ceiling existed to do before
+ * it started producing them in the ordinary case.
  */
-const MIN_BUMP_W = 1024;
-const MIN_BUMP_H = 576;
+const MIN_BUMP_W = RENDER_W;
+const MIN_BUMP_H = RENDER_H;
 
 export interface PixelPass {
   target: THREE.WebGLRenderTarget;

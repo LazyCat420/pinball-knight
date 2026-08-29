@@ -43,33 +43,49 @@ export const RENDER_H = 720;
  *
  * Integer scale, a full-screen fill, and a fixed field of view are mutually
  * exclusive — you can have any two. We gave up fixed FOV (see the RENDER_W note
- * above), but unbounded that trade is worse than it sounds: PPU is pinned at
- * 64, so the render width IS the field of view. A 1920-wide target shows 30
- * tiles where the game was designed around 20, which makes every sprite
- * physically SMALLER on screen — the opposite of the fidelity this whole change
- * was chasing, even though each pixel is now perfectly square.
+ * above), but unbounded that trade is worse than it sounds: PPU is pinned, so
+ * the render width IS the field of view.
  *
- * 1920×1080 is chosen so the most common desktop size fills the screen at a
- * whole-number scale. The previous 1600×900 was a bad pick: it sat just below
- * 1920, so a 1080p player got 160px bars each side and 90px top and bottom —
- * 31% of the screen black — to buy a framing nobody asked for.
+ * ── WHY THIS IS 2560x1440 AND NOT 2160x1216 (2026-08-29) ──
  *
- * Be clear about what integer scaling costs at 1080p, because it is real and
- * there is no way to avoid it: the old fractional path was effectively ×1.5,
- * giving the designed 20 tiles at 96px each. No integer reproduces that. ×1 is
- * 30 tiles at 64px (more level, smaller figures); ×2 is 15 tiles at 128px (big
- * chunky figures, a quarter less warning of what is coming). We took ×1.
+ * It was 2160x1216, picked so 1920x1080 fills at a whole-number scale. It did
+ * that, but two pixels past it the field of view fell off a cliff, because the
+ * ceiling is enforced by RAISING the upscale (pixel-pass.ts) and an upscale
+ * only comes in whole steps. Measured at the `wider` rung (PPU 56), old
+ * numbers:
  *
- * Past this size the integer scale is KEPT and the canvas letterboxes: crispness is the thing we refuse to
- * trade, and modest bars beat a level that silently zooms out on a big monitor.
- * It also still does the original job — a 7680×1080 ultrawide pins the scale at
- * 1 and would otherwise ask for a 7680-wide target.
+ *     physical window   scale   grid         tiles across
+ *     2160x1216          x1     2160x1216        38.6
+ *     2162x1216          x2     1082x608         19.3   ← half the level, from
+ *                                                          two more pixels
+ *     2560x1297          x2     1280x650         22.9   ← a maximised browser
+ *                                                          on a 1440p monitor
  *
- * Raising this re-opens the FOV question; it is not a free "use more of the
- * screen" dial. Must stay EVEN (see the even-size rule in pixel-pass.ts).
+ * So a 1440p player saw a third less level than the 1080p player beside them,
+ * at double the pixel size — and 1280x650 is UNDER the 1280x720 that RENDER_W
+ * above promises as the floor. That is what "the game is stretched out and
+ * half of it is cut off" was, reported 2026-08-29.
+ *
+ * 2560x1440 is the next real monitor size up, so the whole 1080p..1440p range
+ * now fills at x1, and the first scale step lands where a 4K panel is:
+ * 3840x2160 renders 1920x1080 at x2, the same framing a 1080p player gets. The
+ * ladder is monotone across every size anyone actually runs.
+ *
+ * The FOV cost is real and is the thing to argue with if this looks wrong: at
+ * 2560 wide the cap now permits 45.7 tiles at PPU 56 where it permitted 38.6.
+ * The counter-dial is per-player and already exists — CAMERA_ZOOM (`close`
+ * pulls PPU to 80, i.e. 32 tiles at that width) — where this ceiling is global.
+ *
+ * Past this size the integer scale is KEPT and the canvas letterboxes:
+ * crispness is the thing we refuse to trade. It also still does the original
+ * job — a 7680x1080 ultrawide pins the scale at 1 and would otherwise ask for a
+ * 7680-wide target.
+ *
+ * Raising this again re-opens the FOV question; it is not a free "use more of
+ * the screen" dial. Must stay EVEN (see the even-size rule in pixel-pass.ts).
  */
-export const MAX_RENDER_W = 2160;
-export const MAX_RENDER_H = 1216;
+export const MAX_RENDER_W = 2560;
+export const MAX_RENDER_H = 1440;
 
 /**
  * Pixels per world unit. FIXED at 72 — one tile (1 world unit) is always

@@ -31,10 +31,12 @@ describe("screenToUi", () => {
   });
 
   it("divides by the integer scale, not by the window ratio", () => {
-    // 2560x1440 is scale 2 over a 1280x720 grid: 200 window px in from the
-    // canvas edge must be UI pixel 100, NOT 200.
-    const w = 2560;
-    const h = 1440;
+    // 3840x2160 is scale 2 over a 1920x1080 grid: 200 window px in from the
+    // canvas edge must be UI pixel 100, NOT 200. (It was 2560x1440 until the
+    // ceiling moved to 2560x1440 — that window now fills at scale 1, so it no
+    // longer exercises the division this test is about.)
+    const w = 3840;
+    const h = 2160;
     const s = computeRenderSizing(w, h);
     expect(s.scale).toBe(2);
     const { left, top } = canvasOrigin(s, w, h);
@@ -43,8 +45,8 @@ describe("screenToUi", () => {
   });
 
   it("keeps the fraction, so adjacent widgets do not both claim a boundary", () => {
-    const w = 2560;
-    const h = 1440;
+    const w = 3840;
+    const h = 2160;
     const s = computeRenderSizing(w, h);
     const { left, top } = canvasOrigin(s, w, h);
     // One window pixel at scale 2 is half a UI pixel. A hit test that floored

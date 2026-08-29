@@ -183,8 +183,8 @@ export const engineConfig: EngineConfig = {
   post: {
     renderW: 1280,
     renderH: 720,
-    maxRenderW: 2160,
-    maxRenderH: 1216,
+    maxRenderW: 2560,
+    maxRenderH: 1440,
     bloomThreshold: 0.7,
     bloomStrength: 0.9,
     bloomRadius: 2.2,
