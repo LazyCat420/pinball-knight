@@ -788,9 +788,11 @@ export function laneTiles(g: Grid, mask: TrackMask): TilePos[] {
  */
 export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
   let cleared = 0;
+  const sWalls = mask ? sealedWalls(g, mask) : null;
   const isProtected = (x: number, y: number): boolean => {
     if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) return true;
     if (mask && isSealed(g, mask, x, y)) return true;
+    if (sWalls && sWalls[idx(g, x, y)] === 1) return true;
     if (g.arcIdx && g.arcIdx[idx(g, x, y)] >= 0) return true;
     return false;
   };

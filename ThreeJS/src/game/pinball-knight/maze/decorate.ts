@@ -29,6 +29,8 @@ import { breakFlowLoops, findFlowCycles, type FlowPart } from "./flow-loops";
 import type { AssemblyRef } from "./assembly";
 import { authorCircuits, type Circuit } from "./circuit";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
+import { analyzePatternGrammar, isLegalSlotForPart } from "./pattern-grammar";
+import type { Doorway } from "./doorways";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -174,8 +176,6 @@ export interface PinballPartSpot extends TilePos {
    * intent: `polishParts` does not de-clump it (a pop nest is three bumpers at
    * Chebyshev 2 on purpose) and the A1 runway repair does not re-aim it (a
    * booster that feeds the deflector two tiles ahead is supposed to have a wall
-   * beyond it — the turn is the point).
-   *
    * It buys NO exemption from `breakLaunchDuels` or `breakFlowLoops`. Those two
    * guard a genuine soft-lock, and the router earns its place by PRE-checking
    * them rather than by being excused from them.
@@ -1003,10 +1003,17 @@ const DUEL_RANGE = 12;
  * matters most: two opposed launchers with a WALL between them are not a duel,
  * they are two ordinary launchers, and "fixing" them would churn good floors.
  */
+function partExit(p: PinballPartSpot): [number, number] {
+  if (p.kind === "boostcorner" && (p.dir2I !== 0 || p.dir2J !== 0)) return [p.dir2I, p.dir2J];
+  return [p.dirI, p.dirJ];
+}
+
 function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot, all: readonly PinballPartSpot[] = []): boolean {
-  if (a.dirI !== -b.dirI || a.dirJ !== -b.dirJ) return false; // facings must oppose
-  const di = a.dirI;
-  const dj = a.dirJ;
+  const [adi, adj] = partExit(a);
+  const [bdi, bdj] = partExit(b);
+  if (adi !== -bdi || adj !== -bdj) return false; // facings must oppose
+  const di = adi;
+  const dj = adj;
   // Same fire axis, and b on the side a is actually pointing.
   const along = di !== 0 ? (b.i - a.i) * di : (b.j - a.j) * dj;
   const across = di !== 0 ? b.j - a.j : b.i - a.i;
@@ -1014,22 +1021,6 @@ function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot, all: readonly 
   for (let s = 1; s < along; s++) {
     if (at(g, a.i + di * s, a.j + dj * s) !== T_FLOOR) return false; // walled off — harmless
   }
-  // ── INTERCEPTED LANES ARE NOT DUELS ─────────────────────────────────────
-  //
-  // A wall between two opposed launchers already disqualifies the pair; so does
-  // another LAUNCHER between them, for the same reason and with the same force.
-  // The ping-pong needs the ball to travel from one to the other and back, and a
-  // launcher in the middle sets a fresh heading — the ball never completes the
-  // round trip.
-  //
-  // This is not hypothetical tidying. Once routes are laid on Φ, two roads
-  // CONVERGING on the same corridor from opposite ends is a normal, legible
-  // shape: both are downhill, they meet at a local minimum, and the part at that
-  // minimum turns the ball out of the lane. Observed on the very first floor
-  // that exercised it — boosters at (15,15)+j and (15,27)−j either side of a
-  // corner booster at (15,22), Φ 60 → 53 ← 58. Without this clause the pass
-  // would "repair" a merge junction by re-aiming one arm back up its own road,
-  // manufacturing the defect it exists to remove.
   for (const q of all) {
     if (q === a || q === b) continue;
     if (!LAUNCH_KINDS.has(q.kind) && q.kind !== "boostcorner" && q.kind !== "boostcurve") continue;
@@ -1043,38 +1034,12 @@ function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot, all: readonly 
 /** Can this part be re-aimed / demoted at all? A VAULT ramp fires into rock on
  *  purpose (that IS the feature), so it can never be one half of a duel. */
 function duelEligible(p: PinballPartSpot): boolean {
-  return !p.vault && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1;
+  return !p.vault && (LAUNCH_KINDS.has(p.kind) || p.kind === "boostcorner");
 }
 
 /**
  * Break every launch duel on the floor. Runs at the very end of decorateMaze,
  * after the last pass that can change a facing.
- *
- * Resolution, cheapest first — the goal is to keep the machine's furniture, so
- * deleting a part is the last resort:
- *   1) RE-AIM one of the pair to any other cardinal with real runway that does
- *      not immediately start a fresh duel. Note that simply REVERSING a part is
- *      a legitimate fix and often the best one in a 1-wide corridor: a duel
- *      needs ANTI-PARALLEL facings, so flipping one makes the pair PARALLEL,
- *      which is a chain — the good thing — rather than a standing wave.
- *   2) DEMOTE to a bumper, but only where a bumper belongs. Parts are placed to
- *      match tile topology (see KIND_TOPOLOGY) and a bumper's topology is a
- *      JUNCTION, so dropping one onto a corridor tile would break that
- *      invariant — decorate.test.ts asserts it.
- *   3) REMOVE the part, the same last resort openLaunchTargets uses for an
- *      orphan it cannot aim anywhere.
- *
- * Which of the pair yields: the one that is cheapest to change. A CHAIN part was
- * placed because another part's exit ray lands on it, so it yields only if its
- * opponent has no way out. A SPINE part NEVER yields — it is one link of the
- * connected booster route down the main artery, and that route carries its own
- * invariant (every pad points down-flow toward the stairs, pinned by
- * decorate.test.ts). Re-aiming one to escape a duel silently points it backward
- * and breaks the route, which is a worse bug than the duel. A spine-vs-spine
- * duel is therefore left alone here and caught at runtime by the pocket-rattle
- * guard instead; the spine builder owns preventing it.
- *
- * Mutates `parts`; returns the number of duels resolved. Pure (no three/DOM).
  */
 export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
   const yieldCost = (p: PinballPartSpot): number =>
@@ -1082,16 +1047,13 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
   const openSides = (i: number, j: number): number => CARDINALS.filter(([di, dj]) => at(g, i + di, j + dj) === T_FLOOR).length;
   let fixed = 0;
 
-  // Re-aiming can create a fresh duel with a third part, so iterate to a fixed
-  // point. Each round fixes at most one pair; a pair nobody may move (spine vs
-  // spine) is skipped rather than retried, or the loop would spin on it.
   for (let round = 0; round < 8; round++) {
     const live = parts.filter(duelEligible);
     let duel: [PinballPartSpot, PinballPartSpot] | null = null;
     outer: for (let x = 0; x < live.length; x++) {
       for (let y = x + 1; y < live.length; y++) {
         if (!firesAt(g, live[x], live[y], parts)) continue;
-        if (live[x].spine && live[y].spine) continue; // neither may move — the runtime guard owns this one
+        if (live[x].spine && live[y].spine) continue;
         duel = [live[x], live[y]];
         break outer;
       }
@@ -1099,7 +1061,6 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
     if (!duel) break;
 
     // Try the cheaper part first; fall back to its opponent if it is boxed in.
-    // A spine link is never a candidate at all.
     const order = (yieldCost(duel[0]) <= yieldCost(duel[1]) ? [duel[0], duel[1]] : [duel[1], duel[0]]).filter((p) => !p.spine);
     let resolved = false;
     for (const p of order) {
@@ -1119,14 +1080,15 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
       if (best) {
         p.dirI = best[0];
         p.dirJ = best[1];
+        if (p.kind === "boostcorner") {
+          p.dir2I = best[0];
+          p.dir2J = best[1];
+        }
         resolved = true;
         break;
       }
     }
     if (!resolved && order.length > 0) {
-      // Nowhere to point either of them. Demote the cheaper one if its tile is
-      // somewhere a bumper legitimately lives (a junction); otherwise take the
-      // part out rather than leave a launcher in a standing wave.
       const p = order[0];
       if (openSides(p.i, p.j) >= 3 || p.circuit !== undefined) {
         p.kind = "bumper";
@@ -2214,6 +2176,66 @@ function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number, walka
   }
   return plazas;
 }
+function enforceDoorwayOutflow(g: Grid, phi: Int32Array, parts: PinballPartSpot[], grammar: PatternGrammarGrid): void {
+  for (const p of parts) {
+    if (p.spine) continue;
+    if (!LAUNCH_KINDS.has(p.kind) && p.kind !== "boostcorner") continue;
+    const [di, dj] = partExit(p);
+    if (di === 0 && dj === 0) continue;
+    let nearDoorway = false;
+    for (let dy = -3; dy <= 3 && !nearDoorway; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) <= 3 && grammar.getSlot(p.i + dx, p.j + dy).isClearway) {
+          nearDoorway = true;
+          break;
+        }
+      }
+    }
+    if (!nearDoorway) continue;
+    if (flowDrop(g, phi, p.i, p.j, di, dj, 4) < 0) {
+      const best = steepestDown(g, phi, p.i, p.j);
+      if (best && launchRunway(g, p.i, p.j, best[0], best[1]) >= MIN_RUNWAY) {
+        p.dirI = best[0];
+        p.dirJ = best[1];
+        if (p.kind === "boostcorner") {
+          p.dir2I = best[0];
+          p.dir2J = best[1];
+        }
+      } else {
+        p.kind = "bumper";
+        p.dirI = 0;
+        p.dirJ = 0;
+        p.dir2I = 0;
+        p.dir2J = 0;
+      }
+    }
+  }
+}
+
+function breakBumperBounceTraps(g: Grid, parts: PinballPartSpot[]): void {
+  for (const p of parts) {
+    if (!LAUNCH_KINDS.has(p.kind)) continue;
+    const [di, dj] = partExit(p);
+    if (di === 0 && dj === 0) continue;
+    for (let step = 1; step <= 2; step++) {
+      const tx = p.i + di * step;
+      const ty = p.j + dj * step;
+      if (at(g, tx, ty) !== T_FLOOR) break;
+      const targetPart = parts.find((q) => q !== p && q.i === tx && q.j === ty);
+      if (targetPart && (targetPart.kind === "bumper" || targetPart.kind === "slingshot")) {
+        const leftOpen = at(g, tx - dj, ty + di) === T_FLOOR;
+        const rightOpen = at(g, tx + dj, ty - di) === T_FLOOR;
+        if (!leftOpen && !rightOpen) {
+          p.kind = "bumper";
+          p.dirI = 0;
+          p.dirJ = 0;
+          p.dir2I = 0;
+          p.dir2J = 0;
+        }
+      }
+    }
+  }
+}
 
 export function decorateMaze(
   g: Grid,
@@ -2223,7 +2245,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -2245,6 +2267,7 @@ export function decorateMaze(
     }
   }
   const strictLaunchers = extras.strictLaunchers === true;
+  const grammar = analyzePatternGrammar(g, extras.doorways ?? [], rooms);
   const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
 
   // ── THE LAUNCH CHUTE IS NOT GENERAL FLOOR ───────────────────────────────
@@ -2418,7 +2441,14 @@ export function decorateMaze(
   const itemSpots = shuffled(
     floors.filter((p) => {
       const d = dist[idx(g, p.i, p.j)];
-      return d >= 4 && !(p.i === stairs.i && p.j === stairs.j) && !spawns.some((s) => s.i === p.i && s.j === p.j) && !inRoom(p);
+      const openCount = WALL_SIDES.filter(([di, dj]) => at(g, p.i + di, p.j + dj) === T_FLOOR).length;
+      return (
+        d >= 4 &&
+        openCount >= 2 &&
+        !(p.i === stairs.i && p.j === stairs.j) &&
+        !spawns.some((s) => s.i === p.i && s.j === p.j) &&
+        !inRoom(p)
+      );
     }),
     rng,
   );
@@ -2678,6 +2708,7 @@ export function decorateMaze(
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
     if (inRoom(p)) continue;
     if (inCircuit(p.i, p.j) || inAssembly(p.i, p.j)) continue;
+    if (grammar.getSlot(p.i, p.j).isClearway) continue;
     const spot = classifyTopology(g, p, rng);
     if (spot) byTopo[spot.topo].push(spot);
   }
@@ -2698,6 +2729,7 @@ export function decorateMaze(
     !inRoom(c) &&
     !inCircuit(c.i, c.j) &&
     !inAssembly(c.i, c.j) &&
+    !grammar.getSlot(c.i, c.j).isClearway &&
     !parts.some((q) => q.i === c.i && q.j === c.j);
 
   for (let chain = 0; chain < chainCount && parts.length < corridorBudget; chain++) {
@@ -2787,6 +2819,8 @@ export function decorateMaze(
     let placed = false;
     while (pool.length > 0) {
       const cand = pool.pop()!;
+      if (grammar.getSlot(cand.i, cand.j).isClearway) continue;
+      if (!isLegalSlotForPart(kind, grammar.getSlot(cand.i, cand.j).slotType)) continue;
       if (parts.some((q) => Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue; // spacing
       let spot = spotForKind(kind, cand, rng);
       // PATH-FIRST flow: point a "speed up" part DOWN-FLOW (toward the exit /
@@ -3370,10 +3404,8 @@ export function decorateMaze(
     }
   }
 
-  // ── LAUNCH DUELS: with every facing now final (placement, the A1 repair and
-  // the post-sweep re-aim above have all had their say), break any pair of
-  // launchers left aimed down one open lane at each other — the ping-pong trap.
-  // Must be the LAST pass that touches a part's direction. ──
+  enforceDoorwayOutflow(g, phi, parts, grammar);
+  breakBumperBounceTraps(g, parts);
   breakLaunchDuels(g, parts);
   // ── …AND EVERY OTHER CLOSED LOOP (maze/flow-loops.ts). The duel breaker only
   // knows the 2-cycle, and only the half of it where neither part is on a

@@ -342,6 +342,7 @@ export function authorFloor(level: number): AuthoredFloor {
       // of it. The legacy branch passes nothing and keeps its own bank pass.
       wallsAuthored: !!track,
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
+      doorways: track?.doorways,
     },
   );
 

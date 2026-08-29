@@ -867,6 +867,7 @@ export function buildTrackFloor(
   }
   compactArcs(grid);
   widenMazeCorridors(grid, mask, rng, doorGuard);
+  ensureMin3WideClearance(grid, mask);
 
   // ── AND NOW THE DOORWAYS ARE CUT ────────────────────────────────────────
   //
@@ -990,6 +991,7 @@ export function buildTrackFloor(
   }
   uncarveDeadEnds(grid, mask, [ends.start, ends.stairs]);
   compactArcs(grid);
+  healRoadTerminations(grid, mask, [ends.start, ends.stairs], { reach: 0 });
 
   let finalStairs = ends.stairs;
   const finalDist = bfsDistances(grid, routeFrom.i, routeFrom.j);
