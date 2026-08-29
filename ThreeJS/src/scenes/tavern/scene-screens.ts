@@ -55,8 +55,14 @@ export interface StationPrompt {
  *
  * Non-pausing and non-focusable: it is a label, and making it focusable would
  * put it in the tab order of whatever sheet opens over it.
+ *
+ * `button` is a GETTER, read every paint rather than captured at show(): a pad
+ * can be plugged in while the prompt is already up, and a label that names the
+ * wrong button is the exact defect this parameter exists to fix. Defaults to
+ * the keyboard so a caller that has no input handle still renders something
+ * true.
  */
-export function createStationPrompt(): StationPrompt {
+export function createStationPrompt(button: () => string = () => "[E]"): StationPrompt {
   if (!isOpen("station-prompt")) {
     push({
       id: "station-prompt",
@@ -67,7 +73,7 @@ export function createStationPrompt(): StationPrompt {
         const s = promptStation;
         if (!s) return;
         const accent = `#${s.accent.toString(16).padStart(6, "0")}`;
-        const label = `[E] ${s.label.toUpperCase()}`;
+        const label = `${button()} ${s.label.toUpperCase()}`;
         const w = Math.max(220, label.length * 9 + GRID * 4);
         const r = rect((f.w - w) / 2, f.h - 132, w, 40);
         fillRect(f, r, UI.sheet);

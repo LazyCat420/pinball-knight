@@ -13,6 +13,8 @@ import { selectBackend, createGPURenderer } from "../../render/backend";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/engine/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
 import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
+import { interactHint } from "../../game/pinball-knight/gui/interact-hint";
+import { installTouchControls, isTouchDevice, type TouchControls } from "../../game/pinball-knight/gui/touch";
 import { tavernScreen } from "../../game/pinball-knight/gui/screens/tavern";
 import { push as pushUiScreen } from "../../game/pinball-knight/gui/stack";
 import { consumeTavernFx } from "../../game/pinball-knight/economy/tavern-shop";
@@ -176,6 +178,8 @@ let props: BuiltProps | null = null;
 let fx: StationFx | null = null;
 let prompt: StationPrompt | null = null;
 let pixelPass: PixelPass | null = null;
+/** The on-screen thumb pad, when this is a touch device. Null on desktop. */
+let touchControls: TouchControls | null = null;
 /** False until WebGPURenderer.init() resolves — render() throws before that. */
 let rendererReady = false;
 /** First scene frame of THIS visit presented — see the perf mark in frame(). */
@@ -351,6 +355,20 @@ function frame(now: number): void {
   // (E = interact, I = menu) via synthetic events, and those must keep working
   // while a station panel is frozen so you can leave a counter with the pad.
   input?.poll();
+  // ── A / CROSS ACTS ──
+  // The poller bridges RB to "e", so a pad COULD already interact — but only
+  // if you knew to press the right bumper, and every prompt on screen said
+  // "[E]". Reported as "in the tavern I can't go into the maze ... I have to
+  // hit E on the keyboard even when using controller".
+  //
+  // `consumeDodge` is the shared queued tap edge behind Space, right-click,
+  // pad A and the on-screen cross, so spending it here wires all four at once.
+  // In the dungeon that button is the dodge roll and the plunger pull; there is
+  // nothing to dodge in the tavern, so the room spends it on the one verb it
+  // has. `interact()` self-guards on `panelOpen()`, and draining the queue even
+  // while frozen is deliberate — otherwise the tap you made to CLOSE a counter
+  // fires again the moment it shuts.
+  if (input?.consumeDodge()) interact();
   if (input) updateTavernPlayer(dt, input, frozen);
 
   const p = tavern.player;
@@ -651,7 +669,9 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   room = buildRoom(scene);
   props = buildProps(scene);
   fx = createStationFx(scene);
-  prompt = createStationPrompt();
+  prompt = createStationPrompt(() =>
+    interactHint({ pad: input?.padConnected() ?? false, touch: touchControls !== null }),
+  );
 
   resetGamblerVisit(); // the round limit is PER VISIT, so clear it on entry
   // Read the run ONCE: the stats are handed in at entry and nothing in the
@@ -667,6 +687,14 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   aimCamera(camera, tavern.camX, 0, tavern.camZ);
 
   input = createInput(canvas);
+  // ON-SCREEN PAD. The dungeon installed one and the tavern never did, so on a
+  // phone this room had no controls at all — no walking, and no way to reach
+  // the descend board. Same `?touch=1` force flag as the dungeon for testing
+  // the layout from a desktop browser.
+  const forceTouch = typeof location !== "undefined" && /[?&]touch=1/.test(location.search);
+  if (forceTouch || isTouchDevice()) {
+    touchControls = installTouchControls(input.pad, () => pixelPass?.sizing() ?? null);
+  }
   hideDungeonHud(true);
   startTavernAmbience();
 
@@ -895,6 +923,8 @@ export function closeTavern(): void {
   fx = null;
   props = null;
   room = null;
+  touchControls?.dispose();
+  touchControls = null;
   input = null;
   pixelPass = null;
   resetTavernState();

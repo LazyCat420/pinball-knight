@@ -40,6 +40,19 @@ export interface InputHandle {
    * a hold charges instead of spamming light swings.
    */
   consumeAttackTap(): boolean;
+  /**
+   * Is a physical controller live RIGHT NOW?
+   *
+   * Only prompts should ask. It exists because a station prompt that says
+   * "[E] ALCHEMIST" to someone holding a pad is not a hint, it is a wrong
+   * answer — and the reason the tavern's descend board read as broken on a
+   * controller (reported 2026-08-29: "I have to hit E on the keyboard to go
+   * into game even when using controller").
+   *
+   * Live rather than sticky: it reports what the last poll saw, so unplugging
+   * a pad puts the keyboard hint back on the next frame.
+   */
+  padConnected(): boolean;
   /** True while a movement modifier (Shift) is held — sprint. */
   sprintHeld(): boolean;
   /** True once if a dodge (Space) was tapped since the last call — a queued tap. */
@@ -351,6 +364,9 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       // Rebuild the pad's continuous state from scratch — see resetPad.
       resetPad(gp);
       gamepads.poll();
+    },
+    padConnected() {
+      return gamepads.connected();
     },
     debug() {
       return { keys: [...down], touch: { ...pad }, gamepad: { ...gp }, poller: gamepads.debug() };
