@@ -13,10 +13,33 @@ name: CI
 # and native: both are pure computation, so they belong here rather than in the
 # manual pile.
 
+# ── DISARMED 2026-08-29. MANUAL ONLY. ───────────────────────────────────────
+#
+# This ran on every push to main and failed every time, mailing a failure for
+# each one. Two independent reasons, both of which have to be fixed before the
+# push trigger goes back on:
+#
+#  1. IT COULD NOT EVEN START. The `drift` job tests `${{ secrets.BDB_TOKEN }}`
+#     in a STEP-LEVEL `if`, and `secrets` is not an available context there
+#     (GitHub allows github/needs/strategy/matrix/job/runner/env/vars/steps/
+#     inputs). That is a workflow VALIDATION failure, so zero jobs start and
+#     the run reports "no jobs were run" rather than naming a broken step —
+#     which is exactly how it was reported. Fixed below by moving the decision
+#     into the step's own shell, where `secrets` IS available via `env:`.
+#
+#  2. EVERY JOB POINTS AT PRE-SPLIT PATHS. This file was last touched
+#     2026-08-16. On 2026-08-23, commit 8bc34180 moved the Rust tree into
+#     `Rust/`, and `legacy/` is gone from the repo entirely. So `Cargo.toml`,
+#     `scripts/` and `legacy/` do not exist at the root any more, and every job
+#     here would fail on its first step even with (1) fixed. Repointing them is
+#     a real port — the working directories, the `legacy` job's whole reason to
+#     exist, and the drift gate's oracle — not a search and replace.
+#
+# `workflow_dispatch` is kept so it can be run deliberately while (2) is being
+# fixed. Restore `push:`/`pull_request:` in the same commit that repoints the
+# jobs, and add `paths: ['Rust/**']` when you do — the ThreeJS client is the
+# half that changes daily and none of these gates read it.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 # A second push to the same branch makes the first run's answer stale, not
@@ -215,8 +238,14 @@ jobs:
     #   bash scripts/pk-drift.sh ../braindeadbot-client
     steps:
       - uses: actions/checkout@v4
+      # `continue-on-error` rather than an `if` on the secret: `secrets` is NOT
+      # an available context in a step-level `if`, and using it there does not
+      # skip the step — it fails the whole WORKFLOW at validation time, before
+      # any job starts. With no token the checkout simply fails and the next
+      # step reports that it could not check, which is the behaviour the `if`
+      # was reaching for.
       - name: fetch the live PK tree
-        if: ${{ secrets.BDB_TOKEN != '' }}
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: LazyCat420/braindeadbot-client
