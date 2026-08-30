@@ -485,7 +485,12 @@ export function updateZombies(dt: number): void {
     // ── CARD statuses (cards.ts) ── CHILL slows this frame's movement; BURN
     // ticks damage over time. Chill's factor is read at the grounded move below.
     const chillMul = (z.chillT ?? 0) > 0 ? CARD_CHILL_SLOW : 1;
-    if (z.chillT) z.chillT = Math.max(0, z.chillT - dt);
+    if (z.chillT) {
+      z.chillT = Math.max(0, z.chillT - dt);
+      // Burn announces every tick with a spark; chill's only output was a speed
+      // factor. Sparse frost clinging to the slowed body evens that up.
+      if (Math.random() < 2.5 * dt) state.vfx?.burst(z.x, 0.35, z.z, 0xbfe8ff, 1, 0.5);
+    }
     if (z.dotT && z.dotT > 0) {
       z.dotT -= dt;
       z.dotTickT = (z.dotTickT ?? 0) - dt;

@@ -84,6 +84,12 @@ export function enterRampage(): void {
   // Swap the Diablo strategy panel down and the Wolfenstein combat bar up; the
   // shared face rides across into the wolf bar's socket.
   setHUDMode("wolf");
+  // The transition itself was HUD-only — a full ultimate spent with no world
+  // event. Detonate at the knight so the spend lands (and co-op bystanders see
+  // WHERE the rampage started, not just a friend vanishing into first person).
+  state.vfx?.ring(p.x, p.z, 0xd97b29, 3.5, 0.5);
+  state.vfx?.burst(p.x, 0.7, p.z, 0xd97b29, 18, 5);
+  state.shakeT = Math.max(state.shakeT, 0.25);
   state.hudDirty = true;
 }
 
@@ -105,6 +111,10 @@ export function exitRampage(): void {
   if (p) {
     p.sprite.mesh.visible = true;
     if (p.silhouette) p.silhouette.mesh.visible = true;
+    // The knight condensing back into the world gets a settle cue — quieter
+    // than the entry detonation, same hue, so enter/exit read as one arc.
+    state.vfx?.ring(p.x, p.z, 0xd97b29, 2.2, 0.4, { thin: true });
+    state.vfx?.burst(p.x, 0.6, p.z, 0xd97b29, 8, 3);
   }
   // Restore the enemy planes to their baked iso orientation + contact blobs.
   for (const z of state.zombies) {

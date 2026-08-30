@@ -75,7 +75,7 @@ import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
 import { screenDirToWorld } from "../engine/camera";
 import { addGold } from "../../../utils/gold-wallet";
-import { WEAPONS, GEAR, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
+import { WEAPONS, GEAR, POTIONS, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 
 /**
@@ -152,11 +152,17 @@ export function applyCardOnHit(z: Zombie): void {
   const w = state.weaponSlots[state.activeSlot];
   if (w && w.cards && w.cards.length) {
     const agg = aggregateCards(w.cards);
-    if (agg.chill) z.chillT = CARD_CHILL_TIME;
+    // Each status stamps a small flash the moment it LANDS — a chill or a DoT
+    // applied silently reads as the monster randomly slowing/shrinking later.
+    if (agg.chill) {
+      z.chillT = CARD_CHILL_TIME;
+      state.vfx?.burst(z.x, 0.6, z.z, 0xbfe8ff, 4, 2.0);
+    }
     if (agg.burn) {
       z.dotT = CARD_BURN_TIME;
       z.dotDmg = CARD_BURN_DMG;
       z.dotTickT = 0;
+      state.vfx?.burst(z.x, 0.6, z.z, 0xf0a63c, 4, 2.2);
     }
     if (agg.bolt) fireBolt(z);
     // LIFESTEAL: the blow feeds the knight (Leech / Vampiric Edge / Blood Pact).
@@ -180,6 +186,7 @@ export function applyCardOnHit(z: Zombie): void {
     z.dotT = CARD_BURN_TIME;
     z.dotDmg = CARD_BURN_DMG;
     z.dotTickT = 0;
+    state.vfx?.blood(z.x, 0.6, z.z, "green", 3); // the coat visibly smears on
   }
   // Static Charge: the blow ARCS to the nearest OTHER living foe — a free zap
   // that ignores the momentum gates (it's lightning, not steel).
@@ -699,6 +706,17 @@ export function damageZombie(
 }
 
 /**
+ * The break moment in the WORLD, not just the toast: a steel-grey shatter and a
+ * dust puff at the owner. Shared by a weapon wearing out and a gear piece dying
+ * to the hit it soaked — until now both were sfxBreak + a corner toast, which
+ * mid-combat nobody reads.
+ */
+function breakFx(x: number, z: number): void {
+  state.vfx?.burst(x, 0.6, z, 0x9aa4b4, 8, 3);
+  state.vfx?.dust(x, 0.15, z);
+}
+
+/**
  * One use of the active weapon (a connected swing, or a shot leaving the
  * barrel). Handles the whole break path: the slot empties, and if the OTHER
  * slot still holds something we auto-switch to it — an empty hand with a
@@ -718,6 +736,7 @@ export function wearActiveWeapon(): void {
 
   state.weaponSlots[state.activeSlot] = null;
   sfxBreak();
+  if (state.player) breakFx(state.player.x, state.player.z);
   const spent = def.kind === "ranged" ? "out of ammo" : "broke";
   const other = 1 - state.activeSlot;
   if (state.weaponSlots[other]) {
@@ -956,6 +975,10 @@ export function killZombie(z: Zombie): void {
     state.goldRun += killGold;
     addGold(killGold, "dungeon-game");
   }
+  // Greed Draught doubling was invisible: the payout is bigger but a 4-coin pop
+  // and a 2-coin pop read the same at speed. The flask-coloured flare marks
+  // every kill the brew is inflating.
+  if (greedMul > 1) state.vfx?.burst(z.x, 0.5, z.z, POTIONS.greed.color, 8, 3);
   // STYLE KILL: a kill carried by pinball momentum (a ball ram, or any hit
   // landed mid-ride) pays bonus gold that scales with the live bounce combo —
   // the machine rewards playing like a ball, not walking up and stabbing.
@@ -1083,6 +1106,12 @@ export function hitPlayer(z: Zombie): void {
   // Stoneskin halves the bite before the armor even sees it (ceil so a 1-dmg
   // nip still stings for 1 — a floor of "0" would read as full immunity).
   const damage = p.stoneT > 0 ? Math.ceil(raw * STONESKIN_DAMAGE_MULT) : raw;
+  // Stoneskin's save happens at the exact moment it saves — grit off the hide,
+  // or halving damage is indistinguishable from the monster rolling low.
+  if (p.stoneT > 0) {
+    state.vfx?.burst(p.x, 0.55, p.z, POTIONS.stoneskin.color, 5, 2.2);
+    state.vfx?.dust(p.x, 0.15, p.z);
+  }
   const heavyHitter = z.kind === "brute" || z.kind === "reaper" || z.kind === "golem" || z.kind === "chomper";
   // A HULK sub-type hits like the heavies it is the size of — reusing the shove
   // the brute already uses rather than inventing a second knockback path.
@@ -1096,6 +1125,7 @@ export function hitPlayer(z: Zombie): void {
   for (const slot of absorbed.destroyed) {
     showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);
     sfxBreak();
+    breakFx(p.x, p.z);
   }
   p.hp -= absorbed.hpDamage;
 
@@ -1158,11 +1188,16 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   if (!p || !g || p.hp <= 0 || state.godMode || p.iframes > 0 || p.shieldT > 0) return; // godMode/shield: untouchable
 
   const dmg = p.stoneT > 0 ? Math.ceil(damage * STONESKIN_DAMAGE_MULT) : damage; // Stoneskin
+  if (p.stoneT > 0) {
+    state.vfx?.burst(p.x, 0.55, p.z, POTIONS.stoneskin.color, 5, 2.2); // grit — see hitPlayer
+    state.vfx?.dust(p.x, 0.15, p.z);
+  }
   const absorbed = absorbDamage(state.gear, dmg);
   state.gear = absorbed.gear;
   for (const slot of absorbed.destroyed) {
     showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);
     sfxBreak();
+    breakFx(p.x, p.z);
   }
   p.hp -= absorbed.hpDamage;
   state.levelHitsTaken += 1; // flawless-floor tally (see hitPlayer)

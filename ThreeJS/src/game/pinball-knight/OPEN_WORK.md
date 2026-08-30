@@ -271,6 +271,22 @@ documents are retired; these are the items that were actually still open.
   that keeps player control so you can surf it. The skulls are cosmetic meshes
   with no player collision; `doSlam` overwrites `p.momX/momZ/momSpeed`, which is
   the opposite of keeping control.
+- **Gold as dust, not tokens** (user, 2026-08-30) — the coin drop should read
+  as pinches of gold dust the knight inhales, not discs. The look is one paint
+  seam — `tinyCoin`/`coinItem`/`coinStackItem` (`render/cel-painter.ts`) plus
+  `COIN_DROP_SCALE` (`constants/economy.ts`) — while the flight/credit
+  machinery (`economy/coins.ts`, the `GroundItem.sprite` contract,
+  `coins.test.ts`) stays untouched. Wants a colour param on `vfx.mote`
+  (hardcoded to `C_DUST` in `fx/system.ts`) for a gold shimmer during the
+  0.42 s magnet flight, and a dust-inhale absorb at `economy/pickups.ts` in
+  place of the plain spark.
+- **The vault opens like a crate** (user, 2026-08-30) — `openVault`
+  (`lamp-puzzle.ts`) spawns its loot as an instant flat ring (radius 0.9): no
+  arc, no stagger, no fountain. The `openT` lid swing (0.6 s cubic, same file)
+  is the clock to hang staged FX on; `spawnReagentMote` (`economy/loot.ts`)
+  shows how to seed each item with a coin-style pop-and-settle `CoinFlight`.
+  Companion gaps in `docs/vault-chest.md` are still open too: the sealed-bump
+  refusal and the brazier HUD readout.
 
 ---
 

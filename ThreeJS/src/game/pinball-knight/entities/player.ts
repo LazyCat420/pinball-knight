@@ -39,6 +39,9 @@ import {
   TELL_TINT_RAGE,
   TELL_TINT_HASTE,
   TELL_TINT_SHIELD,
+  TELL_TINT_STONE,
+  TELL_TINT_MAGBOOTS,
+  TELL_TINT_BALLFORM,
   SHIELD_RING_INTERVAL,
   SHIELD_RING_MOTES,
   SHIELD_RING_RADIUS,
@@ -300,6 +303,9 @@ function spawnAura(dt: number, interval: number, hot: boolean, life = AURA_LIFE,
 let buffTellT = 0;
 let shieldRingT = 0;
 let materialMoteT = 0;
+let ballGlintT = 0;
+/** Countdown to the next plunger-charge gather spark (updatePlunger). */
+let plungerGatherT = 0;
 
 /**
  * BUFF WORLD-TELLS — every timed buff gets a look, not just a HUD tile.
@@ -323,6 +329,11 @@ function updateBuffTells(dt: number): void {
     if (p.rageT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_RAGE, 0.3, 0.42);
     else if (p.hasteT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_HASTE, 0.26, 0.34);
     if (p.shieldT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_SHIELD, 0.34, 0.3);
+    // The body brews were invisible until the frame they mattered: Stoneskin
+    // reads as a granite shell, Magnet Boots as a faint dark-iron field. Both
+    // stack with the tells above (they change WHAT you are, not how fast).
+    if (p.stoneT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_STONE, 0.3, 0.3);
+    if (p.magBootsT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_MAGBOOTS, 0.26, 0.22);
     // MARBLE MATERIAL — the ball's substance gets its own trail hue (distinct
     // from every potion tell), stacking with the buff ghosts above. During a
     // fusion window both materials shed images — two colours interleaved.
@@ -330,6 +341,11 @@ function updateBuffTells(dt: number): void {
       state.vfx.ghost(p.sprite.mesh, MATERIALS[p.material].trail, 0.3, 0.38);
       if (p.fuseT > 0 && p.fuseMaterial) state.vfx.ghost(p.sprite.mesh, MATERIALS[p.fuseMaterial].trail, 0.24, 0.3);
     }
+    // 🪩 BALL FORM — the flagship buff had no aura at all: the steelball clip
+    // and the carved groove only read while ROLLING. Excluded while a marble
+    // material runs, because a material REPLACES what the ball is made of and
+    // already sheds its own trail hue above.
+    else if (p.ironT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_BALLFORM, 0.3, 0.38);
   }
 
   // Per-material idle sparkle: diamond glints, water drips, stone crumbles —
@@ -348,6 +364,17 @@ function updateBuffTells(dt: number): void {
       else if (p.material === "shadow") state.vfx.mote(mx, 0.2 + Math.random() * 0.4, mz);
       else if (p.material === "lava") state.vfx.ember(mx, 0.1, mz);
       else state.vfx.dust(mx, 0.05, mz);
+    }
+  }
+
+  // 🪩 The chrome bearing glints even standing still — the same idle-sparkle
+  // idea as the materials above, in white-hot steel.
+  if (p.ironT > 0 && !(p.material && p.materialT > 0)) {
+    ballGlintT -= dt;
+    if (ballGlintT <= 0) {
+      ballGlintT = 0.3;
+      const a = Math.random() * Math.PI * 2;
+      state.vfx.burst(p.x + Math.cos(a) * 0.3, 0.3 + Math.random() * 0.4, p.z + Math.sin(a) * 0.3, 0xfff3c8, 1, 0.5);
     }
   }
 
@@ -1953,7 +1980,20 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
 
   if (input.dodgeHeld()) {
     state.plungerCharging = true;
+    const prevPower = state.plungerPower;
     state.plungerPower = Math.min(1, state.plungerPower + dt / PLUNGER_CHARGE_TIME);
+    // The pull gathers light: sparks stream INTO the knight from behind the
+    // launch line, denser as power fills — the rig's growing tension lives in
+    // the world, not only on the HUD meter. A single pop marks full charge so
+    // the "release now" moment doesn't require watching a bar.
+    plungerGatherT -= dt;
+    if (plungerGatherT <= 0) {
+      plungerGatherT = 0.16 - 0.11 * state.plungerPower;
+      const back = 0.5 + Math.random() * 0.4;
+      const side = (Math.random() - 0.5) * 0.6;
+      state.vfx?.sparks(p.x - dir.x * back - dir.z * side, 0.35, p.z - dir.z * back + dir.x * side, dir.x, dir.z, 2);
+    }
+    if (prevPower < 1 && state.plungerPower >= 1) state.vfx?.burst(p.x, 0.5, p.z, 0xfff3c8, 10, 2.5);
     syncActorMesh(p);
     return true;
   }
@@ -1967,7 +2007,9 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
     if (state.plungerSkill) armSkillShot(state.plungerSkill);
     sfxSpring();
     requestShake(0.14 + 0.22 * state.plungerPower);
-    state.vfx?.sparks(p.x, 0.4, p.z, -dir.x, -dir.z, 6);
+    // Muzzle-blast scaled to the pull, like the shake above it — a full send
+    // should look like one.
+    state.vfx?.sparks(p.x, 0.4, p.z, -dir.x, -dir.z, 6 + Math.round(10 * state.plungerPower));
     state.plungerArmed = false;
     state.plungerCharging = false;
     state.plungerPower = 0;

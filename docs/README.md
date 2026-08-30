@@ -38,6 +38,17 @@ Read in this order:
 
 ## Recent work
 
+### 2026-08-30 — VFX Tier A: the ten invisible events (`ThreeJS/`)
+
+A coverage audit of every item, move, powerup and brew found a specific set of
+game-state changes with zero visual output — the freeze potion chief among
+them (the table halted indistinguishably from a hang). All ten got their look,
+each a handful of `state.vfx` calls at an existing seam; the four fx capture
+scripts the repo split deleted were restored under `ThreeJS/scripts/`. Full
+write-up + the unverified player test list in **`docs/vfx-tier-a.md`**; the
+remaining roadmap (gold-as-dust coins, the vault loot fountain) was filed into
+`ThreeJS/src/game/pinball-knight/OPEN_WORK.md` Tier 5.
+
 ### 2026-08-29 — The vault chest (`ThreeJS/`)
 
 The sealed loot vault stands in the boss chamber by construction and could only
