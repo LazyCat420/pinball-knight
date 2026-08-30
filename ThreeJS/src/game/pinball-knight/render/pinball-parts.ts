@@ -24,7 +24,7 @@ import { PALETTE_HEX } from "./palette";
 import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
 import type { ElementMaterial } from "../fx/elements/element";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase, TELL_TINT_FREEZE, FREEZE_TELL_INTERVAL, FREEZE_TELL_PARTS } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -1720,6 +1720,9 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   },
 };
 
+/** Countdown to the next frost glint while the freeze-ray holds the table. */
+let frostTellT = 0;
+
 /**
  * Tick cooldowns + drive idle/hit animations. The ONE place part timers mutate
  * per frame; player.ts only consumes ready parts and stamps cooldownT/hitT=0.
@@ -1728,6 +1731,20 @@ export function updatePinballParts(dt: number): void {
   animT += dt;
   if (state.jackpotT > 0) state.jackpotT = Math.max(0, state.jackpotT - dt); // Slice 5 flash window
   const frozen = state.freezeT > 0;
+  // ❄️ FREEZE TELL: without this the freeze-ray reads as "the table hung" —
+  // parts halt mid-swing with no visible cause. Sparse frost glints over
+  // random halted parts say HELD for the whole duration, and stopping the
+  // moment freezeT runs out is itself the ending cue.
+  if (frozen && state.vfx && state.pinballParts.length > 0) {
+    frostTellT -= dt;
+    if (frostTellT <= 0) {
+      frostTellT = FREEZE_TELL_INTERVAL;
+      for (let n = 0; n < FREEZE_TELL_PARTS; n++) {
+        const part = state.pinballParts[(Math.random() * state.pinballParts.length) | 0];
+        state.vfx.burst(part.x + (Math.random() - 0.5) * 0.5, 0.25 + Math.random() * 0.45, part.z + (Math.random() - 0.5) * 0.5, TELL_TINT_FREEZE, 1, 0.35);
+      }
+    }
+  }
   // ── LIT SHOT: while you're travelling under momentum, whatever you're
   // actually aimed at lights up. A real table tells you where the shot IS —
   // this floor had a light vocabulary (bumper gold, bank green/red) but no

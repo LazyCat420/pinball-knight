@@ -567,6 +567,19 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
   const pierce =
     (w.pierce ?? 0) + (wState?.cards?.length ? aggregateCards(wState.cards).pierce : 0);
 
+  // Muzzle flash — one per trigger pull, not per pellet, or a spread weapon
+  // strobes. Without it the shot has no visible origin: projectiles appear a
+  // MUZZLE_OFFSET ahead of the knight out of nothing. The bow gets sparks only
+  // (a string has no fire), the flamer an ember-coloured tongue.
+  const mx = px + fx * MUZZLE_OFFSET;
+  const mz = pz + fz * MUZZLE_OFFSET;
+  if (w.projectile === "flame") {
+    state.vfx?.burst(mx, PROJECTILE_Y, mz, PALETTE_HEX[17], 6, 3.2);
+  } else {
+    state.vfx?.sparks(mx, PROJECTILE_Y, mz, fx, fz, w.projectile === "bullet" ? 6 : 3);
+    if (w.projectile === "bullet") state.vfx?.burst(mx, PROJECTILE_Y, mz, PALETTE_HEX[18], 4, 2.4);
+  }
+
   for (let n = 0; n < pellets; n++) {
     const jitter = (Math.random() - 0.5) * 2 * (w.spread ?? 0);
     const cos = Math.cos(jitter);

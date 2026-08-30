@@ -11,7 +11,7 @@
 import { myId } from "../../../net/presence";
 import { sfxCoin, sfxPickup } from "../sfx";
 import { presentCardPickup } from "../card-reader";
-import { cardDef, socketCard, type CardId } from "../cards";
+import { RARITY_HEX, cardDef, socketCard, type CardId } from "../cards";
 import {
   BOOTS_SPEED_FACTOR,
   CARD_PICKUP_RANGE,
@@ -30,7 +30,7 @@ import { dropWeapon, creditReagent } from "./loot";
 import { addToBelt, applyPotion } from "./shop";
 import { MATERIALS, applyMaterial } from "../entities/marble";
 import { faceOnSpecial } from "../hud-face";
-import { GEAR, POTIONS, WEAPONS, type GearSlot, type PotionId, type WeaponId, type WeaponState } from "../items";
+import { GEAR, ITEM_RARITY_HEX, POTIONS, WEAPONS, type GearSlot, type PotionId, type WeaponId, type WeaponState } from "../items";
 import { at } from "../maze/generator";
 import { REAGENTS, type ReagentId } from "../reagents";
 import { state, type GroundItem, type MarbleMaterial } from "../state";
@@ -95,6 +95,25 @@ export function segmentDistance(ax: number, az: number, bx: number, bz: number, 
   let t = ((px - ax) * dx + (pz - az) * dz) / len2;
   t = t < 0 ? 0 : t > 1 ? 1 : t;
   return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+
+/**
+ * Accent colour for the grab flash — the moment an item leaves the floor.
+ *
+ * Coins, reagents and marble materials already flash (the coin absorb spark,
+ * the reagent bank spark, applyMaterial's transformation burst); this covers
+ * the four kinds that until now vanished with only a toast. Weapons and gear
+ * flash their rolled ITEM RARITY — the first consumer ITEM_RARITY_HEX has ever
+ * had outside its test — cards their card rarity, potions their brew colour.
+ */
+function grabFlashTint(it: GroundItem): number | null {
+  if (it.kind === "weapon" || it.kind === "gear") return parseInt(ITEM_RARITY_HEX[it.rarity ?? "common"].slice(1), 16);
+  if (it.kind === "card") {
+    const def = cardDef(it.id as CardId);
+    return def ? parseInt(RARITY_HEX[def.rarity].slice(1), 16) : null;
+  }
+  if (it.kind === "potion") return POTIONS[it.id as PotionId]?.color ?? null;
+  return null;
 }
 
 /** Where the knight was at the END of the previous sweep, i.e. the start of the
@@ -235,6 +254,13 @@ export function checkPickups(dt: number): void {
       // alone made them look like a no-op item.
       const gearNote = def.absorb > 0 ? `soaks ${def.absorb} damage` : `+${Math.round((BOOTS_SPEED_FACTOR - 1) * 100)}% move speed`;
       showPickupNote(`${def.icon} ${def.label.toUpperCase()} — ${gearNote}`);
+    }
+    const tint = grabFlashTint(it);
+    if (tint !== null) {
+      // Same height as the idle glint (sim/loop.ts) so the flash reads as the
+      // glint "popping" — the item's sparkle leaving with it.
+      state.vfx?.burst(it.x, 0.4, it.z, tint, 10, 2.8);
+      state.vfx?.sparks(it.x, 0.3, it.z, 0, 0, 4);
     }
     sfxPickup();
     state.hudDirty = true;

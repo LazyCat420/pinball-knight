@@ -350,6 +350,12 @@ export const TELL_TINT_SHIELD = 0x8fc46b;
 export const SHIELD_RING_INTERVAL = 0.13; // cadence of the orbiting bubble motes
 export const SHIELD_RING_MOTES = 3; // motes emitted per pulse around the ring
 export const SHIELD_RING_RADIUS = 0.55;
+/** ❄️ FREEZE tell — matches POTIONS.freeze's flask colour. The freeze halts the
+ * TABLE, not the knight, so its tell lives on the parts (pinball-parts.ts),
+ * not in updateBuffTells with the body buffs above. */
+export const TELL_TINT_FREEZE = 0xbfe8ff;
+export const FREEZE_TELL_INTERVAL = 0.12; // cadence of frost glints on halted parts
+export const FREEZE_TELL_PARTS = 2; // parts glinted per pulse
 
 /**
  * SHOT IDENTITY (D2-D5) — the layer that turns motion into PLAY. The machine

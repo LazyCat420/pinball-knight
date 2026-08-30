@@ -155,6 +155,11 @@ export function applyPotion(id: PotionId): void {
     }
     if (id === "freeze") {
       state.freezeT = def.duration;
+      // The freeze halts the TABLE, so the tell is table-sized: one frost wave
+      // washing outward from the drinker. The halted parts then glint for the
+      // duration — render/pinball-parts.updatePinballParts owns that half.
+      state.vfx?.ring(p.x, p.z, def.color, 7, 0.8);
+      state.vfx?.sigil(p.x, p.z, def.color, 1.0, 0.9, 1.4);
       sfxFreeze();
     }
     if (id === "multiball") {
