@@ -13,8 +13,8 @@
 import * as THREE from "three";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
 import { createActorSprite } from "../../game/pinball-knight/engine/render/sprite";
-import { getKnightSheet } from "../../game/pinball-knight/render/knight-sheets";
-import { lookFromGear, lookKey } from "../../game/pinball-knight/render/knight-look";
+import { getKnightSheet, playerArtKey } from "../../game/pinball-knight/render/knight-sheets";
+import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import { Animator, facingFromVelocity, type Facing } from "../../game/pinball-knight/engine/render/animator";
 import { PPU } from "../../game/pinball-knight/constants";
 import { screenDirToWorld } from "../../game/pinball-knight/engine/camera";
@@ -133,22 +133,22 @@ export function createTavernPlayer(scene: THREE.Scene): TavernPlayer {
   vz = 0;
   animator.setFacing(p.facing);
   syncMesh(p);
-  lastArtKey = lookKey(activeWeapon().id, lookFromGear(dungeonState.gear));
+  lastArtKey = playerArtKey(activeWeapon().id, lookFromGear(dungeonState.gear));
   return p;
 }
 
-/** Which (weapon, look) atlas the tavern knight currently wears. */
+/** Which (character, weapon, look) atlas the tavern knight currently wears. */
 let lastArtKey: string | null = null;
 
 /**
- * Re-dress the tavern knight if the loadout changed — called when a vendor
- * counter closes, so buying plate at the Armorer visibly lands on the knight
- * the moment you step back into the room.
+ * Re-dress the tavern knight if the character or loadout changed — called when
+ * a modal or vendor counter closes, so choosing a character or buying plate at
+ * the Armorer visibly lands on the knight the moment you step back into the room.
  */
 export function refreshTavernPlayerArt(): void {
   const p = tavern.player;
   if (!p) return;
-  const key = lookKey(activeWeapon().id, lookFromGear(dungeonState.gear));
+  const key = playerArtKey(activeWeapon().id, lookFromGear(dungeonState.gear));
   if (key === lastArtKey) return;
   p.sprite.setSheet(getKnightSheet(activeWeapon().id, lookFromGear(dungeonState.gear), "tavern"));
   lastArtKey = key;

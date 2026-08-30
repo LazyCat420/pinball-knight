@@ -229,8 +229,11 @@ function hideDungeonHud(hidden: boolean): void {
 }
 
 /** True while any overlay owns the screen — movement and interaction freeze. */
+export function isPanelOpen(): boolean {
+  return uiIsOpen("tavern") || isRunSummaryOpen() || isGamblerOpen() || uiIsOpen("menu") || uiIsOpen("character-select");
+}
 function panelOpen(): boolean {
-  return uiIsOpen("tavern") || isRunSummaryOpen() || isGamblerOpen() || uiIsOpen("menu");
+  return isPanelOpen();
 }
 
 /**
