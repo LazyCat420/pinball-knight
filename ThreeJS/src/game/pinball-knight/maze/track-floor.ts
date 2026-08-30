@@ -984,14 +984,20 @@ export function buildTrackFloor(
   // 8 is a runaway guard, not an operative value; measured, floors settle in
   // two rounds. If it is ever hit, something is oscillating and that is a bug
   // to find rather than a limit to raise.
+  const doorTiles: TilePos[] = [];
+  for (const d of doors.doorways) {
+    doorTiles.push(...doorwayFootprint(grid, d));
+  }
+  const protectedWithDoors = [ends.start, ends.stairs, ...doorTiles];
+
   for (let round = 0; round < 8; round++) {
-    uncarveDeadEnds(grid, mask, [ends.start, ends.stairs]);
+    uncarveDeadEnds(grid, mask, protectedWithDoors);
     compactArcs(grid);
     if (removeWallStubs(grid, mask) === 0) break;
   }
-  uncarveDeadEnds(grid, mask, [ends.start, ends.stairs]);
+  uncarveDeadEnds(grid, mask, protectedWithDoors);
   compactArcs(grid);
-  healRoadTerminations(grid, mask, [ends.start, ends.stairs], { reach: 0 });
+  healRoadTerminations(grid, mask, protectedWithDoors, { reach: 0 });
 
   let finalStairs = ends.stairs;
   const finalDist = bfsDistances(grid, routeFrom.i, routeFrom.j);

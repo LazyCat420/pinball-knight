@@ -797,13 +797,13 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
     return false;
   };
 
-  for (let iter = 0; iter < 2; iter++) {
+  for (let iter = 0; iter < 3; iter++) {
     let clearedThisRound = 0;
     for (let j = 1; j < g.h - 1; j++) {
       for (let i = 1; i < g.w - 1; i++) {
         if (!isWalkable(g, i, j)) continue;
 
-        // 1-wide vertical slit (wall at i-1 and i+1)
+        // 1-wide vertical slit (wall at i-1 and i+1) -> expand 3-wide across width and depth
         if (at(g, i - 1, j) === T_WALL && at(g, i + 1, j) === T_WALL) {
           if (!isProtected(i - 1, j) && !isProtected(i + 1, j)) {
             setTile(g, i - 1, j, T_FLOOR);
@@ -818,9 +818,23 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
             if (!isProtected(i - 2, j)) setTile(g, i - 2, j, T_FLOOR);
             clearedThisRound++;
           }
+          // Ensure corridor depth along j-1 and j+1 is also 3-wide
+          for (const dj of [-1, 1]) {
+            const ny = j + dj;
+            if (ny >= 1 && ny < g.h - 1 && isWalkable(g, i, ny)) {
+              if (at(g, i - 1, ny) === T_WALL && !isProtected(i - 1, ny)) {
+                setTile(g, i - 1, ny, T_FLOOR);
+                clearedThisRound++;
+              }
+              if (at(g, i + 1, ny) === T_WALL && !isProtected(i + 1, ny)) {
+                setTile(g, i + 1, ny, T_FLOOR);
+                clearedThisRound++;
+              }
+            }
+          }
         }
 
-        // 1-wide horizontal slit (wall at j-1 and j+1)
+        // 1-wide horizontal slit (wall at j-1 and j+1) -> expand 3-wide across width and depth
         if (at(g, i, j - 1) === T_WALL && at(g, i, j + 1) === T_WALL) {
           if (!isProtected(i, j - 1) && !isProtected(i, j + 1)) {
             setTile(g, i, j - 1, T_FLOOR);
@@ -834,6 +848,20 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
             setTile(g, i, j - 1, T_FLOOR);
             if (!isProtected(i, j - 2)) setTile(g, i, j - 2, T_FLOOR);
             clearedThisRound++;
+          }
+          // Ensure corridor depth along i-1 and i+1 is also 3-wide
+          for (const di of [-1, 1]) {
+            const nx = i + di;
+            if (nx >= 1 && nx < g.w - 1 && isWalkable(g, nx, j)) {
+              if (at(g, nx, j - 1) === T_WALL && !isProtected(nx, j - 1)) {
+                setTile(g, nx, j - 1, T_FLOOR);
+                clearedThisRound++;
+              }
+              if (at(g, nx, j + 1) === T_WALL && !isProtected(nx, j + 1)) {
+                setTile(g, nx, j + 1, T_FLOOR);
+                clearedThisRound++;
+              }
+            }
           }
         }
 
@@ -855,6 +883,26 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
             clearedThisRound++;
           } else if (!isProtected(i, j - 1)) {
             setTile(g, i, j - 1, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+
+        // Diagonal 2x2 corner pinch clearance
+        if (isWalkable(g, i + 1, j + 1) && at(g, i + 1, j) === T_WALL && at(g, i, j + 1) === T_WALL) {
+          if (!isProtected(i + 1, j)) {
+            setTile(g, i + 1, j, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i, j + 1)) {
+            setTile(g, i, j + 1, T_FLOOR);
+            clearedThisRound++;
+          }
+        }
+        if (isWalkable(g, i - 1, j + 1) && at(g, i - 1, j) === T_WALL && at(g, i, j + 1) === T_WALL) {
+          if (!isProtected(i - 1, j)) {
+            setTile(g, i - 1, j, T_FLOOR);
+            clearedThisRound++;
+          } else if (!isProtected(i, j + 1)) {
+            setTile(g, i, j + 1, T_FLOOR);
             clearedThisRound++;
           }
         }

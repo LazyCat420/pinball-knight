@@ -116,13 +116,19 @@ export function analyzePatternGrammar(
 ): PatternGrammarGrid {
   const slots: PatternSlot[] = new Array(g.w * g.h);
 
-  // Mark doorway / threshold clearways (tiles within doorway footprints)
+  // Mark doorway / threshold clearways (tiles within doorway footprints + 1-tile margin)
   const clearwayMask = new Uint8Array(g.w * g.h);
   for (const d of doorways) {
     const fp = doorwayFootprint(g, d);
     for (const t of fp) {
-      if (t.i >= 0 && t.i < g.w && t.j >= 0 && t.j < g.h) {
-        clearwayMask[idx(g, t.i, t.j)] = 1;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const tx = t.i + di;
+          const ty = t.j + dj;
+          if (tx >= 0 && tx < g.w && ty >= 0 && ty < g.h) {
+            clearwayMask[idx(g, tx, ty)] = 1;
+          }
+        }
       }
     }
   }
