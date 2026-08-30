@@ -38,6 +38,16 @@ Read in this order:
 
 ## Recent work
 
+### 2026-08-29 — The vault chest (`ThreeJS/`)
+
+The sealed loot vault stands in the boss chamber by construction and could only
+be opened by lighting every brazier — a mechanic the HUD never mentions, on an
+object with no collider, so bumping it did nothing. Reported from the live site
+as "the chest can't be opened". The overlord's death now opens it, and the chest
+was rebuilt as one: a hinged barrel lid over a strapped plank carcass. Full
+write-up in **`docs/vault-chest.md`**, including the four visual defects a green
+suite could not see and what is still open.
+
 ### 2026-08-27 — The gambler's roulette wheel
 
 The tavern's roulette wheel is now rasterised in Rust rather than stubbed.
