@@ -52,6 +52,7 @@ import { setMerchantCaughtHandler } from "../entities/npc";
 import { queueMini, queueSummon, makeZombie, bumpZombieNid } from "../spawn/factory";
 import { dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "../economy/loot";
 import { spawnCoin } from "../economy/coins";
+import { openVaultOnBossDefeat } from "../lamp-puzzle";
 import { golemShards } from "../entities/projectiles";
 import { spawnFloorFx } from "../entities/floor-fx";
 import { MATERIAL_LIST } from "../entities/marble";
@@ -187,7 +188,13 @@ export function installGameplayWiring(deps: WiringDeps): void {
       if (kind === "ghost") state.vfx?.sparks(x, 0.6, z, 0, 0, 22);
       else state.vfx?.blood(x, 0.6, z, "green", 20);
       spawnCoin(x, z, boss ? BOSS_GOLD : GOLD_PER_KILL);
-      if (boss) state.shakeT = Math.max(state.shakeT, 0.4);
+      if (boss) {
+        state.shakeT = Math.max(state.shakeT, 0.4);
+        // A replica never runs dropBossReward (the authority owns the kill), so
+        // without this the vault would open on one screen and stay sealed on
+        // the other. Loot is per-client here, exactly like the shared gold.
+        openVaultOnBossDefeat();
+      }
     },
     applyDamage: (z, dmg, dx, dz, push) => {
       // A replica's hit, already gated by THEIR momentum — apply it raw

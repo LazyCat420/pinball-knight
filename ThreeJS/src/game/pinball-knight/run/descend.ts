@@ -23,6 +23,7 @@ import { applyDelveCatchUp } from "../delve";
 import { sweepCoins } from "../economy/coins";
 import { addGold } from "../../../utils/gold-wallet";
 import { showToast, showPickupNote } from "../ui";
+import { openVaultOnBossDefeat } from "../lamp-puzzle";
 import { sfxStairs } from "../sfx";
 import { enterTavern } from "../../../scenes/tavern";
 import { haulScreen } from "../gui/screens/haul";
@@ -75,6 +76,9 @@ export function dropBossReward(x: number, z: number): void {
   spawnCoin(x, z, BOSS_GOLD);
   if (!state.scene) return;
   showToast("OVERLORD SLAIN", `+${BOSS_GOLD} gold · the way down is clear`);
+  // He was standing over the floor's sealed vault — the kill is its key. No-op
+  // on a floor that rolled no puzzle, or one already opened by the braziers.
+  openVaultOnBossDefeat();
   const drops: Array<{ id: string; dx: number; dz: number }> = [
     { id: "health", dx: -0.5, dz: 0 },
     { id: "gold", dx: 0.5, dz: 0 },
