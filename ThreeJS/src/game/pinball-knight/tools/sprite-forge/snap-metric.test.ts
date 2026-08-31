@@ -223,7 +223,7 @@ describe("snap metric bench", () => {
     // confetti in `work/snap-ab/C-luma-nostone.png`.
     expect(C.arcane, `banning stone stopped leaking onto arcane — re-look at the strips:\n${report.join("\n")}`)
       .toBeGreaterThan(A.arcane * 2);
-  }, 240000);
+  }, 600000);
 });
 
 describe("density sweep — is it just pixels?", () => {

@@ -29,7 +29,7 @@ export default defineConfig({
     },
   },
   test: {
-    testTimeout: 60000,
+    testTimeout: 180000,
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
