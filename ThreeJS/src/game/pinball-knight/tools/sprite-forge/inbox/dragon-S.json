@@ -1,0 +1,18 @@
+{
+  "sheet": "dragon-S",
+  "author": "LazyCat420 & Nano Banana (Multi-Part Composite)",
+  "notes": "Ancient Dragon 4x4 SNES boss sprite sheet assembled from modular Body and Head/Wings layers",
+  "matte": {
+    "tolerance": 48
+  },
+  "grid": [
+    4,
+    4
+  ],
+  "rows": [
+    "idle",
+    "walk",
+    "attack",
+    "death"
+  ]
+}

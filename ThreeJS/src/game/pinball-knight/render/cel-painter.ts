@@ -3249,6 +3249,11 @@ export function makeSpiderPaints(): ActorPaints {
       spiderFrame(dir, { step: 0.75, bob: 2 }),
     ],
     death: SPIDER_DEATH,
+    attack: [
+      spiderFrame(dir, { step: 0.25, bob: -3 }),
+      spiderFrame(dir, { step: 0.75, bob: -5 }),
+      spiderFrame(dir, { step: 0.5, bob: 0 }),
+    ],
     // The HOUND runs the leaper policy on this sheet (spawn/factory.ts tints it
     // red). A spider has no hips to sink, so its coil is the body DROPPING onto
     // its legs — bob is positive-down here, so the abdomen settles toward the
@@ -3375,6 +3380,11 @@ export function makeBossPaints(): ActorPaints {
       bruteFrame(dir, { bob: 4, stride: 1, lurch: lurch + 0.02 }, BOSS_SCALE_ART, true),
       bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
       bruteFrame(dir, { bob: 4, stride: -1, lurch: lurch - 0.04 }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
+    ],
+    attack: [
+      bruteFrame(dir, { bob: -3, stride: 0, lurch: lurch + 0.08 }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 6, stride: 1, lurch: lurch - 0.05 }, BOSS_SCALE_ART, true),
       bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
     ],
     death: BOSS_DEATH,
@@ -3573,6 +3583,11 @@ export function makeGhostPaints(): ActorPaints {
       ghostFrame(dir, { bob: -1, ripple: 4.2 }),
       ghostFrame(dir, { bob: 1, ripple: 6.3 }),
     ],
+    attack: [
+      ghostFrame(dir, { bob: -3, ripple: 1.5 }),
+      ghostFrame(dir, { bob: 0, ripple: 4.5 }),
+      ghostFrame(dir, { bob: 2, ripple: 6.0 }),
+    ],
     // Death: fade-dissipate — the sheet crumples with x-eyes (opacity handled by
     // the sprite material's flash; here we just show the spent pose).
     death: [
@@ -3730,6 +3745,12 @@ export function makeReaperPaints(): ActorPaints {
       reaperFrame(dir, { bob: 1, ripple: 2.1, sway: 0.2 }),
       reaperFrame(dir, { bob: -1, ripple: 4.2, sway: -1 }),
       reaperFrame(dir, { bob: 1, ripple: 6.3, sway: -0.2 }),
+    ],
+    attack: [
+      reaperFrame(dir, { bob: -2, ripple: 1.0, sway: 2.0 }),
+      reaperFrame(dir, { bob: 0, ripple: 3.0, sway: 3.5 }),
+      reaperFrame(dir, { bob: 2, ripple: 5.0, sway: -1.0 }),
+      reaperFrame(dir, { bob: 0, ripple: 0, sway: 0 }),
     ],
     death: [
       reaperFrame(dir, { bob: 3, ripple: 1, sway: 0, dead: true }),

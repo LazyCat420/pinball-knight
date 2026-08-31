@@ -81,4 +81,8 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   mimic: makeGolemPaints,
   // The Death Dealer, and the Reaper King who wears his coat.
   reaper: makeReaperPaints,
+  broodmother: makeSpiderPaints,
+  overlord: makeBossPaints,
+  archivist: makeGhostPaints,
+  dragon: makeBossPaints,
 };

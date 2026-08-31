@@ -36,7 +36,7 @@
  */
 import type { SheetKey } from "./boot/sheets";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -219,7 +219,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     title: "🕷 THE BROODMOTHER 🕷",
     tagline: "the warren is her nest — cut it out",
     label: "BROODMOTHER",
-    art: { sheetKey: "spider", tint: 0x7fdc6a, scale: 2.15 },
+    art: { sheetKey: "broodmother", tint: null, scale: 2.15 },
     hpMult: 0.9,
     speedMult: 0.75,
     moves: {
@@ -241,10 +241,6 @@ export const BOSSES: Record<BossKind, BossSpec> = {
 
   // ══ THE BLOODWORKS — the punch factory ═════════════════════════════════
   //
-  // WEARS THE ATLAS NOBODY HAS EVER SEEN. `makeBossPaints` — a scaled brute
-  // with its own death clip — has been painted, palette-tested and unspawned
-  // this whole time, while the King wore the reaper's coat. It is his now.
-  //
   // The Bloodworks deals in gloves and slingshots, so its guardian is pure
   // momentum: he commits to a line and you get out of it. No projectiles at
   // all — the biome's own furniture is the ranged threat.
@@ -254,7 +250,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     title: "🩸 THE OVERLORD 🩸",
     tagline: "it does not throw. it arrives.",
     label: "OVERLORD",
-    art: { sheetKey: "boss", tint: 0xd0402a, scale: 2.17 },
+    art: { sheetKey: "overlord", tint: null, scale: 2.17 },
     hpMult: 1.25,
     speedMult: 0.9,
     moves: {
@@ -283,7 +279,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     title: "🔮 THE ARCHIVIST 🔮",
     tagline: "it reads the room faster than you cross it",
     label: "ARCHIVIST",
-    art: { sheetKey: "ghost", tint: 0xb070ff, scale: 2.05 },
+    art: { sheetKey: "archivist", tint: null, scale: 2.05 },
     hpMult: 0.85,
     speedMult: 1.1,
     moves: {
@@ -298,6 +294,34 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         // "stand outside the nova" stops being a free answer.
         nova: { interval: 4.0, telegraph: 0.85, radius: 6.0, damage: 2, sweep: 0.35, color: 0xd8a0ff },
         orbit: { count: 4, radius: 1.7, speed: 1.8, color: 0xd8a0ff },
+      },
+    },
+  },
+
+  // ══ THE MAGMA ABYSS — apex inferno ═════════════════════════════════════
+  //
+  // Modular multi-part composite dragon boss. Spews fire projectiles and slams
+  // the earth with ground-shattering quakes.
+  dragon: {
+    kind: "dragon",
+    biome: "magma",
+    title: "🔥 THE ANCIENT DRAGON 🔥",
+    tagline: "the apex predator of the molten abyss",
+    label: "DRAGON",
+    art: { sheetKey: "dragon", tint: null, scale: 2.35 },
+    hpMult: 1.35,
+    speedMult: 0.95,
+    moves: {
+      barrage: { interval: 2.4, windup: 0.5, speed: 14, damage: 2, maxDist: 18, color: 0xff6a00 },
+      slam: { interval: 5.0, telegraph: 1.1, radius: 2.8, damage: 3, launch: 20, color: 0xff3a00 },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🔥 THE DRAGON UNLEASHES INFERNO",
+      speedMult: 1.25,
+      moves: {
+        barrage: { interval: 1.6, windup: 0.35, speed: 16, damage: 2, maxDist: 18, color: 0xff3a00 },
+        slam: { interval: 3.8, telegraph: 0.85, radius: 2.8, damage: 3, launch: 22, color: 0xff1a00, echo: { delay: 0.4, radius: 3.0, damage: 2 } },
       },
     },
   },

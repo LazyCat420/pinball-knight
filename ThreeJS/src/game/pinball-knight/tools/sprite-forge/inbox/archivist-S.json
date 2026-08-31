@@ -1,0 +1,18 @@
+{
+  "sheet": "archivist-S",
+  "author": "LazyCat420 & Nano Banana",
+  "notes": "archivist 4x4 SNES boss sprite sheet",
+  "matte": {
+    "tolerance": 48
+  },
+  "grid": [
+    4,
+    4
+  ],
+  "rows": [
+    "idle",
+    "walk",
+    "attack",
+    "death"
+  ]
+}

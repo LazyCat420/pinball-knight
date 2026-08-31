@@ -152,7 +152,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic"
-  | "reaper";
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -161,7 +161,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "reaper",
+  "necromancer", "crystalback", "mimic", "reaper", "broodmother", "overlord", "archivist", "dragon",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -410,6 +410,12 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   webspinner: "webspinner",
   hound: "hound",
   pin: "pin",
+  reaper: "reaper",
+  broodmother: "broodmother",
+  overlord: "overlord",
+  archivist: "archivist",
+  dragon: "dragon",
+  boss: "overlord",
 };
 
 
