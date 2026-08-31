@@ -32,6 +32,8 @@ import { saveResumeFloor } from "../corpse-run";
 import { resetCombatJuice } from "../entities/combat";
 import { playerMaxHp } from "../skill-runtime";
 import { freshPlayerFields } from "../state";
+import { exitRampage } from "../fps";
+
 
 /**
  * Lay out every corpse pile stored for this floor as ground items.
@@ -124,6 +126,7 @@ export function collectCorpseItems(): CorpseItem[] {
 
 export function onPlayerDeath(): void {
   if (state.gameOver) return;
+  if (state.fpsActive) exitRampage();
   state.gameOver = true;
   coopAnnounceDeath(); // final pose w/ mode:"death" — peers stop colliding with the body
   // Bank the loose change before the run is scored — the run tally on the death

@@ -42,6 +42,8 @@ import { ITEM_PAINTS } from "../render/cel-painter";
 import { floorFlow } from "../run/grade";
 import { getSettings } from "../settings-save";
 import { awardFloorXp, playerMaxHp } from "../skill-runtime";
+import { exitRampage } from "../fps";
+
 
 /**
  * How long we keep WATCHING for the shared seed after a floor has been built.
@@ -217,6 +219,7 @@ export function adoptPoolSeedWhenItArrives(startedOnLevel: number): void {
 }
 
 export function descend(): void {
+  if (state.fpsActive) exitRampage();
   // BANK ANY COINS STILL ON THE FLOOR before the tavern opens.
   //
   // Every other sweep site is a teardown (startLevel, death, exit), and the

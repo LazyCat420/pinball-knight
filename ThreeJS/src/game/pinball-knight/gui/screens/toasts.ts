@@ -117,6 +117,7 @@ export function toastScreen(): UiScreen {
     pauses: false,
     focus: 0,
     scroll: 0,
+    onCancel: () => true,
     // Matched to the HUD's box on purpose. These two are the only screens open
     // during play, they sit on the same edges of the same frame, and a toast at
     // half the HUD's type size reads as a different game's notification.

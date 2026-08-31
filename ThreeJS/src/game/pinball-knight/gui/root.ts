@@ -136,8 +136,12 @@ export function drawUiFrame(pass: PixelPass): void {
     }
 
     if (input.cancel) {
-      const handled = s.onCancel?.(s) ?? false;
-      if (!handled) pop();
+      if (s.onCancel) {
+        const handled = s.onCancel(s);
+        if (!handled && s.pauses) pop();
+      } else if (s.pauses) {
+        pop();
+      }
     }
   }
 
