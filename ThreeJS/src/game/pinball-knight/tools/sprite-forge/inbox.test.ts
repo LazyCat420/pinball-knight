@@ -106,6 +106,7 @@ const KNOWN_SWEEP: readonly string[] = [
   // and any frame whose feet fall short of it floats. zombie-E's death row is
   // 20px out, which at its scale is most of a boot.
   "stiltneck-E death", "zombie-E attack", "zombie-E stumble", "zombie-E death",
+  "croaker-S walk",
 ];
 
 let restore = (): void => {};

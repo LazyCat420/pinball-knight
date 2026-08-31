@@ -116,6 +116,10 @@ export interface Player extends Actor {
    *  Past SHADOW_PHASE_GRACE the eject fires — a run that ends sealed inside a
    *  wall is unrecoverable, so this net is not optional. */
   phaseStuckT: number;
+  /** Chomper grab & hold: while > 0 player is trapped in place until spamming out. */
+  chomperGrabT?: number;
+  chomperGrabEscape?: number;
+  chomperGrabHost?: Zombie | null;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -1413,6 +1417,9 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     momZ: 0,
     momSpeed: 0,
     ramT: 0,
+    chomperGrabT: 0,
+    chomperGrabEscape: 0,
+    chomperGrabHost: null,
     grooveHopT: 0,
     grooveHopDur: 0,
     grooveHopCdT: 0,

@@ -72,20 +72,16 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   // texel-exempt: UNEXAMINED — as golem.
   webspinner: { scale: 1.05 },
   jester: { scale: 1.0 },
-  croaker: { scale: 1.0 },
+  croaker: { scale: 0.72 },
   // texel-exempt: the rotor makes the sprite WIDE, and at 1.0 the disc read as
   // the creature's body rather than as the thing bolted on top of it.
   rotortail: { scale: 0.95 },
-  // 1.0, and the 1.12 it shipped with is worth an epitaph: any non-integer mesh
-  // scale breaks the sprite identity (1 stored texel = 1 render pixel, see
-  // constants/render.ts SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID), so every
-  // ~8th texel row/column rendered doubled — "uneven pixels", visible as
-  // moiré crawling on the coat. The tall read never needed the multiplier;
-  // the creature already fills its cel to the margins. THIS is the row the
-  // portrait table disagreed with for four weeks, and the reason check H
-  // exists.
   stiltneck: { scale: 1.0 },
   fish_feet: { scale: 1.0 },
+  warden: { scale: 1.05 },
+  necromancer: { scale: 1.0 },
+  crystalback: { scale: 1.0 },
+  mimic: { scale: 1.0 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //
@@ -95,12 +91,8 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   // one of these gets a bespoke painter (as hound did) its scale should go to
   // 1.0 and the exemption should be deleted, not carried over.
   bloater: { sheetKey: "slime", tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag — texel-exempt: distorted borrowed slime
-  necromancer: { sheetKey: "spitter", tint: 0x8a5cd0, scale: 1.05 }, // purple caster — texel-exempt: distorted borrowed spitter
-  warden: { sheetKey: "warden", tint: 0x4f8fdb, scale: 1.05 }, // blue guardian, its OWN key (see sheets.ts) — texel-exempt: distorted borrowed brute paints
   wisp: { sheetKey: "ghost", tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp — texel-exempt: distorted borrowed ghost
   sapper: { sheetKey: "magnet", tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief — texel-exempt: distorted borrowed magnet
-  crystalback: { sheetKey: "golem", tint: 0x8fdfff, scale: 1.12 }, // crystalline golem — texel-exempt: distorted borrowed golem
-  mimic: { sheetKey: "golem", tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate — texel-exempt: distorted borrowed golem
 };
 
 /**

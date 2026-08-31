@@ -2063,6 +2063,43 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
 
+  // ── CHOMPER GRAB & HOLD ──
+  if ((p.chomperGrabT ?? 0) > 0) {
+    if (p.chomperGrabHost && p.chomperGrabHost.mode === "dead") {
+      p.chomperGrabT = 0;
+      p.chomperGrabEscape = 0;
+      p.chomperGrabHost = null;
+    } else {
+      p.chomperGrabT = Math.max(0, (p.chomperGrabT ?? 0) - dt);
+      const spammed =
+        input.consumeAttack() ||
+        input.consumeDodge() ||
+        input.consumeRoll() ||
+        input.consumeAbility(0) ||
+        input.consumeAbility(1) ||
+        input.moveX !== 0 ||
+        input.moveZ !== 0;
+      if (spammed) {
+        p.chomperGrabEscape = Math.max(0, (p.chomperGrabEscape ?? 5) - 1);
+        state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 4);
+        if (p.chomperGrabEscape <= 0) {
+          p.chomperGrabT = 0;
+          p.chomperGrabHost = null;
+          showToast("🌿 BROKE FREE!", "Escaped the flytrap!");
+        }
+      }
+      if ((p.chomperGrabT ?? 0) > 0 && p.chomperGrabHost) {
+        p.x = p.chomperGrabHost.x;
+        p.z = p.chomperGrabHost.z;
+        p.momSpeed = 0;
+        syncActorMesh(p);
+        p.anim.play("stumble");
+        p.anim.update(dt);
+        return;
+      }
+    }
+  }
+
   // ── RICOCHET FORM ── ⚡ bolt / ✨ laser. Checked FIRST among the owners: it
   // is the one state that ignores input entirely, so anything that reads the
   // stick below must not get a look in while it runs.

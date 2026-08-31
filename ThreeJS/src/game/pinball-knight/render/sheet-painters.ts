@@ -76,6 +76,9 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   rotortail: makeRotortailPaints,
   stiltneck: makeStiltneckPaints,
   fish_feet: makeFishFeetPaints,
+  necromancer: makeSpitterPaints,
+  crystalback: makeGolemPaints,
+  mimic: makeGolemPaints,
   // The Death Dealer, and the Reaper King who wears his coat.
   reaper: makeReaperPaints,
 };

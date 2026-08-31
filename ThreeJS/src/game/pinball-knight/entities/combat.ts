@@ -907,6 +907,8 @@ export function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.staggerT = 0;
   z.windupT = 0;
+  z.flashT = 0;
+  z.sprite.setTint(z.baseTint ?? null);
   z.anim.play("death", { force: true });
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
@@ -1174,6 +1176,14 @@ export function hitPlayer(z: Zombie): void {
     // from the sapper's drain simply not having fired.
     state.vfx?.sparks(p.x, 0.7, p.z, 0, 1, 8);
     showToast("💎 UNBREAKABLE", "the sapper cannot cut diamond");
+  }
+
+  // CHOMPER: Giant Venus flytrap bite GRABS and HOLDS the player until spammed free!
+  if (z.kind === "chomper" && (p.chomperGrabT ?? 0) <= 0) {
+    p.chomperGrabT = 4.0;
+    p.chomperGrabEscape = 5;
+    p.chomperGrabHost = z;
+    showToast("🪴 GRABBED BY CHOMPER!", "SPAM buttons to break free!");
   }
 }
 

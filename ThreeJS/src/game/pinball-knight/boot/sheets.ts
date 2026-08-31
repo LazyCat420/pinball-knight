@@ -151,40 +151,17 @@ export type SheetKey =
   | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
-  // The Death Dealer's atlas, and the Reaper King wears it too. It had a
-  // PRIVATE lazy-sheet path (`render/reaper-sheet.ts`) that predated this
-  // registry, so `sheetKeyForKind("reaper")` resolved to undefined and every
-  // consumer needed a `kind === "reaper" ?` special case. It is a monster with
-  // a painter like any other; it is registered like one now. Deliberately NOT
-  // in ESSENTIAL or BACKFILL — most runs never see a Death Dealer, and the
-  // Reaper King builds it on the spawn.
+  | "necromancer" | "crystalback" | "mimic"
   | "reaper";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
- *
- * This used to be a hand-written literal typed `Record<string, SheetKey>` —
- * `string`, so nothing made it exhaustive — and it was missing EIGHT of the
- * twenty-eight kinds: reaper, warden, bloater, necromancer, wisp, sapper,
- * crystalback and mimic. Three live consequences, all silent:
- *
- *   · the re-skin loop in `rebuild()` could never hot-swap those actors when
- *     an atlas was re-emitted — including the WARDEN, whose key was right
- *     there in BUILDERS;
- *   · the co-op replica spawner (`boot/wiring.ts`) fell through to
- *     `state.sheets.zombie`, drawing a peer's bloater AS A ZOMBIE — the exact
- *     failure its own comment warns about;
- *   · `__dungeonAtlas` needed a second lookup to cover the difference.
- *
- * `spawn/kind-skin.ts` already knows which sheet each kind wears, so ask it.
- * Every kind resolves, `reaper` included: it used to be the one exception,
- * because its atlas lived behind a private lazy-sheet helper rather than in
- * this registry. It is a SheetKey now.
  */
 const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
-  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet", "reaper",
+  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
+  "necromancer", "crystalback", "mimic", "reaper",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -411,18 +388,22 @@ export function buildMonsterSheets(): void {
 // but labels it with the game's kind — this map is that bridge, and a copy
 // of it in the forge would be the two-writers drift all over again.
 export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
-  // The first creature built end to end by the LOCAL pipeline (qwen master →
-  // Wan I2V clips → prep-brute → crush), rather than from a bought sheet.
-  // `warden` is deliberately absent right below: it is the brute's tinted
-  // reskin and keeps the painter, so this entry changes one creature only.
   brute: "brute",
   jester: "jester",
-  rotortail: "beaver",
-  croaker: "frog",
+  rotortail: "crawler",
+  croaker: "croaker",
   fish_feet: "fish_feet",
   zombie: "zombie",
   slime: "slime",
   goblin: "goblin",
+  spider: "spider",
+  spitter: "demon",
+  sporeling: "sporeling",
+  chomper: "chomper",
+  warden: "warden",
+  necromancer: "necro",
+  crystalback: "crystalback",
+  mimic: "mimic",
 };
 
 /**
