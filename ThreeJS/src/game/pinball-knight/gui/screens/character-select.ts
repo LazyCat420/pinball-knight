@@ -27,7 +27,7 @@
  * shipped invisible for weeks.
  */
 import { UI, GRID, ROW_H } from "../theme";
-import { button, focusRing, focusable, rect, scrim, sheet, strokeRect, text } from "../im";
+import { clampFocus, focusRing, focusable, rect, scrim, sheet, strokeRect, text, button } from "../im";
 import { pop, type UiScreen } from "../stack";
 import { DEFAULT_PLAYER_SHEET, PLAYABLE, playerSheetName, switchPlayerSheet } from "../../render/knight-sheets";
 import { loadImportedSheet } from "../../render/imported-paints";
@@ -69,6 +69,44 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
     scroll: 0,
     design: { w: 600, h: 338, max: 2 },
     onClose: onDone,
+    onNavigate(f, self, input) {
+      const cardCount = PLAYABLE.length;
+      const confirmIndex = cardCount;
+      let handled = false;
+
+      if (input.right > 0) {
+        if (self.focus < cardCount - 1) {
+          self.focus = Math.min(cardCount - 1, self.focus + input.right);
+          handled = true;
+        }
+      } else if (input.left > 0) {
+        if (self.focus > 0 && self.focus < cardCount) {
+          self.focus = Math.max(0, self.focus - input.left);
+          handled = true;
+        } else if (self.focus === confirmIndex) {
+          const chosenIdx = PLAYABLE.findIndex((c) => c.sheet === chosen);
+          self.focus = chosenIdx >= 0 ? chosenIdx : cardCount - 1;
+          handled = true;
+        }
+      } else if (input.down > 0) {
+        if (self.focus < cardCount) {
+          self.focus = confirmIndex;
+          handled = true;
+        }
+      } else if (input.up > 0) {
+        if (self.focus === confirmIndex) {
+          const chosenIdx = PLAYABLE.findIndex((c) => c.sheet === chosen);
+          self.focus = chosenIdx >= 0 ? chosenIdx : 0;
+          handled = true;
+        }
+      }
+
+      if (handled) {
+        self.focus = clampFocus(self.focus, f.count);
+        f.focus = self.focus;
+      }
+      return handled;
+    },
     paint(f, self) {
       scrim(f);
       const body = sheet(f, 584, 322);
@@ -102,7 +140,13 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         const painted = c.sheet === DEFAULT_PLAYER_SHEET;
         const ready = painted || preview !== null; // undefined = still loading
 
-        if (st.activated && ready && !busy) chosen = c.sheet;
+        if ((st.focused || st.activated) && ready && !busy) chosen = c.sheet;
+
+        // Instant-pick on direct activation (pressing A or clicking the card)
+        if (st.activated && ready && !busy) {
+          busy = true;
+          void switchPlayerSheet(chosen).finally(() => pop());
+        }
 
         strokeRect(f, cell, chosen === c.sheet ? UI.gold : UI.textFaint, chosen === c.sheet ? 2 : 1);
         if (st.focused) focusRing(f, cell);
@@ -170,7 +214,7 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         x += CARD_W + GRID;
       }
 
-      text(f, busy ? "SWITCHING…" : "CLICK A CHARACTER, THEN CONFIRM", foot.x, foot.y + 8, {
+      text(f, busy ? "SWITCHING…" : "SELECT A CHARACTER OR PRESS CONFIRM", foot.x, foot.y + 8, {
         size: 8,
         colour: UI.textFaint,
       });

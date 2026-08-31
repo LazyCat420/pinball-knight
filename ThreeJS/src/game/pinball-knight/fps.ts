@@ -31,6 +31,7 @@ import {
   RENDER_W,
   RENDER_H,
   ZOMBIE_R,
+  FOG_RADIUS,
 } from "./constants";
 import { moveCircle } from "./engine/collision";
 import { faceCameraYaw, faceCameraIso } from "./engine/render/sprite";
@@ -40,6 +41,9 @@ import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
 import { setHUDMode } from "./hud";
 import { sfxGun } from "./sfx";
 import { clamp } from "../../utils/math";
+import { aimCamera, snapCameraTo } from "./engine/camera";
+import { worldToTile } from "./maze/generator";
+import { revealAround } from "./fog";
 
 /** How long a streak survives without a fresh kill before it resets, seconds. */
 const STREAK_WINDOW = 2.5;
@@ -111,6 +115,16 @@ export function exitRampage(): void {
   if (p) {
     p.sprite.mesh.visible = true;
     if (p.silhouette) p.silhouette.mesh.visible = true;
+    // Snap isometric camera directly to knight's exit position
+    if (state.camera) {
+      snapCameraTo(p.x, p.z);
+      aimCamera(state.camera, p.x, 0.5, p.z);
+    }
+    // Reveal fog at player's location
+    if (state.fog && state.grid) {
+      const ft = worldToTile(state.grid, p.x, p.z);
+      revealAround(state.fog, state.grid, ft.i, ft.j, FOG_RADIUS);
+    }
     // The knight condensing back into the world gets a settle cue — quieter
     // than the entry detonation, same hue, so enter/exit read as one arc.
     state.vfx?.ring(p.x, p.z, 0xd97b29, 2.2, 0.4, { thin: true });

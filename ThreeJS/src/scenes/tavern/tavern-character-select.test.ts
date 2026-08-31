@@ -133,4 +133,67 @@ describe("tavern character select and sprite update", () => {
     pop();
     expect(isPanelOpen()).toBe(false);
   });
+
+  it("navigates 2D focus across character cards with controller directional inputs", () => {
+    const screen = characterSelectScreen(() => {});
+    const canvas = createCanvas(600, 338);
+    const ctx = canvas.getContext("2d") as unknown as CanvasRenderingContext2D;
+
+    // Paint initial frame with focus 0 (Knight)
+    const { beginUi, emptyUiInput } = require("../../game/pinball-knight/gui/im");
+    let f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
+    screen.paint(f, screen);
+    expect(screen.focus).toBe(0);
+
+    // Simulate pushing Right on controller stick / D-pad
+    const rightInput = { ...emptyUiInput(), right: 1 };
+    expect(screen.onNavigate?.(f, screen, rightInput)).toBe(true);
+    expect(screen.focus).toBe(1);
+
+    // Paint with Mario focused -> updates chosen to mario
+    f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
+    screen.paint(f, screen);
+    expect(screen.focus).toBe(1);
+
+    // Simulate pushing Down on controller stick / D-pad -> jumps to CONFIRM button (index 2)
+    const downInput = { ...emptyUiInput(), down: 1 };
+    expect(screen.onNavigate?.(f, screen, downInput)).toBe(true);
+    expect(screen.focus).toBe(2);
+
+    // Simulate pushing Up on controller stick / D-pad -> jumps back to Mario card (index 1)
+    const upInput = { ...emptyUiInput(), up: 1 };
+    expect(screen.onNavigate?.(f, screen, upInput)).toBe(true);
+    expect(screen.focus).toBe(1);
+
+    // Simulate pushing Left on controller stick / D-pad -> moves back to Knight card (index 0)
+    const leftInput = { ...emptyUiInput(), left: 1 };
+    expect(screen.onNavigate?.(f, screen, leftInput)).toBe(true);
+    expect(screen.focus).toBe(0);
+  });
+
+  it("confirms character selection and swaps sheet when activated with controller accept", async () => {
+    let closed = false;
+    const screen = characterSelectScreen(() => {
+      closed = true;
+    });
+    const canvas = createCanvas(600, 338);
+    const ctx = canvas.getContext("2d") as unknown as CanvasRenderingContext2D;
+    const { beginUi, emptyUiInput } = require("../../game/pinball-knight/gui/im");
+
+    push(screen);
+
+    // Move to Mario (focus 1)
+    screen.focus = 1;
+    let f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
+    screen.paint(f, screen);
+
+    // Activate Mario card with controller A (accept)
+    const acceptInput = { ...emptyUiInput(), accept: true };
+    f = beginUi(ctx, 600, 338, acceptInput, screen.focus, true);
+    screen.paint(f, screen);
+
+    // Wait for switchPlayerSheet promise
+    await new Promise((r) => setTimeout(r, 20));
+    expect(playerSheetName()).toBe("mario");
+  });
 });

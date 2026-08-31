@@ -134,11 +134,11 @@ export function simulate(dt: number): void {
     updateFps(dt, state.input);
   } else {
     updatePlayer(dt, state.input);
-    // Paint the fog from wherever the knight ended up this step.
-    if (state.fog && state.grid && state.player) {
-      const ft = worldToTile(state.grid, state.player.x, state.player.z);
-      revealAround(state.fog, state.grid, ft.i, ft.j, FOG_RADIUS);
-    }
+  }
+  // Paint the fog from wherever the knight ended up this step.
+  if (state.fog && state.grid && state.player) {
+    const ft = worldToTile(state.grid, state.player.x, state.player.z);
+    revealAround(state.fog, state.grid, ft.i, ft.j, FOG_RADIUS);
   }
   // TIME CRAWL: the ability scales the horde's dt so enemies move + wind up in
   // slow-mo while the player runs at full speed. Everything else keeps real dt.

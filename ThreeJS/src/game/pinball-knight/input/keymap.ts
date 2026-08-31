@@ -12,7 +12,7 @@ import { runDeps } from "../run/deps";
 import { advanceCardReader } from "../card-reader";
 import { toggleFloorMap, closeFloorMap } from "../map-overlay";
 import { useBeltSlot, closeShop } from "../economy/shop";
-import { canRampage, enterRampage } from "../fps";
+import { canRampage, enterRampage, exitRampage } from "../fps";
 import { castAbility } from "../abilities";
 import { showToast } from "../ui";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
@@ -105,9 +105,10 @@ export function handleKey(e: KeyboardEvent): void {
     case "3": useBeltSlot(2); break;
     case "4": useBeltSlot(3); break;
 
-    // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
+    // ── RAMPAGE: the FPS ultimate (only when the meter is full) / early cancel ──
     case "r":
-      if (canRampage()) enterRampage();
+      if (state.fpsActive) exitRampage();
+      else if (canRampage()) enterRampage();
       break;
 
     // ── Q/E active skills (Diablo HUD). In rampage Q/E steer the FPS camera. ──

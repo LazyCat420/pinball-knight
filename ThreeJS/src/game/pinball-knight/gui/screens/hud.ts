@@ -383,14 +383,16 @@ function paintWolf(f: UiFrame, p: NonNullable<typeof state.player>): void {
   setFaceHealth(p.hp, maxHp);
 
   const cx = f.w / 2;
+  const span = Math.min(220, Math.floor(f.w * 0.38));
+  const innerSpan = Math.min(80, Math.floor(span * 0.36));
   const big = (label: string, value: string, x: number, colour: string): void => {
     text(f, value, x, panel.y + 14, { size: 16, colour, align: "center" });
     text(f, label, x, panel.y + 40, { size: 8, colour: UI.textDim, align: "center" });
   };
-  big("HEALTH", String(p.hp), cx - 220, UI.danger);
-  big("STREAK", String(state.fpsStreak), cx - 80, UI.gold);
-  big("TIME", `${Math.max(0, Math.ceil(state.fpsTimer))}`, cx + 80, UI.arcane);
-  big("KILLS", String(state.kills), cx + 220, UI.good);
+  big("HEALTH", String(p.hp), cx - span, UI.danger);
+  big("STREAK", String(state.fpsStreak), cx - innerSpan, UI.gold);
+  big("TIME", `${Math.max(0, Math.ceil(state.fpsTimer))}`, cx + innerSpan, UI.arcane);
+  big("KILLS", String(state.kills), cx + span, UI.good);
 
   // The crosshair. Four ticks around a gap, so it never occludes what it aims
   // at — a solid dot at this scale covers an entire distant enemy.

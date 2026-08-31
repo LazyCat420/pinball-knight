@@ -128,15 +128,12 @@ export function drawUiFrame(pass: PixelPass): void {
     // widgets this screen registered. Doing it before would use last frame's
     // count and wrap early on any screen whose row count changed.
     s.focus = clampFocus(f.focus, f.count);
-    // The COUNT is the delta. Three quick Downs move three rows even if all
-    // three landed between two painted frames.
-    //
-    // Called even at delta 0, which is not a no-op: `moveFocus` also steps the
-    // cursor off a row that went DISABLED since the last frame. Without that,
-    // spending the gold a button needed left the cursor resting on a widget that
-    // draws no ring and answers no key — a counter that looks dead while you are
-    // broke. See `moveFocus`.
-    s.focus = moveFocus(f, input.down - input.up);
+    // If screen provides custom navigation, run it; otherwise apply 1D delta.
+    if (!s.onNavigate?.(f, s, input)) {
+      // The COUNT is the delta. Include horizontal input (left/right) along with vertical (down/up).
+      const navDelta = input.down - input.up + (input.right - input.left);
+      s.focus = moveFocus(f, navDelta);
+    }
 
     if (input.cancel) {
       const handled = s.onCancel?.(s) ?? false;

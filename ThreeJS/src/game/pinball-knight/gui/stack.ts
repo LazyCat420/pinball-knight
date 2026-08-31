@@ -79,6 +79,11 @@ export interface UiScreen {
   };
   /** Paint one frame and handle its own input. */
   paint(f: UiFrame, self: UiScreen): void;
+  /**
+   * Optional custom focus navigation handler (e.g. for 2D grids or directional routing).
+   * If provided and returns true, default 1D moveFocus is skipped.
+   */
+  onNavigate?(f: UiFrame, self: UiScreen, input: import("./im").UiInput): boolean;
   /** Called when the screen is popped, for any teardown it owns. */
   onClose?(): void;
   /**
