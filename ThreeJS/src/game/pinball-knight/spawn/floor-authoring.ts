@@ -42,6 +42,7 @@ import { type PrefabAnchor, decorateMaze, pickEndpoints, widenMainArtery } from 
 import { walkableCount } from "../maze/floor-metrics";
 import { carveRooms, crackSecretWalls, generateMaze, thickenWalls, tileCenter } from "../maze/generator";
 import { authorLampPuzzle, lampCountFor } from "../maze/lamp-puzzle";
+import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { rollModifier } from "../maze/modifiers";
 import { pickFocusCells, stampLandmark, stampPrefabs, themeFor, themeIndexFor } from "../maze/prefabs";
 import { paintBands, paintSurfaces } from "../maze/surface-paint";
@@ -361,13 +362,18 @@ export function authorFloor(level: number): AuthoredFloor {
   };
   markOcc(plan.start);
   markOcc(plan.stairs);
+  const bossSpot = nearestOpenTile(grid, plan.stairs.i, plan.stairs.j, 2) ?? plan.stairs;
+  markOcc(bossSpot);
   plan.parts.forEach(markOcc);
   plan.spawns.forEach(markOcc);
   plan.items.forEach(markOcc);
   plan.props.forEach(markOcc);
   plan.torches.forEach(markOcc);
-  const lampPuzzlePlan = authorLampPuzzle(grid, plan.start, (i, j) => puzzleOccupied.has(`${i},${j}`), rng, lampCountFor(level));
-  if (lampPuzzlePlan) plan.parts.push(...lampPuzzlePlan.lamps);
+  const lampPuzzlePlan = authorLampPuzzle(grid, plan.start, (i, j) => puzzleOccupied.has(`${i},${j}`), rng, lampCountFor(level), bossSpot);
+  if (lampPuzzlePlan) {
+    plan.parts.push(...lampPuzzlePlan.lamps);
+    markOcc(lampPuzzlePlan.vault);
+  }
 
   // ── SURFACES ── what the floor is MADE of (engine/surfaces.ts). Runs on the
   // FINAL grid — after topology, shapes, cracks, prefabs and the lamp puzzle —

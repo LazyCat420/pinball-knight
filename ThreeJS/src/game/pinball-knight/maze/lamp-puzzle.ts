@@ -49,9 +49,17 @@ export function lampCountFor(level: number): number {
  * Pick the puzzle's tiles, or null if the floor is too small / too crowded to
  * host one cleanly. `occupied(i,j)` reports tiles already carrying placed
  * content (parts, spawns, items, props, torches, stairs, start) — nothing
- * lands on top of them.
+ * lands on top of them. When `bossSpot` is provided, the vault is sited
+ * immediately adjacent to the boss in the boss chamber.
  */
-export function authorLampPuzzle(g: Grid, start: TilePos, occupied: (i: number, j: number) => boolean, rng: () => number, lampCount: number): LampPuzzlePlan | null {
+export function authorLampPuzzle(
+  g: Grid,
+  start: TilePos,
+  occupied: (i: number, j: number) => boolean,
+  rng: () => number,
+  lampCount: number,
+  bossSpot?: TilePos | null,
+): LampPuzzlePlan | null {
   const d = bfsDistancesOwned(g, start.i, start.j); // held while placing
   let maxD = 0;
   for (let k = 0; k < d.length; k++) if (d[k] > maxD) maxD = d[k];
@@ -68,14 +76,37 @@ export function authorLampPuzzle(g: Grid, start: TilePos, occupied: (i: number, 
       cand.push({ i, j, d: dd });
     }
   }
-  if (cand.length < lampCount + 3) return null;
+  if (cand.length === 0) return null;
 
-  // Vault: a FAR, open tile (all four cardinals floor → reads as a chamber, not
-  // a wall nook). Prefer the most open, deepest such tile.
-  const openTile = (t: { i: number; j: number }): boolean => at(g, t.i + 1, t.j) === T_FLOOR && at(g, t.i - 1, t.j) === T_FLOOR && at(g, t.i, t.j + 1) === T_FLOOR && at(g, t.i, t.j - 1) === T_FLOOR;
-  const far = cand.filter((c) => c.d >= maxD * 0.5).sort((a, b) => b.d - a.d);
-  const vaultC = far.find(openTile) ?? far[0] ?? cand[cand.length - 1];
-  const vault: TilePos = { i: vaultC.i, j: vaultC.j };
+  // Vault: an open tile (all four cardinals floor → reads as a chamber, not
+  // a wall nook).
+  const openTile = (t: { i: number; j: number }): boolean =>
+    at(g, t.i + 1, t.j) === T_FLOOR &&
+    at(g, t.i - 1, t.j) === T_FLOOR &&
+    at(g, t.i, t.j + 1) === T_FLOOR &&
+    at(g, t.i, t.j - 1) === T_FLOOR;
+
+  let vault: TilePos;
+  if (bossSpot) {
+    // When bossSpot is specified, site the vault right in the boss chamber.
+    const bossCand = cand.slice().sort((a, b) => {
+      const da = Math.abs(a.i - bossSpot.i) + Math.abs(a.j - bossSpot.j);
+      const db = Math.abs(b.i - bossSpot.i) + Math.abs(b.j - bossSpot.j);
+      return da - db;
+    });
+    // Prefer an open tile within 1..3 tiles of the boss, or the closest candidate.
+    const closeOpen = bossCand.find((c) => {
+      const dist = Math.abs(c.i - bossSpot.i) + Math.abs(c.j - bossSpot.j);
+      return dist >= 1 && dist <= 3 && openTile(c);
+    });
+    const best = closeOpen ?? bossCand[0];
+    vault = { i: best.i, j: best.j };
+  } else {
+    // Fallback: a far, open tile.
+    const far = cand.filter((c) => c.d >= maxD * 0.5).sort((a, b) => b.d - a.d);
+    const vaultC = far.find(openTile) ?? far[0] ?? cand[cand.length - 1];
+    vault = { i: vaultC.i, j: vaultC.j };
+  }
 
   // Braziers: spread across the reachable floor (separation scales with size),
   // never hugging the vault or each other.
@@ -84,10 +115,10 @@ export function authorLampPuzzle(g: Grid, start: TilePos, occupied: (i: number, 
   for (const c of shuffle(cand, rng)) {
     if (lampsT.length >= lampCount) break;
     if (Math.abs(c.i - vault.i) + Math.abs(c.j - vault.j) < 3) continue;
+    if (bossSpot && Math.abs(c.i - bossSpot.i) + Math.abs(c.j - bossSpot.j) < 3) continue;
     if (lampsT.some((l) => Math.abs(l.i - c.i) + Math.abs(l.j - c.j) < sep)) continue;
     lampsT.push({ i: c.i, j: c.j });
   }
-  if (lampsT.length < 3) return null; // not enough spread → no puzzle
 
   const lamps = lampsT.map(
     (t): PinballPartSpot => ({ i: t.i, j: t.j, kind: "lamp", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 }),

@@ -78,4 +78,25 @@ describe("authorLampPuzzle", () => {
     authorLampPuzzle(g, { i: 1, j: 1 }, never, mulberry32(5), 4);
     expect(Array.from(g.t)).toEqual(Array.from(before));
   });
+
+  it("sites the vault chest immediately next to bossSpot in the boss arena", () => {
+    const g = emptyGrid(24, 20);
+    const start = { i: 1, j: 1 };
+    const bossSpot = { i: 20, j: 15 };
+    const occupied = (i: number, j: number) => (i === start.i && j === start.j) || (i === bossSpot.i && j === bossSpot.j);
+    const plan = authorLampPuzzle(g, start, occupied, mulberry32(7), 4, bossSpot);
+    expect(plan).toBeTruthy();
+    const vault = plan!.vault;
+    const distToBoss = Math.abs(vault.i - bossSpot.i) + Math.abs(vault.j - bossSpot.j);
+    // Vault is placed in the immediate vicinity (1 to 3 Manhattan tiles) of the boss.
+    expect(distToBoss).toBeGreaterThanOrEqual(1);
+    expect(distToBoss).toBeLessThanOrEqual(3);
+    // Vault is not placed ON the boss spot.
+    expect(vault.i === bossSpot.i && vault.j === bossSpot.j).toBe(false);
+    // Braziers are kept at least 3 tiles away from the boss and vault.
+    for (const lamp of plan!.lamps) {
+      expect(Math.abs(lamp.i - bossSpot.i) + Math.abs(lamp.j - bossSpot.j)).toBeGreaterThanOrEqual(3);
+      expect(Math.abs(lamp.i - vault.i) + Math.abs(lamp.j - vault.j)).toBeGreaterThanOrEqual(3);
+    }
+  });
 });
