@@ -421,6 +421,8 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   croaker: "frog",
   fish_feet: "fish_feet",
   zombie: "zombie",
+  slime: "slime",
+  goblin: "goblin",
 };
 
 /**
