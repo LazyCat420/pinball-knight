@@ -14,6 +14,7 @@ import {
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import { push, pop, clearScreens } from "../../game/pinball-knight/gui/stack";
 import { characterSelectScreen } from "../../game/pinball-knight/gui/screens/character-select";
+import { beginUi, emptyUiInput } from "../../game/pinball-knight/gui/im";
 import { isPanelOpen } from "./core";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -140,7 +141,6 @@ describe("tavern character select and sprite update", () => {
     const ctx = canvas.getContext("2d") as unknown as CanvasRenderingContext2D;
 
     // Paint initial frame with focus 0 (Knight)
-    const { beginUi, emptyUiInput } = require("../../game/pinball-knight/gui/im");
     let f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
     screen.paint(f, screen);
     expect(screen.focus).toBe(0);
@@ -178,7 +178,6 @@ describe("tavern character select and sprite update", () => {
     });
     const canvas = createCanvas(600, 338);
     const ctx = canvas.getContext("2d") as unknown as CanvasRenderingContext2D;
-    const { beginUi, emptyUiInput } = require("../../game/pinball-knight/gui/im");
 
     push(screen);
 
