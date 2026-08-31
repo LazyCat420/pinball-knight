@@ -3219,6 +3219,14 @@ const SPIDER_DEATH: FramePaint[] = [
     ctx.fillStyle = C(7); ctx.fill();
     celShade(ctx);
   },
+  (ctx) => {
+    groundShadow(ctx, 64, GROUND + 2, 22);
+    spiderBody(ctx, "S", { step: 0, bob: 12, dead: true });
+    // pooled ichor
+    ctx.beginPath(); ctx.ellipse(64, GROUND - 2, 20, 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = C(7); ctx.fill();
+    celShade(ctx);
+  },
 ];
 
 /** The giant-spider painter set. No variants (yet) — one menacing look. */

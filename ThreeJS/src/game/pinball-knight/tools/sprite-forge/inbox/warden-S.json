@@ -1,11 +1,11 @@
 {
-  "matte": {
-    "tolerance": 64
-  },
   "rows": [
     "idle",
     "walk",
     "attack",
     "death"
-  ]
+  ],
+  "matte": {
+    "tolerance": 64
+  }
 }

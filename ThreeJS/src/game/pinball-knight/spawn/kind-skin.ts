@@ -66,7 +66,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   // may not need the 12%; nobody has looked since it was written.
   golem: { scale: 1.12 },
   // texel-exempt: UNEXAMINED — as golem.
-  chomper: { scale: 1.1 },
+  chomper: { scale: 1.35 },
   // texel-exempt: UNEXAMINED — as golem.
   magnet: { scale: 0.95 },
   // texel-exempt: UNEXAMINED — as golem.

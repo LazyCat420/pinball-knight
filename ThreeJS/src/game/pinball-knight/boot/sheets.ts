@@ -366,10 +366,9 @@ export function buildMonsterSheets(): void {
   state.sheets.zombie = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
   startBackfill();
-  // The PLAYER's imported art only. The monster half is one ~1s blocking task
-  // per kind and it used to land on top of the title sequence — `core.ts` runs
-  // it from the intro's `onDone` instead. See applyImportedArt's docblock.
+  // Load both knight and monster imported art on startup
   void loadImportedKnightArt();
+  void applyImportedMonsterArt();
 }
 
 /**
@@ -404,7 +403,15 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   necromancer: "necro",
   crystalback: "crystalback",
   mimic: "mimic",
+  ghost: "ghost",
+  bat: "bat",
+  golem: "golem",
+  magnet: "magnet",
+  webspinner: "webspinner",
+  hound: "hound",
+  pin: "pin",
 };
+
 
 /**
  * `stiltneck` is deliberately ABSENT, and its sheet still ships.

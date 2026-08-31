@@ -228,6 +228,11 @@ export class Animator {
     return this.clip;
   }
 
+  getFrameIdx(): number {
+    return this.frameIdx;
+  }
+
+
   /**
    * Playback-rate multiplier over the clip's base FPS. The sprint gait ramps
    * this with the sprint charge so the run visibly quickens as it spools.
