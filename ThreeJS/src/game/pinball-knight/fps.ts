@@ -38,7 +38,7 @@ import { faceCameraYaw, faceCameraIso } from "./engine/render/sprite";
 import { damageZombie } from "./entities/combat";
 import type { InputHandle } from "./engine/input";
 import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
-import { setHUDMode } from "./hud";
+import { setHUDMode, mountHUDs } from "./hud";
 import { sfxGun } from "./sfx";
 import { clamp } from "../../utils/math";
 import { aimCamera, snapCameraTo } from "./engine/camera";
@@ -140,6 +140,7 @@ export function exitRampage(): void {
   setFpsOverlay();
   // Slide the Wolfenstein bar back down and the Diablo panel back up.
   setHUDMode("diablo");
+  mountHUDs();
   state.hudDirty = true;
 }
 

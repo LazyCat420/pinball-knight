@@ -173,6 +173,7 @@ export function hudScreen(): UiScreen {
     focus: 0,
     scroll: 0,
     design: DESIGN,
+    onCancel: () => true,
     paint(f) {
       // The HUD never takes input, so it never registers a focusable. That is
       // what keeps the focus cursor of whatever sheet is open above it correct.
@@ -224,7 +225,7 @@ export function hudScreen(): UiScreen {
         const tr = rect(skills.x + 4 + i * (TILE + 4), skills.y + 3, TILE, TILE);
         fillRect(f, tr, UI.sheet);
         strokeRect(f, tr, UI.wellEdge);
-        if (!id) continue;
+        if (!id || !ABILITIES[id]) continue;
         const def = ABILITIES[id];
         // "Affordable" asks the ability layer, NOT the mana bar: under the Blood
         // Price keystone an empty pool still casts, and greying out a slot the
@@ -250,7 +251,7 @@ export function hudScreen(): UiScreen {
         // Cooldown sweep: a dark curtain falling as the ability comes back.
         const cd = state.abilityCd[id] ?? 0;
         if (cd > 0) {
-          const frac = Math.max(0, Math.min(1, cd / def.cooldown));
+          const frac = Math.max(0, Math.min(1, cd / (def.cooldown || 1)));
           f.g.fillStyle = "rgba(11,13,18,0.72)";
           f.g.fillRect(tr.x, tr.y, tr.w, Math.round(tr.h * frac));
         }
@@ -265,13 +266,14 @@ export function hudScreen(): UiScreen {
       // needed twice while the icon sat next to it.
       const wpn = rect(x, y, W.wpn, h);
       const w = state.weaponSlots[state.activeSlot];
-      cell(f, wpn, w ? WEAPONS[w.id].label.toUpperCase() : "WEAPON");
-      if (w) {
+      cell(f, wpn, w && WEAPONS[w.id] ? WEAPONS[w.id].label.toUpperCase() : "WEAPON");
+      if (w && WEAPONS[w.id]) {
         drawIcon(f.g, itemIcon(w.id), wpn.x + 3, wpn.y + 3, ITEM_ICON);
         const dur = Number.isFinite(w.durability) ? `${w.durability}` : "∞";
         text(f, dur, wpn.x + ITEM_ICON + 6, wpn.y + 10, { size: 8, colour: UI.textDim });
       }
       x += wpn.w + GAP;
+
 
       // ── LIFE · FACE · MANA ──
       const maxHp = playerMaxHp();
