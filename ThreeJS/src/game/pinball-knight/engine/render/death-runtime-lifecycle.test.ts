@@ -158,4 +158,56 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
     }
     expect(z.anim.getFrameIdx(), "Must advance to frame 3").toBeGreaterThanOrEqual(3);
   });
+
+  it("strictly prevents play('idle'), play('walk'), play('stumble'), or facing changes from interrupting death on fish_feet and goblin", () => {
+    for (const kind of ["fish_feet", "goblin"] as const) {
+      const sheet = sheetFor(kind);
+      const z = makeZombie(sheet, 6, 6, 1, { kind });
+      state.zombies = [z];
+
+      killZombie(z);
+      expect(z.anim.getClip()).toBe("death");
+      expect(z.anim.getFrameIdx()).toBe(0);
+
+      // Attempt to interrupt with idle, walk, stumble, or attack
+      z.anim.play("idle", { force: true });
+      expect(z.anim.getClip(), "Must remain locked in death clip").toBe("death");
+      expect(z.anim.getFrameIdx()).toBe(0);
+
+      z.anim.play("walk", { force: true });
+      expect(z.anim.getClip()).toBe("death");
+
+      z.anim.play("stumble", { force: true });
+      expect(z.anim.getClip()).toBe("death");
+
+      z.anim.setFacing("N");
+      expect(z.anim.getClip()).toBe("death");
+
+      // Advance through death frames while external calls continuously bombard with idle/walk/setFacing
+      for (let t = 0; t < 12; t++) {
+        z.anim.play("idle", { force: true });
+        z.anim.setFacing("E");
+        updateZombies(0.016);
+        z.anim.update(0.016);
+      }
+      expect(z.anim.getClip()).toBe("death");
+      expect(z.anim.getFrameIdx(), `${kind} must advance to frame 1 despite idle/facing bombardment`).toBe(1);
+
+      for (let t = 0; t < 12; t++) {
+        z.anim.play("walk", { force: true });
+        z.anim.setFacing("W");
+        updateZombies(0.016);
+        z.anim.update(0.016);
+      }
+      expect(z.anim.getFrameIdx(), `${kind} must advance to frame 2`).toBe(2);
+
+      for (let t = 0; t < 12; t++) {
+        z.anim.play("idle", { force: true });
+        updateZombies(0.016);
+        z.anim.update(0.016);
+      }
+      expect(z.anim.getFrameIdx(), `${kind} must advance to frame 3`).toBeGreaterThanOrEqual(3);
+      expect(z.anim.isFinished(), `${kind} death must finish`).toBe(true);
+    }
+  });
 });

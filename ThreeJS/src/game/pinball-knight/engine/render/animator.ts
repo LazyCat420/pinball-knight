@@ -204,12 +204,10 @@ export class Animator {
 
   /** Switch clip. Re-playing the clip you're already in is a no-op (unless forced). */
   play(clip: ClipName, opts: { force?: boolean; onEnd?: () => void } = {}): void {
-    if (this.clip === clip && !opts.force) return;
     // Guard against interrupting or resetting a death animation already in progress or completed.
-    // Once death begins, it is strictly terminal and non-reentrant.
-    if (this.clip === "death" && clip === "death") {
-      return;
-    }
+    // Once death begins, it is strictly terminal and non-reentrant for ALL clips.
+    if (this.clip === "death") return;
+    if (this.clip === clip && !opts.force) return;
     this.clip = clip;
     this.frameIdx = 0;
     this.timer = 0;
@@ -219,6 +217,8 @@ export class Animator {
   }
 
   setFacing(facing: Facing): void {
+    // Facing direction is locked upon death
+    if (this.clip === "death") return;
     if (this.facing === facing) return;
     this.facing = facing;
     this.apply();
