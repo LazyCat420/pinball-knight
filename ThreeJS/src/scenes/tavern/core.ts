@@ -25,6 +25,7 @@ import { openMenu } from "../../game/pinball-knight/gui/screens/menu";
 import { close as closeUiScreen, isOpen as uiIsOpen, remove as removeUiScreen } from "../../game/pinball-knight/gui/stack";
 import { mountHUDs } from "../../game/pinball-knight/hud";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
+import { isRendererReady } from "../../game/pinball-knight/boot/renderer";
 import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import {
@@ -210,6 +211,7 @@ let shadowFrameCounter = 0;
 let lobbySyncTimer = 0;
 let cachedBestDepth = 0;
 let cachedResumeFloor = 0;
+let isSharedRenderer = false;
 
 /**
  * Show/hide the dungeon's bottom HUD.
@@ -520,8 +522,6 @@ function frame(now: number): void {
     case "none":
       return;
     case "ui-only":
-      pixelPass?.presentUi();
-      return;
     case "scene":
       if (tavern.scene && tavern.camera) {
         shadowFrameCounter++;
@@ -538,6 +538,7 @@ function frame(now: number): void {
           performance.mark("tavern:first-present");
         }
       }
+      return;
   }
 }
 
@@ -549,6 +550,8 @@ export interface TavernOptions {
   /** Lobby mode — connect to multiplayer + show the roster/ready gate. Only the
    * entry hall; between-floor shop stops leave this falsy. See OpenTavernOptions. */
   lobby?: boolean;
+  /** Shared WebGPURenderer instance (e.g. from dungeon boot). */
+  renderer?: WebGPURenderer;
 }
 
 /**
@@ -559,66 +562,56 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   if (tavern.active) return true;
 
   let renderer: WebGPURenderer;
-  try {
-    selectBackend();
-    renderer = createGPURenderer({
-      antialias: false,
-      alpha: false,
-      powerPreference: "high-performance",
-    });
-  } catch {
-    return false; // no context — caller keeps the DOM tavern
+  if (opts.renderer || dungeonState.renderer) {
+    renderer = (opts.renderer ?? dungeonState.renderer)!;
+    isSharedRenderer = true;
+  } else {
+    isSharedRenderer = false;
+    try {
+      selectBackend();
+      renderer = createGPURenderer({
+        antialias: false,
+        alpha: false,
+        powerPreference: "high-performance",
+      });
+    } catch {
+      return false; // no context — caller keeps the DOM tavern
+    }
   }
-  // Backend creation is async and render() throws before it resolves. This
-  // function stays SYNC and keeps returning boolean, because index.ts:40 uses
-  // the return value to decide between this scene and the DOM tavern — making
-  // it async would turn that check into a truthy Promise and the DOM fallback
-  // would become unreachable. The loop skips frames until this flips.
-  rendererReady = false;
-  // Up BEFORE the gate, down when it reports ready. The span it covers is the
-  // one span in the game that has no pass to paint into — see boot-notice.ts.
-  showTavernBootNotice("loading");
-  // Everything the warm needs (pixelPass, vfx, the built room) exists by the
-  // time the gate's continuations run: this function is fully synchronous after
-  // this line, so nothing awaited below can start before it returns.
-  //
-  // The choreography itself lives in backend-gate.ts — read its docblock before
-  // changing anything here. Both of the ways this used to end in a permanent
-  // black screen (an uncaught init rejection; an unbounded warm) are asserted
-  // there, and neither is assertable from inside this file.
-  void openBackend({
-    init: () => tavernInitPromise(renderer),
-    warm: tavernWarmEnabled()
-      ? () =>
-          // `tavern.scene === scene` also proves this belongs to the CURRENT
-          // visit — a close+reopen faster than init() resolving would otherwise
-          // warm the new room with the old renderer.
-          tavern.active && pixelPass && tavern.scene === scene && tavern.camera
-            ? warmTavern({
-                renderer,
-                scene,
-                camera: tavern.camera,
-                pixelPass,
-                vfx,
-                active: () => tavern.active && tavern.scene === scene,
-              })
-            : Promise.resolve()
-      : null,
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    onReady: () => {
-      rendererReady = true;
-      hideTavernBootNotice();
-    },
-    onFailed: (err) => {
-      // Not recoverable in place: `render()` throws on an uninitialised
-      // backend, and the DOM fallback in index.ts is already unreachable
-      // because `openTavernScene` returned "scene" synchronously long ago. Say
-      // so in the DOM — which the browser composites without any frame loop,
-      // and is therefore the one thing still guaranteed to reach the player.
-      console.error("[tavern] renderer backend failed — the room cannot start", err);
-      showTavernBootNotice("failed");
-    },
-  });
+
+  // Backend creation is async and render() throws before it resolves.
+  // If sharing an already-initialized renderer, rendererReady is immediately true.
+  rendererReady = isSharedRenderer && isRendererReady();
+  if (!rendererReady) {
+    showTavernBootNotice("loading");
+    void openBackend({
+      init: () => tavernInitPromise(renderer),
+      warm: tavernWarmEnabled()
+        ? () =>
+            tavern.active && pixelPass && tavern.scene === scene && tavern.camera
+              ? warmTavern({
+                  renderer,
+                  scene,
+                  camera: tavern.camera,
+                  pixelPass,
+                  vfx,
+                  active: () => tavern.active && tavern.scene === scene,
+                })
+              : Promise.resolve()
+        : null,
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      onReady: () => {
+        rendererReady = true;
+        hideTavernBootNotice();
+      },
+      onFailed: (err) => {
+        console.error("[tavern] renderer backend failed — the room cannot start", err);
+        showTavernBootNotice("failed");
+      },
+    });
+  } else {
+    hideTavernBootNotice();
+  }
 
   tavern.active = true;
   tavern.container = container;
@@ -645,8 +638,12 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   const canvas = renderer.domElement;
-  canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:10005;image-rendering:pixelated";
-  container.appendChild(canvas);
+  if (!canvas.parentElement || canvas.parentElement !== container) {
+    canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:10005;image-rendering:pixelated";
+    container.appendChild(canvas);
+  } else {
+    canvas.style.zIndex = "10005";
+  }
 
   const camera = createDungeonCamera();
   // Module-level, so a second visit must not inherit the last one. Picks 1
@@ -940,8 +937,13 @@ export function closeTavern(): void {
   pixelPass?.dispose();
 
   tavern.player?.sprite.mesh.removeFromParent();
-  tavern.renderer?.domElement.remove();
-  tavern.renderer?.dispose();
+  if (!isSharedRenderer) {
+    tavern.renderer?.domElement.remove();
+    tavern.renderer?.dispose();
+  } else if (tavern.renderer) {
+    tavern.renderer.domElement.style.zIndex = "10000";
+  }
+  isSharedRenderer = false;
 
   hideDungeonHud(false);
   stopTavernAmbience();

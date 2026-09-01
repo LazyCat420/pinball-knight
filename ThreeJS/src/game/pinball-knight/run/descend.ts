@@ -282,6 +282,10 @@ export function descend(): void {
 
   // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
   const toTavern = (): void => {
+    if (state.animFrameId !== null) {
+      cancelAnimationFrame(state.animFrameId);
+      state.animFrameId = null;
+    }
     if (!state.container) {
       runDeps().startLevel(nextLevel);
       showPickupNote(gradeLine);

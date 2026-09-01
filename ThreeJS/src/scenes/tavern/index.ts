@@ -32,6 +32,8 @@ export interface OpenTavernOptions {
    * Between-floor taverns pass this falsy so they stay a quick, solo shop.
    */
   lobby?: boolean;
+  /** Shared WebGPURenderer instance (e.g. from dungeon boot). */
+  renderer?: any;
 }
 
 /**

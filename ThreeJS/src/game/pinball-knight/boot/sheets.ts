@@ -366,9 +366,8 @@ export function buildMonsterSheets(): void {
   state.sheets.zombie = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
   startBackfill();
-  // Load both knight and monster imported art on startup
+  // Load knight imported art on startup
   void loadImportedKnightArt();
-  void applyImportedMonsterArt();
 }
 
 /**
@@ -483,36 +482,44 @@ export async function applyImportedArt(): Promise<void> {
   await applyImportedMonsterArt();
 }
 
+let applyingMonsters = false;
+let appliedMonsters = false;
+
+export function resetImportedMonsterArtForTest(): void {
+  applyingMonsters = false;
+  appliedMonsters = false;
+}
+
 /** The expensive half — see the note above for why it is the caller's to time. */
 export async function applyImportedMonsterArt(): Promise<void> {
-  if (!importedArtEnabled()) return;
-  for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
-    const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
-      (s): s is ImportedSheet => s !== null,
-    );
-    if (!loaded.length) continue;
-    const paints = importedPaints(loaded);
-    if (!paints) continue;
-    imported.set(key, paints);
-    const pal = sheetPalette(loaded);
-    if (pal) importedPalettes.set(key, pal);
-    _clearPortraitCache();
-    // COVERAGE AGAINST THE BUILD SPEC, not just "it loaded".
-    //
-    // The old line said how many sheets arrived and which facings, which reads
-    // as success for any number above zero — the brute logged "1 sheet(s) [S]"
-    // and that was the whole report on a creature carrying 3 of 18 rows. What
-    // is missing is the actionable half: no death row, no E, no N. Now the log
-    // names it, so the next person to look at the console learns what the
-    // creature still owes instead of that it exists.
-    const cov = sheetCoverage(loaded.map((s) => s.manifest));
-    console.info(
-      `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
-        `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}\n` +
-        `           coverage: ${cov.summary}` +
-        (cov.clips.missing.length ? ` (${cov.clips.missing.join("/")} fall through to the painter)` : ""),
-    );
-    rebuild(key);
+  if (!importedArtEnabled() || applyingMonsters || appliedMonsters) return;
+  applyingMonsters = true;
+  try {
+    for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
+      const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
+        (s): s is ImportedSheet => s !== null,
+      );
+      if (!loaded.length) continue;
+      const paints = importedPaints(loaded);
+      if (!paints) continue;
+      imported.set(key, paints);
+      const pal = sheetPalette(loaded);
+      if (pal) importedPalettes.set(key, pal);
+      _clearPortraitCache();
+      const cov = sheetCoverage(loaded.map((s) => s.manifest));
+      console.info(
+        `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
+          `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}\n` +
+          `           coverage: ${cov.summary}` +
+          (cov.clips.missing.length ? ` (${cov.clips.missing.join("/")} fall through to the painter)` : ""),
+      );
+      rebuild(key);
+      // Yield to frame loop between monster rebuilds
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    appliedMonsters = true;
+  } finally {
+    applyingMonsters = false;
   }
 }
 

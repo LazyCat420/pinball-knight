@@ -15,16 +15,28 @@ import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import { push, pop, clearScreens } from "../../game/pinball-knight/gui/stack";
 import { characterSelectScreen } from "../../game/pinball-knight/gui/screens/character-select";
 import { beginUi, emptyUiInput } from "../../game/pinball-knight/gui/im";
-import { isPanelOpen } from "./core";
+import { isPanelOpen, openTavernScene, closeTavern, isTavernSceneOpen } from "./core";
+import { installSpriteTestDom } from "../../game/pinball-knight/testkit/atlas-census";
 
 const realDoc = (globalThis as { document?: unknown }).document;
 const realStorage = (globalThis as { localStorage?: unknown }).localStorage;
+const realWin = (globalThis as { window?: unknown }).window;
 
 let store: Record<string, string> = {};
 
-function ensureDocAndStorage(): void {
+function ensureTestDom(): void {
   (globalThis as { document?: unknown }).document = {
-    createElement: (t: string) => (t === "canvas" ? createCanvas(1, 1) : {}),
+    createElement: (t: string) => {
+      const el = t === "canvas" ? (createCanvas(1, 1) as unknown as HTMLElement) : ({} as HTMLElement);
+      (el as unknown as { style: Record<string, string> }).style = (el as unknown as { style: Record<string, string> }).style || {};
+      (el as unknown as { appendChild: () => void }).appendChild = () => {};
+      (el as unknown as { remove: () => void }).remove = () => {};
+      (el as unknown as { replaceChildren: () => void }).replaceChildren = () => {};
+      return el;
+    },
+    getElementById: () => null,
+    body: { appendChild: () => {} },
+    head: { appendChild: () => {} },
   };
   (globalThis as { localStorage?: unknown }).localStorage = {
     getItem: (k: string) => store[k] ?? null,
@@ -38,21 +50,38 @@ function ensureDocAndStorage(): void {
       store = {};
     },
   };
+  (globalThis as { window?: unknown }).window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    setTimeout: (fn: () => void) => {
+      fn();
+      return 0;
+    },
+    clearTimeout: () => {},
+    innerWidth: 1920,
+    innerHeight: 1080,
+    location: { search: "" },
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+  };
+  (globalThis as unknown as { requestAnimationFrame: unknown }).requestAnimationFrame = () => 1;
+  (globalThis as unknown as { cancelAnimationFrame: unknown }).cancelAnimationFrame = () => {};
 }
 
 beforeAll(() => {
-  ensureDocAndStorage();
+  ensureTestDom();
 });
 
 afterAll(() => {
   (globalThis as { document?: unknown }).document = realDoc;
   (globalThis as { localStorage?: unknown }).localStorage = realStorage;
+  (globalThis as { window?: unknown }).window = realWin;
 });
 
 describe("tavern character select and sprite update", () => {
   beforeEach(() => {
     store = {};
-    ensureDocAndStorage();
+    ensureTestDom();
     resetTavernState();
     disposeTavernPlayer();
     clearScreens();
@@ -194,5 +223,52 @@ describe("tavern character select and sprite update", () => {
     // Wait for switchPlayerSheet promise
     await new Promise((r) => setTimeout(r, 20));
     expect(playerSheetName()).toBe("mario");
+  });
+
+  it("handles shared renderer lifecycle without disposing shared renderer", () => {
+    let disposed = false;
+    let removed = false;
+    const mockRenderer = {
+      domElement: {
+        style: { cssText: "", zIndex: "10000" },
+        remove: () => {
+          removed = true;
+        },
+        parentElement: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+      shadowMap: { enabled: false, type: 0 },
+      toneMapping: 0,
+      setPixelRatio: () => {},
+      dispose: () => {
+        disposed = true;
+      },
+      init: () => Promise.resolve(),
+      render: () => {},
+      setSize: () => {},
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      clear: () => {},
+    } as unknown as THREE.WebGLRenderer;
+
+    const container = {
+      appendChild: () => {},
+    } as unknown as HTMLElement;
+
+    const opened = openTavernScene(container, {
+      stats: { grade: "A", floor: 1, kills: 10, bestCombo: 5 },
+      onDescend: () => {},
+      renderer: mockRenderer as any,
+    });
+
+    expect(opened).toBe(true);
+    expect(isTavernSceneOpen()).toBe(true);
+
+    closeTavern();
+    expect(isTavernSceneOpen()).toBe(false);
+    expect(disposed).toBe(false);
+    expect(removed).toBe(false);
+    expect(mockRenderer.domElement.style.zIndex).toBe("10000");
   });
 });
