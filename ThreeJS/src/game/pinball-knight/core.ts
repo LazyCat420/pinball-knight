@@ -357,18 +357,13 @@ export function launchDungeonGame(onExit?: () => void): void {
     return "run started";
   };
   if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("autostart") === "1") {
-    // One frame later: enterTavern below has to finish building the lobby
-    // before we tear it down, or its teardown runs against a half-built scene.
     requestAnimationFrame(() => {
       closeTavern();
       beginRun();
     });
   }
-  // Title sequence, then the lobby and its character prompt — run/lobby.ts.
-  // `!` — narrowing is lost in the callback.
   runPinballIntro(() => openLobby(state.container!, { onDescend: beginRun, onAbandon: () => exitDungeonGame() }));
 }
-
 
 /**
  * ── ENTERING A FLOOR ───────────────────────────────────────────────────────
@@ -417,12 +412,8 @@ function startLevel(level: number): void {
   void warmFloorPipelines(load).finally(() => {
     load.close();
     releaseFloorLoad(load);
-    // The loop has been idle for several seconds; without this the next frame
-    // would carry a multi-second delta into the fixed-step accumulator.
     state.lastTime = performance.now();
-    if (state.animFrameId === null && state.active) {
-      state.animFrameId = requestAnimationFrame(loop);
-    }
+    if (state.animFrameId === null && state.active) state.animFrameId = requestAnimationFrame(loop);
   });
 }
 
