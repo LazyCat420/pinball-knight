@@ -3668,7 +3668,7 @@ function reaperFrame(dir: Dir, pose: RPose): FramePaint {
     const flip = dir === "E" ? -1 : 1; // profile carries the scythe on the far side
 
     // Scythe first, BEHIND the robe — only the haft is occluded, and the
-    // crescent riding clear above the hood is the read we want.
+// crescent riding clear above the hood is the read we want.
     if (!pose.dead) reaperScythe(ctx, pose.bob, pose.sway, flip);
 
     // ── ROBE — a tall column that flares from a narrow cowl to a wide hem.
@@ -3769,17 +3769,50 @@ export function makeReaperPaints(): ActorPaints {
 // Drawn small and HIGH in the cel (it flies; the mesh hovers too).
 // ══════════════════════════════════════════════════════════════════
 
-/** One bat frame. `flap` -1 (wings down) .. 1 (wings up). */
-function batFrame(dir: Dir, flap: number, dead = false): FramePaint {
+/** One bat frame. `flap` -1 (wings down) .. 1 (wings up). `deathStage` 0..3 */
+function batFrame(dir: Dir, flap: number, deathStage?: number): FramePaint {
   return (ctx) => {
-    if (dead) {
-      // crumpled on the floor, one wing sticking up
-      groundShadow(ctx, 64, GROUND + 2, 14);
-      ellShaded(ctx, 64, GROUND - 6, 10, 6, R_LEATHER, 0.2);
-      poly(ctx, [[70, GROUND - 8], [84, GROUND - 26], [76, GROUND - 6]], F(26));
-      figDetail(ctx, [[58, GROUND - 8], [62, GROUND - 4]], 2, 1); // x eye
-      figDetail(ctx, [[62, GROUND - 8], [58, GROUND - 4]], 2, 1);
-      return;
+    if (deathStage !== undefined) {
+      if (deathStage === 0) {
+        // 0: Hit shock in air — wings splayed, eyes wide red glow
+        const cy = 58;
+        for (const side of [-1, 1]) {
+          plateShaded(ctx, [[64 + side * 6, cy], [64 + side * 24, cy - 14], [64 + side * 12, cy + 8]], R_LEATHER, { rim: false });
+        }
+        ellShaded(ctx, 64, cy + 2, 9, 11, R_LEATHER);
+        figGlow(ctx, 60, cy - 2, 2.5, 13, 13);
+        figGlow(ctx, 68, cy - 2, 2.5, 13, 13);
+        return;
+      } else if (deathStage === 1) {
+        // 1: Tumbling drop — wings folding, tilting down
+        const cy = 76;
+        groundShadow(ctx, 64, GROUND + 2, 18);
+        ctx.save();
+        ctx.translate(64, cy);
+        ctx.rotate(0.5);
+        for (const side of [-1, 1]) {
+          plateShaded(ctx, [[side * 5, 0], [side * 18, -4], [side * 8, 8]], R_LEATHER, { rim: false });
+        }
+        ellShaded(ctx, 0, 0, 9, 11, R_LEATHER);
+        ctx.restore();
+        return;
+      } else if (deathStage === 2) {
+        // 2: Ground impact — wings hitting floor
+        groundShadow(ctx, 64, GROUND + 2, 16);
+        ellShaded(ctx, 64, GROUND - 10, 11, 7, R_LEATHER, 0.2);
+        poly(ctx, [[70, GROUND - 10], [84, GROUND - 20], [76, GROUND - 8]], F(26));
+        figDetail(ctx, [[58, GROUND - 11], [62, GROUND - 7]], 2, 1);
+        figDetail(ctx, [[62, GROUND - 11], [58, GROUND - 7]], 2, 1);
+        return;
+      } else {
+        // 3: Flat crumpled corpse on the floor
+        groundShadow(ctx, 64, GROUND + 2, 14);
+        ellShaded(ctx, 64, GROUND - 6, 10, 6, R_LEATHER, 0.2);
+        poly(ctx, [[70, GROUND - 8], [84, GROUND - 26], [76, GROUND - 6]], F(26));
+        figDetail(ctx, [[58, GROUND - 8], [62, GROUND - 4]], 2, 1); // x eye
+        figDetail(ctx, [[62, GROUND - 8], [58, GROUND - 4]], 2, 1);
+        return;
+      }
     }
     const cy = 56; // flies high in the cel
     const wingY = cy - flap * 10; // wingtip height swings with the flap
@@ -3813,7 +3846,7 @@ export function makeBatPaints(): ActorPaints {
   const dirClips = (dir: Dir) => ({
     idle: [batFrame(dir, 0.6), batFrame(dir, -0.6)],
     walk: [batFrame(dir, 1), batFrame(dir, -1)], // full-power flap in flight
-    death: [batFrame(dir, 0.2), batFrame(dir, 0, true), batFrame(dir, 0, true), batFrame(dir, 0, true)],
+    death: [batFrame(dir, 0, 0), batFrame(dir, 0, 1), batFrame(dir, 0, 2), batFrame(dir, 0, 3)],
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
 }
@@ -3858,17 +3891,25 @@ export function makeSlimePaints(): ActorPaints {
   const dirClips = (dir: Dir) => ({
     idle: [slimeFrame(dir, -0.2), slimeFrame(dir, 0.25)],
     // the scoot: gather tall → spring flat → settle — a 4-beat squash cycle
-    walk: [slimeFrame(dir, -1), slimeFrame(dir, -0.2), slimeFrame(dir, 1), slimeFrame(dir, 0.3)],
-    death: [slimeFrame(dir, 0.6, 0.15), slimeFrame(dir, 0.8, 0.4), slimeFrame(dir, 1, 0.7), slimeFrame(dir, 1, 1)],
+    walk: [
+      slimeFrame(dir, -0.6), // 0: gather tall before the jump
+      slimeFrame(dir, 0.8),  // 1: squash flat as it springs forward
+      slimeFrame(dir, -0.1), // 2: glide mid-air
+      slimeFrame(dir, 0.4),  // 3: land and settle
+    ],
+    // melt on death: spreading into a wider, flatter puddle over 4 frames
+    death: [
+      slimeFrame(dir, 0.6, 0.15),
+      slimeFrame(dir, 0.8, 0.4),
+      slimeFrame(dir, 1.0, 0.7),
+      slimeFrame(dir, 1.0, 1.0),
+    ],
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
 }
 
 // ══════════════════════════════════════════════════════════════════
-// WAVE-B BESPOKE ART — the six pinball-reactive monsters get their own
-// silhouettes (they shipped as tinted reskins first). Same idle/walk/
-// death frame contract as the slime; the webspinner (ranged) also gets
-// an attack rear-back so its telegraph reads.
+// BUMPER GOBLIN, BRICK GOLEM, BOWLING PIN, CHOMPER, MAGNET, WEBSPINNER
 // ══════════════════════════════════════════════════════════════════
 
 const R_GOBLIN: Ramp = [15, 16, 17]; // warm rubber amber
@@ -3878,16 +3919,52 @@ const R_PLANT: Ramp = [7, 8, 9]; // rot-green stalk
 const R_SILK: Ramp = [4, 21, 22]; // pale spider
 
 /** BUMPER GOBLIN — a round rubbery amber imp; squash-stretch bounce. */
-function goblinFrame(dir: Dir, squash: number, dead = false): FramePaint {
+function goblinFrame(dir: Dir, squash: number, deathStage?: number): FramePaint {
   return (ctx) => {
-    if (dead) {
-      groundShadow(ctx, 64, GROUND + 2, 20);
-      ellShaded(ctx, 64, GROUND - 6, 21, 8, R_GOBLIN); // splatted flat
-      figDetail(ctx, [[53, GROUND - 9], [59, GROUND - 4]], 2, 1);
-      figDetail(ctx, [[59, GROUND - 9], [53, GROUND - 4]], 2, 1);
-      figDetail(ctx, [[69, GROUND - 9], [75, GROUND - 4]], 2, 1);
-      figDetail(ctx, [[75, GROUND - 9], [69, GROUND - 4]], 2, 1);
-      return;
+    if (deathStage !== undefined) {
+      if (deathStage === 0) {
+        // 0: Hit stagger — tilted back, mouth gaping, eyes startled
+        const cy = GROUND - 18;
+        groundShadow(ctx, 64, GROUND + 2, 16);
+        for (const s of [-1, 1]) limbShaded(ctx, [64 + s * 8, cy + 8], [64 + s * 12, GROUND], 4, R_GOBLIN);
+        ellShaded(ctx, 62, cy, 22, 18, R_GOBLIN);
+        for (const s of [-1, 1]) limbShaded(ctx, [62 + s * 14, cy - 4], [62 + s * 22, cy - 10], 4, R_GOBLIN);
+        figDetail(ctx, [[58, cy - 4], [62, cy]], 2, 1);
+        figDetail(ctx, [[62, cy - 4], [58, cy]], 2, 1);
+        figDetail(ctx, [[68, cy - 4], [72, cy]], 2, 1);
+        figDetail(ctx, [[72, cy - 4], [68, cy]], 2, 1);
+        return;
+      } else if (deathStage === 1) {
+        // 1: Knee drop / flinch down
+        const cy = GROUND - 13;
+        groundShadow(ctx, 64, GROUND + 2, 18);
+        for (const s of [-1, 1]) limbShaded(ctx, [64 + s * 10, cy + 6], [64 + s * 14, GROUND - 2], 4, R_GOBLIN);
+        ellShaded(ctx, 64, cy, 24, 15, R_GOBLIN);
+        for (const s of [-1, 1]) limbShaded(ctx, [64 + s * 16, cy], [64 + s * 22, cy + 4], 4, R_GOBLIN);
+        figDetail(ctx, [[56, cy - 3], [60, cy + 1]], 2, 1);
+        figDetail(ctx, [[60, cy - 3], [56, cy + 1]], 2, 1);
+        figDetail(ctx, [[68, cy - 3], [72, cy + 1]], 2, 1);
+        figDetail(ctx, [[72, cy - 3], [68, cy + 1]], 2, 1);
+        return;
+      } else if (deathStage === 2) {
+        // 2: Faceplant / impact flattening
+        groundShadow(ctx, 64, GROUND + 2, 20);
+        ellShaded(ctx, 64, GROUND - 8, 23, 11, R_GOBLIN);
+        figDetail(ctx, [[54, GROUND - 11], [60, GROUND - 6]], 2, 1);
+        figDetail(ctx, [[60, GROUND - 11], [54, GROUND - 6]], 2, 1);
+        figDetail(ctx, [[68, GROUND - 11], [74, GROUND - 6]], 2, 1);
+        figDetail(ctx, [[74, GROUND - 11], [68, GROUND - 6]], 2, 1);
+        return;
+      } else {
+        // 3: Flat collapsed corpse
+        groundShadow(ctx, 64, GROUND + 2, 20);
+        ellShaded(ctx, 64, GROUND - 6, 21, 8, R_GOBLIN); // splatted flat
+        figDetail(ctx, [[53, GROUND - 9], [59, GROUND - 4]], 2, 1);
+        figDetail(ctx, [[59, GROUND - 9], [53, GROUND - 4]], 2, 1);
+        figDetail(ctx, [[69, GROUND - 9], [75, GROUND - 4]], 2, 1);
+        figDetail(ctx, [[75, GROUND - 9], [69, GROUND - 4]], 2, 1);
+        return;
+      }
     }
     const w = 20 + squash * 5;
     const h = 22 - squash * 5;
@@ -3917,20 +3994,29 @@ export function makeGoblinPaints(): ActorPaints {
   const dc = (dir: Dir) => ({
     idle: [goblinFrame(dir, -0.15), goblinFrame(dir, 0.2)],
     walk: [goblinFrame(dir, -0.8), goblinFrame(dir, 0.1), goblinFrame(dir, 0.8), goblinFrame(dir, 0.1)],
-    death: [goblinFrame(dir, 0.4), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true)],
+    death: [goblinFrame(dir, 0, 0), goblinFrame(dir, 0, 1), goblinFrame(dir, 0, 2), goblinFrame(dir, 0, 3)],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
 
 /** BOWLING PIN — tall cream pin with red neck stripes; wobble + topple. */
-function pinFrame(dir: Dir, lean: number, dead = false): FramePaint {
+function pinFrame(dir: Dir, lean: number, deathStage?: number): FramePaint {
   return (ctx) => {
-    if (dead) {
-      groundShadow(ctx, 64, GROUND + 2, 22);
+    if (deathStage !== undefined) {
+      const angle = deathStage === 0 ? 0.35 : deathStage === 1 ? 0.75 : deathStage === 2 ? 1.1 : 1.3;
+      const cy = deathStage === 3 ? GROUND - 6 : GROUND;
+      groundShadow(ctx, 64, GROUND + 2, 12 + deathStage * 3);
       ctx.save();
-      ctx.translate(64, GROUND - 6);
-      ctx.rotate(1.3); // toppled on its side
-      ellShaded(ctx, 0, 0, 9, 26, R_PIN);
+      ctx.translate(64, cy);
+      ctx.rotate(angle);
+      if (deathStage === 3) {
+        ellShaded(ctx, 0, 0, 9, 26, R_PIN);
+      } else {
+        plateShaded(ctx, [[-9, 0], [9, 0], [7, -18], [4, -26], [5, -34], [-5, -34], [-4, -26], [-7, -18]], R_PIN);
+        ellShaded(ctx, 0, -38, 6, 7, R_PIN);
+        line(ctx, [[-6, -30], [6, -30]], 3, F(12));
+        line(ctx, [[-7, -25], [7, -25]], 3, F(12));
+      }
       ctx.restore();
       return;
     }
@@ -3951,7 +4037,7 @@ export function makePinPaints(): ActorPaints {
   const dc = (dir: Dir) => ({
     idle: [pinFrame(dir, -0.3), pinFrame(dir, 0.3)],
     walk: [pinFrame(dir, -1), pinFrame(dir, 1)],
-    death: [pinFrame(dir, 1.4), pinFrame(dir, 0, true), pinFrame(dir, 0, true), pinFrame(dir, 0, true)],
+    death: [pinFrame(dir, 0, 0), pinFrame(dir, 0, 1), pinFrame(dir, 0, 2), pinFrame(dir, 0, 3)],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
@@ -3996,23 +4082,36 @@ export function makeGolemPaints(): ActorPaints {
 }
 
 /** CHOMPER PLANT — a rooted stalk topped by a toothy maw that snaps. */
-function chomperFrame(dir: Dir, open: number, dead = false): FramePaint {
+function chomperFrame(dir: Dir, open: number, deathStage?: number): FramePaint {
   return (ctx) => {
     groundShadow(ctx, 64, GROUND + 2, 18);
-    if (dead) {
-      // wilted — the head flops over the base
-      limbShaded(ctx, [64, GROUND], [58, GROUND - 12], 8, R_PLANT);
-      ellShaded(ctx, 54, GROUND - 14, 12, 8, R_PLANT);
-      return;
+    if (deathStage !== undefined) {
+      if (deathStage === 0) {
+        // 0: Maw snaps shut hard, stalk shuddering
+        plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_LEATHER);
+        limbShaded(ctx, [64, GROUND - 10], [62, GROUND - 32], 7, R_PLANT);
+        plateShaded(ctx, [[54, GROUND - 40], [74, GROUND - 40], [68, GROUND - 30], [60, GROUND - 30]], R_PLANT);
+        return;
+      } else if (deathStage === 1) {
+        // 1: Stalk bending 45 deg, drooping
+        plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_LEATHER);
+        limbShaded(ctx, [64, GROUND - 10], [58, GROUND - 24], 7, R_PLANT);
+        ellShaded(ctx, 52, GROUND - 26, 14, 9, R_PLANT, -0.4);
+        return;
+      } else if (deathStage === 2) {
+        // 2: Head striking ground
+        plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_LEATHER);
+        limbShaded(ctx, [64, GROUND - 8], [56, GROUND - 14], 8, R_PLANT);
+        ellShaded(ctx, 50, GROUND - 16, 13, 8, R_PLANT, -0.2);
+        return;
+      } else {
+        // 3: Wilted flat corpse
+        limbShaded(ctx, [64, GROUND], [58, GROUND - 12], 8, R_PLANT);
+        ellShaded(ctx, 54, GROUND - 14, 12, 8, R_PLANT);
+        return;
+      }
     }
     // Pot/root base, in LEATHER rather than the plant ramp (2026-07-31).
-    //
-    // The whole creature used to be one green family — pot, stalk, leaves and
-    // both jaws — so at the shipped 63px grid it crushed to a single green blob
-    // and the roster census scored it the noisiest actor in the game (isolated
-    // 38.3%, 17 invented). One material cannot separate a form; a second one
-    // can. Terracotta is also the reading that makes a rooted monster make
-    // sense, so this costs nothing in fiction.
     plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_LEATHER);
     // stalk
     limbShaded(ctx, [64, GROUND - 10], [64, GROUND - 34], 7, R_PLANT);
@@ -4029,15 +4128,6 @@ function chomperFrame(dir: Dir, open: number, dead = false): FramePaint {
     // red gullet + white fangs when open
     if (open > 0.15) {
       ellShaded(ctx, 64, my, 9, jaw + 2, R_BLOOD, 0, { rim: false });
-      // THREE fangs per jaw at 3.2 units, not four at 1.6.
-      //
-      // The cel is 128 units and ships to a 63-texel grid, so a cel unit is
-      // ~0.49 texels: the old 1.6-unit fang was 0.78 of a texel — SUB-TEXEL,
-      // which cannot render as a tooth. It rendered as eight sources of
-      // confetti instead, and the census counted them (17 invented indices,
-      // the joint-worst on the roster). 3.2 units clears 1.5 texels, so a fang
-      // is a fang. Same lesson as `sprite-fidelity-is-ppu-not-filtering`:
-      // detail below the grid is not detail, it is noise.
       for (const fx of [57, 64, 71]) {
         figDetail(ctx, [[fx, my - jaw + 2], [fx, my - jaw + 7]], 3.2, 22);
         figDetail(ctx, [[fx, my + jaw - 2], [fx, my + jaw - 7]], 3.2, 22);
@@ -4051,21 +4141,26 @@ export function makeChomperPaints(): ActorPaints {
     idle: [chomperFrame(dir, 0.15), chomperFrame(dir, 0.32)],
     walk: [chomperFrame(dir, 0.1), chomperFrame(dir, 0.4)], // it's rooted; the maw just breathes
     attack: [chomperFrame(dir, 0.9), chomperFrame(dir, 1), chomperFrame(dir, 0.05)], // gape then SNAP
-    death: [chomperFrame(dir, 0.5), chomperFrame(dir, 0, true), chomperFrame(dir, 0, true), chomperFrame(dir, 0, true)],
+    death: [chomperFrame(dir, 0, 0), chomperFrame(dir, 0, 1), chomperFrame(dir, 0, 2), chomperFrame(dir, 0, 3)],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
 
 /** MAGNET CRAWLER — a horseshoe magnet on skittering legs, poles arcing. */
-function magnetFrame(dir: Dir, step: number, dead = false): FramePaint {
+function magnetFrame(dir: Dir, step: number, deathStage?: number): FramePaint {
   return (ctx) => {
-    if (dead) {
+    if (deathStage !== undefined) {
+      const angle = deathStage === 0 ? 0.2 : deathStage === 1 ? 0.45 : deathStage === 2 ? 0.65 : 0.8;
+      const cy = deathStage === 3 ? GROUND - 6 : 90 + deathStage * 3;
       groundShadow(ctx, 64, GROUND + 2, 16);
       ctx.save();
-      ctx.translate(64, GROUND - 6);
-      ctx.rotate(0.8);
-      // the horseshoe on its side
+      ctx.translate(64, cy);
+      ctx.rotate(angle);
       plateShaded(ctx, [[-14, -10], [-6, -10], [-6, 8], [6, 8], [6, -10], [14, -10], [14, 14], [-14, 14]], R_STEEL);
+      if (deathStage < 2) {
+        rrectShaded(ctx, -14, 6, 8, 8, 1, R_BLOOD);
+        rrectShaded(ctx, 6, 6, 8, 8, 1, [29, 30, 31]);
+      }
       ctx.restore();
       return;
     }
@@ -4098,7 +4193,7 @@ export function makeMagnetPaints(): ActorPaints {
   const dc = (dir: Dir) => ({
     idle: [magnetFrame(dir, 0.3), magnetFrame(dir, -0.3)],
     walk: [magnetFrame(dir, 1), magnetFrame(dir, -1)],
-    death: [magnetFrame(dir, 0.4), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true)],
+    death: [magnetFrame(dir, 0, 0), magnetFrame(dir, 0, 1), magnetFrame(dir, 0, 2), magnetFrame(dir, 0, 3)],
     // The SAPPER runs the ambusher policy on this sheet. Its whole tell is that
     // it never moved — so the spring out of that stillness is the only frame
     // the player gets, and it has to be a big one.
@@ -4109,13 +4204,42 @@ export function makeMagnetPaints(): ActorPaints {
 }
 
 /** WEB SPINNER — a bloated pale spider with a silk-sac abdomen. */
-function webspinnerFrame(dir: Dir, legPh: number, rear = 0, dead = false): FramePaint {
+function webspinnerFrame(dir: Dir, legPh: number, rear = 0, deathStage?: number): FramePaint {
   return (ctx) => {
-    if (dead) {
+    if (deathStage !== undefined) {
       groundShadow(ctx, 64, GROUND + 2, 18);
-      ellShaded(ctx, 64, GROUND - 5, 14, 7, R_SILK);
-      for (const s of [-1, 1]) for (let l = 0; l < 3; l++) figDetail(ctx, [[64, GROUND - 5], [64 + s * (12 + l * 4), GROUND - 2]], 1.6, 2);
-      return;
+      if (deathStage === 0) {
+        // 0: Hit shudder, legs curling upward
+        const cy = 92;
+        for (const s of [-1, 1]) {
+          for (let l = 0; l < 4; l++) {
+            figDetail(ctx, [[64, cy], [64 + s * (12 + l * 3), cy - 14], [64 + s * (16 + l * 4), cy - 6]], 2, 1);
+          }
+        }
+        ellShaded(ctx, 64, cy + 2, 16, 14, R_SILK);
+        ellShaded(ctx, 64, cy - 10, 10, 8, R_SILK);
+        return;
+      } else if (deathStage === 1) {
+        // 1: Body sinking, legs folding in
+        const cy = 97;
+        for (const s of [-1, 1]) {
+          for (let l = 0; l < 3; l++) {
+            figDetail(ctx, [[64, cy], [64 + s * (10 + l * 3), cy - 8], [64 + s * (14 + l * 3), GROUND]], 2, 1);
+          }
+        }
+        ellShaded(ctx, 64, cy, 15, 11, R_SILK);
+        return;
+      } else if (deathStage === 2) {
+        // 2: Flat impact, legs splaying out
+        ellShaded(ctx, 64, GROUND - 7, 15, 9, R_SILK);
+        for (const s of [-1, 1]) for (let l = 0; l < 3; l++) figDetail(ctx, [[64, GROUND - 7], [64 + s * (10 + l * 4), GROUND - 3]], 1.6, 2);
+        return;
+      } else {
+        // 3: Flat curled corpse
+        ellShaded(ctx, 64, GROUND - 5, 14, 7, R_SILK);
+        for (const s of [-1, 1]) for (let l = 0; l < 3; l++) figDetail(ctx, [[64, GROUND - 5], [64 + s * (12 + l * 4), GROUND - 2]], 1.6, 2);
+        return;
+      }
     }
     const cy = 92 - rear * 6;
     groundShadow(ctx, 64, GROUND + 2, 20);
@@ -4146,7 +4270,7 @@ export function makeWebspinnerPaints(): ActorPaints {
     idle: [webspinnerFrame(dir, 0), webspinnerFrame(dir, 1.6)],
     walk: [webspinnerFrame(dir, 0), webspinnerFrame(dir, 1.6), webspinnerFrame(dir, 3.1), webspinnerFrame(dir, 4.7)],
     attack: [webspinnerFrame(dir, 0, 0.5), webspinnerFrame(dir, 0, 1), webspinnerFrame(dir, 0, 0.2)], // rear back to spit silk
-    death: [webspinnerFrame(dir, 2, 0), webspinnerFrame(dir, 0, 0, true), webspinnerFrame(dir, 0, 0, true), webspinnerFrame(dir, 0, 0, true)],
+    death: [webspinnerFrame(dir, 0, 0, 0), webspinnerFrame(dir, 0, 0, 1), webspinnerFrame(dir, 0, 0, 2), webspinnerFrame(dir, 0, 0, 3)],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
