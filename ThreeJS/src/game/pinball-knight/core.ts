@@ -423,9 +423,6 @@ function startLevel(level: number): void {
   });
 }
 
-/** The live descent screen, or null when the game is not entering a floor. */
-/** While true the loop simulates and renders nothing — see startLevel. */
-
 function buildLevel(level: number): void {
   if (!state.scene) return;
 
