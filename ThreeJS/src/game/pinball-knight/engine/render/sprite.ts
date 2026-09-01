@@ -1509,6 +1509,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     // V is bottom-up in GL while the canvas paints top-down, so row 0 is the
     // TOP row of the image and must map to the highest offset.
     tex.offset.y = (rows - 1 - row) / rows;
+    tex.updateMatrix();
   }
 
   const api: ActorSprite = {

@@ -876,6 +876,7 @@ pub struct LiveMonster {
     pub kind_index: usize,
     pub last_hp: f64,
     pub flash_t: f32,
+    pub death_t: Option<f32>,
 }
 
 /// Spawns live dynamic monsters from the sim's active monster list.
@@ -930,6 +931,7 @@ pub fn spawn_live_horde(
                     kind_index,
                     last_hp: m.hp,
                     flash_t: 0.0,
+                    death_t: None,
                 },
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(monster_mat),

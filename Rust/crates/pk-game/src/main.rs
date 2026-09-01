@@ -157,6 +157,7 @@ pub struct SheetClips {
     pub roll: Vec<[f32; 4]>,
     /// The melee attack slash clip.
     pub attack: Vec<[f32; 4]>,
+    pub death: Vec<[f32; 4]>,
     pub aspect: f32, // cell w / h
 }
 
@@ -818,6 +819,7 @@ fn decode_sheet(
     let run = uv_cells("run");
     let roll = uv_cells("roll");
     let attack = uv_cells("attack");
+    let death = uv_cells("death");
     let first = idle
         .first()
         .or_else(|| walk.first())
@@ -853,6 +855,11 @@ fn decode_sheet(
                 walk.clone()
             } else {
                 attack
+            },
+            death: if death.is_empty() {
+                walk.clone()
+            } else {
+                death
             },
             walk,
             aspect,
@@ -1831,21 +1838,64 @@ fn step_live_monsters(
             continue;
         };
 
-        // If dead, despawn entity and spawn death gore + coins
+        // If dead, advance death animation and despawn only when complete
         if !sm.is_alive() {
-            bursts.write(fx::SparkBurst {
-                pos: tf.translation,
-                dir: Vec2::new(0.0, 1.0),
-                count: 16,
-            });
-            coins_render::spawn_coin_burst(
-                &mut coin_pool,
-                sm.x,
-                sm.z,
-                (sm.damage as i64 * 3).max(5),
-                sm.id,
-            );
-            commands.entity(entity).despawn();
+            let dt_val = comp.death_t.get_or_insert(0.0);
+            *dt_val += dt;
+            let death_t = *dt_val;
+
+            let clips = match comp.kind_index {
+                1 => monster_art.brute.as_ref().unwrap_or(&monster_art.zombie),
+                2 => monster_art.frog.as_ref().unwrap_or(&monster_art.zombie),
+                3 => monster_art.goblin.as_ref().unwrap_or(&monster_art.zombie),
+                4 => monster_art.jester.as_ref().unwrap_or(&monster_art.zombie),
+                5 => monster_art.reaper.as_ref().unwrap_or(&monster_art.zombie),
+                6 => monster_art.slime.as_ref().unwrap_or(&monster_art.zombie),
+                7 => monster_art.spider.as_ref().unwrap_or(&monster_art.zombie),
+                8 => monster_art
+                    .stiltneck
+                    .as_ref()
+                    .unwrap_or(&monster_art.zombie),
+                _ => &monster_art.zombie,
+            };
+
+            let death_cells = if !clips.death.is_empty() {
+                &clips.death
+            } else if !clips.idle.is_empty() {
+                &clips.idle
+            } else {
+                &clips.walk
+            };
+
+            let death_fps = 6.0f32;
+            let frame_idx = ((death_t * death_fps) as usize).min(death_cells.len().saturating_sub(1));
+
+            if !death_cells.is_empty() {
+                let [u, v, uw, vh] = death_cells[frame_idx];
+                if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                    mat.uv_transform = Affine2 {
+                        matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
+                        translation: Vec2::new(u, v),
+                    };
+                }
+            }
+
+            let max_death_duration = (death_cells.len() as f32 / death_fps) + 3.0; // hold corpse on frame 3 for 3s before despawn
+            if death_t >= max_death_duration {
+                bursts.write(fx::SparkBurst {
+                    pos: tf.translation,
+                    dir: Vec2::new(0.0, 1.0),
+                    count: 16,
+                });
+                coins_render::spawn_coin_burst(
+                    &mut coin_pool,
+                    sm.x,
+                    sm.z,
+                    (sm.damage as i64 * 3).max(5),
+                    sm.id,
+                );
+                commands.entity(entity).despawn();
+            }
             continue;
         }
 

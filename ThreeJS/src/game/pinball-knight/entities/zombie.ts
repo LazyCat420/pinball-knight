@@ -412,7 +412,7 @@ export function updateZombies(dt: number): void {
     }
     if (z.mode === "dead") {
       if (z.anim?.getClip?.() !== "death") {
-        z.anim?.play?.("death", { force: true });
+        z.anim?.play?.("death");
       }
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;

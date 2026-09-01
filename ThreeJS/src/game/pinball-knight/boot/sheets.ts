@@ -547,6 +547,7 @@ function rebuild(key: SheetKey): void {
   // borrowed kinds rather than serve them wrong.
   for (const z of state.zombies) {
     if (sheetKeyForKind(z.kind) !== key) continue;
+    if (z.mode === "dead") continue; // Never clobber a corpse or active death animation in progress
     if (KIND_SKIN[z.kind]?.tint !== undefined) {
       state.expansionSheets[z.kind]?.texture.dispose();
       delete state.expansionSheets[z.kind];
