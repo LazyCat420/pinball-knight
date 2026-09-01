@@ -122,4 +122,40 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
     killZombie(z);
     expect(z.anim.getFrameIdx()).toBe(2);
   });
+
+  it("never resets timer or sticks on frame 0 when hit repeatedly during the first 160ms of death", () => {
+    const sheet = sheetFor("goblin");
+    const z = makeZombie(sheet, 6, 6, 1, { kind: "goblin" });
+    state.zombies = [z];
+
+    killZombie(z);
+    expect(z.anim.getFrameIdx()).toBe(0);
+
+    // Simulate 60FPS ticks with rapid DoT / multi-hit triggers landing on every frame during the 0-160ms window
+    for (let t = 0; t < 12; t++) {
+      // Re-trigger kill and play death with force flag on every tick
+      z.anim.play("death", { force: true });
+      damageZombie(z, 10, 0, 1, 0);
+      updateZombies(0.016);
+      z.anim.update(0.016);
+    }
+
+    // Must have successfully advanced to Frame 1 (12 * 0.016s = 0.192s > 0.1667s)
+    expect(z.anim.getFrameIdx(), "Must advance past frame 0 to frame 1 despite rapid hit bombardment").toBe(1);
+
+    // Continue stepping to frame 2 and frame 3 with continual hit bombardment
+    for (let t = 0; t < 12; t++) {
+      z.anim.play("death", { force: true });
+      updateZombies(0.016);
+      z.anim.update(0.016);
+    }
+    expect(z.anim.getFrameIdx(), "Must advance to frame 2").toBe(2);
+
+    for (let t = 0; t < 12; t++) {
+      z.anim.play("death", { force: true });
+      updateZombies(0.016);
+      z.anim.update(0.016);
+    }
+    expect(z.anim.getFrameIdx(), "Must advance to frame 3").toBeGreaterThanOrEqual(3);
+  });
 });

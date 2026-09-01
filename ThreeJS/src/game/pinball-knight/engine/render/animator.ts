@@ -205,8 +205,9 @@ export class Animator {
   /** Switch clip. Re-playing the clip you're already in is a no-op (unless forced). */
   play(clip: ClipName, opts: { force?: boolean; onEnd?: () => void } = {}): void {
     if (this.clip === clip && !opts.force) return;
-    // Guard against interrupting or resetting a death animation already in progress or completed
-    if (this.clip === "death" && clip === "death" && (this.finished || this.frameIdx > 0)) {
+    // Guard against interrupting or resetting a death animation already in progress or completed.
+    // Once death begins, it is strictly terminal and non-reentrant.
+    if (this.clip === "death" && clip === "death") {
       return;
     }
     this.clip = clip;
