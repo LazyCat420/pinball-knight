@@ -23,7 +23,7 @@ import { startSpriteSheet } from "./sprite";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
 
 function mockSprite(paints: ReturnType<typeof makeGoblinPaints>) {
-  const build = startSpriteSheet(paints, 84, "monster");
+  const build = startSpriteSheet(paints);
   build.finish();
   const sheet = build.sheet;
   let currentFrame = 0;
@@ -80,7 +80,7 @@ describe("All Monsters 4-Stage Death Animation Progression", () => {
       expect(sDeathFrames!.length, `${name} must have at least 4 death frames`).toBeGreaterThanOrEqual(4);
 
       const anim = new Animator(sprite as any, { facing: "S" });
-      anim.play("death", { force: true });
+      anim.play("death");
       expect(anim.getFrameIdx()).toBe(0);
       expect(anim.isFinished()).toBe(false);
 

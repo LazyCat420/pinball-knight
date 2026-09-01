@@ -32,7 +32,9 @@ import { getPlayerName, setPlayerName, NAME_MAX } from "../../../../services/pla
 import { deadFace, FACE_PX } from "../../hud-face";
 import { UI, GRID, ROW_H } from "../theme";
 import { button, cutTop, drawIcon, fillRect, rect, scrim, strokeRect, text, textField } from "../im";
-import { pop, type UiScreen } from "../stack";
+import { loadUnlockedDepth } from "../../unlocked-depths";
+import { depthSelectScreen } from "./depth-select";
+import { push, pop, type UiScreen } from "../stack";
 
 /**
  * The portrait's plate: the mugshot's own 72px grid plus the 4px margin the HUD
@@ -71,8 +73,8 @@ const H = {
 export function gameOverScreen(opts: {
   /** Back to the hub with an empty pack — the kit is on the floor above. */
   onTavern: () => void;
-  /** Straight back down to the floor you died on, where your pile is. */
-  onRetry: () => void;
+  /** Straight back down to the floor you died on, or a chosen unlocked floor. */
+  onRetry: (floor?: number) => void;
   onExit: () => void;
   droppedCount?: number;
 }): UiScreen {
@@ -97,7 +99,7 @@ export function gameOverScreen(opts: {
     // halves. Trim padding first. `game-over.test.ts` fails either way.
     design: { w: 600, h: 338, max: 2 },
     // Death is not dismissable. Esc must not drop you back into a dungeon you
-    // are dead in — the three buttons are the only ways out.
+    // are dead in — the buttons are the only ways out.
     onCancel: () => true,
     paint(f, self) {
       scrim(f);
@@ -187,25 +189,57 @@ export function gameOverScreen(opts: {
       });
 
       cutTop(col, H.gap);
-      // THREE ways out, laid in one row. RETRY MAZE is the same reset minus the
-      // hub: the floor is regenerated from the run seed, so it is a fresh maze
-      // at the same depth — a retry, not a rewind.
       const buttons = cutTop(col, H.buttons);
-      const bw = Math.floor((buttons.w - 16) / 3);
-      if (button(f, rect(buttons.x, buttons.y, bw, ROW_H), "TAVERN", { good: true })) {
-        pop();
-        opts.onTavern();
-        return;
-      }
-      if (button(f, rect(buttons.x + bw + 8, buttons.y, bw, ROW_H), "RETRY MAZE")) {
-        pop();
-        opts.onRetry();
-        return;
-      }
-      if (button(f, rect(buttons.x + (bw + 8) * 2, buttons.y, bw, ROW_H), "EXIT GAME", { danger: true })) {
-        pop();
-        opts.onExit();
-        return;
+      const unlocked = loadUnlockedDepth();
+      const hasMultiple = unlocked > 1;
+
+      if (hasMultiple) {
+        // Four buttons: TAVERN, DEPTHS, RETRY, EXIT
+        const bw = Math.floor((buttons.w - 24) / 4);
+        if (button(f, rect(buttons.x, buttons.y, bw, ROW_H), "TAVERN", { good: true })) {
+          pop();
+          opts.onTavern();
+          return;
+        }
+        if (button(f, rect(buttons.x + bw + 8, buttons.y, bw, ROW_H), "DEPTHS")) {
+          push(
+            depthSelectScreen({
+              onSelect: (floor) => {
+                pop(); // close game-over screen
+                opts.onRetry(floor);
+              },
+            }),
+          );
+          return;
+        }
+        if (button(f, rect(buttons.x + (bw + 8) * 2, buttons.y, bw, ROW_H), "RETRY")) {
+          pop();
+          opts.onRetry();
+          return;
+        }
+        if (button(f, rect(buttons.x + (bw + 8) * 3, buttons.y, bw, ROW_H), "EXIT", { danger: true })) {
+          pop();
+          opts.onExit();
+          return;
+        }
+      } else {
+        // Three buttons: TAVERN, RETRY MAZE, EXIT GAME
+        const bw = Math.floor((buttons.w - 16) / 3);
+        if (button(f, rect(buttons.x, buttons.y, bw, ROW_H), "TAVERN", { good: true })) {
+          pop();
+          opts.onTavern();
+          return;
+        }
+        if (button(f, rect(buttons.x + bw + 8, buttons.y, bw, ROW_H), "RETRY MAZE")) {
+          pop();
+          opts.onRetry();
+          return;
+        }
+        if (button(f, rect(buttons.x + (bw + 8) * 2, buttons.y, bw, ROW_H), "EXIT GAME", { danger: true })) {
+          pop();
+          opts.onExit();
+          return;
+        }
       }
       self.focus = f.focus;
     },

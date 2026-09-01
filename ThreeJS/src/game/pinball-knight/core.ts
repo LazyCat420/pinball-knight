@@ -50,6 +50,7 @@ import { installScene } from "./boot/scene";
 import { installDevWiring, installGameplayWiring } from "./boot/wiring";
 import { setRunDeps } from "./run/deps";
 import { descend, descendInto, dropBossReward, adoptPoolSeedWhenItArrives } from "./run/descend";
+import { unlockDepth } from "./unlocked-depths";
 import { onPlayerDeath } from "./run/death";
 import { spawnReaper } from "./spawn/reaper";
 import { authorFloor } from "./spawn/floor-authoring";
@@ -438,6 +439,7 @@ function buildLevel(level: number): void {
   resetJuice(); // a new floor never inherits the previous one's shake/freeze chain
 
   state.level = level;
+  unlockDepth(level);
   // Decide the floor — spawn/floor-authoring.ts. Everything up to here is
   // local; the commit below is where it becomes the world.
   const f = authorFloor(level);

@@ -96,6 +96,8 @@ export function dropBossReward(x: number, z: number): void {
   state.hudDirty = true;
 }
 
+import { unlockDepth } from "../unlocked-depths";
+
 /**
  * 🪜 THE ONE WAY DOWN from the tavern — used by the plunger, the join board and
  * the retry-after-death path alike.
@@ -115,6 +117,7 @@ export function dropBossReward(x: number, z: number): void {
  */
 export function descendInto(explicit?: number): number {
   const target = resolveDescendFloor(peers(), loadResumeFloor(), explicit);
+  unlockDepth(target);
   runDeps().startLevel(target); // startLevel adopts the shared pool seed (coopSeed) if connected
   initCoop(); // spin up dungeon-scene pool presence (no-op offline)
   grantDelveBoon(target);

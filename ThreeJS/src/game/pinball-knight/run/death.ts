@@ -172,15 +172,16 @@ export function onPlayerDeath(): void {
     // floor you died on, which is also where your pile is. The floor is
     // regenerated from the run seed, so this is a fresh maze at the same depth
     // — a "retry", not a rewind.
-    onRetry: () => {
+    onRetry: (targetFloor?: number) => {
       dismiss();
       resetKnightAfterDeath();
+      const floor = targetFloor ?? deathFloor;
       if (!state.container) {
-        runDeps().startLevel(deathFloor);
+        runDeps().startLevel(floor);
         return;
       }
-      runDeps().armFloorLoading(deathFloor, () => {
-        adoptPoolSeedWhenItArrives(descendInto(deathFloor));
+      runDeps().armFloorLoading(floor, () => {
+        adoptPoolSeedWhenItArrives(descendInto(floor));
       });
     },
     onExit: () => runDeps().exitDungeonGame(),

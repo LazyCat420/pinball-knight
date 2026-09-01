@@ -69,6 +69,8 @@ import { groupByFloor } from "./join-board";
 import { resolveDescendFloor } from "../../net/rally";
 import { loadBestDepth } from "../../game/pinball-knight/best-depth";
 import { loadResumeFloor } from "../../game/pinball-knight/corpse-run";
+import { loadUnlockedDepth } from "../../game/pinball-knight/unlocked-depths";
+import { depthSelectScreen } from "../../game/pinball-knight/gui/screens/depth-select";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
@@ -275,16 +277,24 @@ function interact(): void {
   prompt?.hide();
 
   if (s.action.kind === "descend") {
-    // Drop-in pool: descending is IMMEDIATE (no ready gate) and it is SHARED.
-    //
-    // The plunger passes NO destination on purpose. It used to send you to your
-    // own resume floor, which quietly split the pool: two players who entered
-    // one after the other landed on two depths, and same-scene relaying made
-    // those two private games. The dungeon resolves the target now
-    // (`descendInto` → net/rally.ts): the floor the pool is on, or your resume
-    // floor when nobody is down there yet. Only a join-board row names a floor.
-    sfxPlunger();
+    const unlocked = loadUnlockedDepth();
     const go = tavern.onDescend;
+    if (unlocked > 1) {
+      pushUiScreen(
+        depthSelectScreen({
+          onSelect: (floor) => {
+            sfxPlunger();
+            closeTavern();
+            go?.(floor);
+          },
+          onCancel: () => {
+            tavern.openStation = null;
+          },
+        }),
+      );
+      return;
+    }
+    sfxPlunger();
     closeTavern();
     go?.(undefined);
     return;
