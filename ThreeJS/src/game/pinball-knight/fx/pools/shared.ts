@@ -38,3 +38,11 @@ export const C_BLOOD_G = [linColor(0x5f8a4f), linColor(0x3d5c3a), linColor(0x8fc
 export const C_BLOOD_R = [linColor(0xa83244), linColor(0x6b1f2a), linColor(0xd95763)];
 /** stone light — floor dust. */
 export const C_DUST = linColor(0x6b7688);
+/** emerald / gold healing motes. */
+export const C_HEAL = [linColor(0x8fd46b), linColor(0xbfe8ff), linColor(0xfff3c8)];
+/** wood splinters. */
+export const C_WOOD = [linColor(0x6b4a2e), linColor(0x8a623e), linColor(0xb58a5f)];
+/** gold coin / greed sparkle. */
+export const C_GOLD = [linColor(0xffd98a), linColor(0xf0a63c), linColor(0xfff3c8)];
+/** venom / poison drips. */
+export const C_POISON = [linColor(0xa83fd0), linColor(0x733299), linColor(0x5f8a4f)];
