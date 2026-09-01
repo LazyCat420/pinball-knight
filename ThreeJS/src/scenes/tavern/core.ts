@@ -203,6 +203,11 @@ let diorama: DioramaState = { lit: 0, ballSpeed: 0 };
 /** Diorama ball angle. Integrated, not derived from the clock, so a change of
  * speed never teleports the ball across the playfield. */
 let ballAngle = 0;
+let dirLight: THREE.DirectionalLight | null = null;
+let shadowFrameCounter = 0;
+let lobbySyncTimer = 0;
+let cachedBestDepth = 0;
+let cachedResumeFloor = 0;
 
 /**
  * Show/hide the dungeon's bottom HUD.
@@ -393,16 +398,19 @@ function frame(now: number): void {
     // between-floor shop tavern; no-ops anyway when the backend isn't reachable.
     if (isLobby) {
       updateTavernPool(dt, p.x, p.z, p.facing);
-      lobbyHud?.update({
-        connected: isMultiplayerActive(),
-        count: poolOnlineCount(),
-        groups: groupByFloor(peers(), loadBestDepth()),
-        resumeFloor: loadResumeFloor(),
-        // Show where the plunger actually drops you — the pool's floor, not
-        // necessarily your own. Resolved with the SAME function the dungeon
-        // uses, so the board can never promise a different floor than you get.
-        descendFloor: resolveDescendFloor(peers(), loadResumeFloor()),
-      });
+      lobbySyncTimer -= dt;
+      if (lobbySyncTimer <= 0) {
+        lobbySyncTimer = 0.25;
+        cachedBestDepth = loadBestDepth();
+        cachedResumeFloor = loadResumeFloor();
+        lobbyHud?.update({
+          connected: isMultiplayerActive(),
+          count: poolOnlineCount(),
+          groups: groupByFloor(peers(), cachedBestDepth),
+          resumeFloor: cachedResumeFloor,
+          descendFloor: resolveDescendFloor(peers(), cachedResumeFloor),
+        });
+      }
     }
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
@@ -506,6 +514,10 @@ function frame(now: number): void {
       return;
     case "scene":
       if (tavern.scene && tavern.camera) {
+        shadowFrameCounter++;
+        if (dirLight && dirLight.shadow) {
+          dirLight.shadow.needsUpdate = shadowFrameCounter % 2 === 0;
+        }
         if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
         else tavern.renderer?.render(tavern.scene, tavern.camera);
         // Measurement boundary: stalls BEFORE this mark are covered by the
@@ -621,7 +633,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   tavern.renderer = renderer;
 
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   const canvas = renderer.domElement;
   canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:10005;image-rendering:pixelated";
   container.appendChild(canvas);
@@ -654,7 +666,12 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   const dir = new THREE.DirectionalLight(0xdccbb2, DIR_INTENSITY * 1.35);
   dir.position.set(-6, DIR_HEIGHT, -4);
   dir.castShadow = true;
-  dir.shadow.mapSize.set(1024, 1024);
+  dir.shadow.autoUpdate = false;
+  dir.shadow.needsUpdate = true;
+  dir.shadow.mapSize.set(512, 512);
+  dir.shadow.camera.near = 0.5;
+  dir.shadow.camera.far = DIR_HEIGHT * 2.5;
+  dirLight = dir;
   scene.add(ambient, hemi, dir);
 
   // Two soft fills over the halves of the room that no fixture reaches. The

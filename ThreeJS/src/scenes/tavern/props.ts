@@ -171,22 +171,23 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const emissive = (color: number, intensity = 1): THREE.MeshStandardMaterial =>
     mat(color, { emissive: color, emissiveIntensity: intensity, roughness: 0.4 });
 
-  const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = group): THREE.Mesh => {
+  const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = group, cast = (w >= 0.25 || h >= 0.25 || d >= 0.25)): THREE.Mesh => {
     const g = new THREE.BoxGeometry(w, h, d);
     geos.push(g);
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = cast;
+    mesh.receiveShadow = (w >= 0.3 || d >= 0.3);
     parent.add(mesh);
     return mesh;
   };
-  const cyl = (r: number, h: number, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = group): THREE.Mesh => {
+  const cyl = (r: number, h: number, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = group, cast = (r >= 0.15 || h >= 0.25)): THREE.Mesh => {
     const g = new THREE.CylinderGeometry(r, r, h, 10);
     geos.push(g);
     const mesh = new THREE.Mesh(g, m);
     mesh.position.set(x, y, z);
-    mesh.castShadow = true;
+    mesh.castShadow = cast;
+    mesh.receiveShadow = (r >= 0.15);
     parent.add(mesh);
     return mesh;
   };

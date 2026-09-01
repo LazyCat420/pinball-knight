@@ -76,15 +76,25 @@ export async function warmTavern({ renderer, scene, camera, pixelPass, vfx, acti
     }
   };
   try {
-    // Sequential, never concurrent: compileAsync saves and restores renderer
-    // state around itself, so two in flight clobber each other's context.
-    const units = warmUnits(scene);
-    for (const unit of units) {
-      // The scene target is MULTI-ATTACHMENT (lit + albedo). A material
-      // compiled with no target bound emits a one-output shader that Dawn
-      // later rejects against the two-attachment target — the compile must
-      // run inside the pass's render context. `withSceneContext` holds the
-      // context across the await (see its docblock), not just the call.
+    // Compile one representative unit per unique material signature to avoid
+    // redundant compiles of dozens of identical box/cylinder primitives.
+    const seenMats = new Set<string>();
+    const representativeUnits: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && mesh.material) {
+        const matKey = Array.isArray(mesh.material)
+          ? mesh.material.map((m) => m.uuid).join(",")
+          : mesh.material.uuid;
+        if (!seenMats.has(matKey)) {
+          seenMats.add(matKey);
+          representativeUnits.push(mesh);
+        }
+      }
+    });
+
+    for (const unit of representativeUnits.length ? representativeUnits : warmUnits(scene)) {
+      if (!active()) break;
       await pixelPass.withSceneContext(() => renderer.compileAsync(unit, camera, scene));
     }
     // ── RESTORE BEFORE THE WARM FRAMES, unlike the dungeon ──
