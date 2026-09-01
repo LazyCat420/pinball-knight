@@ -271,4 +271,46 @@ describe("tavern character select and sprite update", () => {
     expect(removed).toBe(false);
     expect(mockRenderer.domElement.style.zIndex).toBe("10000");
   });
+
+  it("handles pending shared renderer initialization cleanly without double init", async () => {
+    let initCalls = 0;
+    const mockRenderer = {
+      domElement: {
+        style: { cssText: "", zIndex: "10000" },
+        remove: () => {},
+        parentElement: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+      shadowMap: { enabled: false, type: 0 },
+      toneMapping: 0,
+      setPixelRatio: () => {},
+      dispose: () => {},
+      init: () => {
+        initCalls++;
+        return Promise.resolve();
+      },
+      render: () => {},
+      setSize: () => {},
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      clear: () => {},
+    } as unknown as THREE.WebGLRenderer;
+
+    const container = {
+      appendChild: () => {},
+    } as unknown as HTMLElement;
+
+    const opened = openTavernScene(container, {
+      stats: { grade: "S", floor: 2, kills: 20, bestCombo: 10 },
+      onDescend: () => {},
+      renderer: mockRenderer as any,
+    });
+
+    expect(opened).toBe(true);
+    expect(isTavernSceneOpen()).toBe(true);
+
+    closeTavern();
+    expect(isTavernSceneOpen()).toBe(false);
+  });
 });

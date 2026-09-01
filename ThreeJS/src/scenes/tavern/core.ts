@@ -25,7 +25,7 @@ import { openMenu } from "../../game/pinball-knight/gui/screens/menu";
 import { close as closeUiScreen, isOpen as uiIsOpen, remove as removeUiScreen } from "../../game/pinball-knight/gui/stack";
 import { mountHUDs } from "../../game/pinball-knight/hud";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
-import { isRendererReady } from "../../game/pinball-knight/boot/renderer";
+import { isRendererReady, whenRendererReady } from "../../game/pinball-knight/boot/renderer";
 import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import {
@@ -579,13 +579,126 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     }
   }
 
+  tavern.active = true;
+  tavern.container = container;
+  tavern.stats = opts.stats;
+  tavern.onDescend = opts.onDescend;
+  tavern.onAbandon = opts.onAbandon ?? null;
+  tavern.time = 0;
+  wasFrozen = false;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x07090d);
+  scene.fog = new THREE.Fog(0x141018, 28, 64);
+  tavern.scene = scene;
+  tavern.renderer = renderer;
+
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  const canvas = renderer.domElement;
+  if (!canvas.parentElement || canvas.parentElement !== container) {
+    canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:10005;image-rendering:pixelated";
+    container.appendChild(canvas);
+  } else {
+    canvas.style.zIndex = "10005";
+  }
+
+  const camera = createDungeonCamera();
+  tavern.camera = camera;
+  applyZoom();
+
+  const ambient = new THREE.AmbientLight(0x99a0b2, AMBIENT_INTENSITY * 3.2);
+  const hemi = new THREE.HemisphereLight(0xb2c0d6, 0x4a3324, HEMI_INTENSITY * 2.6);
+  const dir = new THREE.DirectionalLight(0xdccbb2, DIR_INTENSITY * 1.35);
+  dir.position.set(-6, DIR_HEIGHT, -4);
+  dir.castShadow = true;
+  dir.shadow.autoUpdate = false;
+  dir.shadow.needsUpdate = true;
+  dir.shadow.mapSize.set(512, 512);
+  dir.shadow.camera.near = 0.5;
+  dir.shadow.camera.far = DIR_HEIGHT * 2.5;
+  dirLight = dir;
+  scene.add(ambient, hemi, dir);
+
+  const fillSW = new THREE.PointLight(0xffb271, 3.4, 16, 2);
+  fillSW.position.set(-4.5, 3.6, 2.6);
+  const fillS = new THREE.PointLight(0xd9b48c, 2.8, 15, 2);
+  fillS.position.set(1.5, 3.6, 4.4);
+  scene.add(fillSW, fillS);
+
+  room = buildRoom(scene);
+  props = buildProps(scene);
+  fx = createStationFx(scene);
+  prompt = createStationPrompt(() =>
+    interactHint({ pad: input?.padConnected() ?? false, touch: touchControls !== null }),
+  );
+
+  resetGamblerVisit();
+  diorama = readDiorama(tavern.stats, props.bumpers.length);
+  ballAngle = 0;
+  vfx = createVfx(scene);
+  npcs = buildNpcs(scene);
+  props.syncViceCards();
+  tavern.player = createTavernPlayer(scene);
+  tavern.camX = tavern.player.x;
+  tavern.camZ = tavern.player.z;
+  aimCamera(camera, tavern.camX, 0, tavern.camZ);
+
+  input = createInput(canvas);
+  const forceTouch = typeof location !== "undefined" && /[?&]touch=1/.test(location.search);
+  if (forceTouch || isTouchDevice()) {
+    touchControls = installTouchControls(input.pad, () => pixelPass?.sizing() ?? null);
+  }
+  hideDungeonHud(true);
+  startTavernAmbience();
+
+  isLobby = !!opts.lobby;
+  if (isLobby) {
+    lobbyHud = createLobbyHud();
+    lobbyHud.onJoin((floor) => {
+      const go = tavern.onDescend;
+      sfxPlunger();
+      closeTavern();
+      go?.(floor);
+    });
+    initTavernPool(scene);
+  }
+
+  pixelPass = createPixelPass(renderer, {
+    quantize: QUANTIZE_DEFAULT,
+    dither: DITHER_DEFAULT,
+    scanline: SCANLINE_DEFAULT,
+    outline: OUTLINE_DEFAULT,
+    bloom: BLOOM_DEFAULT,
+    ao: AO_DEFAULT,
+    cel: CEL_DEFAULT,
+    uiTexture: uiTexture(),
+  });
+  syncSize(pixelPass.sizing());
+  installUiInput();
+  {
+    const renderScene = pixelPass.render.bind(pixelPass);
+    const pass = pixelPass;
+    pixelPass.render = (scene3, camera3) => {
+      drawUiFrame(pass);
+      renderScene(scene3, camera3);
+    };
+    const presentUiOnly = pixelPass.presentUi.bind(pixelPass);
+    pixelPass.presentUi = () => {
+      drawUiFrame(pass);
+      presentUiOnly();
+    };
+  }
+
   // Backend creation is async and render() throws before it resolves.
   // If sharing an already-initialized renderer, rendererReady is immediately true.
-  rendererReady = isSharedRenderer && isRendererReady();
+  rendererReady = isSharedRenderer ? isRendererReady() : false;
   if (!rendererReady) {
     showTavernBootNotice("loading");
     void openBackend({
-      init: () => tavernInitPromise(renderer),
+      init: isSharedRenderer
+        ? () => whenRendererReady()
+        : () => tavernInitPromise(renderer),
       warm: tavernWarmEnabled()
         ? () =>
             tavern.active && pixelPass && tavern.scene === scene && tavern.camera
@@ -611,174 +724,6 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     });
   } else {
     hideTavernBootNotice();
-  }
-
-  tavern.active = true;
-  tavern.container = container;
-  tavern.stats = opts.stats;
-  tavern.onDescend = opts.onDescend;
-  tavern.onAbandon = opts.onAbandon ?? null;
-  tavern.time = 0;
-  wasFrozen = false;
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x07090d);
-  // Warm haze at the room's edges. THE NUMBERS USED TO BE 18/42 AND THAT WAS THE
-  // SINGLE BIGGEST REASON THE TAVERN RENDERED NEAR-BLACK — not the light rig.
-  // The iso camera sits at CAMERA_DIST 24, so its own target was already 25% of
-  // the way to full fog, and the north-west corner of the room (~34 units out)
-  // was 67% faded to 0x0b0d12. Two thirds of the furniture in the far half was
-  // being crossfaded into the background colour before a single light was
-  // considered. The dungeon uses 30/58 for exactly this reason. 28/64 keeps a
-  // little falloff at the corners without eating the room.
-  scene.fog = new THREE.Fog(0x141018, 28, 64);
-  tavern.scene = scene;
-  tavern.renderer = renderer;
-
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
-  const canvas = renderer.domElement;
-  if (!canvas.parentElement || canvas.parentElement !== container) {
-    canvas.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:10005;image-rendering:pixelated";
-    container.appendChild(canvas);
-  } else {
-    canvas.style.zIndex = "10005";
-  }
-
-  const camera = createDungeonCamera();
-  // Module-level, so a second visit must not inherit the last one. Picks 1
-  // (pixel-perfect) when the render target can hold the room, else wide.
-  tavern.camera = camera;
-  applyZoom();
-
-  // ── Lights ── warm/cold contrast is the navigation aid: warm = people and
-  // fire, cold = machinery and the way down. The base rig stays dim so the
-  // station accents in props.ts are what actually draw the eye.
-  // Brighter than the dungeon's rig, not dimmer: the dungeon earns its darkness
-  // with a torch every few tiles, while this is one room lit by six fixtures. A
-  // straight copy of those levels rendered the tavern almost black.
-  //
-  // THE MULTIPLIERS BELOW ARE TAVERN-LOCAL OVERRIDES. `AMBIENT_INTENSITY` and
-  // friends are the DUNGEON's constants and are deliberately not touched — the
-  // dungeon earns its darkness with a torch every few tiles and a fog radius,
-  // and raising them there would flatten it. This room is a safehouse between
-  // floors: it is supposed to be warm and legible, and a screenshot showed the
-  // left and bottom thirds of the frame were unreadable — props sitting in
-  // shadow you could not name. 1.9/1.5/1.1 -> 3.2/2.6/1.35.
-  const ambient = new THREE.AmbientLight(0x99a0b2, AMBIENT_INTENSITY * 3.2);
-  // The ground half of the hemisphere is a warm timber bounce rather than the
-  // old cold purple: every floor in here is planking lit by fire, and bouncing
-  // violet up into the furniture was fighting the warm/cold discipline.
-  const hemi = new THREE.HemisphereLight(0xb2c0d6, 0x4a3324, HEMI_INTENSITY * 2.6);
-  const dir = new THREE.DirectionalLight(0xdccbb2, DIR_INTENSITY * 1.35);
-  dir.position.set(-6, DIR_HEIGHT, -4);
-  dir.castShadow = true;
-  dir.shadow.autoUpdate = false;
-  dir.shadow.needsUpdate = true;
-  dir.shadow.mapSize.set(512, 512);
-  dir.shadow.camera.near = 0.5;
-  dir.shadow.camera.far = DIR_HEIGHT * 2.5;
-  dirLight = dir;
-  scene.add(ambient, hemi, dir);
-
-  // Two soft fills over the halves of the room that no fixture reaches. The
-  // stations all light themselves from their own accents, so the DEAD ZONES are
-  // the open floor between them — the south-west quarter (armory approach) and
-  // the south spine the player actually walks in along. Wide radius and low
-  // intensity: these are meant to lift the floor off black, not to cast a pool
-  // that competes with a station's accent for the eye.
-  const fillSW = new THREE.PointLight(0xffb271, 3.4, 16, 2);
-  fillSW.position.set(-4.5, 3.6, 2.6);
-  const fillS = new THREE.PointLight(0xd9b48c, 2.8, 15, 2);
-  fillS.position.set(1.5, 3.6, 4.4);
-  scene.add(fillSW, fillS);
-
-  room = buildRoom(scene);
-  props = buildProps(scene);
-  fx = createStationFx(scene);
-  prompt = createStationPrompt(() =>
-    interactHint({ pad: input?.padConnected() ?? false, touch: touchControls !== null }),
-  );
-
-  resetGamblerVisit(); // the round limit is PER VISIT, so clear it on entry
-  // Read the run ONCE: the stats are handed in at entry and nothing in the
-  // tavern can change them, so re-deriving this per frame would only allocate.
-  diorama = readDiorama(tavern.stats, props.bumpers.length);
-  ballAngle = 0;
-  vfx = createVfx(scene);
-  npcs = buildNpcs(scene);
-  props.syncViceCards();
-  tavern.player = createTavernPlayer(scene);
-  tavern.camX = tavern.player.x;
-  tavern.camZ = tavern.player.z;
-  aimCamera(camera, tavern.camX, 0, tavern.camZ);
-
-  input = createInput(canvas);
-  // ON-SCREEN PAD. The dungeon installed one and the tavern never did, so on a
-  // phone this room had no controls at all — no walking, and no way to reach
-  // the descend board. Same `?touch=1` force flag as the dungeon for testing
-  // the layout from a desktop browser.
-  const forceTouch = typeof location !== "undefined" && /[?&]touch=1/.test(location.search);
-  if (forceTouch || isTouchDevice()) {
-    touchControls = installTouchControls(input.pad, () => pixelPass?.sizing() ?? null);
-  }
-  hideDungeonHud(true);
-  startTavernAmbience();
-
-  // ── Multiplayer presence (LOBBY ONLY) ── connect to the lobby and spin up the
-  // roster/countdown HUD. Between-floor shop stops skip all of this and stay the
-  // single-player tavern. initTavernNet is itself a no-op when the backend isn't
-  // reachable, so an offline / public visitor also just plays solo.
-  isLobby = !!opts.lobby;
-  if (isLobby) {
-    lobbyHud = createLobbyHud();
-    // JOIN a floor someone else is already on. Same descend path as the
-    // plunger, just with an explicit destination instead of your own resume
-    // floor — that one substitution is the whole co-op story.
-    lobbyHud.onJoin((floor) => {
-      const go = tavern.onDescend;
-      sfxPlunger();
-      closeTavern();
-      go?.(floor);
-    });
-    initTavernPool(scene);
-  }
-
-  pixelPass = createPixelPass(renderer, {
-    quantize: QUANTIZE_DEFAULT,
-    dither: DITHER_DEFAULT,
-    scanline: SCANLINE_DEFAULT,
-    outline: OUTLINE_DEFAULT,
-    bloom: BLOOM_DEFAULT,
-    ao: AO_DEFAULT,
-    cel: CEL_DEFAULT,
-    uiTexture: uiTexture(),
-  });
-  // The walkable tavern owns a SECOND pixel pass, so it needs the same UI wiring
-  // the dungeon's `boot/renderer.ts` does. Without this the in-game screens
-  // paint into the layer and composite nowhere, because the pass rendering this
-  // scene never samples them — a vendor counter that opens, pauses the world and
-  // draws nothing.
-  syncSize(pixelPass.sizing());
-  installUiInput();
-  {
-    const renderScene = pixelPass.render.bind(pixelPass);
-    const pass = pixelPass;
-    pixelPass.render = (scene3, camera3) => {
-      drawUiFrame(pass);
-      renderScene(scene3, camera3);
-    };
-    // The UI-ONLY present takes the SAME wrapper, for the same reason and exactly
-    // as `boot/renderer.ts` does it: it is a composite, so the layer has to be
-    // painted and uploaded before it runs. `frame()` uses this path for every
-    // frame a panel is open, so an unwrapped `presentUi` would composite whatever
-    // the UI canvas happened to hold last — which is a panel that never repaints
-    // and never sees a keypress.
-    const presentUiOnly = pixelPass.presentUi.bind(pixelPass);
-    pixelPass.presentUi = () => {
-      drawUiFrame(pass);
-      presentUiOnly();
-    };
   }
   onKey = (e: KeyboardEvent): void => {
     if (!tavern.active) return;

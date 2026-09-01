@@ -420,6 +420,9 @@ function startLevel(level: number): void {
     // The loop has been idle for several seconds; without this the next frame
     // would carry a multi-second delta into the fixed-step accumulator.
     state.lastTime = performance.now();
+    if (state.animFrameId === null && state.active) {
+      state.animFrameId = requestAnimationFrame(loop);
+    }
   });
 }
 

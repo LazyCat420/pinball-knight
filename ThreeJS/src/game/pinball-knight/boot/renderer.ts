@@ -45,10 +45,17 @@ export function gpuTimingWanted(): boolean {
  * let a frame render against a disposed backend.
  */
 let rendererReady = false;
+let initPromise: Promise<void> | null = null;
 
 /** Whether the backend has finished initialising and `render()` is safe. */
 export function isRendererReady(): boolean {
   return rendererReady;
+}
+
+/** Resolves when the shared backend has finished initialising. */
+export function whenRendererReady(): Promise<void> {
+  if (rendererReady) return Promise.resolve();
+  return initPromise ?? Promise.resolve();
 }
 
 /**
@@ -105,7 +112,7 @@ export function installRenderer(): void {
   // it async would silently reorder their teardown. So the loop skips frames
   // until this resolves; see the rendererReady gate in the render block.
   rendererReady = false;
-  void state.renderer.init().then(() => {
+  initPromise = state.renderer.init().then(() => {
     rendererReady = true;
   });
   state.renderer.setClearColor(PALETTE_HEX[0]);
