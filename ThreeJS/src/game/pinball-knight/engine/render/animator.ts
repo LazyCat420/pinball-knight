@@ -294,12 +294,16 @@ export class Animator {
   private resolved(): ClipName {
     const { dir } = resolve(this.facing);
     if (this.sprite.sheet.clips.get(`${dir}:${this.clip}`)?.length) return this.clip;
+    if (this.sprite.sheet.clips.get(`S:${this.clip}`)?.length) return this.clip;
     return CLIP_FALLBACK[this.clip] ?? this.clip;
   }
 
   private indices(): number[] {
     const { dir } = resolve(this.facing);
-    return this.sprite.sheet.clips.get(`${dir}:${this.resolved()}`) ?? [];
+    const clip = this.resolved();
+    const own = this.sprite.sheet.clips.get(`${dir}:${clip}`);
+    if (own && own.length > 0) return own;
+    return this.sprite.sheet.clips.get(`S:${clip}`) ?? [];
   }
 
   private apply(): void {

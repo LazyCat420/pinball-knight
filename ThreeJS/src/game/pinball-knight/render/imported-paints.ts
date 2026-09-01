@@ -103,7 +103,16 @@ function decode(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      if (src.startsWith("/")) {
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => resolve(fallbackImg);
+        fallbackImg.onerror = () => resolve(null);
+        fallbackImg.src = "." + src;
+        return;
+      }
+      resolve(null);
+    };
     img.src = src;
   });
 }

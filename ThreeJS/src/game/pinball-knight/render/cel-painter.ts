@@ -3813,7 +3813,7 @@ export function makeBatPaints(): ActorPaints {
   const dirClips = (dir: Dir) => ({
     idle: [batFrame(dir, 0.6), batFrame(dir, -0.6)],
     walk: [batFrame(dir, 1), batFrame(dir, -1)], // full-power flap in flight
-    death: [batFrame(dir, 0.3), batFrame(dir, -0.8), batFrame(dir, 0, true), batFrame(dir, 0, true)],
+    death: [batFrame(dir, 0.2), batFrame(dir, 0, true), batFrame(dir, 0, true), batFrame(dir, 0, true)],
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
 }
@@ -3917,7 +3917,7 @@ export function makeGoblinPaints(): ActorPaints {
   const dc = (dir: Dir) => ({
     idle: [goblinFrame(dir, -0.15), goblinFrame(dir, 0.2)],
     walk: [goblinFrame(dir, -0.8), goblinFrame(dir, 0.1), goblinFrame(dir, 0.8), goblinFrame(dir, 0.1)],
-    death: [goblinFrame(dir, 0.9), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true)],
+    death: [goblinFrame(dir, 0.4), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true)],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
