@@ -111,7 +111,7 @@ export function createPixelSurface(opts: PixelSurfaceOptions): PixelSurface {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(opts.logicalWidth));
   canvas.height = 1;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.imageSmoothingEnabled = false;
 
   const surface = {

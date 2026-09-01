@@ -206,8 +206,6 @@ let diorama: DioramaState = { lit: 0, ballSpeed: 0 };
 /** Diorama ball angle. Integrated, not derived from the clock, so a change of
  * speed never teleports the ball across the playfield. */
 let ballAngle = 0;
-let dirLight: THREE.DirectionalLight | null = null;
-let shadowFrameCounter = 0;
 let lobbySyncTimer = 0;
 let cachedBestDepth = 0;
 let cachedResumeFloor = 0;
@@ -524,10 +522,6 @@ function frame(now: number): void {
     case "ui-only":
     case "scene":
       if (tavern.scene && tavern.camera) {
-        shadowFrameCounter++;
-        if (dirLight && dirLight.shadow) {
-          dirLight.shadow.needsUpdate = shadowFrameCounter % 2 === 0;
-        }
         if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
         else tavern.renderer?.render(tavern.scene, tavern.camera);
         // Measurement boundary: stalls BEFORE this mark are covered by the
@@ -612,12 +606,9 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   const dir = new THREE.DirectionalLight(0xdccbb2, DIR_INTENSITY * 1.35);
   dir.position.set(-6, DIR_HEIGHT, -4);
   dir.castShadow = true;
-  dir.shadow.autoUpdate = false;
-  dir.shadow.needsUpdate = true;
-  dir.shadow.mapSize.set(512, 512);
+  dir.shadow.mapSize.set(1024, 1024);
   dir.shadow.camera.near = 0.5;
   dir.shadow.camera.far = DIR_HEIGHT * 2.5;
-  dirLight = dir;
   scene.add(ambient, hemi, dir);
 
   const fillSW = new THREE.PointLight(0xffb271, 3.4, 16, 2);
