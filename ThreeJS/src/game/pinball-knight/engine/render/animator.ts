@@ -270,7 +270,8 @@ export class Animator {
     // since monsters never call setRate and their world speed is unchanged.
     const beats = this.sprite.sheet.beats?.[played];
     const smooth = beats && beats > 0 ? indices.length / beats : 1;
-    const step = 1 / (fpsFor(played) * this.rate * smooth);
+    const fps = fpsFor(played) || 6;
+    const step = 1 / (fps * this.rate * smooth);
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;
@@ -298,17 +299,36 @@ export class Animator {
    */
   private resolved(): ClipName {
     const { dir } = resolve(this.facing);
-    if (this.sprite.sheet.clips.get(`${dir}:${this.clip}`)?.length) return this.clip;
-    if (this.sprite.sheet.clips.get(`S:${this.clip}`)?.length) return this.clip;
+    const clips = this.sprite.sheet.clips;
+    if (clips.get(`${dir}:${this.clip}`)?.length) return this.clip;
+    if (clips.get(`S:${this.clip}`)?.length) return this.clip;
+    if (clips.get(`E:${this.clip}`)?.length) return this.clip;
+    if (clips.get(`N:${this.clip}`)?.length) return this.clip;
+    for (const key of clips.keys()) {
+      if (key.endsWith(`:${this.clip}`) && clips.get(key)!.length > 0) return this.clip;
+    }
     return CLIP_FALLBACK[this.clip] ?? this.clip;
   }
 
   private indices(): number[] {
     const { dir } = resolve(this.facing);
     const clip = this.resolved();
-    const own = this.sprite.sheet.clips.get(`${dir}:${clip}`);
+    const clips = this.sprite.sheet.clips;
+    const own = clips.get(`${dir}:${clip}`);
     if (own && own.length > 0) return own;
-    return this.sprite.sheet.clips.get(`S:${clip}`) ?? [];
+    const south = clips.get(`S:${clip}`);
+    if (south && south.length > 0) return south;
+    const east = clips.get(`E:${clip}`);
+    if (east && east.length > 0) return east;
+    const north = clips.get(`N:${clip}`);
+    if (north && north.length > 0) return north;
+    for (const key of clips.keys()) {
+      if (key.endsWith(`:${clip}`)) {
+        const list = clips.get(key);
+        if (list && list.length > 0) return list;
+      }
+    }
+    return [];
   }
 
   private apply(): void {

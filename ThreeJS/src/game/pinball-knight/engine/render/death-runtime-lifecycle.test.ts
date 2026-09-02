@@ -210,4 +210,26 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       expect(z.anim.isFinished(), `${kind} death must finish`).toBe(true);
     }
   });
+
+  it("plays full death animation sequence on fish_feet across ALL facings (S, N, E, W)", () => {
+    const sheet = sheetFor("fish_feet");
+    for (const facing of ["S", "N", "E", "W"] as const) {
+      const z = makeZombie(sheet, 6, 6, 1, { kind: "fish_feet" });
+      state.zombies = [z];
+      z.anim.setFacing(facing);
+
+      killZombie(z);
+      expect(z.anim.getClip()).toBe("death");
+      expect(z.anim.getFrameIdx()).toBe(0);
+
+      // Advance through death frames
+      for (let t = 0; t < 60; t++) {
+        updateZombies(0.016);
+        z.anim.update(0.016);
+      }
+
+      expect(z.anim.getFrameIdx(), `fish_feet facing ${facing} must reach frame 3`).toBe(3);
+      expect(z.anim.isFinished(), `fish_feet facing ${facing} must finish death`).toBe(true);
+    }
+  });
 });
