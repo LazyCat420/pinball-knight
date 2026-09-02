@@ -105,7 +105,7 @@ const LOCK = { lockEntries: 20 };
  * still painted has no entry and builds against the shared palette alone. See
  * `SheetBuildOptions.sheetPalette`.
  */
-const importedPalettes = new Map<SheetKey, number[][]>();
+export const importedPalettes = new Map<SheetKey, number[][]>();
 
 function buildOpts(key?: SheetKey): SheetBuildOptions {
   const pal = key ? importedPalettes.get(key) : undefined;
@@ -289,7 +289,7 @@ export function sheetFor(key: SheetKey): SpriteSheet {
  * missing, when its dimensions no longer match its manifest, and when the
  * player turns imported art off.
  */
-const imported = new Map<SheetKey, ActorPaints>();
+export const imported = new Map<SheetKey, ActorPaints>();
 
 /**
  * The art a key builds with: imported clips OVER the painter's, never INSTEAD
@@ -547,7 +547,6 @@ function rebuild(key: SheetKey): void {
   // borrowed kinds rather than serve them wrong.
   for (const z of state.zombies) {
     if (sheetKeyForKind(z.kind) !== key) continue;
-    if (z.mode === "dead") continue; // Never clobber a corpse or active death animation in progress
     if (KIND_SKIN[z.kind]?.tint !== undefined) {
       state.expansionSheets[z.kind]?.texture.dispose();
       delete state.expansionSheets[z.kind];
