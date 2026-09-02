@@ -481,7 +481,7 @@ export function damageZombie(
   // right here, which is a second roster to keep in step by hand.
   const gate = force ? undefined : MOMENTUM_GATES[z.kind];
   if (gate?.gatesDamage) {
-    const f = gate.minSpeed > 0 && momentum <= gate.minSpeed ? 0 : momentumGate(momentum, gate.bar, gate.soft);
+    const f = momentum <= gate.minSpeed ? 0 : momentumGate(momentum, gate.bar, gate.soft);
     if (f <= GATE_MIN_FACTOR) {
       state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
       state.shakeT = Math.max(state.shakeT, 0.05);

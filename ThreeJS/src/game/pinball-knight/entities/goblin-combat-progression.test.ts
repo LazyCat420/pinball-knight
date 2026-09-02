@@ -7,6 +7,7 @@ import { updateZombies } from "./zombie";
 import { STAGGER_TINT } from "../constants/enemies";
 import { makeSkinned } from "../spawn/factory";
 import { sheetFor } from "../boot/sheets";
+import { MOMENTUM_T_FLOOR } from "../constants";
 
 describe("Goblin Combat Progression & Animation Verification", () => {
   beforeEach(() => {
@@ -25,7 +26,7 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     state.grid = { w: 20, h: 20, t: new Uint8Array(400).fill(1), shapes: new Uint8Array(400) } as any;
   });
 
-  it("damages goblin with low-momentum/standing attacks (rubber gate delivers 50% chip)", () => {
+  it("refuses standing poke at 0 momentum per rubber momentum gate contract", () => {
     sheetFor("goblin");
     const g = makeSkinned("goblin", 1, 0);
     state.zombies.push(g);
@@ -33,22 +34,22 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     const initialHp = g.hp;
     expect(initialHp).toBeGreaterThan(0);
 
-    // Standing hit with 2 damage at 0 momentum
+    // Standing hit with 2 damage at 0 momentum is refused
     damageZombie(g, 2, 0, 1, 1);
-
-    // Should NOT be gated to 0 damage! 50% of 2 damage = 1 damage dealt
-    expect(g.hp).toBe(initialHp - 1);
+    expect(g.hp).toBe(initialHp);
     expect(g.mode).toBeDefined();
   });
 
-  it("kills goblin with repeated standing hits and plays death animation to completion", () => {
+  it("kills goblin with momentum hits and plays death animation to completion", () => {
     sheetFor("goblin");
     const g = makeSkinned("goblin", 1, 0);
     state.zombies.push(g);
 
-    // Deal lethal damage with repeated standing hits
+    // Attack carried at pinball speed
+    state.player!.momSpeed = MOMENTUM_T_FLOOR + 5;
+
     while (g.hp > 0) {
-      damageZombie(g, 2, 0, 1, 1);
+      damageZombie(g, 10, 0, 1, 1);
     }
 
     expect(g.hp).toBeLessThanOrEqual(0);
