@@ -216,7 +216,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
  * six exhaustive Record tables (or the art they would each need).
  */
 export function movementOf(z: Zombie): MovementKind {
-  return (z.ztype ? ZOMBIE_TYPES[z.ztype].movement : undefined) ?? MOVEMENT_BY_KIND[z.kind];
+  return (z.ztype ? ZOMBIE_TYPES[z.ztype].movement : undefined) ?? MOVEMENT_BY_KIND[z.kind] ?? "chase";
 }
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -456,7 +456,7 @@ export function updateZombies(dt: number): void {
 
     // Per-family combat feel (bite range, windup, cooldown, body size, whether
     // it attacks at range) comes from the STATS table.
-    const st = STATS[z.kind];
+    const st = STATS[z.kind] ?? STATS.zombie;
     // ── ZOMBIE SUB-TYPE (zombie-types.ts) ──
     // The STATS table stays keyed by EnemyKind; a sub-type MULTIPLIES it. That is
     // the whole reason sub-types are not kinds: one row per family, eight
@@ -1081,7 +1081,7 @@ export function updateZombies(dt: number): void {
 function updateGhost(z: Zombie, dt: number): void {
   const p = state.player;
   if (!p) return;
-  const st = STATS[z.kind];
+  const st = STATS[z.kind] ?? STATS.ghost;
   // The reaper's resting look is blood-red, not untinted — every place the
   // ghost path clears its telegraph tint, the reaper re-dyes instead.
   const baseTint = z.baseTint ?? null;

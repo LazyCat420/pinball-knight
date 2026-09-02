@@ -317,14 +317,54 @@ function wakeFrames(base: FramePaint): FramePaint[] {
  * a bigger atlas for every actor to clone. Three facings of a 0.3s recoil is
  * three times the cost for a distinction nobody can see at 72px.
  */
+function deathFrames(base: FramePaint): FramePaint[] {
+  return [
+    reframed(base, 0.15, 2, 2),
+    (ctx) => {
+      ctx.save();
+      ctx.translate(CX + 4, GROUND + 4);
+      ctx.rotate(0.28);
+      ctx.scale(1.15, 0.75);
+      ctx.translate(-CX, -GROUND);
+      base(ctx);
+      ctx.restore();
+    },
+    (ctx) => {
+      ctx.save();
+      ctx.translate(CX + 6, GROUND + 6);
+      ctx.rotate(0.42);
+      ctx.scale(1.35, 0.45);
+      ctx.translate(-CX, -GROUND);
+      base(ctx);
+      ctx.restore();
+    },
+    (ctx) => {
+      ctx.save();
+      ctx.translate(CX + 8, GROUND + 8);
+      ctx.rotate(0.55);
+      ctx.scale(1.5, 0.25);
+      ctx.translate(-CX, -GROUND);
+      ctx.globalAlpha = 0.85;
+      base(ctx);
+      ctx.restore();
+    },
+  ];
+}
+
 export function withRecoil(p: ActorPaints): ActorPaints {
   const base = p.E.idle?.[0] ?? p.S.idle?.[0];
   if (!base) return p;
   const stumble = stumbleFrames(base);
   const wake = wakeFrames(base);
+  const death = deathFrames(base);
   const out = { ...p } as ActorPaints;
   for (const dir of ["S", "N", "E"] as Dir[]) {
-    out[dir] = { ...p[dir], stumble: p[dir].stumble ?? stumble, wake: p[dir].wake ?? wake };
+    out[dir] = {
+      ...p[dir],
+      stumble: p[dir].stumble ?? stumble,
+      wake: p[dir].wake ?? wake,
+      death: p[dir].death ?? death,
+    };
   }
   return out;
 }

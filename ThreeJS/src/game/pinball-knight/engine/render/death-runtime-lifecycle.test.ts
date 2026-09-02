@@ -81,7 +81,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       expect(z.anim.getFrameIdx(), "Must advance to death frame 3").toBeGreaterThanOrEqual(3);
 
       // Advance to full completion (covering 4-frame and 5-frame death sequences)
-      for (let t = 0; t < 15; t++) {
+      for (let t = 0; t < 20; t++) {
         updateZombies(0.016);
         z.anim.update(0.016);
       }
@@ -201,7 +201,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       }
       expect(z.anim.getFrameIdx(), `${kind} must advance to frame 2`).toBe(2);
 
-      for (let t = 0; t < 12; t++) {
+      for (let t = 0; t < 20; t++) {
         z.anim.play("idle", { force: true });
         updateZombies(0.016);
         z.anim.update(0.016);

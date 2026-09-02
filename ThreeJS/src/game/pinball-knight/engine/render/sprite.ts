@@ -1477,6 +1477,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   // the frame offset into an instanced attribute.
   let tex = sheet.texture.clone();
   tex.needsUpdate = true;
+  tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
 
   const matOpts = {
     map: tex,
@@ -1496,15 +1497,15 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   const blob = makeContactBlob(mesh);
 
   let flipped = false;
-  let currentFrame = 0;
+  let currentFrame = -1;
 
   // When repeat.x is negative the texture reads right-to-left, so the offset has
   // to anchor on the frame's RIGHT edge instead of its left. Get this wrong and
   // a flipped sprite shows the neighbouring frame.
   function applyFrame(): void {
     const { cols, rows } = api.sheet;
-    const col = currentFrame % cols;
-    const row = Math.floor(currentFrame / cols);
+    const col = Math.max(0, currentFrame) % cols;
+    const row = Math.floor(Math.max(0, currentFrame) / cols);
     tex.offset.x = (flipped ? col + 1 : col) / cols;
     // V is bottom-up in GL while the canvas paints top-down, so row 0 is the
     // TOP row of the image and must map to the highest offset.
