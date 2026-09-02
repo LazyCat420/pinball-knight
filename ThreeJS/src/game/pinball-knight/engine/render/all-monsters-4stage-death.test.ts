@@ -79,7 +79,8 @@ describe("All Monsters 4-Stage Death Animation Progression", () => {
       expect(sDeathFrames, `${name} must have an S:death clip`).toBeDefined();
       expect(sDeathFrames!.length, `${name} must have at least 4 death frames`).toBeGreaterThanOrEqual(4);
 
-      const anim = new Animator(sprite as any, { facing: "S" });
+      const anim = new Animator(sprite as any);
+      anim.setFacing("S");
       anim.play("death");
       expect(anim.getFrameIdx()).toBe(0);
       expect(anim.isFinished()).toBe(false);
@@ -100,6 +101,39 @@ describe("All Monsters 4-Stage Death Animation Progression", () => {
       anim.update(0.5);
       expect(anim.getFrameIdx()).toBe(sDeathFrames!.length - 1);
       expect(anim.isFinished()).toBe(true);
+    });
+
+    it(`plays all death frames for ${name} when facing E and W`, () => {
+      const paints = fn();
+      const { sprite } = mockSprite(paints);
+
+      // Facing E
+      const animE = new Animator(sprite as any);
+      animE.setFacing("E");
+      animE.play("death");
+      expect(animE.getFrameIdx()).toBe(0);
+      animE.update(0.18);
+      expect(animE.getFrameIdx()).toBe(1);
+      animE.update(0.18);
+      expect(animE.getFrameIdx()).toBe(2);
+      animE.update(0.18);
+      expect(animE.getFrameIdx()).toBe(3);
+      animE.update(0.5);
+      expect(animE.isFinished()).toBe(true);
+
+      // Facing W (mirrored E)
+      const animW = new Animator(sprite as any);
+      animW.setFacing("W");
+      animW.play("death");
+      expect(animW.getFrameIdx()).toBe(0);
+      animW.update(0.18);
+      expect(animW.getFrameIdx()).toBe(1);
+      animW.update(0.18);
+      expect(animW.getFrameIdx()).toBe(2);
+      animW.update(0.18);
+      expect(animW.getFrameIdx()).toBe(3);
+      animW.update(0.5);
+      expect(animW.isFinished()).toBe(true);
     });
   }
 });
