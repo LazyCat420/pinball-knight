@@ -196,6 +196,19 @@ export class Animator {
   private finished = false;
   private onEnd: (() => void) | null = null;
   private rate = 1;
+  /**
+   * QA counters: how many times `update()` ran, and the last dt it saw.
+   *
+   * Two assignments per actor per frame, and they earn it. "The death
+   * animation is frozen" and "the PAGE is frozen" produce identical readings
+   * from every other angle — same clip, same frame index, forever — and a
+   * capture harness reading a throttled background tab reports the second as
+   * the first. This is what tells them apart: a tick count that climbs while
+   * the frame index does not is an ANIMATOR bug; one that does not climb is
+   * not an animation bug at all. Read through `__dungeonAnim()`.
+   */
+  private ticks = 0;
+  private lastDt = 0;
 
   constructor(sprite: ActorSprite) {
     this.sprite = sprite;
@@ -234,6 +247,30 @@ export class Animator {
     return this.frameIdx;
   }
 
+  /** The facing the art is currently resolved against — QA/dev read-only. */
+  getFacing(): Facing {
+    return this.facing;
+  }
+
+  /**
+   * The frame indices this actor is actually playing right now — clip AFTER
+   * fallback, direction AFTER the W→E mirror, exactly what `update()` steps
+   * through. Exists so a harness can ask "what is on screen" instead of
+   * re-deriving the resolution rules and measuring its own copy of them.
+   */
+  debugIndices(): number[] {
+    return this.indices();
+  }
+
+  /** How many times `update()` has run on this actor, and the last dt. */
+  debugTicks(): { ticks: number; lastDt: number; timer: number } {
+    return { ticks: this.ticks, lastDt: this.lastDt, timer: this.timer };
+  }
+
+  /** The clip that will actually play (post-fallback). See `resolved()`. */
+  debugResolvedClip(): ClipName {
+    return this.resolved();
+  }
 
   /**
    * Playback-rate multiplier over the clip's base FPS. The sprint gait ramps
@@ -255,6 +292,8 @@ export class Animator {
   }
 
   update(dt: number): void {
+    this.ticks++;
+    this.lastDt = dt;
     const indices = this.indices();
     if (indices.length <= 1) return;
     if (this.finished) {

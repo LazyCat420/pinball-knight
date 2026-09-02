@@ -51,7 +51,9 @@ describe("Sandbox Visual Frame-by-Frame Trace for All Monsters", () => {
   it("verifies and extracts full 4-frame death progression (0 -> 1 -> 2 -> 3) for all monster sheets", async () => {
     const restore = installSpriteTestDom();
     const spritesDir = path.resolve(__dirname, "../../../../../public/sprites");
-    const outBaseDir = path.resolve(__dirname, "../../../../../tools/sprite-forge/work/sandbox-output");
+    // See the note in sandbox-goblin-death-trace.test.ts: five levels up is the
+    // repo root, not the forge's work directory.
+    const outBaseDir = path.resolve(__dirname, "../../tools/sprite-forge/work/sandbox-output");
     fs.mkdirSync(outBaseDir, { recursive: true });
 
     const DIRS: Dir[] = ["S", "E", "N"];

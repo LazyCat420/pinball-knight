@@ -15,6 +15,16 @@ const wgslRaw = {
 
 export default defineConfig({
   plugins: [wgslRaw],
+  /**
+   * The build stamp the page prints at boot and `__dungeonBuild()` returns.
+   *
+   * Deliberately changes on every build, so the bundle's content hash does
+   * too: "did my fix reach the browser" stops being a guess. See the docblock
+   * in src/main.ts for the incident that earned it.
+   */
+  define: {
+    __BUILD_ID__: JSON.stringify(new Date().toISOString().replace(/\.\d+Z$/, "Z")),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

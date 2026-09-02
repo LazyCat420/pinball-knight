@@ -37,7 +37,7 @@ import { installGuiHooks } from "./gui-hooks";
 import { isOpen as uiIsOpen } from "../gui/stack";
 import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
-import { syncActorMesh } from "../entities/combat";
+import { damageZombie, syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
 import { multiBallPositions } from "../entities/multiball";
 import { applyMaterial, isMaterial } from "../entities/marble";
@@ -50,6 +50,7 @@ import { isFloorMapOpen } from "../map-overlay";
 import { secretDoorsInFlight } from "../secrets";
 import { at, tileCenter } from "../maze/generator";
 import { measureDoorway } from "../maze/doorways";
+import { worldToScreenPx } from "../engine/camera";
 import { spawnCardDrop } from "../economy/loot";
 import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
@@ -1095,6 +1096,63 @@ export function installDevHooks(deps: DevHookDeps): void {
       }
       return { materialsInScene: seen.size, shaders: out };
     };
+    /**
+     * `__dungeonKill(kind?, n?)` — kill living actors through the REAL damage
+     * path (`damageZombie` with `force`), not by poking `hp`.
+     *
+     * Art QA for a death animation has to start where a player's kill starts,
+     * or it is testing a code path nobody plays. Returns how many it struck.
+     */
+    (window as unknown as { __dungeonKill?: (kind?: string, n?: number) => number }).__dungeonKill = (kind?: string, n = 99) => {
+      let hit = 0;
+      for (const z of state.zombies) {
+        if (hit >= n) break;
+        if (z.mode === "dead") continue;
+        if (kind && z.kind !== kind) continue;
+        damageZombie(z, 999, 0, 1, 0, true, "steel");
+        hit++;
+      }
+      return hit;
+    };
+    /**
+     * `__dungeonAnim()` — WHAT EVERY ACTOR IS ACTUALLY SHOWING, this instant.
+     *
+     * The clip/frame an Animator *thinks* it is on and the cel the GPU is
+     * *sampling* are two different claims, and a death animation that plays in
+     * the animator while the quad holds frame 0 satisfies the first and fails
+     * the second. So this reports BOTH: the animator's clip/index/indices, and
+     * `texFrame`, decoded back out of the live texture offset — the frame that
+     * is on screen.
+     *
+     * Dead actors are included deliberately; they are the interesting ones.
+     */
+    (window as unknown as { __dungeonAnim?: () => unknown }).__dungeonAnim = () =>
+      state.zombies.map((z) => {
+        const mat = z.sprite.mesh.material as { map?: { offset: { x: number; y: number }; repeat: { x: number } } };
+        const map = mat?.map;
+        const { cols, rows } = z.sprite.sheet;
+        // applyFrame(): offset.x = (flipped ? col+1 : col)/cols, offset.y = (rows-1-row)/rows
+        const flipped = (map?.repeat.x ?? 1) < 0;
+        const col = map ? Math.round(map.offset.x * cols) - (flipped ? 1 : 0) : -1;
+        const row = map ? rows - 1 - Math.round(map.offset.y * rows) : -1;
+        return {
+          kind: z.kind,
+          mode: z.mode,
+          hp: z.hp,
+          clip: z.anim.getClip(),
+          resolved: z.anim.debugResolvedClip(),
+          facing: z.anim.getFacing(),
+          frameIdx: z.anim.getFrameIdx(),
+          finished: z.anim.isFinished(),
+          indices: z.anim.debugIndices(),
+          ticks: z.anim.debugTicks(),
+          screen: worldToScreenPx(z.x, z.z),
+          texFrame: col < 0 ? -1 : row * cols + col,
+          visible: z.sprite.mesh.visible,
+          x: z.x,
+          z: z.z,
+        };
+      });
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;

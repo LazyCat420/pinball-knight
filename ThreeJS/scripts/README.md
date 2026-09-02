@@ -12,6 +12,10 @@ What each proves is documented in its own header:
 - `fx-shot.mjs`   — full-frame contact sheet at real presented resolution
 - `heat-ab.mjs`   — shimmer A/B (it has nothing of its own to look at)
 - `fx-probe.mjs`  — ask the live page a question instead of guessing
+- `death-lab.mjs` — spawn a monster, kill it, and prove what the SCREEN showed:
+  the animator's frame, the frame the texture is really sampling, and a cropped
+  contact sheet of the death. `--all` runs the whole roster. It also needs
+  `canvas`, which IS in package.json.
 
 Requirements (deliberately NOT in package.json — heavyweight, capture-only):
 

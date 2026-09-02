@@ -19,8 +19,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { loadImage } from "canvas";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
 import { importedPaints, type ImportedSheet } from "../../render/imported-paints";
 import type { SheetManifest } from "./manifest";
@@ -82,6 +83,45 @@ describe("published sheets", () => {
     // Same gate, the other roster. See `playable()` for why it needs one.
     await expectRosterLoads(playable(), "PLAYABLE");
   }, 120_000);
+
+  /**
+   * EVERY SIDECAR CARRIES ITS PNG'S OWN CONTENT HASH.
+   *
+   * `versioned()` (render/imported-paints.ts) puts this in the image's URL so a
+   * re-exported sheet is a NEW url. Without it that function falls back to the
+   * sheet's DIMENSIONS — and a re-export at the same size then keeps the same
+   * url while nginx serves the PNG `max-age=1y, immutable`. A returning player
+   * gets a fresh sidecar cut against a year-old image: the new rects land on the
+   * old art, the loader's size check sees two matching sizes and passes it, and
+   * nothing anywhere reports a problem.
+   *
+   * That was the state of 41 of the 43 published manifests: only mario's had a
+   * hash, written by hand after the bug bit there. The publisher writes one for
+   * every sheet now (`inbox.test.ts`), and this is the gate that keeps it true —
+   * it reads the PNG and re-derives the tag, so a hand-edited or half-published
+   * pair fails here rather than in someone's browser a week later.
+   */
+  it("every published sidecar's hash matches its own PNG", () => {
+    const files = (readdirSync(PUBLIC) as string[]).filter((f: string) => f.endsWith(".json"));
+    expect(files.length, "public/sprites has no sidecars — did the path move?").toBeGreaterThan(0);
+    const stale: string[] = [];
+    for (const f of files) {
+      const manifest = JSON.parse(readFileSync(join(PUBLIC, f), "utf8")) as SheetManifest;
+      const png = join(PUBLIC, manifest.image.replace(/^\/sprites\//, "").replace(/\?.*$/, ""));
+      if (!existsSync(png)) {
+        stale.push(`${f}: names ${manifest.image}, which is not in public/sprites`);
+        continue;
+      }
+      const want = createHash("sha256").update(readFileSync(png)).digest("hex").slice(0, 12);
+      if (manifest.hash !== want) {
+        stale.push(`${f}: hash ${manifest.hash ?? "MISSING"} but its PNG hashes to ${want}`);
+      }
+    }
+    expect(
+      stale,
+      `sidecars out of step with their art — re-run \`npm run sprites\`:\n  ${stale.join("\n  ")}`,
+    ).toEqual([]);
+  }, 60_000);
 
   async function expectRosterLoads(art: [string, string][], label: string): Promise<void> {
     expect(art.length, `${label} parsed as empty — did the table's shape change?`)

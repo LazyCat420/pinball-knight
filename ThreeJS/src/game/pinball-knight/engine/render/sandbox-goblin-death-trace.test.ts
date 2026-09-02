@@ -60,7 +60,11 @@ describe("Sandbox Visual Trace for Goblin & Monster Death Animations", () => {
     expect(z.anim.getClip()).toBe("death");
     expect(z.anim.getFrameIdx()).toBe(0);
 
-    const outDir = path.resolve(__dirname, "../../../../../tools/sprite-forge/work/sandbox-output");
+    // ../../ lands on `pinball-knight/`, whose `tools/sprite-forge/work` is
+    // where every other forge artefact goes. FIVE levels up landed on the repo
+    // root instead and wrote an untracked `ThreeJS/tools/` that nobody reads —
+    // and that leaves the tree dirty, which the ship guard refuses to deploy.
+    const outDir = path.resolve(__dirname, "../../tools/sprite-forge/work/sandbox-output");
     fs.mkdirSync(outDir, { recursive: true });
 
     const canvas = (sheet.texture as any).image;

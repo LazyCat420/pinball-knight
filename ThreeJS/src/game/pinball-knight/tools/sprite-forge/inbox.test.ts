@@ -41,6 +41,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas, loadImage } from "canvas";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
 import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from "../../render/atlas-census";
 import { type Cell } from "./slice";
@@ -351,14 +352,34 @@ describe("sprite inbox", () => {
       //
       // `npm run sprites` sets FORGE_PUBLISH; the deploy gate does not, and
       // then this file only MEASURES the art that is already committed.
+      // Hashed BEFORE the write and from the same buffer that is written, so
+      // the tag can never describe a different PNG than the one on disk.
+      const png = sc.toBuffer("image/png");
+      const hash = createHash("sha256").update(png).digest("hex").slice(0, 12);
       if (PUBLISH) {
         mkdirSync(PUBLIC, { recursive: true });
-        writeFileSync(join(PUBLIC, `${name}-${dir}.png`), sc.toBuffer("image/png"));
+        writeFileSync(join(PUBLIC, `${name}-${dir}.png`), png);
       }
       const manifest: SheetManifest = {
         name, dir: dir as SheetManifest["dir"],
         image: `/sprites/${name}-${dir}.png`,
         source: [sheet.width, sheet.height],
+        // ⚠️ THE CACHE-BUSTING TAG, AND IT IS NOT OPTIONAL IN PRACTICE.
+        //
+        // `nginx.conf` serves every PNG `max-age=1y, immutable`, so a returning
+        // player's browser does not even REVALIDATE this file — and until this
+        // line existed the publisher never wrote a hash, so `versioned()` fell
+        // back to the sheet's DIMENSIONS. A re-export at the same 1024x1024
+        // therefore kept the same URL, and the loader's size check (which is
+        // the other half of the defence) saw two matching sizes and passed the
+        // stale image straight through. The player then gets a FRESH sidecar
+        // cut against a YEAR-OLD image: the new rects land on the old art.
+        //
+        // Every published sheet was in that state (41 of 43 manifests carried
+        // no hash; only mario's was ever written, by hand, after it bit).
+        // `published.test.ts` now fails a manifest whose hash does not match
+        // its own PNG, so this cannot silently go missing again.
+        hash,
         // The measured lattice, so the RUNTIME can choose between an exact
         // block reduce and a resample without re-measuring 1.6M pixels on every
         // boot. Omitted when there is none, so the field's presence means
