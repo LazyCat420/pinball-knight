@@ -20,6 +20,7 @@ import { KIND_SKIN } from "../spawn/kind-skin";
 import { KIND_IDS } from "../bestiary";
 import { SHEET_PAINTERS } from "../render/sheet-painters";
 import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type ImportedSheet } from "../render/imported-paints";
+import { authoredFacingsFor } from "./manifest-inventory";
 import { sheetCoverage } from "../tools/sprite-forge/build-plan";
 import { _clearPortraitCache } from "../render/monster-portrait";
 import type { Dir } from "../engine/render/paint-types";
@@ -490,32 +491,69 @@ export function resetImportedMonsterArtForTest(): void {
   appliedMonsters = false;
 }
 
-/** The expensive half — see the note above for why it is the caller's to time. */
+/**
+ * Load imported art for a specific monster sheet on-demand.
+ * Idempotent: returns true immediately if already loaded.
+ */
+export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
+  if (!importedArtEnabled()) return false;
+  if (imported.has(key)) return true;
+  const name = IMPORTED_ART[key];
+  if (!name) return false;
+  const facings = authoredFacingsFor(name);
+  const loaded = (await Promise.all(facings.map((d) => loadImportedSheet(name, d)))).filter(
+    (s): s is ImportedSheet => s !== null,
+  );
+  if (!loaded.length) return false;
+  const paints = importedPaints(loaded);
+  if (!paints) return false;
+  imported.set(key, paints);
+  const pal = sheetPalette(loaded);
+  if (pal) importedPalettes.set(key, pal);
+  _clearPortraitCache();
+  const cov = sheetCoverage(loaded.map((s) => s.manifest));
+  console.info(
+    `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
+      `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}\n` +
+      `           coverage: ${cov.summary}` +
+      (cov.clips.missing.length ? ` (${cov.clips.missing.join("/")} fall through to the painter)` : ""),
+  );
+  rebuild(key);
+  return true;
+}
+
+/**
+ * Determine which monster sheets are required for a given floor level.
+ */
+export function keysForFloor(level: number): SheetKey[] {
+  const keys: SheetKey[] = ["zombie", "boss"];
+  if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
+  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost");
+  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
+  if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
+  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon");
+  return keys;
+}
+
+/**
+ * Load imported monster art specifically needed for a given floor level.
+ */
+export async function loadMonsterSheetsForFloor(level: number): Promise<void> {
+  if (!importedArtEnabled()) return;
+  const needed = keysForFloor(level);
+  await Promise.all(needed.map((k) => loadMonsterSheet(k)));
+}
+
+/** The background backfill — loads remaining monster art during idle/delay. */
 export async function applyImportedMonsterArt(): Promise<void> {
   if (!importedArtEnabled() || applyingMonsters || appliedMonsters) return;
   applyingMonsters = true;
   try {
-    for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
-      const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
-        (s): s is ImportedSheet => s !== null,
-      );
-      if (!loaded.length) continue;
-      const paints = importedPaints(loaded);
-      if (!paints) continue;
-      imported.set(key, paints);
-      const pal = sheetPalette(loaded);
-      if (pal) importedPalettes.set(key, pal);
-      _clearPortraitCache();
-      const cov = sheetCoverage(loaded.map((s) => s.manifest));
-      console.info(
-        `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
-          `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}\n` +
-          `           coverage: ${cov.summary}` +
-          (cov.clips.missing.length ? ` (${cov.clips.missing.join("/")} fall through to the painter)` : ""),
-      );
-      rebuild(key);
+    for (const key of Object.keys(IMPORTED_ART) as SheetKey[]) {
+      if (imported.has(key)) continue;
+      await loadMonsterSheet(key);
       // Yield to frame loop between monster rebuilds
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 16));
     }
     appliedMonsters = true;
   } finally {
@@ -555,6 +593,7 @@ function rebuild(key: SheetKey): void {
     } else {
       z.sprite.setSheet(sheet);
     }
+    z.anim?.reapply();
   }
 }
 

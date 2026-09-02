@@ -23,6 +23,7 @@ import { blockReduce } from "../tools/sprite-forge/grid";
 import { resampleCell, upscaleExact, type ResampleStrategy } from "../tools/sprite-forge/resample";
 import { SPRITE_PIXEL_GRID } from "../constants";
 import type { ActorPaints, ClipName, Dir, FramePaint } from "../engine/render/paint-types";
+import { hasAuthoredFacing } from "../boot/manifest-inventory";
 
 /** A decoded sheet plus the rects that cut it up. */
 export interface ImportedSheet {
@@ -40,6 +41,7 @@ export interface ImportedSheet {
  * atlas construction and takes the floor down with it.
  */
 export async function loadImportedSheet(name: string, dir: Dir): Promise<ImportedSheet | null> {
+  if (!hasAuthoredFacing(name, dir)) return null;
   try {
     let res = await fetch(`/sprites/${name}-${dir}.json`);
     if (!res.ok) {

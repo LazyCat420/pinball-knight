@@ -24,7 +24,8 @@ import { createCanvas } from "canvas";
 import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "../render/palette";
 import { setEnginePalette } from "../engine/palette-source";
 import { invalidatePaletteCaches } from "../engine/render/sprite";
-import { sheetFor, SHEET_KEY_BY_KIND, type SheetKey } from "./sheets";
+import { sheetFor, SHEET_KEY_BY_KIND, type SheetKey, keysForFloor } from "./sheets";
+import { hasAuthoredFacing, authoredFacingsFor } from "./manifest-inventory";
 import { skinSheet } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import type { EnemyKind } from "../state";
@@ -126,5 +127,36 @@ describe("every spawnable kind can reach art", () => {
       expect(ALL_KEYS, `SHEET_KEY_BY_KIND.${kind} points at unknown key "${key}"`).toContain(key);
       expect(sheetFor(key), `kind "${kind}" could not get art`).toBeTruthy();
     }
+  });
+});
+
+describe("manifest inventory & floor loading", () => {
+  it("only reports authored facings, eliminating blind 404 probes", () => {
+    expect(hasAuthoredFacing("goblin", "S")).toBe(true);
+    expect(hasAuthoredFacing("goblin", "N")).toBe(false);
+    expect(hasAuthoredFacing("goblin", "E")).toBe(false);
+    expect(authoredFacingsFor("goblin")).toEqual(["S"]);
+
+    expect(hasAuthoredFacing("zombie", "E")).toBe(true);
+    expect(hasAuthoredFacing("zombie", "S")).toBe(false);
+    expect(authoredFacingsFor("zombie")).toEqual(["E"]);
+
+    expect(hasAuthoredFacing("fish_feet", "S")).toBe(true);
+    expect(hasAuthoredFacing("fish_feet", "E")).toBe(true);
+    expect(hasAuthoredFacing("fish_feet", "N")).toBe(false);
+  });
+
+  it("keysForFloor scales with level depth without loading the entire 29-monster roster up-front", () => {
+    const f1 = keysForFloor(1);
+    expect(f1).toContain("zombie");
+    expect(f1).toContain("goblin");
+    expect(f1).toContain("spider");
+    expect(f1).not.toContain("dragon");
+    expect(f1).not.toContain("reaper");
+    expect(f1).not.toContain("archivist");
+
+    const f5 = keysForFloor(5);
+    expect(f5).toContain("dragon");
+    expect(f5).toContain("reaper");
   });
 });

@@ -293,6 +293,11 @@ export class Animator {
     return this.rate;
   }
 
+  /** Re-evaluate and re-apply UV offset after a sheet swap (e.g. rebuild). */
+  reapply(): void {
+    this.apply();
+  }
+
   update(dt: number): void {
     this.ticks++;
     this.lastDt = dt;

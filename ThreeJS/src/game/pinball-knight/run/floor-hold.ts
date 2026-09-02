@@ -19,6 +19,7 @@
 import { openFloorLoading, type FloorLoading } from "../floor-loading";
 import { presentUiFrame } from "../boot/renderer";
 import { state } from "../state";
+import { loadMonsterSheetsForFloor } from "../boot/sheets";
 
 let floorLoad: FloorLoading | null = null;
 let held = false;
@@ -81,6 +82,7 @@ export function armFloorLoading(level: number, then: () => void): void {
     return;
   }
   holdForFloorLoad(openFloorLoading(state.container, level));
+  void loadMonsterSheetsForFloor(level);
   requestAnimationFrame(() => {
     presentUiFrame();
     requestAnimationFrame(() => {
