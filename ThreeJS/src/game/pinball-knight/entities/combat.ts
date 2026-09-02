@@ -910,7 +910,7 @@ export function killZombie(z: Zombie): void {
   z.windupT = 0;
   z.flashT = 0;
   z.sprite.setTint(z.baseTint ?? null);
-  z.anim.play("death", { force: true });
+  z.anim.play("death");
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);

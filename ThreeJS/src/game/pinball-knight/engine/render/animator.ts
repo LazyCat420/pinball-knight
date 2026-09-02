@@ -229,6 +229,8 @@ export class Animator {
   }
 
   setFacing(facing: Facing): void {
+    // Facing direction is locked upon death so death animations cannot be derailed
+    if (this.clip === "death") return;
     if (this.facing === facing) return;
     this.facing = facing;
     this.apply();
@@ -295,7 +297,9 @@ export class Animator {
     this.ticks++;
     this.lastDt = dt;
     const indices = this.indices();
-    if (indices.length <= 1) return;
+    if (indices.length <= 1) {
+      return;
+    }
     if (this.finished) {
       this.apply();
       return;
@@ -380,7 +384,8 @@ export class Animator {
     // unauthored clip.
     this.sprite.setFlipped(flip);
     if (!indices.length) return;
-    this.sprite.setFrame(indices[Math.min(this.frameIdx, indices.length - 1)]);
+    const target = indices[Math.min(this.frameIdx, indices.length - 1)];
+    this.sprite.setFrame(target);
   }
 }
 

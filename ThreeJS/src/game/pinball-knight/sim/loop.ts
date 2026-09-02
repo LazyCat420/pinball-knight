@@ -45,7 +45,7 @@ import {showPickupNote, spawnFloatingCombo} from "../ui";
  * `state.accumulator`. A level change deliberately does NOT reset it —
  * `startLevel` re-bases `lastTime` but has never dropped banked time.
  */
-const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
+export const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
 
 /**
  * The shimmer's own clock, in REAL seconds.

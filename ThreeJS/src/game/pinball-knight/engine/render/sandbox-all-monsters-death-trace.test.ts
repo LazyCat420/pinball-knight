@@ -9,7 +9,8 @@ import { makeZombie } from "../../spawn/factory";
 import { paintsFor, imported, importedPalettes, type SheetKey } from "../../boot/sheets";
 import { importedPaints, sheetPalette, type ImportedSheet } from "../../render/imported-paints";
 import { buildSpriteSheet } from "./sprite";
-import { updateZombies } from "../../entities/zombie";
+import { simLoop } from "../../sim/loop";
+import { simulate } from "../../sim/simulate";
 import { killZombie } from "../../entities/combat";
 import { withRecoil } from "../../render/cel-painter";
 import type { SheetManifest } from "../../tools/sprite-forge/manifest";
@@ -48,11 +49,9 @@ const MONSTER_SHEET_MAP: Record<string, string> = {
 };
 
 describe("Sandbox Visual Frame-by-Frame Trace for All Monsters", () => {
-  it("verifies and extracts full 4-frame death progression (0 -> 1 -> 2 -> 3) for all monster sheets", async () => {
+  it("verifies and extracts full death progression from live ActorSprite UV offsets for all monsters", async () => {
     const restore = installSpriteTestDom();
     const spritesDir = path.resolve(__dirname, "../../../../../public/sprites");
-    // See the note in sandbox-goblin-death-trace.test.ts: five levels up is the
-    // repo root, not the forge's work directory.
     const outBaseDir = path.resolve(__dirname, "../../tools/sprite-forge/work/sandbox-output");
     fs.mkdirSync(outBaseDir, { recursive: true });
 
@@ -65,9 +64,10 @@ describe("Sandbox Visual Frame-by-Frame Trace for All Monsters", () => {
         x: 10,
         z: 10,
         hp: 100,
+        momSpeed: 0,
         anim: { update: () => {} } as any,
       } as any;
-      state.grid = { w: 20, h: 20, tiles: new Uint8Array(400).fill(1) } as any;
+      state.grid = { w: 20, h: 20, t: new Uint8Array(400).fill(1), shapes: new Uint8Array(400) } as any;
 
       // Load all available directional manifests for this monster
       const loaded: ImportedSheet[] = [];
@@ -105,29 +105,32 @@ describe("Sandbox Visual Frame-by-Frame Trace for All Monsters", () => {
       const monsterOutDir = path.join(outBaseDir, key);
       fs.mkdirSync(monsterOutDir, { recursive: true });
 
-      const canvas = (sheet.texture as any).image;
+      const mat = z.sprite.mesh.material as any;
+      const map = mat.map;
+      const atlasCanvas = map.image;
+      const { cols, rows } = z.sprite.sheet;
       const deathIndices = (sheet.clips.get("S:death") ?? sheet.clips.get("E:death") ?? sheet.clips.get("N:death"))!;
       expect(deathIndices, `Missing death clip indices for ${key}`).toBeDefined();
       const recordedFrames: number[] = [];
 
       for (let step = 0; step < 60; step++) {
-        const prevFrame = z.anim.getFrameIdx();
-        updateZombies(0.016);
+        simLoop.step(0.016, state.hitstopT, simulate);
         z.anim.update(0.016);
         const curFrame = z.anim.getFrameIdx();
 
         if (!recordedFrames.includes(curFrame)) {
           recordedFrames.push(curFrame);
 
-          const globalFrameIndex = deathIndices[curFrame];
-          const col = globalFrameIndex % sheet.cols;
-          const row = Math.floor(globalFrameIndex / sheet.cols);
-          const cellW = canvas.width / sheet.cols;
-          const cellH = canvas.height / sheet.rows;
+          // Decode UV coordinates directly from the live Three.js material map
+          const flipped = (map.repeat.x < 0);
+          const col = Math.round(map.offset.x * cols) - (flipped ? 1 : 0);
+          const row = rows - 1 - Math.round(map.offset.y * rows);
+          const cellW = atlasCanvas.width / cols;
+          const cellH = atlasCanvas.height / rows;
 
           const cellCanvas = createCanvas(cellW, cellH);
           const cellCtx = cellCanvas.getContext("2d");
-          cellCtx.drawImage(canvas, col * cellW, row * cellH, cellW, cellH, 0, 0, cellW, cellH);
+          cellCtx.drawImage(atlasCanvas, col * cellW, row * cellH, cellW, cellH, 0, 0, cellW, cellH);
 
           const outPath = path.join(monsterOutDir, `${key}-death-${curFrame}.png`);
           fs.writeFileSync(outPath, cellCanvas.toBuffer("image/png"));
