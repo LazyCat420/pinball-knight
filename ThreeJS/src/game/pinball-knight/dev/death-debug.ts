@@ -2,6 +2,8 @@
  * 🔬 Death Debug & Actor Telemetry Diagnostic Subsystem
  *
  * Activated exclusively when `?death-debug=1` is present in URL search params.
+ * Strictly adheres to gui/no-dom rules (zero DOM element creation/modification).
+ *
  * Provides:
  * 1. An immutable event trace log on `window.__deathTrace` capturing:
  *    - `damage`
@@ -10,10 +12,10 @@
  *    - `tick`
  *    - `set_frame`
  *    - `reap`
- * 2. An on-screen floating diagnostics overlay tracking real-time actor state:
+ * 2. Instantaneous actor telemetry via `window.__deathDebugSnapshot()`:
  *    - Actor ID & Kind
  *    - HP, maxHp, and ZombieMode
- *    - Facing, Flipped
+ *    - Facing
  *    - Requested Clip vs Resolved Clip
  *    - Animator frameIdx vs Decoded Texture Frame
  *    - Mesh visibility & Build Timestamp
@@ -30,16 +32,34 @@ export interface DeathTraceEvent {
   details: Record<string, unknown>;
 }
 
+export interface ActorTelemetrySnapshot {
+  actorId: string;
+  kind: string;
+  mode: string;
+  hp: number;
+  maxHp: number;
+  facing: string;
+  clip: string;
+  frameIdx: number;
+  finished: boolean;
+  texFrame: number;
+  uv: [number, number] | null;
+  meshVisible: boolean;
+  build: string;
+  totalEvents: number;
+}
+
 declare global {
   interface Window {
     __deathTrace?: DeathTraceEvent[];
     __inspectActorId?: string | null;
+    __deathDebugSnapshot?: () => ActorTelemetrySnapshot | null;
+    __latestActorState?: ActorTelemetrySnapshot | null;
   }
 }
 
 let enabled = false;
-let traceBuffer: DeathTraceEvent[] = [];
-let overlayElement: HTMLDivElement | null = null;
+const traceBuffer: DeathTraceEvent[] = [];
 
 if (typeof window !== "undefined") {
   try {
@@ -47,6 +67,7 @@ if (typeof window !== "undefined") {
     enabled = params.get("death-debug") === "1";
     if (enabled) {
       window.__deathTrace = traceBuffer;
+      window.__deathDebugSnapshot = getDeathDebugSnapshot;
       console.info("[death-debug] Active. Events recorded on window.__deathTrace.");
     }
   } catch {
@@ -79,53 +100,23 @@ export function recordDeathTrace(
   if (traceBuffer.length > 2000) traceBuffer.shift();
 
   // If inspectActorId is not set, latch onto the first damaged or killed actor
-  if (!window.__inspectActorId && (type === "damage" || type === "kill")) {
+  if (typeof window !== "undefined" && !window.__inspectActorId && (type === "damage" || type === "kill")) {
     window.__inspectActorId = actorId;
   }
 }
 
 /**
- * Updates the floating DOM diagnostics badge for the inspected actor.
+ * Computes instantaneous telemetry snapshot for the inspected actor.
  */
-export function updateDeathDebugOverlay(): void {
-  if (!enabled) return;
-  if (!overlayElement && typeof document !== "undefined") {
-    overlayElement = document.createElement("div");
-    overlayElement.id = "death-debug-overlay";
-    overlayElement.style.cssText = `
-      position: fixed;
-      top: 12px;
-      right: 12px;
-      z-index: 999999;
-      background: rgba(10, 14, 20, 0.88);
-      color: #7ef49a;
-      font-family: monospace;
-      font-size: 11px;
-      line-height: 1.4;
-      padding: 10px 14px;
-      border: 1px solid #327a4d;
-      border-radius: 6px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-      pointer-events: none;
-      max-width: 320px;
-    `;
-    document.body.appendChild(overlayElement);
-  }
-
-  if (!overlayElement) return;
-
-  // Find inspected actor or default to first goblin / dead actor
-  const targetId = window.__inspectActorId;
+export function getDeathDebugSnapshot(): ActorTelemetrySnapshot | null {
+  const targetId = typeof window !== "undefined" ? window.__inspectActorId : null;
   let target = targetId ? state.zombies.find((z) => z.dbgId === targetId || z.nid === targetId) : null;
   if (!target) {
     target = state.zombies.find((z) => z.kind === "goblin") || state.zombies.find((z) => z.mode === "dead") || state.zombies[0];
-    if (target) window.__inspectActorId = target.dbgId || target.nid;
+    if (target && typeof window !== "undefined") window.__inspectActorId = target.dbgId || target.nid;
   }
 
-  if (!target) {
-    overlayElement.innerHTML = `<b>[DEATH DEBUGGER]</b><br/>No actors found in state.zombies`;
-    return;
-  }
+  if (!target) return null;
 
   const anim = target.anim;
   const sprite = target.sprite;
@@ -136,25 +127,35 @@ export function updateDeathDebugOverlay(): void {
   let texFrame = -1;
   if (tex && sprite?.sheet) {
     const { cols, rows } = sprite.sheet;
-    const col = Math.round(tex.offset.x * cols - (sprite.sheet.cols > 1 ? 0 : 0));
+    const col = Math.round(tex.offset.x * cols);
     const row = Math.round(rows - 1 - tex.offset.y * rows);
     texFrame = row * cols + col;
   }
 
-  const build = (window as any).__dungeonBuild ? (window as any).__dungeonBuild() : "N/A";
+  const build = typeof window !== "undefined" && (window as any).__dungeonBuild ? (window as any).__dungeonBuild() : "N/A";
 
-  overlayElement.innerHTML = `
-    <div style="color: #fff; font-weight: bold; border-bottom: 1px solid #333; margin-bottom: 4px; padding-bottom: 2px;">
-      💀 ACTOR TELEMETRY: ${target.dbgId || target.nid}
-    </div>
-    <b>Kind:</b> ${target.kind} | <b>Mode:</b> <span style="color: ${target.mode === "dead" ? "#ff4d4d" : "#4df"}">${target.mode}</span><br/>
-    <b>HP:</b> ${target.hp.toFixed(1)} / ${(target.maxHp ?? target.hp).toFixed(1)}<br/>
-    <b>Facing:</b> ${anim.getFacing()}<br/>
-    <b>Requested Clip:</b> ${anim.getClip()}<br/>
-    <b>Internal frameIdx:</b> ${anim.getFrameIdx()} / ${anim.isFinished() ? "FINISHED" : "PLAYING"}<br/>
-    <b>Decoded texFrame:</b> <span style="color: #ffd700">${texFrame}</span> (UV: ${tex ? `${tex.offset.x.toFixed(3)}, ${tex.offset.y.toFixed(3)}` : "N/A"})<br/>
-    <b>Mesh Visible:</b> ${mesh ? mesh.visible : "N/A"} | <b>Scale:</b> ${mesh ? mesh.scale.x.toFixed(2) : "N/A"}<br/>
-    <b>Build:</b> <span style="color: #bbb">${build}</span><br/>
-    <div style="font-size: 9px; color: #888; margin-top: 4px;">Trace events: ${traceBuffer.length}</div>
-  `;
+  return {
+    actorId: target.dbgId || target.nid || "unknown",
+    kind: target.kind,
+    mode: target.mode,
+    hp: target.hp,
+    maxHp: target.maxHp ?? target.hp,
+    facing: anim.getFacing(),
+    clip: anim.getClip(),
+    frameIdx: anim.getFrameIdx(),
+    finished: anim.isFinished(),
+    texFrame,
+    uv: tex ? [tex.offset.x, tex.offset.y] : null,
+    meshVisible: mesh ? mesh.visible : false,
+    build,
+    totalEvents: traceBuffer.length,
+  };
+}
+
+/**
+ * Updates window.__latestActorState without touching the DOM.
+ */
+export function updateDeathDebugOverlay(): void {
+  if (!enabled || typeof window === "undefined") return;
+  window.__latestActorState = getDeathDebugSnapshot();
 }
