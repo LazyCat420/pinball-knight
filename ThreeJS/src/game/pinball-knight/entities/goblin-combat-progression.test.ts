@@ -8,6 +8,7 @@ import { STAGGER_TINT } from "../constants/enemies";
 import { makeSkinned } from "../spawn/factory";
 import { sheetFor } from "../boot/sheets";
 import { MOMENTUM_T_FLOOR } from "../constants";
+import { animationPresentation } from "../presentation/animation-system";
 
 describe("Goblin Combat Progression & Animation Verification", () => {
   beforeEach(() => {
@@ -60,23 +61,23 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     // Step physics & animation loop across 60 frames (~1 second)
     for (let f = 0; f < 60; f++) {
       updateZombies(0.016);
-      g.anim.update(0.016);
+      animationPresentation.update(0.016);
     }
 
     // Must reach and hold the final death frame
-    expect(g.anim.getFrameIdx()).toBe(3);
-    expect(g.anim.isFinished()).toBe(true);
+    expect(g!.anim.getFrameIdx()).toBe(3);
+    expect(g!.anim.isFinished()).toBe(true);
   });
 
   it("recovers cleanly from stumble without remaining stuck in hurt pose or tint", () => {
     sheetFor("goblin");
-    const g = makeSkinned("goblin", 1, 0);
+    const g = makeSkinned("goblin", 1, 0)!;
     state.zombies.push(g);
 
     // Trigger stagger
     g.staggerT = 0.2;
     updateZombies(0.016);
-    g.anim.update(0.016);
+    animationPresentation.update(0.016);
 
     expect(g.anim.getClip()).toBe("stumble");
     const matColor = (g.sprite.mesh.material as any).color.getHex();
@@ -85,7 +86,7 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     // Run until stagger expires
     for (let f = 0; f < 20; f++) {
       updateZombies(0.016);
-      g.anim.update(0.016);
+      animationPresentation.update(0.016);
     }
 
     expect(g.staggerT).toBe(0);

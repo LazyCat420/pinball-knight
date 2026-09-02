@@ -2094,7 +2094,6 @@ export function updatePlayer(dt: number, input: InputHandle): void {
         p.momSpeed = 0;
         syncActorMesh(p);
         p.anim.play("stumble");
-        p.anim.update(dt);
         return;
       }
     }
@@ -2119,7 +2118,6 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     // from the exit speed anyway.
     const spec = ricochetSpec();
     if (spec) p.anim.play(spec.clip);
-    p.anim.update(dt);
     return;
   }
 

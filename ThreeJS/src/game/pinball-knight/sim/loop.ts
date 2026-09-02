@@ -38,6 +38,7 @@ import { updateShots } from "../shots";
 import { setElementTorch, tickElements } from "../fx/floor/decals";
 import { pushHeatField } from "../fx/heat";
 import {showPickupNote, spawnFloatingCombo} from "../ui";
+import { animationPresentation } from "../presentation/animation-system";
 
 /**
  * The 60Hz clock. One instance for the session; `resetSimClock()` is called
@@ -273,8 +274,7 @@ export function loop(now: number): void {
   updateLampPuzzle(frame); // brazier glow + vault chest reveal
   updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay
-  if (p) p.anim.update(frame);
-  for (const z of state.zombies) z.anim.update(frame);
+  animationPresentation.update(frame);
 
   // Loot bobs, snapped to the pixel grid so it doesn't shimmer. Coins are
   // skipped: they own their own Y across burst/rest/magnet (updateCoins), and

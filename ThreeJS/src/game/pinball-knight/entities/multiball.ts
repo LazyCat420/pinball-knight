@@ -304,7 +304,6 @@ export function updateMultiBall(dt: number): void {
     const pose = echoPose(knightClip, knightRate, moving);
     e.anim.setRate(pose.rate);
     e.anim.play(pose.clip);
-    e.anim.update(dt);
     syncActorMesh(e);
 
     tickRamCooldowns(e.hitCd, dt);
@@ -339,3 +338,9 @@ export function disposeMultiBall(): void {
   trail = [];
   clock = 0;
 }
+
+/** Active echoes for the central animation presentation system. */
+export function getMultiBallEchoes(): readonly { anim: Animator }[] {
+  return echoes;
+}
+

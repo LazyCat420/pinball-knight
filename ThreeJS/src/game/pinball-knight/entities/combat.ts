@@ -905,6 +905,7 @@ function tallyKill(z: Zombie): void {
 
 export function killZombie(z: Zombie): void {
   if (z.mode === "dead") return;
+  z.deathFacing = z.anim.getFacing();
   z.mode = "dead";
   z.staggerT = 0;
   z.windupT = 0;

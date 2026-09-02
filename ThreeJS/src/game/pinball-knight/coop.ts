@@ -325,7 +325,6 @@ function ghostTick(dt: number): void {
       z.z += (t.z - z.z) * k;
       const speed = Math.hypot(z.x - px, z.z - pz) / (dt || 1 / 60);
       z.anim.play(speed > 0.35 ? "walk" : "idle");
-      z.anim.update(dt);
       syncGhostMesh(z);
     }
     // Contact damage against OUR knight — player HP is client-owned, so the
