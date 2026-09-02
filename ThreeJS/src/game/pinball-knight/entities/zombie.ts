@@ -579,6 +579,10 @@ export function updateZombies(dt: number): void {
       // fall back to `idle` in the animator, which is what this line used to be.
       z.anim.play("stumble");
       if (z.flashT <= 0) z.sprite.setTint(STAGGER_TINT);
+      if (z.staggerT <= 0) {
+        if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+        z.anim.play("idle", { force: true });
+      }
       syncActorMesh(z);
       continue;
     }
