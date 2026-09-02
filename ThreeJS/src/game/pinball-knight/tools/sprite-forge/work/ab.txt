@@ -13,8 +13,8 @@
 ── stiltneck (idle, walk, attack, stumble, death) — 15 frames each
    IMPORTED  entries 24.9  isolated 47.8%  runLen 1.18
    PAINTED   entries 22.7  isolated 23.7%  runLen 1.71
-── pinball_knight (idle, walk, run, attack, stumble, roll) — 22 frames each
-   IMPORTED  entries 15.6  isolated 5.8%  runLen 2.12
-   PAINTED   entries 26.5  isolated 27.8%  runLen 1.52
+── pinball_knight (idle, walk, run, attack, stumble, death, roll) — 25 frames each
+   IMPORTED  entries 16.1  isolated 6.1%  runLen 2.10
+   PAINTED   entries 26.5  isolated 28.2%  runLen 1.53
 
 Top row imported, bottom row painted, in work/ab-<name>.png
