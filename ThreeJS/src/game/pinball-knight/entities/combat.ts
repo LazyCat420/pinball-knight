@@ -77,6 +77,7 @@ import { screenDirToWorld } from "../engine/camera";
 import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
+import { recordDeathTrace } from "../dev/death-debug";
 
 /**
  * Player's outgoing damage: the base weapon damage run through the active
@@ -613,6 +614,7 @@ export function damageZombie(
   // and avoids threading a source through six call sites that don't care.
   _killSrc = src;
   z.hp -= damage;
+  recordDeathTrace(z, "damage", { damage, hp: z.hp, src, momentum });
   z.aggro = true; // hitting a dormant zombie certainly wakes it
   z.flashT = FLASH_TIME;
   z.sprite.setTint(0xff6a6a);
@@ -912,6 +914,7 @@ export function killZombie(z: Zombie): void {
   z.flashT = 0;
   z.sprite.setTint(z.baseTint ?? null);
   z.anim.play("death");
+  recordDeathTrace(z, "kill", { facing: z.deathFacing });
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);

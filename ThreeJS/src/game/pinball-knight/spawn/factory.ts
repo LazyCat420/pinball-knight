@@ -162,8 +162,10 @@ export function makeZombie(
   anim.setFacing("S");
   anim.play("idle");
   const nid = "z" + zombieNidSeq++;
+  const dbgId = `${kind}#${nid}`;
   const z2: Zombie = {
     nid,
+    dbgId,
     sprite,
     anim,
     x,

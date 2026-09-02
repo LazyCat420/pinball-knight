@@ -13,6 +13,7 @@ import { state } from "../state";
 import type { Animator } from "../engine/render/animator";
 import type { ActorSprite } from "../engine/render/sprite";
 import { getMultiBallEchoes } from "../entities/multiball";
+import { updateDeathDebugOverlay, recordDeathTrace } from "../dev/death-debug";
 
 export interface AnimatableEntity {
   readonly id?: string;
@@ -59,7 +60,14 @@ export class AnimationPresentationSystem {
     // 2. World Monsters (Zombies, Goblins, Bosses, Corpses)
     for (const z of state.zombies) {
       if (z?.anim) {
+        const prevFrame = z.anim.getFrameIdx();
         this.tickActor(z.anim, renderDt);
+        if (z.mode === "dead") {
+          const nextFrame = z.anim.getFrameIdx();
+          if (prevFrame !== nextFrame || z.anim.isFinished()) {
+            recordDeathTrace(z, "tick", { prevFrame, nextFrame, clip: z.anim.getClip(), finished: z.anim.isFinished() });
+          }
+        }
       }
     }
 
@@ -76,6 +84,8 @@ export class AnimationPresentationSystem {
         this.tickActor(actor.anim, renderDt);
       }
     }
+
+    updateDeathDebugOverlay();
   }
 
   private tickActor(anim: Animator, dt: number): void {

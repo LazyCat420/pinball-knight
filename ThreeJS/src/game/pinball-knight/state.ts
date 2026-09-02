@@ -349,6 +349,8 @@ export interface Zombie extends Actor {
   /** Co-op network id — assigned by makeZombie in creation order, which is
    * seed-deterministic at startLevel so every pool member agrees on the horde. */
   nid?: string;
+  /** Stable debug tracking id (e.g. "goblin#1") for runtime diagnostics */
+  dbgId?: string;
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
   kind: EnemyKind;
   hp: number;

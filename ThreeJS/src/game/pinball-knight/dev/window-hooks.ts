@@ -37,7 +37,7 @@ import { installGuiHooks } from "./gui-hooks";
 import { isOpen as uiIsOpen } from "../gui/stack";
 import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
-import { damageZombie, syncActorMesh } from "../entities/combat";
+import { damageZombie, resolvePlayerAttack, syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
 import { multiBallPositions } from "../entities/multiball";
 import { applyMaterial, isMaterial } from "../entities/marble";
@@ -1114,6 +1114,8 @@ export function installDevHooks(deps: DevHookDeps): void {
       }
       return hit;
     };
+    (window as unknown as { __playerAttack?: () => boolean }).__playerAttack = () => resolvePlayerAttack();
+    (window as unknown as { __damageZombie?: typeof damageZombie }).__damageZombie = damageZombie;
     /**
      * `__dungeonAnim()` — WHAT EVERY ACTOR IS ACTUALLY SHOWING, this instant.
      *

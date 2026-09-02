@@ -32,6 +32,7 @@
  * necromancer adds) — replicas receive the tide through the co-op snapshot.
  */
 import { state } from "../state";
+import { recordDeathTrace } from "../dev/death-debug";
 import {
   CORPSE_BUDGET,
   TIDE_GRACE,
@@ -255,6 +256,7 @@ export function reapCorpses(): void {
   for (let i = 0; i < state.zombies.length && excess > 0; ) {
     const z = state.zombies[i];
     if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished())) {
+      recordDeathTrace(z, "reap", { excess });
       state.zombies.splice(i, 1);
       z.sprite.mesh.parent?.remove(z.sprite.mesh);
       excess--;
