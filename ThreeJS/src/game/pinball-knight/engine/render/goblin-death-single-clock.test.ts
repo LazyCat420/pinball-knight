@@ -5,12 +5,13 @@ import { sheetFor } from "../../boot/sheets";
 import { killZombie, damageZombie } from "../../entities/combat";
 import { animationPresentation } from "../../presentation/animation-system";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
+import { installDevHooks } from "../../dev/window-hooks";
 import { importedPaints } from "../../render/imported-paints";
 import { buildSpriteSheet } from "./sprite";
 import { withRecoil } from "../../render/cel-painter";
 import * as fs from "node:fs";
 import { loadImage } from "canvas";
-import type { Facing } from "../render/paint-types";
+import type { Facing } from "./animator";
 
 import * as THREE from "three";
 
@@ -170,5 +171,69 @@ describe("Goblin Death Single-Clock Presentation Progression (TDD Red/Green)", (
     }
     expect(g.anim.getFrameIdx()).toBe(3);
     expect(g.anim.isFinished()).toBe(true);
+  });
+
+  it("verifies dev window hooks (__dungeonIsTavern, __dungeonKillAll, safe __dungeonTavern) support automated QA without pausing engine", () => {
+    const win = globalThis as any;
+    win.window = win;
+    if (!win.localStorage) {
+      win.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
+    }
+    if (!win.AudioContext) {
+      win.AudioContext = class {
+        state = "running";
+        destination = {};
+        createGain() { return { connect: () => {}, gain: { value: 1, linearRampToValueAtTime: () => {} } }; }
+        createOscillator() { return { connect: () => {}, start: () => {}, stop: () => {}, frequency: { setValueAtTime: () => {} } }; }
+      };
+    }
+
+    installDevHooks({
+      startLevel: () => {},
+      descend: () => {},
+      onPlayerDeath: () => {},
+      openShop: () => {},
+      applyPotion: () => false,
+      debugSpawn: () => ({} as any),
+      debugClearEnemies: () => {},
+      exitDungeonGame: () => {},
+      tearGraveHole: () => {},
+    });
+
+    // __dungeonIsTavern returns false initially
+    expect(win.__dungeonIsTavern()).toBe(false);
+
+    // Calling __dungeonTavern() without args must NOT open tavern or pause engine — it returns false
+    expect(win.__dungeonTavern()).toBe(false);
+    expect(win.__dungeonIsTavern()).toBe(false);
+
+    // Spawn a goblin and kill with __dungeonKillAll
+    const g = makeSkinned("goblin", 5, 5, 1)!;
+    state.zombies = [g];
+    expect(g.mode).not.toBe("dead");
+
+    const killed = win.__dungeonKillAll("goblin");
+    expect(killed).toBe(1);
+    expect(g.mode).toBe("dead");
+    expect(g.anim.getClip()).toBe("death");
+    expect(g.anim.getFrameIdx()).toBe(0);
+
+    // Verify __dungeonAnim reports accurate metadata
+    const anims = win.__dungeonAnim();
+    expect(anims).toHaveLength(1);
+    expect(anims[0].mode).toBe("dead");
+    expect(anims[0].clip).toBe("death");
+    expect(anims[0].frameIdx).toBe(0);
+
+    // Advance presentation clock and verify death progresses to frame 3
+    for (let f = 0; f < 60; f++) {
+      animationPresentation.update(0.016);
+    }
+    expect(g.anim.getFrameIdx()).toBe(3);
+    expect(g.anim.isFinished()).toBe(true);
+
+    const animsEnd = win.__dungeonAnim();
+    expect(animsEnd[0].frameIdx).toBe(3);
+    expect(animsEnd[0].finished).toBe(true);
   });
 });

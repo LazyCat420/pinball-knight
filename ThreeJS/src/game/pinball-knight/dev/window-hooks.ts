@@ -598,9 +598,9 @@ export function installDevHooks(deps: DevHookDeps): void {
       showCardHaul(entries, floor ?? state.level, () => {});
       return true;
     };
-    // Dev: open the between-floor TAVERN without clearing a floor first — it's
-    // where the holo cards live, and QA'ing them shouldn't need a full run.
-    (window as unknown as { __dungeonTavern?: () => boolean }).__dungeonTavern = () => {
+    // Dev: check whether the tavern is open (read-only query) or open it if requested.
+    (window as unknown as { __dungeonIsTavern?: () => boolean }).__dungeonIsTavern = () => isTavernSceneOpen();
+    (window as unknown as { __dungeonOpenTavern?: () => boolean }).__dungeonOpenTavern = () => {
       if (!state.container || uiIsOpen("tavern") || isTavernSceneOpen()) return false;
       enterTavern(state.container, {
         stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
@@ -608,6 +608,18 @@ export function installDevHooks(deps: DevHookDeps): void {
         onAbandon: () => exitDungeonGame(),
       });
       return true;
+    };
+    (window as unknown as { __dungeonTavern?: (action?: boolean | "open") => boolean }).__dungeonTavern = (action?: boolean | "open") => {
+      if (action === true || action === "open") {
+        if (!state.container || uiIsOpen("tavern") || isTavernSceneOpen()) return false;
+        enterTavern(state.container, {
+          stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
+          onDescend: () => startLevel(state.level + 1),
+          onAbandon: () => exitDungeonGame(),
+        });
+        return true;
+      }
+      return isTavernSceneOpen();
     };
     // Dev: put the knight at a world position. `__dungeonTeleport(6, 6)`.
     // Walking a headless bot to a specific tile is unreliable (WASD is
@@ -1107,6 +1119,16 @@ export function installDevHooks(deps: DevHookDeps): void {
       let hit = 0;
       for (const z of state.zombies) {
         if (hit >= n) break;
+        if (z.mode === "dead") continue;
+        if (kind && z.kind !== kind) continue;
+        damageZombie(z, 999, 0, 1, 0, true, "steel");
+        hit++;
+      }
+      return hit;
+    };
+    (window as unknown as { __dungeonKillAll?: (kind?: string) => number }).__dungeonKillAll = (kind?: string) => {
+      let hit = 0;
+      for (const z of state.zombies) {
         if (z.mode === "dead") continue;
         if (kind && z.kind !== kind) continue;
         damageZombie(z, 999, 0, 1, 0, true, "steel");
