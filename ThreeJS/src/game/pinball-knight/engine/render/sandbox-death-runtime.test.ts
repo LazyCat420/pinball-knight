@@ -23,9 +23,32 @@ describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verificati
       z: 10,
       hp: 100,
       momSpeed: 0,
-      anim: { update: () => {} } as any,
+      ricochetT: 0,
+      grooveHopT: 0,
+      sprite: { mesh: new Scene(), setElevation: () => {} } as any,
+      anim: { update: () => {}, getClip: () => "idle", getRate: () => 1 } as any,
     } as any;
     state.grid = { w: 20, h: 20, t: new Uint8Array(400).fill(1), shapes: new Uint8Array(400) } as any;
+    state.input = {
+      poll: () => {},
+      axis: () => ({ x: 0, z: 0 }),
+      consumeAttack: () => false,
+      attackHeldNow: () => false,
+      consumeAttackTap: () => false,
+      sprintHeld: () => false,
+      consumeDodge: () => false,
+      dodgeHeld: () => false,
+      consumeFlip: () => false,
+      flipHeld: () => false,
+      turnAxis: () => 0,
+      consumeMouseDelta: () => ({ dx: 0, dy: 0 }),
+      aimScreen: () => null,
+      aimStick: () => null,
+      controllerActive: () => false,
+      consumeStance: () => false,
+      consumePlunge: () => false,
+      plungeHeld: () => false,
+    } as any;
 
     const spritesDir = path.resolve(__dirname, "../../../../../public/sprites");
     const manifestPath = path.join(spritesDir, "goblin-S.json");
@@ -72,14 +95,9 @@ describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verificati
     const { cols, rows } = z.sprite.sheet;
 
     for (let step = 0; step < 60; step++) {
-      // Step the real simulation loop
+      // Step the real simulation loop (which updates corpse death animation deterministically)
       const stepped = simLoop.step(0.016, state.hitstopT, simulate);
       state.hitstopT = stepped.hitstopT;
-
-      // Step the real presentation animation loop (sim/loop.ts line 277)
-      for (const actor of state.zombies) {
-        actor.anim.update(0.016);
-      }
 
       // Ensure that external attempts to interrupt death (walk, idle, setFacing) are completely blocked
       if (step === 5) {
@@ -144,8 +162,8 @@ describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verificati
 
       const frames: number[] = [];
       for (let s = 0; s < 60; s++) {
-        simLoop.step(0.016, state.hitstopT, simulate);
-        actor.anim.update(0.016);
+        const stepped = simLoop.step(0.016, state.hitstopT, simulate);
+        state.hitstopT = stepped.hitstopT;
         const f = actor.anim.getFrameIdx();
         if (!frames.includes(f)) frames.push(f);
       }

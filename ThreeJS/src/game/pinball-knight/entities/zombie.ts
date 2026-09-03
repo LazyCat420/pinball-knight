@@ -402,7 +402,7 @@ function detonateCroakerCorpse(z: Zombie, index: number): void {
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
-  if (!g || !p) return;
+  if (!g) return;
 
   for (let i = state.zombies.length - 1; i >= 0; i--) {
     const z = state.zombies[i];
@@ -414,6 +414,10 @@ export function updateZombies(dt: number): void {
       if (z.anim?.getClip?.() !== "death") {
         z.anim?.play?.("death");
       }
+      // Advance corpse death animation deterministically until finished (puddle locked)
+      if (z.anim && !z.anim.isFinished()) {
+        z.anim.update(dt);
+      }
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;
@@ -424,6 +428,8 @@ export function updateZombies(dt: number): void {
       }
       continue; // the death clip plays out; the corpse stays (unless exploded)
     }
+
+    if (!p) continue;
 
     // The ONE steering decision. Everything below that branches on this reads
     // the policy, never the family — so a kind can never be handled by two
