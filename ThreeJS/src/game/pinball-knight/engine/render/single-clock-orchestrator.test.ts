@@ -100,8 +100,6 @@ describe("Single-Clock Architecture & Death Progression Orchestration", () => {
       const content = fs.readFileSync(filePath, "utf-8");
       const lines = content.split("\n");
       lines.forEach((line, idx) => {
-        // Exclude intentional deterministic corpse death animation advancement in zombie.ts
-        if (filePath.endsWith("entities/zombie.ts") && line.includes("z.anim.update(dt)")) return;
         if (line.includes(".anim.update(") || line.includes(".anim?.update?.(")) {
           illegalCalls.push(`${path.relative(srcRoot, filePath)}:${idx + 1}: ${line.trim()}`);
         }

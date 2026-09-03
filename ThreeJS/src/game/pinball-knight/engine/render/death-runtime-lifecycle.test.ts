@@ -5,6 +5,7 @@ import { makeZombie } from "../../spawn/factory";
 import { sheetFor, type SheetKey } from "../../boot/sheets";
 import { killZombie, damageZombie } from "../../entities/combat";
 import { updateZombies } from "../../entities/zombie";
+import { animationPresentation } from "../../presentation/animation-system";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
 
 describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
@@ -62,24 +63,28 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       // Step ~0.18s -> must be on Frame 1
       for (let t = 0; t < 11; t++) {
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), "Must advance to death frame 1").toBe(1);
 
       // Step another ~0.18s -> must be on Frame 2
       for (let t = 0; t < 11; t++) {
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), "Must advance to death frame 2").toBe(2);
 
       // Step another ~0.18s -> must be on Frame 3 or higher
       for (let t = 0; t < 11; t++) {
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), "Must advance to death frame 3").toBeGreaterThanOrEqual(3);
 
       // Advance to full completion (covering 4-frame and 5-frame death sequences)
       for (let t = 0; t < 20; t++) {
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.isFinished(), "Must mark finished on terminal frame").toBe(true);
 
@@ -89,6 +94,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       for (let t = 0; t < 30; t++) {
         damageZombie(z, 50, 0, 1, 1);
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), "Must remain on last frame and not snap to 0").toBe(finalFrame);
       expect(z.anim.isFinished()).toBe(true);
@@ -106,6 +112,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
     // Advance to frame 2
     for (let t = 0; t < 22; t++) {
       updateZombies(0.016);
+      animationPresentation.update(0.016);
     }
     expect(z.anim.getFrameIdx()).toBe(2);
 
@@ -131,6 +138,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       z.anim.play("death", { force: true });
       damageZombie(z, 10, 0, 1, 0);
       updateZombies(0.016);
+      animationPresentation.update(0.016);
     }
 
     // Must have successfully advanced to Frame 1 (12 * 0.016s = 0.192s > 0.1667s)
@@ -140,14 +148,16 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
     for (let t = 0; t < 12; t++) {
       z.anim.play("death", { force: true });
       updateZombies(0.016);
+      animationPresentation.update(0.016);
     }
-    expect(z.anim.getFrameIdx(), "Must advance to frame 2").toBe(2);
+    expect(z.anim.getFrameIdx()).toBe(2);
 
     for (let t = 0; t < 12; t++) {
       z.anim.play("death", { force: true });
       updateZombies(0.016);
+      animationPresentation.update(0.016);
     }
-    expect(z.anim.getFrameIdx(), "Must advance to frame 3").toBeGreaterThanOrEqual(3);
+    expect(z.anim.getFrameIdx()).toBeGreaterThanOrEqual(3);
   });
 
   it("strictly prevents play('idle'), play('walk'), play('stumble'), or facing changes from interrupting death on fish_feet and goblin", () => {
@@ -179,6 +189,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
         z.anim.play("idle", { force: true });
         z.anim.setFacing("E");
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getClip()).toBe("death");
       expect(z.anim.getFrameIdx(), `${kind} must advance to frame 1 despite idle/facing bombardment`).toBe(1);
@@ -187,12 +198,14 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
         z.anim.play("walk", { force: true });
         z.anim.setFacing("W");
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), `${kind} must advance to frame 2`).toBe(2);
 
       for (let t = 0; t < 20; t++) {
         z.anim.play("idle", { force: true });
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
       expect(z.anim.getFrameIdx(), `${kind} must advance to frame 3`).toBeGreaterThanOrEqual(3);
       expect(z.anim.isFinished(), `${kind} death must finish`).toBe(true);
@@ -213,6 +226,7 @@ describe("Monster Death Runtime Lifecycle & Dependency Chain", () => {
       // Advance through death frames
       for (let t = 0; t < 60; t++) {
         updateZombies(0.016);
+        animationPresentation.update(0.016);
       }
 
       expect(z.anim.getFrameIdx(), `fish_feet facing ${facing} must reach frame 3`).toBe(3);

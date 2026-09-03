@@ -9,6 +9,7 @@ import { state, type Zombie } from "../../state";
 import { damageZombie } from "../../entities/combat";
 import { updateZombies } from "../../entities/zombie";
 import { makeDebugEnemy } from "../../dev/debug-actions";
+import { animationPresentation } from "../../presentation/animation-system";
 
 describe("Goblin Death Animation Pipeline (TDD Red/Green)", () => {
   let restoreDom: () => void;
@@ -76,6 +77,7 @@ describe("Goblin Death Animation Pipeline (TDD Red/Green)", () => {
     // Step ~60 simulation ticks (1.0 second total)
     for (let step = 0; step < 60; step++) {
       updateZombies(0.01666);
+      animationPresentation.update(0.01666);
       const current = z.anim.getFrameIdx();
       if (current !== frameProgression[frameProgression.length - 1]) {
         frameProgression.push(current);
@@ -92,6 +94,7 @@ describe("Goblin Death Animation Pipeline (TDD Red/Green)", () => {
     // Step further (another 60 ticks) — it must remain at frame 3 forever
     for (let step = 0; step < 60; step++) {
       updateZombies(0.01666);
+      animationPresentation.update(0.01666);
       expect(z.anim.getFrameIdx()).toBe(3);
       expect(z.anim.isFinished()).toBe(true);
     }
@@ -119,6 +122,7 @@ describe("Goblin Death Animation Pipeline (TDD Red/Green)", () => {
       const frames: number[] = [0];
       for (let step = 0; step < 60; step++) {
         updateZombies(0.01666);
+        animationPresentation.update(0.01666);
         const cur = z.anim.getFrameIdx();
         if (cur !== frames[frames.length - 1]) frames.push(cur);
       }

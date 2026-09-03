@@ -11,6 +11,7 @@ import { makeSkinned } from "../../spawn/factory";
 import { sheetFor, imported, importedPalettes } from "../../boot/sheets";
 import { importedPaints, sheetPalette, type ImportedSheet } from "../../render/imported-paints";
 import { damageZombie, killZombie } from "../../entities/combat";
+import { animationPresentation } from "../../presentation/animation-system";
 import type { SheetManifest } from "../../tools/sprite-forge/manifest";
 
 describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verification", () => {
@@ -95,9 +96,10 @@ describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verificati
     const { cols, rows } = z.sprite.sheet;
 
     for (let step = 0; step < 60; step++) {
-      // Step the real simulation loop (which updates corpse death animation deterministically)
+      // Step the real simulation loop and central presentation animation clock
       const stepped = simLoop.step(0.016, state.hitstopT, simulate);
       state.hitstopT = stepped.hitstopT;
+      animationPresentation.update(0.016);
 
       // Ensure that external attempts to interrupt death (walk, idle, setFacing) are completely blocked
       if (step === 5) {
@@ -164,6 +166,7 @@ describe("Authentic Sandbox: Goblin Death Runtime Progression & Image Verificati
       for (let s = 0; s < 60; s++) {
         const stepped = simLoop.step(0.016, state.hitstopT, simulate);
         state.hitstopT = stepped.hitstopT;
+        animationPresentation.update(0.016);
         const f = actor.anim.getFrameIdx();
         if (!frames.includes(f)) frames.push(f);
       }

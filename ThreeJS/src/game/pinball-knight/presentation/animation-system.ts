@@ -57,13 +57,17 @@ export class AnimationPresentationSystem {
       this.tickActor(p.anim, renderDt);
     }
 
-    // 2. World Monsters (Zombies, Goblins, Bosses)
-    // Note: dead monsters (corpses) are stepped deterministically by the simulation loop
-    // in updateZombies(dt) to guarantee exact 4-stage progression and puddle lock.
+    // 2. World Monsters (Zombies, Goblins, Bosses, Corpses)
     for (const z of state.zombies) {
       if (z?.anim) {
-        if (z.mode === "dead") continue;
+        const prevFrame = z.anim.getFrameIdx();
         this.tickActor(z.anim, renderDt);
+        if (z.mode === "dead") {
+          const nextFrame = z.anim.getFrameIdx();
+          if (prevFrame !== nextFrame || z.anim.isFinished()) {
+            recordDeathTrace(z, "tick", { prevFrame, nextFrame, clip: z.anim.getClip(), finished: z.anim.isFinished() });
+          }
+        }
       }
     }
 
