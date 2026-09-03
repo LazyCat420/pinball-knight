@@ -230,10 +230,16 @@ export class MonsterAnimator {
       this.timer -= step;
       this.frameIdx++;
       if (this.frameIdx >= indices.length) {
-        if (this.state === "dying" || !LOOPS[played]) {
+        if (this.state === "dying") {
           this.frameIdx = indices.length - 1;
           this.finished = true;
           this.state = "dead";
+          this.onEnd?.();
+          this.onEnd = null;
+          break;
+        } else if (!LOOPS[played]) {
+          this.frameIdx = indices.length - 1;
+          this.finished = true;
           this.onEnd?.();
           this.onEnd = null;
           break;
