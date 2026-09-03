@@ -20,7 +20,7 @@ import { updateZombies } from "../entities/zombie";
 import { at, isWalkable, tileCenter, worldToTile, type Grid, type TilePos } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { themeFor } from "../maze/prefabs";
-import { Animator } from "../engine/render/animator";
+import { MonsterAnimator } from "../engine/render/monster-animator";
 import { ZOMBIE_VARIANTS } from "../render/cel-painter";
 import { bakeTintedSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { sheetFor, skinSheet } from "../boot/sheets";
@@ -158,7 +158,7 @@ export function makeZombie(
     sprite.mesh.renderOrder = 11;
   }
   state.scene!.add(sprite.mesh);
-  const anim = new Animator(sprite);
+  const anim = new MonsterAnimator(sprite);
   anim.setFacing("S");
   anim.play("idle");
   const nid = "z" + zombieNidSeq++;

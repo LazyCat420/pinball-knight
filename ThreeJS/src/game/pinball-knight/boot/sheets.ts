@@ -589,11 +589,22 @@ function rebuild(key: SheetKey): void {
       state.expansionSheets[z.kind]?.texture.dispose();
       delete state.expansionSheets[z.kind];
       const rebaked = skinSheet(z.kind);
-      if (rebaked) z.sprite.setSheet(rebaked);
+      if (rebaked) {
+        if (typeof (z.anim as any).reapplySheet === "function") {
+          (z.anim as any).reapplySheet(rebaked);
+        } else {
+          z.sprite.setSheet(rebaked);
+          z.anim?.reapply?.();
+        }
+      }
     } else {
-      z.sprite.setSheet(sheet);
+      if (typeof (z.anim as any).reapplySheet === "function") {
+        (z.anim as any).reapplySheet(sheet);
+      } else {
+        z.sprite.setSheet(sheet);
+        z.anim?.reapply?.();
+      }
     }
-    z.anim?.reapply();
   }
 }
 

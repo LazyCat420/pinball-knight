@@ -1162,6 +1162,7 @@ export function installDevHooks(deps: DevHookDeps): void {
         return {
           kind: z.kind,
           mode: z.mode,
+          animState: (z.anim as any).getState?.() ?? z.mode,
           hp: z.hp,
           clip: z.anim.getClip(),
           resolved: z.anim.debugResolvedClip(),

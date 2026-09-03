@@ -906,14 +906,18 @@ function tallyKill(z: Zombie): void {
 }
 
 export function killZombie(z: Zombie): void {
-  if (z.mode === "dead") return;
+  if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) return;
   z.deathFacing = z.anim.getFacing();
   z.mode = "dead";
   z.staggerT = 0;
   z.windupT = 0;
   z.flashT = 0;
   z.sprite.setTint(z.baseTint ?? null);
-  z.anim.play("death");
+  if (typeof (z.anim as any).triggerDeath === "function") {
+    (z.anim as any).triggerDeath(z.deathFacing);
+  } else {
+    z.anim.play("death");
+  }
   recordDeathTrace(z, "kill", { facing: z.deathFacing });
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).

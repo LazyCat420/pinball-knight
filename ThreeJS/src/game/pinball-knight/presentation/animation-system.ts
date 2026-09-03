@@ -11,13 +11,14 @@
  */
 import { state } from "../state";
 import type { Animator } from "../engine/render/animator";
+import type { MonsterAnimator } from "../engine/render/monster-animator";
 import type { ActorSprite } from "../engine/render/sprite";
 import { getMultiBallEchoes } from "../entities/multiball";
 import { updateDeathDebugOverlay, recordDeathTrace } from "../dev/death-debug";
 
 export interface AnimatableEntity {
   readonly id?: string;
-  readonly anim: Animator;
+  readonly anim: Animator | MonsterAnimator;
   readonly sprite?: ActorSprite;
   mode?: string;
 }
@@ -25,7 +26,7 @@ export interface AnimatableEntity {
 export class AnimationPresentationSystem {
   private extraActors = new Set<AnimatableEntity>();
   private currentFrameId = 0;
-  private updatedThisFrame = new Set<Animator>();
+  private updatedThisFrame = new Set<Animator | MonsterAnimator>();
 
   /**
    * Register a transient entity (e.g., multiball echoes, co-op replicas).
@@ -62,7 +63,7 @@ export class AnimationPresentationSystem {
       if (z?.anim) {
         const prevFrame = z.anim.getFrameIdx();
         this.tickActor(z.anim, renderDt);
-        if (z.mode === "dead") {
+        if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) {
           const nextFrame = z.anim.getFrameIdx();
           if (prevFrame !== nextFrame || z.anim.isFinished()) {
             recordDeathTrace(z, "tick", { prevFrame, nextFrame, clip: z.anim.getClip(), finished: z.anim.isFinished() });
@@ -88,7 +89,7 @@ export class AnimationPresentationSystem {
     updateDeathDebugOverlay();
   }
 
-  private tickActor(anim: Animator, dt: number): void {
+  private tickActor(anim: Animator | MonsterAnimator, dt: number): void {
     if (this.updatedThisFrame.has(anim)) {
       console.warn("[AnimationPresentationSystem] Duplicate update prevented on frame", this.currentFrameId);
       return;

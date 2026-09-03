@@ -14,6 +14,7 @@ import type { ActorSprite, SpriteSheet } from "./engine/render/sprite";
 import type { SheetKey } from "./boot/sheets";
 import type { BossKind } from "./boss-kinds";
 import type { Animator, Facing } from "./engine/render/animator";
+import type { MonsterAnimator } from "./engine/render/monster-animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { Fog } from "./fog";
 import type { ArcCorner } from "./engine/collision";
@@ -38,7 +39,7 @@ import { freshWeapon } from "./items";
 
 export interface Actor {
   sprite: ActorSprite;
-  anim: Animator;
+  anim: Animator | MonsterAnimator;
   x: number;
   z: number;
 }
@@ -346,6 +347,7 @@ export type EnemyKind =
   | "mimic"; // AMBUSHER — dormant + item-like until you're close, then lunges
 
 export interface Zombie extends Actor {
+  anim: MonsterAnimator;
   /** Co-op network id — assigned by makeZombie in creation order, which is
    * seed-deterministic at startLevel so every pool member agrees on the horde. */
   nid?: string;
