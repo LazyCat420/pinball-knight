@@ -339,9 +339,9 @@ export function paintsFor(key: SheetKey): ActorPaints {
   const art = imported.get(key);
   if (!art) return painted;
   return {
-    S: { ...painted.S, ...art.S, death: art.S?.death ?? painted.S.death },
-    N: { ...painted.N, ...art.N, death: art.N?.death ?? painted.N.death },
-    E: { ...painted.E, ...art.E, death: art.E?.death ?? painted.E.death },
+    S: { ...painted.S, ...art.S, death: (art.S?.death && art.S.death.length > 0) ? art.S.death : painted.S.death },
+    N: { ...painted.N, ...art.N, death: (art.N?.death && art.N.death.length > 0) ? art.N.death : painted.N.death },
+    E: { ...painted.E, ...art.E, death: (art.E?.death && art.E.death.length > 0) ? art.E.death : painted.E.death },
     ...(painted.beats ? { beats: painted.beats } : {}),
   };
 }

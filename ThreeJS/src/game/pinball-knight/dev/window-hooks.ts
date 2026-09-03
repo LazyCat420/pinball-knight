@@ -1173,7 +1173,11 @@ export function installDevHooks(deps: DevHookDeps): void {
           ticks: z.anim.debugTicks(),
           screen: worldToScreenPx(z.x, z.z),
           texFrame: col < 0 ? -1 : row * cols + col,
+          uvOffset: map ? { x: map.offset.x, y: map.offset.y } : null,
           visible: z.sprite.mesh.visible,
+          meshVisible: z.sprite.mesh.visible,
+          meshScale: z.sprite.mesh.scale.x,
+          opacity: (mat as any)?.opacity ?? 1,
           x: z.x,
           z: z.z,
         };
