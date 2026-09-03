@@ -207,7 +207,8 @@ export class MonsterAnimator {
     }
 
     const indices = this.indices();
-    if (indices.length <= 1) {
+    if (indices.length === 0) {
+      // Empty clip: if dying, finish and hold state
       if (this.state === "dying") {
         this.finished = true;
         this.state = "dead";
@@ -224,8 +225,30 @@ export class MonsterAnimator {
     const beats = this.sprite.sheet.beats?.[played];
     const smooth = beats && beats > 0 ? indices.length / beats : 1;
     const fps = fpsFor(played) || 6;
-    const step = 1 / (fps * this.rate * smooth);
+    const safeFps = Math.max(1, fps);
+    const safeRate = Math.max(0.1, this.rate);
+    const safeSmooth = Math.max(0.1, smooth);
+    const step = 1 / (safeFps * safeRate * safeSmooth);
 
+    // Single-frame clip: hold for at least 1 step before marking finished
+    if (indices.length === 1) {
+      if (this.timer >= step) {
+        if (this.state === "dying") {
+          this.finished = true;
+          this.state = "dead";
+          this.onEnd?.();
+          this.onEnd = null;
+        } else if (!LOOPS[played]) {
+          this.finished = true;
+          this.onEnd?.();
+          this.onEnd = null;
+        }
+      }
+      this.apply();
+      return;
+    }
+
+    // Multi-frame clip progression
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;
@@ -252,9 +275,17 @@ export class MonsterAnimator {
     this.apply();
   }
 
-  /** Reapply sheet on atlas rebuild. */
+  /** Reapply sheet on atlas rebuild without losing death pose or progression. */
   reapplySheet(newSheet: SpriteSheet): void {
     this.sprite.setSheet(newSheet);
+    const newIndices = this.indices();
+    if (newIndices.length > 0) {
+      if (this.state === "dead") {
+        this.frameIdx = newIndices.length - 1;
+      } else {
+        this.frameIdx = Math.min(this.frameIdx, newIndices.length - 1);
+      }
+    }
     this.apply();
   }
 
@@ -313,6 +344,10 @@ export class MonsterAnimator {
         const list = clips.get(key);
         if (list && list.length > 0) return list;
       }
+    }
+    if (clip === "death") {
+      const fallback = clips.get("S:idle") ?? clips.get("E:idle") ?? clips.values().next().value;
+      if (fallback && fallback.length > 0) return fallback;
     }
     return [];
   }
