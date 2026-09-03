@@ -983,6 +983,9 @@ export function installDevHooks(deps: DevHookDeps): void {
       const p = state.player;
       const len = Math.hypot(dirX, dirZ);
       if (!p || len < 1e-4) return false;
+      state.plungerArmed = false;
+      state.plungerCharging = false;
+      state.plungerPower = 0;
       p.momX = dirX / len;
       p.momZ = dirZ / len;
       p.momSpeed = speed;
@@ -993,6 +996,9 @@ export function installDevHooks(deps: DevHookDeps): void {
     (window as unknown as { __dungeonWarp?: (x: number, z: number) => boolean }).__dungeonWarp = (x: number, z: number) => {
       const p = state.player;
       if (!p) return false;
+      state.plungerArmed = false;
+      state.plungerCharging = false;
+      state.plungerPower = 0;
       p.x = x;
       p.z = z;
       p.momSpeed = 0;

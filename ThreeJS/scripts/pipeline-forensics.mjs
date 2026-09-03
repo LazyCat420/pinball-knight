@@ -173,29 +173,31 @@ async function runForensicTrace(kind, killMode) {
   // Execute killing blow
   log(`[Combat Trigger] Delivering fatal blow via ${killMode}...`);
   if (killMode === "ram") {
-    for (let attempt = 0; attempt < 30; attempt++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await page.evaluate(() => {
+        const z = window.__dungeonAnim()[0];
+        if (!z || z.mode === "dead") return;
+        window.__dungeonPotion?.("ballform");
+        window.__dungeonWarp?.(z.x - 1.0, z.z);
+        window.__dungeonLaunch?.(1, 0, 22);
+      });
+      await page.waitForTimeout(100);
       const isDead = await page.evaluate(() => {
         const z = window.__dungeonAnim()[0];
-        const p = window.__dungeonPlayer();
-        if (!z || !p) return true;
-        if (z.mode === "dead") return true;
-        window.__dungeonLaunch(z.x - p.x, z.z - p.z, 22);
-        return false;
+        return !z || z.mode === "dead";
       });
       if (isDead) break;
-      await page.waitForTimeout(60);
     }
   } else if (killMode === "slash") {
     for (let attempt = 0; attempt < 20; attempt++) {
       const isDead = await page.evaluate(() => {
         const z = window.__dungeonAnim()[0];
-        const p = window.__dungeonPlayer();
-        if (!z || !p) return true;
-        if (z.mode === "dead") return true;
-        p.x = z.x - 0.5;
-        p.z = z.z;
-        window.__playerAttack();
-        return false;
+        if (!z || z.mode === "dead") return true;
+        window.__dungeonWarp?.(z.x - 0.4, z.z);
+        window.__dungeonLaunch?.(1, 0, 16);
+        window.__playerAttack?.();
+        const updated = window.__dungeonAnim()[0];
+        return updated?.mode === "dead";
       });
       if (isDead) break;
       await page.waitForTimeout(100);
