@@ -570,7 +570,7 @@ export async function applyImportedMonsterArt(): Promise<void> {
  * uses for a knight re-dress. (Only the player carries an occlusion silhouette,
  * so there is no second map to re-sync here.)
  */
-function rebuild(key: SheetKey): void {
+export function rebuild(key: SheetKey): void {
   _clearPortraitCache();
   inFlight.delete(key);
   if (current?.key === key) current = null;
