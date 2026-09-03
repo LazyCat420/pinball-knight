@@ -6,7 +6,7 @@ import { buildSpriteSheet, createActorSprite } from "./sprite";
 import { MonsterAnimator } from "./monster-animator";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
 
-describe("Goblin Imported Art Death Clip Diagnostics", () => {
+describe("Goblin Imported Art Death Clip Assertions", () => {
   let restore: (() => void) | null = null;
   beforeEach(() => {
     restore = installSpriteTestDom();
@@ -16,99 +16,61 @@ describe("Goblin Imported Art Death Clip Diagnostics", () => {
     restore = null;
   });
 
-  it("checks what clips are built from actual goblin-S.json", () => {
+  it("proves actual goblin-S.json loads >= 4 death cels and advances to the final cel without resetting", () => {
     const jsonPath = resolve(__dirname, "../../../../../public/sprites/goblin-S.json");
     const manifest = JSON.parse(readFileSync(jsonPath, "utf-8"));
-    
-    // Fake image canvas
+
     const canvas = document.createElement("canvas");
     canvas.width = 1024;
     canvas.height = 1024;
-    
+
     const importedSheet: ImportedSheet = {
       manifest,
       image: canvas as any,
     };
-    
+
     const paints = importedPaints([importedSheet]);
     expect(paints).not.toBeNull();
-    console.log("Paints keys for S:", Object.keys(paints!.S));
-    console.log("Paints keys for N:", Object.keys(paints!.N));
-    console.log("Paints keys for E:", Object.keys(paints!.E));
-    console.log("Death frames count S:", paints!.S.death?.length);
-    console.log("Death frames count N:", paints!.N.death?.length);
-    console.log("Death frames count E:", paints!.E.death?.length);
+    expect(paints!.S.death?.length, "S:death must have >= 4 frames").toBeGreaterThanOrEqual(4);
 
     const sheet = buildSpriteSheet(paints!);
-    console.log("Sheet clip keys:", Array.from(sheet.clips.keys()));
-    console.log("S:death indices:", sheet.clips.get("S:death"));
-    console.log("N:death indices:", sheet.clips.get("N:death"));
-    console.log("E:death indices:", sheet.clips.get("E:death"));
+    const deathIndices = sheet.clips.get("S:death");
+    expect(deathIndices, "S:death clip must exist in built sheet").toBeDefined();
+    expect(deathIndices!.length, "S:death indices count").toBeGreaterThanOrEqual(4);
 
-    const sprite = createActorSprite(sheet, false);
-    const anim = new MonsterAnimator(sprite);
+    // Test for all 4 facings (S, N, E, W)
+    for (const facing of ["S", "N", "E", "W"] as const) {
+      const sprite = createActorSprite(sheet, false);
+      const anim = new MonsterAnimator(sprite);
 
-    // Test with S facing
-    anim.setFacing("S");
-    anim.triggerDeath("S");
-    console.log("After triggerDeath(S):", {
-      state: anim.getState(),
-      clip: anim.getClip(),
-      facing: anim.getFacing(),
-      indices: anim.debugIndices(),
-      frameIdx: anim.getFrameIdx(),
-    });
+      anim.setFacing(facing);
+      anim.triggerDeath(facing);
 
-    // Advance 0.2s (more than 1 step at 6fps)
-    anim.update(0.2);
-    console.log("After update(0.2) facing S:", {
-      state: anim.getState(),
-      clip: anim.getClip(),
-      indices: anim.debugIndices(),
-      frameIdx: anim.getFrameIdx(),
-      finished: anim.isFinished(),
-    });
+      expect(anim.getState(), `${facing}: initial death state`).toBe("dying");
+      expect(anim.getClip(), `${facing}: clip name`).toBe("death");
+      expect(anim.getFrameIdx(), `${facing}: initial frameIdx must be 0`).toBe(0);
+      expect(anim.isFinished(), `${facing}: cannot be finished at frame 0`).toBe(false);
 
-    // Now test with N facing!
-    const spriteN = createActorSprite(sheet, false);
-    const animN = new MonsterAnimator(spriteN);
-    animN.setFacing("N");
-    animN.triggerDeath("N");
-    console.log("After triggerDeath(N):", {
-      state: animN.getState(),
-      clip: animN.getClip(),
-      facing: animN.getFacing(),
-      indices: animN.debugIndices(),
-      frameIdx: animN.getFrameIdx(),
-    });
-    animN.update(0.2);
-    console.log("After update(0.2) facing N:", {
-      state: animN.getState(),
-      clip: animN.getClip(),
-      indices: animN.debugIndices(),
-      frameIdx: animN.getFrameIdx(),
-      finished: animN.isFinished(),
-    });
+      const indices = anim.debugIndices();
+      expect(indices.length, `${facing}: death indices must not be empty`).toBeGreaterThanOrEqual(4);
 
-    // Now test with W facing!
-    const spriteW = createActorSprite(sheet, false);
-    const animW = new MonsterAnimator(spriteW);
-    animW.setFacing("W");
-    animW.triggerDeath("W");
-    console.log("After triggerDeath(W):", {
-      state: animW.getState(),
-      clip: animW.getClip(),
-      facing: animW.getFacing(),
-      indices: animW.debugIndices(),
-      frameIdx: animW.getFrameIdx(),
-    });
-    animW.update(0.2);
-    console.log("After update(0.2) facing W:", {
-      state: animW.getState(),
-      clip: animW.getClip(),
-      indices: animW.debugIndices(),
-      frameIdx: animW.getFrameIdx(),
-      finished: animW.isFinished(),
-    });
+      // Step by 0.2s (enough for 1 frame at 6 fps)
+      anim.update(0.2);
+      expect(anim.getFrameIdx(), `${facing}: must advance to frame 1 after 0.2s`).toBe(1);
+
+      // Step until death completes (e.g. 2.0s total)
+      for (let i = 0; i < 20; i++) {
+        anim.update(0.1);
+      }
+
+      expect(anim.getFrameIdx(), `${facing}: final frameIdx must be last cel`).toBe(indices.length - 1);
+      expect(anim.isFinished(), `${facing}: must be finished at last cel`).toBe(true);
+      expect(anim.getState(), `${facing}: state must be dead`).toBe("dead");
+
+      // Verify further updates HOLD the last frame (no loop, no reset to 0)
+      anim.update(1.0);
+      expect(anim.getFrameIdx(), `${facing}: must permanently hold last cel`).toBe(indices.length - 1);
+      expect(anim.isFinished(), `${facing}: must remain finished`).toBe(true);
+    }
   });
 });

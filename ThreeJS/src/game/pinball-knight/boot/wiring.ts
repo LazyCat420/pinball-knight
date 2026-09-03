@@ -44,6 +44,7 @@ import {
   setBloaterBurstHandler,
   setCoopCombatBridge,
   damageZombie,
+  killZombie,
   hitPlayerRanged,
   resetCombatJuice,
 } from "../entities/combat";
@@ -177,6 +178,9 @@ export function installGameplayWiring(deps: WiringDeps): void {
     removeZombie: (z) => {
       state.scene?.remove(z.sprite.mesh);
       z.sprite.dispose();
+    },
+    killZombie: (z) => {
+      killZombie(z);
     },
     removeItem: (it) => {
       state.scene?.remove(it.sprite.mesh);

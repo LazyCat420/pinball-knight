@@ -47,7 +47,7 @@ interface View {
  * flip-flopping E/W on every wall hit — "running back and forth". Mirroring the
  * peer's actual clip is what makes a ball look like a ball.
  */
-const MIRRORED_CLIPS = new Set(["ball", "roll", "attack", "run"]);
+const MIRRORED_CLIPS = new Set(["ball", "roll", "attack", "run", "death"]);
 
 export class RemotePartyRenderer {
   private readonly views = new Map<string, View>();

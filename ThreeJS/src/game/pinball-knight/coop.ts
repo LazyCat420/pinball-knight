@@ -85,6 +85,8 @@ export interface CoopHooks {
   spawnGhostItem(nid: string, kind: GroundItem["kind"], id: string, x: number, z: number): GroundItem | null;
   /** Remove an enemy WITHOUT kill logic (it died authority-side; juice separate). */
   removeZombie(z: Zombie): void;
+  /** Trigger death progression on an enemy when authority confirms kill. */
+  killZombie?: (z: Zombie) => void;
   /** Remove a ground item (someone else picked it up). */
   removeItem(it: GroundItem): void;
   /** Kill juice + shared gold at (x,z) for a kill that happened authority-side. */
@@ -384,8 +386,12 @@ function handleAct(act: Act): void {
       // act) removes the ghost.
       const z = state.zombies.find((x) => x.nid === act.n && x.mode !== "dead");
       if (z) {
-        hooks.removeZombie(z);
-        state.zombies = state.zombies.filter((x) => x !== z);
+        if (hooks.killZombie) {
+          hooks.killZombie(z);
+        } else {
+          hooks.removeZombie(z);
+          state.zombies = state.zombies.filter((x) => x !== z);
+        }
         ghostTargets.delete(act.n);
       }
       hooks.onRemoteKill(act.x, act.z, act.kind, act.boss);

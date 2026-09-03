@@ -345,10 +345,6 @@ export class MonsterAnimator {
         if (list && list.length > 0) return list;
       }
     }
-    if (clip === "death") {
-      const fallback = clips.get("S:idle") ?? clips.get("E:idle") ?? clips.values().next().value;
-      if (fallback && fallback.length > 0) return fallback;
-    }
     return [];
   }
 
