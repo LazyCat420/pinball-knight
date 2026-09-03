@@ -415,7 +415,7 @@ export function updateZombies(dt: number): void {
         z.anim?.play?.("death");
       }
       // Advance corpse death animation deterministically until finished (puddle locked)
-      if (z.anim && !z.anim.isFinished()) {
+      if (z.anim?.update && !z.anim.isFinished?.()) {
         z.anim.update(dt);
       }
       if (z.kind === "croaker" && p && p.hp > 0) {
