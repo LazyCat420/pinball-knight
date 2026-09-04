@@ -323,6 +323,36 @@ async function runCell({ count, sabotage, label }) {
 
   const before = await anim();
 
+  // ── ARE THE ANIMATORS EVEN RUNNING? ──
+  // `sim/loop.ts` returns early while a floor is held or the tavern owns the
+  // screen, and in that state NOTHING ticks — every actor would be scored
+  // FROZEN-JS and the report would blame the game for a harness that started
+  // measuring too early. rAF being alive is not the same claim: the page can
+  // be painting the loading screen. Ask the LIVING actors whether their tick
+  // count climbs, before killing anything.
+  {
+    const t0 = (await anim()).filter((z) => z.kind === a.kind).map((z) => z.ticks?.ticks ?? -1);
+    await page.waitForTimeout(400);
+    const t1 = (await anim()).filter((z) => z.kind === a.kind).map((z) => z.ticks?.ticks ?? -1);
+    const climbed = t0.length > 0 && t1.every((v, i) => v > t0[i]);
+    if (!climbed) {
+      log(`   ⚠ animators are NOT ticking before the kill (${t0[0]} → ${t1[0]}) — the floor is held or the`);
+      log(`     scene is not presenting. Waiting for the clock rather than scoring a stopped game.`);
+      await page.waitForFunction(
+        (k) => {
+          const rows = window.__dungeonAnim().filter((z) => z.kind === k);
+          const now = rows.map((z) => z.ticks?.ticks ?? -1);
+          const prev = window.__swarmPrevTicks ?? now.map(() => -1);
+          window.__swarmPrevTicks = now;
+          return rows.length > 0 && now.every((v, i) => v > prev[i]);
+        },
+        a.kind,
+        { timeout: 30_000, polling: 300 },
+      );
+      log(`   ▶ clock is running; proceeding`);
+    }
+  }
+
   // ── THE JS/UV CHANNEL IS RECORDED IN THE PAGE, NOT POLLED OVER CDP ──
   // A `page.evaluate` round-trip is 15-30ms and a screenshot 60-90ms, so a
   // polled sample lands roughly once per death cel and a real 0->1->2->3
