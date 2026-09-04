@@ -32,3 +32,5 @@ dist/
 # ship guard refuses a working tree it cannot identify.
 ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/sandbox-output/
 ThreeJS/.death-lab/
+ThreeJS/.pipeline-forensics/
+
