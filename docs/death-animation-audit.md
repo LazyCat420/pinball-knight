@@ -116,3 +116,79 @@ that deploy can hold the old bundle — and therefore the old game — under RFC
 `__dungeonBuild()` in the console is the one-line answer. It must print the
 `BUILD_ID` of the live deploy; anything older is a pre-fix bundle, and a hard
 reload is the whole fix.
+
+---
+
+# CORRECTION — the pipeline did NOT work (2026-09-04, later the same day)
+
+**Everything above is measurement, and the measurement was blind in one
+dimension.** Every check in the table kills ONE monster and scores JavaScript:
+`[death:step]` prints the animator's frame index, and `death-lab`'s `texFrame`
+decodes `texture.offset` — a value this code sets itself. Both were already
+correct. The player's report was about eight monsters and about PIXELS.
+
+`scripts/death-swarm.mjs`, the first instrument that kills more than one and
+crops each actor out of a real screenshot, reproduced the complaint on the
+first attempt:
+
+| count | died | PLAYED | FROZEN-GPU |
+| --- | --- | --- | --- |
+| 1 | 1 | 1 | 0 |
+| 2 | 2 | 1 | 1 |
+| 4 | 4 | 1 | 3 |
+| 16 | 16 | 8 | 8 |
+
+**One monster always worked.** That single fact explains the whole four days:
+every probe ever pointed at this bug stood in the one regime where it does not
+happen, and each green reading was true and irrelevant.
+
+## What was actually wrong
+
+With four goblins dead, all four animators had advanced 0→3, all four textures
+held the terminal offset `0.682` and a matching `matrix.elements[6]`, all four
+had distinct material, texture and mesh objects — and three of the four went on
+drawing death cel 0 for as long as anyone watched. `map.needsUpdate = true`,
+which rebuilds the binding, snapped all four to the correct cel instantly;
+calling `updateMatrix()` alone did nothing.
+
+So the uv transform was right in JavaScript and stale on the GPU.
+`texture.offset` reaches the WebGPU node renderer as a per-object uniform, and
+that upload was being skipped for every actor but one.
+
+**The fix** (`371ef7b1`): the cel is chosen by writing the quad's own uv
+attribute. `spriteGeometry()` returns a clone per actor and `dispose()` frees
+it; the texture matrix is pinned to identity (`matrixAutoUpdate = false`) while
+`offset`/`repeat` stay maintained for the debug decoders. A uv in this mesh's
+own buffer cannot be coalesced with its neighbour's.
+
+Verified after: 16/16 locally, 8/8 twice against the deployed build, and eight
+goblins photographed as eight puddles.
+
+## The three claims above that were wrong, and why
+
+- **"The death pipeline works."** True for one monster, false for two. The
+  denominator was never stated.
+- **"The residual is a stale `index.html` on the client."** It was not. The
+  cache fix in `61f9cd4b` was real and worth having, but it was standing in for
+  a bug nobody had measured, and it made a live defect look like a support
+  issue.
+- **"`death-lab --kill ram` only lands the first kind"** — still true, still
+  open, and now much less important: `death-swarm --kill ram` exists and reports
+  `NEVER DIED` per actor. Worth knowing when reading any ram-driven result: a
+  goblin has **two** hit points and a bumper pop deals **one** on a 0.6 s
+  cooldown, so a single pass through a pile leaves most of it standing.
+
+## What stops this recurring
+
+The new harness will not print a sweep until it has been shown to fail.
+`__dungeonSabotage` breaks one actor deliberately in three ways —
+`freeze-js` (animator stopped), `freeze-gpu` (setFrame stopped) and
+`freeze-quad`, which detaches the mesh from the quad the sprite keeps writing,
+so every JavaScript reading stays correct while the pixels stop. That last one
+is the shape of the bug above; without it a future regression would look
+exactly like the four days this document was written about.
+
+The pixel channel also has to earn its vote: it photographs one cel at two
+positions and is muted unless it can still name it. That gate is what stopped
+it accusing four hounds whose terminal cel is a dark puddle on a dark floor —
+a false red it produced on its very first run.
