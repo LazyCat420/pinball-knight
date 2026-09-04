@@ -17,6 +17,32 @@ What each proves is documented in its own header:
   contact sheet of the death. `--all` runs the whole roster. It also needs
   `canvas`, which IS in package.json.
 
+  **Use `--kill force` for the roster.** `--kill ram` lands its launch on the
+  FIRST kind and misses every one after it (open item — the trigger is not
+  re-armed between entries). The probe no longer scores a survivor as broken
+  art: a kind that never died prints
+  `⚠ NEVER DIED — the ram trigger did not land …` and drops out of the
+  denominator. It once printed 26 of those as death-animation failures, on a
+  build whose deaths were verified working by every other measurement.
+
+  The terminal cel is read off the DYING ACTOR, not off the kind's atlas — a
+  reaper is a brute wearing the boss atlas, so its death cels are 50-53 while
+  the kind's own `S:death` reads 12-15.
+
+- `audit-death-live.mjs` — the same question asked of ORDINARY PLAY instead of
+  a lab: no god mode, no `__dungeonKill`, no wait for imported art. Runs
+  `__dungeonBot` against a deployed URL and transcribes every death from the
+  build's own `[death:step]` / `[death:done]` logging, scoring whether the
+  texture reached and held each actor's terminal cel. `--gpu webgpu|cpu|none`
+  picks the backend, `--intro` keeps the full title sequence and drops every
+  query parameter, so it can measure the entry a player actually takes.
+  See `docs/death-animation-audit.md`.
+
+- `audit-ram-kill.mjs` — does a pinball RAM (and a melee swing) actually kill?
+  Spawns one goblin, drives each mechanism, prints hp/mode/texFrame. Written
+  because a probe that cannot land its kill reports a live monster as a frozen
+  death clip.
+
 Requirements (deliberately NOT in package.json — heavyweight, capture-only):
 
 - `playwright` (all four) and `sharp` (all but fx-probe): `npm i -D playwright sharp`

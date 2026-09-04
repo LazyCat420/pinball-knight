@@ -38,6 +38,11 @@ Read in this order:
 
 ## Recent work
 
+- `death-animation-audit.md` — **2026-09-04.** The monster death pipeline was
+  never broken; three broken *measurements* made it look that way. What was
+  measured against the deployed build, the probe defects that produced 26 false
+  reds, the co-op fix that was unreachable code, and the open items.
+
 ### 2026-08-30 — VFX Tier A: the ten invisible events (`ThreeJS/`)
 
 A coverage audit of every item, move, powerup and brew found a specific set of

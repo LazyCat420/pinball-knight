@@ -47,7 +47,7 @@ interface View {
  * flip-flopping E/W on every wall hit — "running back and forth". Mirroring the
  * peer's actual clip is what makes a ball look like a ball.
  */
-const MIRRORED_CLIPS = new Set(["ball", "roll", "attack", "run", "death"]);
+const MIRRORED_CLIPS = new Set(["ball", "roll", "attack", "run"]);
 
 export class RemotePartyRenderer {
   private readonly views = new Map<string, View>();
@@ -131,16 +131,33 @@ export class RemotePartyRenderer {
       const vx = (v.rx - px) / (dt || 1 / 60);
       const vz = (v.rz - pz) / (dt || 1 / 60);
       const speed = Math.hypot(vx, vz);
-      // Death: drain the tint and hold idle until a live pose arrives (retry).
+      // Death: drain the tint and play the peer's DEATH clip, held on its last
+      // cel until a live pose arrives (retry).
+      //
+      // ── WHY THIS IS NOT IN `MIRRORED_CLIPS` ──
+      // It was added there once, and it could never fire: `v.dead` is latched
+      // in this same iteration, three lines above the mirror check, and the
+      // dead branch below `continue`s past it. The entry read as a fix and was
+      // unreachable code — a peer in death mode stood in an IDLE pose while a
+      // set two screens up said "death" was mirrored.
+      //
+      // The facing is captured ONCE, at the transition. `Animator` has no death
+      // lock (that lives on `MonsterAnimator`), so re-asserting the peer's
+      // reported facing every tick would re-seat the clip's row mid-collapse.
       if (v.mode === "death" && !v.dead) {
         v.dead = true;
         v.sprite.setTint(0x6b7688);
+        v.animator.setFacing(v.tf);
+        v.animator.setRate(1);
+        v.animator.play("death");
       } else if (v.mode !== "death" && v.dead) {
         v.dead = false;
         v.sprite.setTint(colorForSlot(v.slot).hex);
       }
       if (v.dead) {
-        v.animator.play("idle");
+        // `death` does not loop, so the animator holds its terminal cel; `play`
+        // is a no-op once the clip is already current, so this cannot restart it.
+        v.animator.play("death");
         v.animator.update(dt);
         v.sprite.mesh.position.set(v.rx, 0, v.rz);
         continue;

@@ -191,9 +191,14 @@ for (const kind of kinds) {
 }
 
 log("\n── DEATH ANIMATION ────────────────────────────────────────────");
-for (const r of results) log(`${r.pass ? "✔" : "✖"} ${r.kind.padEnd(13)} ${r.why}`);
-const bad = results.filter((r) => !r.pass);
-log(`\n${results.length - bad.length}/${results.length} kinds play a death animation. Sheets in ${a.out}/`);
+for (const r of results) log(`${r.pass ? "✔" : r.unkilled ? "⚠" : "✖"} ${r.kind.padEnd(13)} ${r.why}`);
+const unkilled = results.filter((r) => r.unkilled);
+const bad = results.filter((r) => !r.pass && !r.unkilled);
+const judged = results.length - unkilled.length;
+log(`\n${judged - bad.length}/${judged} kinds that ACTUALLY DIED play a death animation. Sheets in ${a.out}/`);
+if (unkilled.length) {
+  log(`⚠ ${unkilled.length} kind(s) never died under --kill ${a.kill}, so their art was not judged: ${unkilled.map((r) => r.kind).join(", ")}`);
+}
 await page.close();
 await browser.close();
 process.exit(bad.length ? 1 : 0);
@@ -210,15 +215,22 @@ async function runKind(kind) {
   // copies of one cel is exactly the failure this exists to catch, and no
   // amount of index tracing can see it.
   const cels = await page.evaluate((k) => window.__dungeonClipCels(k), kind);
-  const deathIdx = cels?.clips["S:death"] ?? [];
   const atlas = cels ? await loadImage(cels.atlas) : null;
-  const distinct = atlas ? countDistinct(atlas, cels, deathIdx) : 0;
 
   if (a.kill === "ram") {
     // A pinball kill is the way this game is actually played, and one launch
     // is not a kill: the knight has to CONNECT, and a goblin is a bumper that
     // shrugs off a slow poke. Re-aim and re-launch until the actor is dead or
     // the attempts run out — then sample from the blow that landed.
+    //
+    // ⚠️ THIS TRIGGER IS UNRELIABLE PAST THE FIRST KIND, and the `--all` table
+    // is what exposed it: kind 1 dies, kinds 2..28 walk through the whole
+    // sample window alive, and the old verdict printed that as a
+    // death-animation failure — 26 false reds, on a build whose deaths were
+    // verified working by every other measurement. The `NEVER DIED` verdict
+    // below now separates the two claims, so a trigger that misses can no
+    // longer be read as art that does not play. (A ram kill DOES work; drive
+    // one kind at a time, or use `--kill force`.)
     for (let i = 0; i < 30; i++) {
       const dead = await page.evaluate(() => {
         const z = window.__dungeonAnim()[0];
@@ -234,6 +246,27 @@ async function runKind(kind) {
   } else {
     await page.evaluate((k) => window.__dungeonKill(k, 1), kind);
   }
+
+  // ── THE ACTOR'S OWN DEATH ROW, NOT THE KIND'S ──
+  //
+  // `S:death` off the kind's atlas is the wrong list for anything wearing a
+  // BORROWED sheet: the reaper is a brute under the hood on the boss atlas, so
+  // its death cels are 50-53 while this kind's `S:death` reads 12-15. That
+  // mismatch printed the roster's only ✖ — a probe defect wearing a monster's
+  // name. The dying actor knows which indices it plays; ask it, and keep the
+  // kind's row as the fallback for a spawn that never reached the death clip.
+  const dying = (await page.evaluate(() => window.__dungeonAnim()))[0] ?? null;
+  if (!dying || (dying.mode !== "dead" && dying.animState === "alive")) {
+    // The trigger did not land. Saying anything about the death animation from
+    // here would be measuring an IDLE cycle and calling it a corpse.
+    const why = `NEVER DIED — the ${a.kill} trigger did not land (hp ${dying?.hp ?? "?"}, clip ${dying?.clip ?? "?"}); says NOTHING about the death animation`;
+    log(`⚠ ${kind}: ${why}`);
+    await page.evaluate(() => window.__dungeonClear());
+    return { kind, pass: false, unkilled: true, why };
+  }
+  const deathIdx =
+    dying?.clip === "death" && dying.indices?.length ? dying.indices : cels?.clips["S:death"] ?? [];
+  const distinct = atlas ? countDistinct(atlas, cels, deathIdx) : 0;
 
   const shots = [];
   const trace = [];
