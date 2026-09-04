@@ -150,7 +150,7 @@ import { worldToTile, tileCenter, idx, isWalkable, isLowWall, type Grid } from "
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
-import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie } from "./combat";
+import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
 import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin } from "../sfx";
 
@@ -587,29 +587,29 @@ export function updateZombies(dt: number): void {
       continue;
     }
 
+    const pdx = p.x - z.x;
+    const pdz = p.z - z.z;
+    const pdist = Math.hypot(pdx, pdz);
+
     // ── Aggro ──
     // The radius is FLOOR-RELATIVE (constants/enemies.ts aggroTiles): spawn
     // placement scales with floor size, so a fixed radius silently stopped
-    // reaching the horde when floors grew 4×.
+    // reaching the horde when floors grew 4×. Point-blank proximity (<= 1.5)
+    // always wakes an enemy so close-range contact and melee never stall.
     //
     // Nothing acquires while the knight is parked in the plunger chute — see
     // `playerIsVisibleToEnemies` (state.ts) for why the whole floor used to
     // gather at the launch point while the player took their time aiming.
-    if (!z.aggro && state.flowField && playerIsVisibleToEnemies()) {
-      const t = worldToTile(g, z.x, z.z);
-      const d = state.flowField[idx(g, t.i, t.j)];
-      if (d >= 0 && d <= aggroTiles(g.w, g.h)) {
+    if (!z.aggro && playerIsVisibleToEnemies()) {
+      if (pdist <= 1.5) {
         z.aggro = true;
-        // One shared gate instead of a module-local cooldown counter. Behaviour
-        // is identical at 1.2s; what changes is that the timer no longer needs
-        // its own `let` and its own decrement in the update loop, and it now
-        // keys on the audio clock like every other throttle.
-        //
-        // The OTHER sfxGroan site (the mimic waking up) stays deliberately
-        // ungated: it is one-shot per mimic, and gating it would swallow the
-        // wake-up of a second mimic in the same room — the one moment the sound
-        // is actually load-bearing information.
-        if (gate("zombie-groan", 1.2)) sfxGroan();
+      } else if (state.flowField) {
+        const t = worldToTile(g, z.x, z.z);
+        const d = state.flowField[idx(g, t.i, t.j)];
+        if (d >= 0 && d <= aggroTiles(g.w, g.h)) {
+          z.aggro = true;
+          if (gate("zombie-groan", 1.2)) sfxGroan();
+        }
       }
     }
     if (!z.aggro) {
@@ -629,10 +629,6 @@ export function updateZombies(dt: number): void {
       updateGhost(z, dt);
       continue;
     }
-
-    const pdx = p.x - z.x;
-    const pdz = p.z - z.z;
-    const pdist = Math.hypot(pdx, pdz);
 
     // ── CROAKER HOP ── the one thing in the game that does not respect the
     // maze. Airborne it ignores knee-high walls entirely and RICOCHETS off the
@@ -729,6 +725,20 @@ export function updateZombies(dt: number): void {
         p.bounceCombo += 1;
         p.bounceComboT = comboWindow(p.bounceCombo);
         p.iframes = Math.max(p.iframes, 0.2);
+
+        // If player is actively executing a melee swing, connect the attack cleanly
+        if (p.attackT >= 0 && !p.didHit) {
+          p.didHit = true;
+          resolvePlayerAttack();
+        } else {
+          // Bumper collision delivers impact damage to the goblin
+          damageZombie(z, 1, -nx, -nz, 0.5, false, "bounce");
+        }
+
+        if (z.hp <= 0 || (z.mode as string) === "dead") {
+          continue;
+        }
+
         // The goblin recoils too — rubber meets rubber.
         const res = moveCircle(g, z.x, z.z, GOBLIN_R, -nx * 0.5, -nz * 0.5);
         z.x = res.x;

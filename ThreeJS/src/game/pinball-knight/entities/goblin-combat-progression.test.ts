@@ -100,4 +100,50 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     const recoveredColor = (g.sprite.mesh.material as any).color.getHex();
     expect(recoveredColor).toBe(0xffffff);
   });
+
+  it("damages and kills goblin through bumper collision in updateZombies", () => {
+    sheetFor("goblin");
+    const g = makeSkinned("goblin", 0.4, 0, 1)!;
+    state.zombies.push(g);
+    expect(g.hp).toBe(2);
+
+    // Collision 1 deals 1 damage and pops player away
+    updateZombies(0.016);
+    expect(g.hp).toBe(1);
+    expect(state.player!.momSpeed).toBeGreaterThan(0);
+
+    // Reset cooldown and collide again to deliver lethal blow
+    g.cooldown = 0;
+    state.player!.x = 0;
+    state.player!.z = 0;
+    g.x = 0.4;
+    g.z = 0;
+    updateZombies(0.016);
+    expect(g.hp).toBe(0);
+    expect(g.mode).toBe("dead");
+
+    // Advance animation presentation to ensure full death playback
+    for (let f = 0; f < 60; f++) {
+      animationPresentation.update(0.016);
+    }
+    expect(g.anim.getFrameIdx()).toBe(3);
+    expect(g.anim.isFinished()).toBe(true);
+  });
+
+  it("connects active melee attack during bumper contact and kills goblin", () => {
+    sheetFor("goblin");
+    const g = makeSkinned("goblin", 0.5, 0, 1)!;
+    state.zombies.push(g);
+    expect(g.hp).toBe(2);
+
+    // Player swinging facing East towards the goblin
+    state.player!.facing = "E";
+    state.player!.attackT = 0.05;
+    state.player!.didHit = false;
+
+    updateZombies(0.016);
+    expect(state.player!.didHit).toBe(true);
+    expect(g.hp).toBeLessThan(2);
+  });
 });
+
