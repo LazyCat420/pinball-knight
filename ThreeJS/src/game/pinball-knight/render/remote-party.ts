@@ -158,6 +158,14 @@ export class RemotePartyRenderer {
         // `death` does not loop, so the animator holds its terminal cel; `play`
         // is a no-op once the clip is already current, so this cannot restart it.
         v.animator.play("death");
+        // SINGLE-CLOCK EXEMPT: this renderer serves TWO scenes — the dungeon
+        // (coop.ts) and the TAVERN (scenes/tavern/multiplayer.ts) — and the
+        // tavern is not on the dungeon's clock: sim/loop.ts returns early while
+        // the tavern owns the screen, so a peer registered with
+        // AnimationPresentationSystem would stand frozen in the tavern. Peers
+        // are not in `state.zombies`, so nothing double-ticks them today. The
+        // dungeon half of this is still worth migrating (register only when
+        // `consumer === "dungeon"`); it needs a two-client co-op test first.
         v.animator.update(dt);
         v.sprite.mesh.position.set(v.rx, 0, v.rz);
         continue;
@@ -178,6 +186,8 @@ export class RemotePartyRenderer {
         v.animator.play("idle");
         v.animator.setRate(1);
       }
+      // SINGLE-CLOCK EXEMPT: same two-scene reason as the dead branch above —
+      // the tavern instance of this renderer has no other clock.
       v.animator.update(dt);
       v.sprite.mesh.position.set(v.rx, 0, v.rz);
     }

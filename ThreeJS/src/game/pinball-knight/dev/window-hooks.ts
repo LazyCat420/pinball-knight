@@ -17,7 +17,7 @@
  */
 import { state } from "../state";
 import type { EnemyKind } from "../state";
-import { SHEET_KEY_BY_KIND, sheetFor as sheetForKey } from "../boot/sheets";
+import { SHEET_KEY_BY_KIND, sheetFor as sheetForKey, imported, importedArtEnabled, rebuild, sheetKeyForKind } from "../boot/sheets";
 import { skinSheet } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { ABILITIES, type AbilityId } from "../abilities";
@@ -26,7 +26,7 @@ import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
 import { isRenderHeld } from "../run/floor-hold";
 import { buyShopRow } from "../economy/shop";
-import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX, CEL_STEPS, CEL_CURVE, CEL_SATURATION } from "../constants";
+import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX, CEL_STEPS, CEL_CURVE, CEL_SATURATION, SPRITE_UNITS } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
@@ -64,6 +64,8 @@ import type { SpriteSheet } from "../engine/render/sprite";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
 import { drawCensus } from "./draw-census";
 import { setFrenzyOverride } from "../sim/loop";
+import { configureEngine, engineConfig } from "../engine/config";
+import type { ActorSprite } from "../engine/render/sprite";
 
 /**
  * The core-owned actions the hooks drive. Injected (not imported) to keep the
@@ -85,6 +87,11 @@ export interface DevHookDeps {
  * Install every `window.__dungeon*` hook. Call once from launchDungeonGame.
  * No-ops outside a browser (the `typeof window` guard the block always had).
  */
+/** Original `setFrame` of any sprite `__dungeonSabotage` has shadowed, so
+ *  `restore` puts back the real closure rather than a prototype that is not
+ *  there — ActorSprite is an object literal, it has no prototype to fall to. */
+const _sabotagedFrame = new WeakMap<ActorSprite, (i: number) => void>();
+
 export function installDevHooks(deps: DevHookDeps): void {
   const { startLevel, descend, onPlayerDeath, openShop, applyPotion, debugSpawn, debugClearEnemies } = deps;
   const { exitDungeonGame, tearGraveHole } = deps;
@@ -1158,7 +1165,7 @@ export function installDevHooks(deps: DevHookDeps): void {
      */
     (window as unknown as { __dungeonAnim?: () => unknown }).__dungeonAnim = () =>
       state.zombies.map((z) => {
-        const mat = z.sprite.mesh.material as { map?: { offset: { x: number; y: number }; repeat: { x: number } } };
+        const mat = z.sprite.mesh.material as { map?: { offset: { x: number; y: number }; repeat: { x: number }; uuid?: string } };
         const map = mat?.map;
         const { cols, rows } = z.sprite.sheet;
         // applyFrame(): offset.x = (flipped ? col+1 : col)/cols, offset.y = (rows-1-row)/rows
@@ -1166,6 +1173,12 @@ export function installDevHooks(deps: DevHookDeps): void {
         const col = map ? Math.round(map.offset.x * cols) - (flipped ? 1 : 0) : -1;
         const row = map ? rows - 1 - Math.round(map.offset.y * rows) : -1;
         return {
+          // IDENTITY. Without it a harness can only track actors by their index
+          // in `state.zombies`, and `reapCorpses` SPLICES that array — so index
+          // 3 is a different monster before and after a reap, and a per-actor
+          // timeline silently splices two actors together.
+          nid: z.nid,
+          dbgId: z.dbgId ?? `${z.kind}#${z.nid}`,
           kind: z.kind,
           mode: z.mode,
           animState: (z.anim as any).getState?.() ?? z.mode,
@@ -1178,16 +1191,210 @@ export function installDevHooks(deps: DevHookDeps): void {
           indices: z.anim.debugIndices(),
           ticks: z.anim.debugTicks(),
           screen: worldToScreenPx(z.x, z.z),
+          // The sprite quad's FOOT and HEAD in window px. One point cannot give
+          // a harness a crop rect: the quad is bottom-origin (spriteGeometry)
+          // and scaled per kind, so its height on screen is not derivable from
+          // the feet alone.
+          feet: worldToScreenPx(z.x, z.z, 0),
+          top: worldToScreenPx(z.x, z.z, SPRITE_UNITS * z.sprite.mesh.scale.y),
+          flipped,
+          // A `setSheet` swap (boot/sheets.ts rebuild → reapplySheet) REPLACES
+          // the material's map with a fresh clone. Same actor, different
+          // texture object — invisible from every other field here, and the one
+          // event that can reset a death mid-collapse.
+          mapUuid: (map as any)?.uuid ?? null,
+          sheetUuid: z.sprite.sheet.texture.uuid,
+          sheetCols: cols,
+          sheetRows: rows,
           texFrame: col < 0 ? -1 : row * cols + col,
           uvOffset: map ? { x: map.offset.x, y: map.offset.y } : null,
           visible: z.sprite.mesh.visible,
           meshVisible: z.sprite.mesh.visible,
           meshScale: z.sprite.mesh.scale.x,
+          meshScaleY: z.sprite.mesh.scale.y,
           opacity: (mat as any)?.opacity ?? 1,
+          corpseT: z.corpseT ?? null,
           x: z.x,
           z: z.z,
         };
       });
+    /**
+     * `__dungeonImported()` — IS THE IMPORTED ART IN YET?
+     *
+     * A harness that spawns a monster and photographs it immediately is
+     * photographing the PAINTER's art, then the sheet swaps under it a second
+     * later (`loadMonsterSheetsForFloor` → `loadMonsterSheet` → `rebuild`). The
+     * old harnesses "solved" this with a fixed 20s sleep, which is both slower
+     * than it needs to be and silently wrong on a slow connection.
+     */
+    (window as unknown as { __dungeonImported?: () => unknown }).__dungeonImported = () => ({
+      enabled: importedArtEnabled(),
+      keys: [...imported.keys()],
+    });
+    /**
+     * `__dungeonRebuild(kind)` — FORCE the atlas swap, now.
+     *
+     * `rebuild` is the one production event that replaces a live actor's
+     * texture (`reapplySheet` → `setSheet` → a fresh clone + `mat.needsUpdate`),
+     * and it normally fires ONCE per kind, 1-3s after the lobby opens. So the
+     * interleaving "the sheet was swapped while this monster was mid-collapse"
+     * is nearly unreachable by waiting, and completely unreachable on demand —
+     * which is why nothing has ever tested it.
+     */
+    (window as unknown as { __dungeonRebuild?: (kind: string) => string | null }).__dungeonRebuild = (kind: string) => {
+      const key = sheetKeyForKind(kind as EnemyKind);
+      if (!key) return null;
+      rebuild(key);
+      return key;
+    };
+    /**
+     * `__dungeonSabotage(kind, index, mode)` — BREAK ONE ACTOR ON PURPOSE.
+     *
+     * The negative control for every death probe. Twenty-two "fixes" shipped
+     * green against instruments nobody had ever seen fail, and a probe whose
+     * number cannot move is a probe measuring itself. These modes reproduce the
+     * two failures a death probe must be able to TELL APART:
+     *
+     *   freeze-js   the animator stops advancing   → frameIdx pinned
+     *   freeze-gpu  the animator advances, the QUAD does not → texFrame pinned
+     *
+     * Both are instance-level property shadows, so nothing in the engine
+     * changes and `restore` really restores. `freeze-gpu` must be installed
+     * BEFORE the kill: `triggerDeath` calls `apply()`, which would otherwise
+     * seat cel 0 for us and hide the difference.
+     */
+    (window as unknown as {
+      __dungeonSabotage?: (kind: string, index: number, mode: string, arg?: number) => unknown;
+    }).__dungeonSabotage = (kind: string, index: number, mode: string, arg?: number) => {
+      const of = state.zombies.filter((z) => z.kind === kind);
+      const z = of[index];
+      if (!z) return null;
+      const anim = z.anim as unknown as Record<string, unknown>;
+      const sprite = z.sprite as unknown as Record<string, unknown>;
+      if (mode === "freeze-js") {
+        anim.update = () => {};
+      } else if (mode === "freeze-gpu") {
+        if (!_sabotagedFrame.has(z.sprite)) _sabotagedFrame.set(z.sprite, z.sprite.setFrame.bind(z.sprite));
+        sprite.setFrame = () => {};
+      } else if (mode === "pin") {
+        const orig = _sabotagedFrame.get(z.sprite) ?? z.sprite.setFrame.bind(z.sprite);
+        _sabotagedFrame.set(z.sprite, orig);
+        orig(arg ?? 0);
+        sprite.setFrame = () => {};
+      } else if (mode === "freeze-quad") {
+        // THE REAL BUG, ON PURPOSE. `freeze-gpu` blocks `setFrame`, so the
+        // texture offset stops moving too and the UV channel catches it — but
+        // the defect this harness was built for looked NOTHING like that: the
+        // offset, the matrix and the animator were all correct and the SCREEN
+        // was stale. Detaching the mesh from the quad the sprite keeps writing
+        // reproduces exactly that: every JavaScript reading stays right, and
+        // the pixels stop. If the probe cannot catch this, it cannot catch a
+        // regression of the thing it just found.
+        const mesh = z.sprite.mesh as unknown as { geometry: { clone: () => unknown } };
+        mesh.geometry = mesh.geometry.clone() as never;
+      } else if (mode === "restore") {
+        delete anim.update;
+        const orig = _sabotagedFrame.get(z.sprite);
+        if (orig) {
+          sprite.setFrame = orig;
+          _sabotagedFrame.delete(z.sprite);
+        } else {
+          delete sprite.setFrame;
+        }
+      } else {
+        return null;
+      }
+      return { nid: z.nid, dbgId: z.dbgId, kind: z.kind, mode };
+    };
+    /**
+     * `__dungeonTexProbe(kind)` — THE TEXTURE, ALL THE WAY DOWN.
+     *
+     * `__dungeonAnim().texFrame` decodes `texture.offset`, which is the value
+     * JAVASCRIPT holds. Between that and the pixel there is a uv MATRIX, a
+     * shared `Source` (every actor's texture is a `clone()`, and a clone shares
+     * its source by reference), a version counter, and whatever the renderer
+     * cached off them. When the offset is right and the screen is wrong, the
+     * answer is in this gap, and nothing in the game reported it.
+     */
+    (window as unknown as { __dungeonTexProbe?: (kind?: string) => unknown }).__dungeonTexProbe = (kind?: string) =>
+      state.zombies
+        .filter((z) => !kind || z.kind === kind)
+        .map((z) => {
+          const mat = z.sprite.mesh.material as unknown as {
+            uuid: string;
+            version: number;
+            needsUpdate: boolean;
+            map?: {
+              uuid: string;
+              version: number;
+              matrixAutoUpdate: boolean;
+              offset: { x: number; y: number };
+              repeat: { x: number; y: number };
+              matrix: { elements: number[] };
+              source?: { uuid: string; version: number };
+              image?: { width?: number; height?: number };
+            };
+          };
+          const m = mat.map;
+          return {
+            dbgId: z.dbgId,
+            frameIdx: z.anim.getFrameIdx(),
+            matUuid: mat.uuid,
+            matVersion: mat.version,
+            mapUuid: m?.uuid ?? null,
+            mapVersion: m?.version ?? null,
+            matrixAutoUpdate: m?.matrixAutoUpdate ?? null,
+            offset: m ? { x: m.offset.x, y: m.offset.y } : null,
+            repeat: m ? { x: m.repeat.x, y: m.repeat.y } : null,
+            // elements[6],[7] are the uv TRANSLATION the shader receives. If
+            // this disagrees with `offset`, `updateMatrix()` did not run — and
+            // the uniform carries the matrix, not the offset.
+            matrix: m ? [...m.matrix.elements] : null,
+            sourceUuid: m?.source?.uuid ?? null,
+            sourceVersion: m?.source?.version ?? null,
+            imageW: m?.image?.width ?? null,
+          };
+        });
+    /**
+     * `__dungeonTexPoke(kind, mode)` — ABLATION. Force one suspected refresh and
+     * see whether the SCREEN corrects itself. Reasoning about a renderer cache
+     * is guessing; poking it is a measurement.
+     */
+    (window as unknown as { __dungeonTexPoke?: (kind: string, mode: string) => number }).__dungeonTexPoke = (
+      kind: string,
+      mode: string,
+    ) => {
+      let n = 0;
+      for (const z of state.zombies) {
+        if (z.kind !== kind) continue;
+        const mat = z.sprite.mesh.material as unknown as {
+          needsUpdate: boolean;
+          map?: { needsUpdate: boolean; matrixAutoUpdate: boolean; updateMatrix: () => void; version: number };
+        };
+        const m = mat.map;
+        if (!m) continue;
+        if (mode === "matrix") m.updateMatrix();
+        else if (mode === "tex") m.needsUpdate = true;
+        else if (mode === "mat") mat.needsUpdate = true;
+        else if (mode === "auto") m.matrixAutoUpdate = true;
+        else continue;
+        n++;
+      }
+      return n;
+    };
+    /**
+     * `__dungeonDeathFps(fps)` — SLOW THE DEATH DOWN so a shutter can see it.
+     *
+     * A 4-cel death at 6fps is 667ms. A CDP screenshot round-trip is 60-90ms,
+     * so the middle cels get one sample each at best and a probe can miss cel 1
+     * or 2 entirely and report a jump. At 2fps each cel holds 500ms, which no
+     * shutter can fall through. `fpsFor` reads the config LIVE, so this applies
+     * to monsters already on the floor.
+     */
+    (window as unknown as { __dungeonDeathFps?: (fps?: number) => number }).__dungeonDeathFps = (fps?: number) => {
+      if (typeof fps === "number" && Number.isFinite(fps) && fps > 0) configureEngine({ anim: { death: fps } });
+      return engineConfig.anim.death;
+    };
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;

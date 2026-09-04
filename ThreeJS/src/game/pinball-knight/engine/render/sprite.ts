@@ -86,14 +86,40 @@ export function faceCameraIso(mesh: THREE.Mesh): void {
  * The blob's TEXTURE was already shared; the geometry and material were not.
  */
 let sharedSpriteGeo: THREE.PlaneGeometry | null = null;
+/**
+ * The quad every actor stands on.
+ *
+ * ⚠️ THIS IS NO LONGER SHARED, AND THE REASON IS THE DEATH ANIMATION.
+ *
+ * The frame used to be chosen with `texture.offset`, which the WebGPU node
+ * renderer feeds to the shader as a uv-transform UNIFORM. Measured on the real
+ * GPU with four goblins dying at once (`scripts/death-swarm.mjs`): all four
+ * animators advanced 0→3, all four textures held the correct terminal offset
+ * (0.682) and the correct `matrix.elements[6]`, and THREE OF THE FOUR went on
+ * drawing death cel 0 for as long as you cared to watch. Calling
+ * `map.needsUpdate = true` — which rebuilds the binding — snapped all four to
+ * the right cel instantly; recomputing the matrix alone did nothing. So the
+ * value was right in JavaScript and stale on the GPU: the per-object uniform
+ * upload was being skipped for all but one actor.
+ *
+ * A uv written into the geometry's own attribute buffer cannot be skipped that
+ * way. It belongs to this mesh and nothing else, it is re-uploaded when its
+ * `needsUpdate` is set, and there is no shared node, group or binding between
+ * one actor and the next for the renderer to coalesce.
+ *
+ * The cost this gives back is small and was measured before it was given back:
+ * a 4-vertex plane is ~100 bytes of attributes, so the ~175-actor cap costs
+ * tens of kilobytes. The blob geometry and blob material next door are still
+ * shared, because nothing per-actor is written into them.
+ */
 function spriteGeometry(): THREE.PlaneGeometry {
-  if (sharedSpriteGeo) return sharedSpriteGeo;
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
-  // Origin at the bottom-centre so the sprite stands ON its position. Baked
-  // into the shared geometry because it is the same for every actor.
-  geo.translate(0, SPRITE_UNITS / 2, 0);
-  sharedSpriteGeo = geo;
-  return geo;
+  if (!sharedSpriteGeo) {
+    const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
+    // Origin at the bottom-centre so the sprite stands ON its position.
+    geo.translate(0, SPRITE_UNITS / 2, 0);
+    sharedSpriteGeo = geo;
+  }
+  return sharedSpriteGeo.clone();
 }
 
 let sharedBlobGeo: THREE.PlaneGeometry | null = null;
@@ -1478,6 +1504,10 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   let tex = sheet.texture.clone();
   tex.needsUpdate = true;
   tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
+  // The uv transform is the GEOMETRY's job now (see applyFrame). Leaving the
+  // texture matrix at identity means offset/repeat can stay descriptive
+  // without also being applied a second time in the shader.
+  tex.matrixAutoUpdate = false;
 
   const matOpts = {
     map: tex,
@@ -1499,18 +1529,55 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   let flipped = false;
   let currentFrame = -1;
 
-  // When repeat.x is negative the texture reads right-to-left, so the offset has
-  // to anchor on the frame's RIGHT edge instead of its left. Get this wrong and
-  // a flipped sprite shows the neighbouring frame.
+  /**
+   * Point this quad at one cel of the atlas.
+   *
+   * ── THE UV LIVES ON THE GEOMETRY, NOT ON THE TEXTURE ──
+   * `texture.offset` reaches the shader as a per-object uniform, and the
+   * WebGPU renderer was demonstrably not re-uploading that uniform for every
+   * actor: with four goblins dying at once, three of them kept drawing death
+   * cel 0 while their offset, their matrix and their animator all read the
+   * terminal cel (see `spriteGeometry` above for the measurement). The uv
+   * attribute is this mesh's own buffer, so the same coalescing cannot happen.
+   *
+   * `offset` and `repeat` are still maintained, and still say exactly what
+   * they always said, because half the debug surface decodes the frame back
+   * out of them (`__dungeonAnim`, `dev/death-debug.ts`) and because they are
+   * the honest description of what this sprite is showing. They no longer
+   * DRIVE the sampling: `matrixAutoUpdate` is off and the texture matrix is
+   * left at identity, so the shader's uv transform is a no-op and the two
+   * cannot disagree.
+   *
+   * When flipped the quad reads right-to-left, so the two u columns swap.
+   * Get this wrong and a mirrored sprite shows its neighbour's cel.
+   */
   function applyFrame(): void {
     const { cols, rows } = api.sheet;
     const col = Math.max(0, currentFrame) % cols;
     const row = Math.floor(Math.max(0, currentFrame) / cols);
+    // Kept for the debug surface and for anything that reads the sprite's
+    // intent; identity matrix means they do not affect sampling.
     tex.offset.x = (flipped ? col + 1 : col) / cols;
     // V is bottom-up in GL while the canvas paints top-down, so row 0 is the
     // TOP row of the image and must map to the highest offset.
     tex.offset.y = (rows - 1 - row) / rows;
-    tex.updateMatrix();
+
+    const uStep = 1 / cols;
+    const vStep = 1 / rows;
+    const uLo = col * uStep;
+    const uHi = uLo + uStep;
+    const vLo = (rows - 1 - row) * vStep;
+    const vHi = vLo + vStep;
+    const uL = flipped ? uHi : uLo;
+    const uR = flipped ? uLo : uHi;
+    // PlaneGeometry vertex order: top-left, top-right, bottom-left, bottom-right.
+    const uv = geo.attributes.uv as THREE.BufferAttribute;
+    const arr = uv.array as Float32Array;
+    arr[0] = uL; arr[1] = vHi;
+    arr[2] = uR; arr[3] = vHi;
+    arr[4] = uL; arr[5] = vLo;
+    arr[6] = uR; arr[7] = vLo;
+    uv.needsUpdate = true;
   }
 
   const api: ActorSprite = {
@@ -1524,8 +1591,12 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     setFlipped(next: boolean): void {
       if (next === flipped) return;
       flipped = next;
+      // Descriptive only, like `offset` — the mirror is done by swapping the
+      // quad's u columns in applyFrame(). `__dungeonAnim` reads the sign of
+      // `repeat.x` to undo the anchor shift when it decodes a frame, so it has
+      // to keep meaning what it meant.
       tex.repeat.x = (flipped ? -1 : 1) / api.sheet.cols;
-      applyFrame(); // repeat changed — the offset anchor moved with it
+      applyFrame();
     },
     // The material colour MULTIPLIES the texture, so white is "no tint". A red
     // tint darkens green/blue pixels toward red — reads as a blood flash even on
@@ -1538,10 +1609,13 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       const old = tex;
       tex = next.texture.clone();
       tex.needsUpdate = true;
+      tex.matrixAutoUpdate = false;
       api.sheet = next;
       mat.map = tex;
       mat.needsUpdate = true;
       tex.repeat.set((flipped ? -1 : 1) / next.cols, 1 / next.rows);
+      // The new atlas may have a different grid, so the quad's uv has to be
+      // recut even when the frame index has not changed.
       applyFrame();
       old.dispose();
     },
@@ -1557,12 +1631,16 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       blob.position.copy(new THREE.Vector3(0, 0.02 - dy, 0).applyQuaternion(inv));
     },
     dispose: () => {
-      // ONLY what this actor uniquely owns. `geo`, the blob's geometry and the
-      // blob's material are module singletons shared by every actor on the
-      // floor (see spriteGeometry/blobGeometry/blobMaterial) — disposing them
+      // The blob's geometry and material ARE module singletons shared by every
+      // actor on the floor (see blobGeometry/blobMaterial) — disposing them
       // here would tear the shared buffers out from under every OTHER living
       // actor the moment the first one died, so the horde would render blank
       // from the first kill onward. They are deliberately never disposed.
+      //
+      // `geo` is no longer among them: each actor now owns its quad, because
+      // the cel is chosen by writing this mesh's uv attribute (see
+      // spriteGeometry). It is this actor's, so it goes with this actor.
+      geo.dispose();
       mat.dispose();
       tex.dispose();
     },
@@ -1581,8 +1659,12 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
  * stencil buffer.
  */
 export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mesh; syncMap(): void; dispose(): void } {
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
-  geo.translate(0, SPRITE_UNITS / 2, 0);
+  // THE ACTOR'S OWN QUAD, not a second copy of it. The cel is chosen by the uv
+  // attribute now, so a silhouette with its own plane would sample the WHOLE
+  // atlas — a rectangle of every frame at once — instead of following the
+  // actor. Sharing the geometry is what makes "follows the frame and the flip
+  // for free" true again; it is also one less buffer.
+  const geo = actor.mesh.geometry;
 
   const srcMat = actor.mesh.material as THREE.MeshBasicMaterial;
   const mat = new THREE.MeshBasicMaterial({
@@ -1610,8 +1692,8 @@ export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mes
       mat.needsUpdate = true;
     },
     dispose: () => {
-      geo.dispose();
-      mat.dispose(); // the map is the actor's — the actor disposes it
+      // The geometry and the map are both the ACTOR's — it disposes them.
+      mat.dispose();
     },
   };
 }

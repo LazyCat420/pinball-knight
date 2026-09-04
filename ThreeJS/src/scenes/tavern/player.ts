@@ -231,6 +231,10 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
 
   if (oneShot) {
     // The one-shot owns the clip; just advance it.
+    // SINGLE-CLOCK EXEMPT: the TAVERN's own render loop. The dungeon's
+    // AnimationPresentationSystem does not run here at all — sim/loop.ts
+    // returns early while `isTavernSceneOpen()`, so this scene must drive
+    // its own animators or every knight in the tavern stands still.
     animator.update(dt);
     syncMesh(p);
     return;
@@ -245,6 +249,10 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
     animator.play("idle");
     animator.setRate(1);
   }
+  // SINGLE-CLOCK EXEMPT: the TAVERN's own render loop. The dungeon's
+  // AnimationPresentationSystem does not run here at all — sim/loop.ts
+  // returns early while `isTavernSceneOpen()`, so this scene must drive
+  // its own animators or every knight in the tavern stands still.
   animator.update(dt);
   syncMesh(p);
 }

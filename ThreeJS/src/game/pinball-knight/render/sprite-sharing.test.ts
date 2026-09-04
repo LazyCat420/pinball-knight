@@ -33,11 +33,49 @@ function fakeSheet(): SpriteSheet {
 }
 
 describe("actor sprites share their identical resources", () => {
-  it("hands every actor the SAME quad geometry", () => {
-    // ~175 actors at cap used to allocate ~175 copies of one rectangle.
+  it("gives every actor its OWN quad, because the CEL lives in the uv", () => {
+    // This used to assert the opposite, and sharing was right at the time: the
+    // quad was a rectangle and the frame was chosen with `texture.offset`.
+    //
+    // It is now wrong, and the reason is the death animation. Measured on the
+    // real GPU with `scripts/death-swarm.mjs`: with four goblins dying at once
+    // every animator advanced 0→3 and every texture held the correct terminal
+    // offset, while THREE OF THE FOUR went on drawing death cel 0 — the
+    // per-object uv-transform uniform was not being re-uploaded. A uv written
+    // into this mesh's own attribute buffer cannot be coalesced with its
+    // neighbour's. See engine/render/sprite.ts `spriteGeometry`.
     const a = createActorSprite(fakeSheet(), false);
     const b = createActorSprite(fakeSheet(), false);
-    expect(a.mesh.geometry).toBe(b.mesh.geometry);
+    expect(a.mesh.geometry).not.toBe(b.mesh.geometry);
+  });
+
+  it("moves each actor's uv when its frame changes, and leaves its neighbour alone", () => {
+    // The property the whole fix exists for, in the cheapest form that can
+    // still fail: two actors, one of them steps a frame, and the OTHER one's
+    // uv must not move with it.
+    const sheet = fakeSheet();
+    const a = createActorSprite(sheet, false);
+    const b = createActorSprite(sheet, false);
+    a.setFrame(0);
+    b.setFrame(0);
+    const beforeB = Array.from((b.mesh.geometry.attributes.uv.array as Float32Array).slice(0, 8));
+    a.setFrame(5);
+    const afterA = Array.from((a.mesh.geometry.attributes.uv.array as Float32Array).slice(0, 8));
+    const afterB = Array.from((b.mesh.geometry.attributes.uv.array as Float32Array).slice(0, 8));
+    expect(afterA).not.toEqual(beforeB);
+    expect(afterB).toEqual(beforeB);
+  });
+
+  it("leaves the texture matrix at identity, so the uv is the only thing steering", () => {
+    // `offset` and `repeat` are still maintained for the debug decoders. If the
+    // matrix were also live, the shader would apply the offset a SECOND time on
+    // top of the uv and every sprite would sample the wrong cel.
+    const a = createActorSprite(fakeSheet(), false);
+    a.setFrame(5);
+    const map = (a.mesh.material as THREE.MeshBasicMaterial).map!;
+    expect(map.matrixAutoUpdate).toBe(false);
+    expect(map.matrix.elements[6]).toBe(0);
+    expect(map.matrix.elements[7]).toBe(0);
   });
 
   it("hands every actor the SAME contact-blob geometry and material", () => {
@@ -61,29 +99,37 @@ describe("actor sprites share their identical resources", () => {
     expect(matA.map).not.toBe(matB.map);
   });
 
-  it("one actor dying does NOT destroy the shared buffers", () => {
-    // The regression this guards: dispose() used to free the quad and blob
-    // geometry. Once those became shared, the first kill would have torn them
-    // out from under every surviving actor and the horde would render blank.
+  it("one actor dying does NOT destroy its neighbour's buffers", () => {
+    // The regression this guards: dispose() must free what the actor uniquely
+    // owns and nothing else. It once freed the blob geometry and material,
+    // which are shared, so the first kill blanked the whole horde.
     const a = createActorSprite(fakeSheet(), false);
     const b = createActorSprite(fakeSheet(), false);
-    const sharedGeo = b.mesh.geometry as THREE.BufferGeometry;
+    const geoB = b.mesh.geometry as THREE.BufferGeometry;
     const blobB = b.mesh.children[0] as THREE.Mesh;
 
     a.dispose();
 
-    // three disposes by firing an event and dropping GPU buffers; the JS-side
-    // attributes survive, so assert the survivor still has real geometry and
-    // still points at the same objects.
-    expect(b.mesh.geometry).toBe(sharedGeo);
-    expect(sharedGeo.attributes.position).toBeTruthy();
+    expect(geoB.attributes.position).toBeTruthy();
+    expect(geoB.attributes.uv).toBeTruthy();
     expect((blobB.material as THREE.Material).type).toBe("MeshBasicMaterial");
   });
 
-  it("disposing every actor still leaves the shared geometry usable", () => {
+  it("disposes the quad it owns, so a floor of corpses does not leak one each", () => {
+    // The cost of un-sharing the quad: it now has an owner, and an owner that
+    // forgets to free it turns ~175 actors per floor into a permanent leak.
+    const a = createActorSprite(fakeSheet(), false);
+    let disposed = false;
+    a.mesh.geometry.addEventListener("dispose", () => {
+      disposed = true;
+    });
+    a.dispose();
+    expect(disposed).toBe(true);
+  });
+
+  it("a brand-new actor after a full wipe still works", () => {
     const a = createActorSprite(fakeSheet(), false);
     a.dispose();
-    // A brand-new actor after a full wipe (floor teardown) must still work.
     const c = createActorSprite(fakeSheet(), false);
     expect((c.mesh.geometry as THREE.BufferGeometry).attributes.position).toBeTruthy();
   });

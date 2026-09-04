@@ -34,3 +34,6 @@ ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/sandbox-output/
 ThreeJS/.death-lab/
 ThreeJS/.pipeline-forensics/
 ThreeJS/.death-audit/
+
+# death-swarm capture artefacts (screenshots, contact sheets, report.json)
+ThreeJS/.death-swarm/
