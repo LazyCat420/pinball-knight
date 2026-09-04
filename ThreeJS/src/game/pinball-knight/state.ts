@@ -396,6 +396,8 @@ export interface Zombie extends Actor {
   mode: ZombieMode;
   /** Locked facing recorded at the instant of death to guarantee deterministic death playback. */
   deathFacing?: Facing;
+  /** Seconds this corpse has rested on the floor after death. */
+  corpseT?: number;
   speed: number;
   windupT: number;
   cooldown: number;

@@ -247,7 +247,7 @@ export function tickTide(dt: number): void {
 export function reapCorpses(): void {
   let corpses = 0;
   for (const z of state.zombies) {
-    if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished())) {
+    if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished()) && (z.corpseT ?? 0) >= 3.0) {
       corpses++;
     }
   }
@@ -255,7 +255,7 @@ export function reapCorpses(): void {
   if (excess <= 0) return;
   for (let i = 0; i < state.zombies.length && excess > 0; ) {
     const z = state.zombies[i];
-    if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished())) {
+    if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished()) && (z.corpseT ?? 0) >= 3.0) {
       recordDeathTrace(z, "reap", { excess });
       state.zombies.splice(i, 1);
       z.sprite.mesh.parent?.remove(z.sprite.mesh);

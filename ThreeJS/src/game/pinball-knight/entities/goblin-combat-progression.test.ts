@@ -27,23 +27,29 @@ describe("Goblin Combat Progression & Animation Verification", () => {
     state.grid = { w: 20, h: 20, t: new Uint8Array(400).fill(1), shapes: new Uint8Array(400) } as any;
   });
 
-  it("refuses standing poke at 0 momentum per rubber momentum gate contract", () => {
+  it("damages goblin with stationary melee attacks at 0 momentum", () => {
     sheetFor("goblin");
-    const g = makeSkinned("goblin", 1, 0);
+    const g = makeSkinned("goblin", 1, 0, 1)!;
     state.zombies.push(g);
 
     const initialHp = g.hp;
-    expect(initialHp).toBeGreaterThan(0);
+    expect(initialHp).toBe(2);
 
-    // Standing hit with 2 damage at 0 momentum is refused
-    damageZombie(g, 2, 0, 1, 1);
-    expect(g.hp).toBe(initialHp);
-    expect(g.mode).toBeDefined();
+    // Standing hit with 1 damage at 0 momentum lands and reduces HP
+    damageZombie(g, 1, 0, 1, 1);
+    expect(g.hp).toBe(1);
+
+    // Second hit kills the goblin
+    damageZombie(g, 1, 0, 1, 1);
+    expect(g.hp).toBe(0);
+    expect(g.mode).toBe("dead");
+    expect(g.corpseT).toBe(0);
+    expect((g.sprite as any).blob?.visible ?? false).toBe(false);
   });
 
   it("kills goblin with momentum hits and plays death animation to completion", () => {
     sheetFor("goblin");
-    const g = makeSkinned("goblin", 1, 0);
+    const g = makeSkinned("goblin", 1, 0, 1)!;
     state.zombies.push(g);
 
     // Attack carried at pinball speed
@@ -71,7 +77,7 @@ describe("Goblin Combat Progression & Animation Verification", () => {
 
   it("recovers cleanly from stumble without remaining stuck in hurt pose or tint", () => {
     sheetFor("goblin");
-    const g = makeSkinned("goblin", 1, 0)!;
+    const g = makeSkinned("goblin", 1, 0, 1)!;
     state.zombies.push(g);
 
     // Trigger stagger

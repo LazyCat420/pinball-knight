@@ -77,10 +77,7 @@ describe("the jester's momentum gate", () => {
   });
 
   it("only the kinds that actually gate damage carry the flag", () => {
-    // chomper and crystalback are in the table because the bestiary must print
-    // their momentum rule, but neither has its DAMAGE gated — the chomper's
-    // momentum scales knockback, the crystalback's scales the shard spray.
-    expect(MOMENTUM_GATES.goblin!.gatesDamage).toBe(true);
+    expect(MOMENTUM_GATES.goblin!.gatesDamage).toBeFalsy();
     expect(MOMENTUM_GATES.golem!.gatesDamage).toBe(true);
     expect(MOMENTUM_GATES.chomper!.gatesDamage).toBeFalsy();
     expect(MOMENTUM_GATES.crystalback!.gatesDamage).toBeFalsy();
@@ -158,12 +155,12 @@ describe("the spring is the JESTER's, not every monster's", () => {
     expect(p.bounceCombo).toBe(0);
   });
 
-  it("a goblin still refuses a standing poke, but does not spring you", () => {
+  it("a goblin takes damage from a standing poke, and does not spring you", () => {
     const p = standingKnightAt(1, 0);
     const z = fakeZombie("goblin", 0, 0);
     state.zombies = [z];
     damageZombie(z, 5, 1, 0, 0.3);
-    expect(z.hp, "the goblin's rubber gate stopped working").toBe(100);
+    expect(z.hp, "goblin takes standard melee damage").toBe(95);
     expect(p.momSpeed, "the goblin acquired the jester's spring").toBe(0);
   });
 });

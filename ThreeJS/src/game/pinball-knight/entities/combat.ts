@@ -911,10 +911,12 @@ export function killZombie(z: Zombie): void {
   if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) return;
   z.deathFacing = z.anim.getFacing();
   z.mode = "dead";
+  z.corpseT = 0;
   z.staggerT = 0;
   z.windupT = 0;
   z.flashT = 0;
   z.sprite.setTint(z.baseTint ?? null);
+  z.sprite.setBlobVisible(false); // Hide standing contact shadow so corpse lies flat on floor
   if (typeof (z.anim as any).triggerDeath === "function") {
     (z.anim as any).triggerDeath(z.deathFacing);
   } else {

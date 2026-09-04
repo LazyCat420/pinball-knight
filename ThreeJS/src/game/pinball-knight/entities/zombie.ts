@@ -411,6 +411,7 @@ export function updateZombies(dt: number): void {
       killZombie(z);
     }
     if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) {
+      z.corpseT = (z.corpseT ?? 0) + dt;
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;

@@ -122,8 +122,7 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     minSpeed: 0,
     bar: MOMENTUM_T_FLOOR,
     soft: GOBLIN_GATE_SOFT,
-    gatesDamage: true,
-    text: "Rubber: a standing poke does nothing at all. Anything carried on momentum lands, and lands harder the faster you arrive.",
+    text: "Rubber: takes standard damage from melee. Strikes carried on momentum deal massive bonus damage and launch it across the room.",
   },
   jester: {
     minSpeed: 0,
