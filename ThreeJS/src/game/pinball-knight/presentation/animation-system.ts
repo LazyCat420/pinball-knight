@@ -62,10 +62,21 @@ export class AnimationPresentationSystem {
     for (const z of state.zombies) {
       if (z?.anim) {
         const prevFrame = z.anim.getFrameIdx();
+        const prevFinished = z.anim.isFinished();
         this.tickActor(z.anim, renderDt);
         if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) {
           const nextFrame = z.anim.getFrameIdx();
-          if (prevFrame !== nextFrame || z.anim.isFinished()) {
+          const nextFinished = z.anim.isFinished();
+          if (prevFrame !== nextFrame || (nextFinished && !prevFinished)) {
+            const id = z.dbgId || z.nid || z.kind;
+            const indices = (z.anim as any).debugIndices?.() ?? [];
+            const texFrame = indices[nextFrame] ?? nextFrame;
+            if (prevFrame !== nextFrame) {
+              console.log(`[death:step] 🎞 ${id} (${z.kind}) cel ${prevFrame} -> ${nextFrame} (texFrame: ${texFrame})`);
+            }
+            if (nextFinished && !prevFinished) {
+              console.log(`[death:done] ✔ ${id} (${z.kind}) finished: held terminal cel ${texFrame} (cels: [${indices.join(", ")}])`);
+            }
             recordDeathTrace(z, "tick", { prevFrame, nextFrame, clip: z.anim.getClip(), finished: z.anim.isFinished() });
           }
         }

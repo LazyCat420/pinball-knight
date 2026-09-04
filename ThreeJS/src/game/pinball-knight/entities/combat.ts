@@ -484,6 +484,8 @@ export function damageZombie(
   if (gate?.gatesDamage) {
     const f = momentum <= gate.minSpeed ? 0 : momentumGate(momentum, gate.bar, gate.soft);
     if (f <= GATE_MIN_FACTOR) {
+      const id = z.dbgId || z.nid || z.kind;
+      console.log(`[combat:gate] 🟢 ${id} (${z.kind}) bounced attack — requires momentum > ${gate.bar} (momSpeed: ${momentum.toFixed(1)})`);
       state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
       state.shakeT = Math.max(state.shakeT, 0.05);
       if (!_gateHintShown) {
@@ -918,6 +920,9 @@ export function killZombie(z: Zombie): void {
   } else {
     z.anim.play("death");
   }
+  const id = z.dbgId || z.nid || z.kind;
+  const indices = (z.anim as any)?.debugIndices?.() ?? [];
+  console.log(`[death:start] 💀 ${id} (${z.kind}) killed | facing: ${z.deathFacing} | death cels: [${indices.join(", ")}]`);
   recordDeathTrace(z, "kill", { facing: z.deathFacing });
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
