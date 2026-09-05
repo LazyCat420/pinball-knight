@@ -20,7 +20,7 @@
  */
 import * as THREE from "three";
 import { state, type EnemyKind, type GroundItem, type MarbleMaterial } from "../state";
-import { setDebugActionDeps, debugSpawn, debugClearEnemies } from "../dev/debug-actions";
+import { setDebugActionDeps, debugSpawn, debugClearEnemies, debugClearAdds } from "../dev/debug-actions";
 import { installDevHooks } from "../dev/window-hooks";
 import { setLevelUpHandler } from "../skill-runtime";
 import { showToast } from "../ui";
@@ -101,7 +101,7 @@ export function installDevWiring(deps: WiringDeps): void {
   setDebugActionDeps({ spawnReaper });
   installDevHooks({
     startLevel, descend, onPlayerDeath, openShop, applyPotion,
-    debugSpawn, debugClearEnemies, exitDungeonGame, tearGraveHole,
+    debugSpawn, debugClearEnemies, debugClearAdds, exitDungeonGame, tearGraveHole,
   });
 
   // Level-up fanfare: toast + modifier sting; the tree lives in the menu (I).

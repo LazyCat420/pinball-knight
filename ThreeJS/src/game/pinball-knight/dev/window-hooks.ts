@@ -52,7 +52,7 @@ import { isFloorMapOpen } from "../map-overlay";
 import { secretDoorsInFlight } from "../secrets";
 import { at, tileCenter } from "../maze/generator";
 import { measureDoorway } from "../maze/doorways";
-import { worldToScreenPx } from "../engine/camera";
+import { worldToScreenPx, snapCameraTo, aimCamera } from "../engine/camera";
 import { spawnCardDrop } from "../economy/loot";
 import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
@@ -81,6 +81,7 @@ export interface DevHookDeps {
   applyPotion: (id: PotionId) => void;
   debugSpawn: (spec: DebugSpawnSpec) => DebugSpawnResult;
   debugClearEnemies: () => void;
+  debugClearAdds: () => void;
   exitDungeonGame: () => void;
   tearGraveHole: (x: number, z: number, name: string) => void;
 }
@@ -95,7 +96,7 @@ export interface DevHookDeps {
 const _sabotagedFrame = new WeakMap<ActorSprite, (i: number) => void>();
 
 export function installDevHooks(deps: DevHookDeps): void {
-  const { startLevel, descend, onPlayerDeath, openShop, applyPotion, debugSpawn, debugClearEnemies } = deps;
+  const { startLevel, descend, onPlayerDeath, openShop, applyPotion, debugSpawn, debugClearEnemies, debugClearAdds } = deps;
   const { exitDungeonGame, tearGraveHole } = deps;
   if (typeof window === "undefined") return;
 
@@ -853,9 +854,10 @@ export function installDevHooks(deps: DevHookDeps): void {
         // waits on a 1-in-100 roll per kill, which is how the full-stash pickup
         // refusal survived to reach a player at depth 5.
         if (f.cardDrops !== undefined) state.dbgCardDropAlways = f.cardDrops;
+        if (f.noTide !== undefined) state.tideBase = f.noTide ? 0 : state.tideBase;
         state.hudDirty = true;
       }
-      return { god: state.godMode, mana: state.infMana, noCd: state.noCooldown, cardDrops: state.dbgCardDropAlways };
+      return { god: state.godMode, mana: state.infMana, noCd: state.noCooldown, cardDrops: state.dbgCardDropAlways, noTide: state.tideBase === 0 };
     };
     // Dev: the BOOSTER rubber on the curved walls — world mid-point of each
     // band plus its live cooldown/flash, so a harness can warp beside one, fire
@@ -1027,8 +1029,21 @@ export function installDevHooks(deps: DevHookDeps): void {
       p.x = x;
       p.z = z;
       p.momSpeed = 0;
+      p.momX = 0;
+      p.momZ = 0;
+      p.move = null;
       syncActorMesh(p);
+      snapCameraTo(x, z);
+      if (state.camera) aimCamera(state.camera, x, 0.5, z);
       return true;
+    };
+    // Dev: clear ambient non-boss enemies from the floor so death-lab only tests arena actors
+    (window as unknown as { __dungeonClearAdds?: () => number }).__dungeonClearAdds = () => {
+      debugClearAdds();
+      return state.zombies.length;
+    };
+    (window as unknown as { __dungeonHidePlayer?: (hide: boolean) => void }).__dungeonHidePlayer = (hide: boolean) => {
+      if (state.player) state.player.sprite.mesh.visible = !hide;
     };
     // Dev: THE HORDE, as numbers. `__dungeonPlayer` reports the knight; there
     // was no read-back for the monsters at all, which made every claim about

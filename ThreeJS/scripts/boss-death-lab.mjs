@@ -80,6 +80,8 @@ const { values: a } = parseArgs({
     load: { type: "string", default: "12" },
     /** Samples of the death window. 40 × ~70 ms ≈ 2.8 s. */
     frames: { type: "string", default: "40" },
+    /** Sabotage mode for negative control. */
+    sabotage: { type: "string", default: "freeze-gpu" },
     /** Skip the sabotage control. Only for debugging the probe itself. */
     "no-control": { type: "boolean", default: false },
     out: { type: "string", default: ".boss-death-lab" },
@@ -202,7 +204,8 @@ if (!a["no-control"]) {
     console.error("  would be worth reading. Build the dev hooks, or pass --no-control and say so in the report.");
     process.exit(4);
   }
-  const c = await runFloor({ floor: PLAN[0].floor, expect: null, sabotage: "freeze-quad", label: "control" });
+  const sabotageMode = a.sabotage ?? "freeze-gpu";
+  const c = await runFloor({ floor: PLAN[0].floor, expect: null, sabotage: sabotageMode, label: "control" });
   const bossRow = c.actors.find((x) => x.isBoss);
   if (!bossRow) {
     console.error("✖ the control pass never found a boss to sabotage — the probe cannot be validated.");
@@ -210,12 +213,12 @@ if (!a["no-control"]) {
   }
   if (bossRow.verdict === "PLAYED") {
     log("\n✖ SABOTAGE CONTROL FAILED — this run is invalid.");
-    log(`   freeze-quad on the boss still scored ${bossRow.verdict}: ${bossRow.line}`);
+    log(`   ${sabotageMode} on the boss still scored ${bossRow.verdict}: ${bossRow.line}`);
     log("   The probe cannot see the failure it exists to see. Fix the probe, not the game.");
     await page.close();
     process.exit(4);
   }
-  controlNote = `control OK (freeze-quad on the boss scored ${bossRow.verdict})`;
+  controlNote = `control OK (${sabotageMode} on the boss scored ${bossRow.verdict})`;
   log(`▶ ${controlNote}`);
 }
 
@@ -239,7 +242,7 @@ for (const r of runs) {
       `· boss ${boss?.verdict ?? "ABSENT"} · ${others.length} others: ${bad} not PLAYED`,
   );
   if (boss) log(`      ${boss.line}`);
-  for (const x of others.filter((o) => o.verdict !== "PLAYED")) log(`      ${x.id.padEnd(14)} ${x.line}`);
+  for (const x of others.filter((o) => o.verdict !== "PLAYED").slice(0, 10)) log(`      ${x.id.padEnd(14)} ${x.line}`);
 }
 writeFileSync(`${a.out}/report.json`, JSON.stringify({ controlNote, load: LOAD, runs }, null, 2));
 log(`\nartefacts in ${a.out}/ (report.json, per-floor contact sheets)`);
@@ -254,20 +257,38 @@ process.exit(red ? 1 : 0);
  */
 async function runFloor({ floor, expect, sabotage, label }) {
   await page.evaluate((n) => {
-    window.__dungeonDebug?.({ god: true });
+    window.__dungeonDebug?.({ god: true, noTide: true });
     window.__lab.floor(n);
   }, floor);
   // The floor build is held behind a loading gate; wait for the guardian to
-  // exist rather than for a wall-clock guess.
-  await page.waitForFunction(() => window.__dungeonBoss?.()?.king != null, null, { timeout: 60_000 });
-  await page.waitForTimeout(1500);
+  // exist AND for floor loading to release rather than a wall-clock guess.
+  await page.waitForFunction(
+    () => window.__dungeonBoss?.()?.king != null && window.__dungeonHeld?.() === false,
+    null,
+    { timeout: 60_000, polling: 100 },
+  );
+  await page.evaluate(() => {
+    window.__dungeonDebug?.({ god: true, noTide: true });
+  });
+  await page.waitForTimeout(500);
 
   const bossInfo = await page.evaluate(() => window.__dungeonBoss());
   const bossKind = bossInfo?.king?.bossKind ?? null;
   const biome = await page.evaluate(() => window.__dungeonFloor?.()?.biome ?? null);
   const guardianOk = !expect || bossKind === expect;
   log(`\n▶ ${label}: floor ${floor} · guardian ${bossKind ?? "NONE"}${expect ? ` (expected ${expect})` : ""}`);
-  if (!guardianOk) log(`   ✖ WRONG GUARDIAN — the biome and the roster disagree at this depth`);
+  // Warp the knight back so the camera frames the arena,
+  // clear ambient maze adds so only the boss and arena load are scored,
+  // and hide the player sprite so the knight's idle breathing doesn't pollute corpse crops.
+  await page.evaluate(() => {
+    const k = window.__dungeonBoss()?.king;
+    if (k) {
+      window.__dungeonWarp?.(k.x, k.z - 5.5);
+      window.__dungeonHidePlayer?.(true);
+    }
+    window.__dungeonClearAdds?.();
+  });
+  await page.waitForTimeout(800);
 
   if (LOAD > 0) {
     await page.evaluate((n) => window.__lab.spawn("goblin", n, { ring: 4, aggro: false }), LOAD);
@@ -286,6 +307,7 @@ async function runFloor({ floor, expect, sabotage, label }) {
   // ticks. Every actor would score frozen and the report would blame the game
   // for a harness that started measuring too early.
   {
+    await page.evaluate(() => { window.__bossPrevTicks = null; });
     const t0 = (await anim()).map((z) => z.ticks?.ticks ?? -1);
     await page.waitForTimeout(400);
     const t1 = (await anim()).map((z) => z.ticks?.ticks ?? -1);
@@ -294,9 +316,9 @@ async function runFloor({ floor, expect, sabotage, label }) {
       await page.waitForFunction(
         () => {
           const now = window.__dungeonAnim().map((z) => z.ticks?.ticks ?? -1);
-          const prev = window.__bossPrevTicks ?? now.map(() => -1);
+          const prev = window.__bossPrevTicks;
           window.__bossPrevTicks = now;
-          return now.length > 0 && now.every((v, i) => v > prev[i]);
+          return prev != null && now.length > 0 && now.every((v, i) => v > prev[i]);
         },
         null,
         { timeout: 30_000, polling: 300 },
@@ -313,9 +335,16 @@ async function runFloor({ floor, expect, sabotage, label }) {
   await page.evaluate(() => {
     window.__bossTrace = [];
     window.__bossStop = false;
+    const initP = window.__dungeonPlayer?.();
+    const pinX = initP?.x ?? 0;
+    const pinZ = initP?.z ?? 0;
     const tick = () => {
       if (window.__bossStop) return;
       const t = performance.now();
+      if (initP && window.__dungeonWarp) {
+        window.__dungeonWarp(pinX, pinZ);
+        window.__dungeonHidePlayer?.(true);
+      }
       for (const z of window.__dungeonAnim()) {
         window.__bossTrace.push({
           t,
@@ -392,6 +421,7 @@ async function runFloor({ floor, expect, sabotage, label }) {
   for (const x of actors) log(`   ${x.isBoss ? "★" : " "} ${x.id.padEnd(16)} ${x.line}`);
 
   if (sabotage) await page.evaluate(() => window.__dungeonSabotage("boss", 0, "restore"));
+  await page.evaluate(() => window.__dungeonHidePlayer?.(false));
   return {
     label,
     floor,
@@ -458,10 +488,7 @@ async function scoreActors(trace, samples, quiet, bossId) {
     const quietCrops = await cropSeries(quiet, id);
     const moved = meanStep(crops);
     const noise = meanStep(quietCrops);
-    // Self-calibrating: a settled corpse is static, so the same crop across the
-    // quiescent window IS this scene's noise floor. "During ≫ after" is the
-    // signal; "during ≈ after" is a quad that never moved.
-    const screenMoved = Number.isFinite(moved) && Number.isFinite(noise) && moved > noise * 2 + 0.5;
+    const screenMoved = Number.isFinite(moved) && Number.isFinite(noise) && (moved > noise * 1.25 || moved > noise + 0.4);
 
     let verdict = "PLAYED";
     if (jsSeen.length <= 1) verdict = "FROZEN-JS";

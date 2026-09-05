@@ -196,6 +196,19 @@ export function debugClearEnemies(): void {
   state.reaperOut = false; // let the reaper be re-summoned after a clear
 }
 
+/** Yank non-boss adds off the floor instantly — keeps the boss. */
+export function debugClearAdds(): void {
+  const bosses = [];
+  for (const z of state.zombies) {
+    if (z.boss) {
+      bosses.push(z);
+    } else {
+      state.scene?.remove(z.sprite.mesh);
+    }
+  }
+  state.zombies = bosses;
+}
+
 // ── SKILLS & ABILITIES, without the wallet ───────────────────────────────────
 //
 // The MENU already sells every node and every ability rank, correctly gated on
