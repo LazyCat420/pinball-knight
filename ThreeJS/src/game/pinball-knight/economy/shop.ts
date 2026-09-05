@@ -127,13 +127,14 @@ export function applyPotion(id: PotionId): void {
   const def = POTIONS[id];
   if (def.heal > 0) {
     p.hp = Math.min(playerMaxHp(), p.hp + def.heal);
-    state.vfx?.blood(p.x, 0.6, p.z, "red", 6); // a little red sparkle for the heal
+    state.vfx?.heal(p.x, 0.6, p.z, def.color);
   }
   if (def.gold && def.gold > 0) {
     // Greed idol: instant gold windfall, banked into the shared wallet.
     state.goldRun += def.gold;
     addGold(def.gold, "dungeon-game");
     state.vfx?.sparks(p.x, 0.7, p.z, 0, 0, 8);
+    state.vfx?.burst(p.x, 0.7, p.z, def.color, 10, 3);
   }
   // ✨ LASER: an instant hand-off, not a timed buff — the ricochet form owns
   // its own clock, so this sits with the heal/gold instants above rather than
@@ -143,13 +144,27 @@ export function applyPotion(id: PotionId): void {
     showToast("✨ LASER", "no steering. no brakes.");
   }
   if (def.duration > 0) {
-    if (id === "rage") p.rageT = def.duration;
-    if (id === "haste") p.hasteT = def.duration;
-    if (id === "shield") p.shieldT = def.duration;
+    if (id === "rage") {
+      p.rageT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 16, 4.5);
+      state.vfx?.ember(p.x, 0.8, p.z);
+    }
+    if (id === "haste") {
+      p.hasteT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 16, 5);
+      state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 8);
+    }
+    if (id === "shield") {
+      p.shieldT = def.duration;
+      state.vfx?.ring(p.x, p.z, def.color, 1.2, 0.5, { thin: true });
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 12, 3);
+    }
     if (id === "ballform") {
       // The consolidated pinball buff drives all three ball systems at once:
       // ram damage (iron), frictionless steering (turbo), springy walls.
       p.ironT = p.turboT = p.springT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 14, 4);
+      state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 10);
       state.shakeT = Math.max(state.shakeT, 0.25);
       sfxBumper();
     }
@@ -166,19 +181,42 @@ export function applyPotion(id: PotionId): void {
       // The echoes own their own countdown + teardown (entities/multiball.ts).
       p.multiBallT = def.duration;
       spawnMultiBall();
+      state.vfx?.burst(p.x - 0.4, 0.6, p.z, def.color, 8, 3);
+      state.vfx?.burst(p.x + 0.4, 0.6, p.z, def.color, 8, 3);
       sfxBumper();
     }
-    if (id === "curveshot") p.curveT = def.duration;
-    if (id === "magnetboots") p.magBootsT = def.duration;
+    if (id === "curveshot") {
+      p.curveT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 12, 3.5);
+    }
+    if (id === "magnetboots") {
+      p.magBootsT = def.duration;
+      state.vfx?.ring(p.x, p.z, def.color, 1.0, 0.4, { inward: true, thin: true });
+    }
     // ── Craft-only brews ──
     if (id === "regen") {
       p.regenT = def.duration;
       p.regenTickT = REGEN_TICK_INTERVAL;
+      state.vfx?.heal(p.x, 0.6, p.z, def.color, 8);
     }
-    if (id === "venomcoat") p.venomCoatT = def.duration;
-    if (id === "stoneskin") p.stoneT = def.duration;
-    if (id === "static") p.staticT = def.duration;
-    if (id === "greed") p.greedT = def.duration;
+    if (id === "venomcoat") {
+      p.venomCoatT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 12, 3);
+    }
+    if (id === "stoneskin") {
+      p.stoneT = def.duration;
+      state.vfx?.burst(p.x, 0.55, p.z, def.color, 8, 2.5);
+      state.vfx?.dust(p.x, 0.15, p.z);
+    }
+    if (id === "static") {
+      p.staticT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 14, 4);
+      state.vfx?.bolt(p.x, 0.5, p.z, 0, 1, 1.0);
+    }
+    if (id === "greed") {
+      p.greedT = def.duration;
+      state.vfx?.burst(p.x, 0.6, p.z, def.color, 14, 3.5);
+    }
   }
   // Elixir of Life: instant full heal AND a permanent-for-the-run max-hearts
   // bump (the only potion that raises the ceiling). Heal AFTER the bump so it
@@ -186,6 +224,8 @@ export function applyPotion(id: PotionId): void {
   if (id === "elixir") {
     state.bonusMaxHp += ELIXIR_MAXHP_BONUS;
     p.hp = playerMaxHp();
+    state.vfx?.heal(p.x, 0.7, p.z, 0xffd98a, 24);
+    state.vfx?.ring(p.x, p.z, 0xffd98a, 1.8, 0.6);
     state.vfx?.sparks(p.x, 0.9, p.z, 0, 0, 18);
   }
   p.sprite.setTint(def.color);

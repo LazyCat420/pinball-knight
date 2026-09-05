@@ -206,7 +206,8 @@ export function checkPickups(dt: number): void {
       const c = it.coin;
       if (c && c.magT < COIN_MAGNET_TIME) continue; // still bursting / resting / flying
       creditGold(it.value ?? GOLD_PER_KILL);
-      state.vfx?.sparks(it.x, COIN_CHEST_Y, it.z, 0, 0, 7); // absorb flash at the chest
+      state.vfx?.burst(it.x, COIN_CHEST_Y, it.z, 0xffd98a, 6, 2.0); // gold dust inhale absorb
+      state.vfx?.mote(it.x, COIN_CHEST_Y, it.z, 0xfff3c8);
       sfxCoin();
       removeGroundItem(k);
       continue;

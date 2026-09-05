@@ -226,6 +226,7 @@ export function updateCoins(dt: number): void {
       it.x = c.fromX + (p.x - c.fromX) * e;
       it.z = c.fromZ + (p.z - c.fromZ) * e;
       c.y = c.fromY + (COIN_CHEST_Y - c.fromY) * e + Math.sin(Math.PI * u) * COIN_MAGNET_ARC;
+      if (Math.random() < dt * 24) state.vfx?.mote(it.x, c.y, it.z, 0xffd98a);
     }
 
     // Snap to the pixel grid like the rest of the loot so it doesn't shimmer.

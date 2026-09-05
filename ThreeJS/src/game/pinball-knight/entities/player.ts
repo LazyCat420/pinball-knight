@@ -2577,7 +2577,14 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   const wc = w.slashColor ?? 0xdfe7f2;
   const sx = p.x + fx * 0.5;
   const sz = p.z + fz * 0.5;
-  if (move.tag === "light2") {
+  if (w.arcCos === 0.0) {
+    // 360 crowd weapons (chair, wreckingball)
+    const scale = move.tag === "finish" || move.tag === "surge" ? 1.8 : move.tag === "heavy" ? 1.6 : 1.35;
+    state.vfx?.slashCircle(p.x, 0.6, p.z, wc, scale);
+    if (w.momentumScaling && p.momSpeed > 0) {
+      state.vfx?.sparks(p.x, 0.5, p.z, fx, fz, 10);
+    }
+  } else if (move.tag === "light2") {
     state.vfx?.slash(sx, 0.6, sz, p.facing, wc, { roll: 0.45, scale: 1.15 });
     state.vfx?.slash(sx, 0.6, sz, p.facing, 0xffa54a, { roll: -0.45, scale: 1.15, mirror: true });
   } else if (move.tag === "finish" || move.tag === "surge") {
@@ -2585,10 +2592,17 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
     state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xff8800, { scale: 1.45, mirror: true, life: 0.17 });
     state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.16, 0.55); // the wind-up blur
     requestShake(0.12);
+  } else if (w.id === "warhammer") {
+    // Heavy siege slam: massive vertical cut, ground shockwave, and heavy impact sparks
+    state.vfx?.slash(p.x + fx * 0.75, 0.6, p.z + fz * 0.75, p.facing, wc, { scale: 1.8, life: 0.22 });
+    state.vfx?.ring(p.x + fx * 0.75, p.z + fz * 0.75, 0xffd98a, 1.4, 0.26, { thin: true });
+    state.vfx?.dust(p.x + fx * 0.75, 0.1, p.z + fz * 0.75);
+    state.vfx?.sparks(p.x + fx * 0.75, 0.4, p.z + fz * 0.75, fx, fz, 8);
   } else if (move.tag === "heavy") {
     state.vfx?.slash(p.x + fx * 0.75, 0.6, p.z + fz * 0.75, p.facing, wc, { scale: 1.6 });
   } else {
     state.vfx?.slash(sx, 0.6, sz, p.facing, wc);
+    if (w.id === "mace") state.vfx?.sparks(sx, 0.5, sz, fx, fz, 4);
   }
 }
 

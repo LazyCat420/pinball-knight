@@ -42,6 +42,7 @@ import {
   setReagentDropHandler,
   setGolemShatterHandler,
   setBloaterBurstHandler,
+  setSporelingBurstHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -239,6 +240,11 @@ export function installGameplayWiring(deps: WiringDeps): void {
     // A bloater bursting is a wet, greasy explosion — the smoke is what makes it
     // read as "something ruptured" rather than "a fire appeared here".
     state.vfx?.smoke(x, 0.4, z, 10, BLOATER_BURST_RADIUS * 0.5);
+  });
+  // A SPORELING bursts into a toxic spore cloud on death (OPEN_WORK 2.1).
+  setSporelingBurstHandler((x, z) => {
+    state.vfx?.sporeCloud(x, 0.4, z, 1.8);
+    spawnFloorFx("slick", x, z, 1.2, 3.5);
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);
