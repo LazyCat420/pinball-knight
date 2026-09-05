@@ -25,6 +25,8 @@ import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
 import { isRenderHeld } from "../run/floor-hold";
+import { themeFor } from "../maze/prefabs";
+import { biomeFor } from "../boot/biomes";
 import { buyShopRow } from "../economy/shop";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX, CEL_STEPS, CEL_CURVE, CEL_SATURATION, SPRITE_UNITS } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
@@ -313,7 +315,18 @@ export function installDevHooks(deps: DevHookDeps): void {
       const king = state.zombies.find((z) => z.boss && z.mode !== "dead");
       if (!king) return { king: null, engaged: bossEngaged(), stairs: state.stairs ?? null };
       return {
-        king: { x: Math.round(king.x * 100) / 100, z: Math.round(king.z * 100) / 100, hp: king.hp, aggro: !!king.aggro },
+        // `bossKind` is WHICH guardian, which is the only way a harness can
+        // check that a floor produced the boss its biome names — the actor's
+        // own `kind` is "brute" for every one of them, and the scale is a
+        // number you would have to reverse-engineer back to a roster row.
+        king: {
+          x: Math.round(king.x * 100) / 100,
+          z: Math.round(king.z * 100) / 100,
+          hp: king.hp,
+          aggro: !!king.aggro,
+          bossKind: king.bossKind ?? null,
+          nid: king.nid ?? null,
+        },
         player: p ? { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 } : null,
         // Straight-line world distance = tiles (1 unit is 1 tile, engine/grid.ts).
         dist: p ? Math.round(Math.hypot(king.x - p.x, king.z - p.z) * 100) / 100 : null,
@@ -927,6 +940,11 @@ export function installDevHooks(deps: DevHookDeps): void {
       hitstopT: state.hitstopT,
       elapsed: state.elapsed,
       level: state.level,
+      // WHICH BAND this depth landed in. The generator's own word for it, so a
+      // harness can check the running game against the schedule the
+      // depth-select screen advertises instead of against another copy of it.
+      biome: themeFor(state.level).name,
+      place: biomeFor(state.level).name,
     });
     // Dev: the FLOOR CENSUS — a fingerprint of what `buildLevel` authored.
     // Read from the snapshot taken at the end of the build, NOT recomputed from
@@ -1266,7 +1284,12 @@ export function installDevHooks(deps: DevHookDeps): void {
     (window as unknown as {
       __dungeonSabotage?: (kind: string, index: number, mode: string, arg?: number) => unknown;
     }).__dungeonSabotage = (kind: string, index: number, mode: string, arg?: number) => {
-      const of = state.zombies.filter((z) => z.kind === kind);
+      // "boss" is not an EnemyKind — every guardian spawns as a `brute` on a
+      // boss atlas — so a harness that wants to sabotage the guardian cannot
+      // name it by kind without also catching the biome's ordinary brutes, and
+      // its index among them shifts with the horde. This selector is how a boss
+      // probe gets its negative control at all.
+      const of = kind === "boss" ? state.zombies.filter((z) => z.boss) : state.zombies.filter((z) => z.kind === kind);
       const z = of[index];
       if (!z) return null;
       const anim = z.anim as unknown as Record<string, unknown>;

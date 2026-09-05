@@ -498,9 +498,8 @@ function buildLevel(level: number): void {
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
-  // Which time round the band schedule this is — `passFor`, not a modulo over
-  // BIOMES.length, which counts BANDS and would print "deeper (2)" the moment
-  // you left the Crypt.
+  // `passFor`, not a modulo over BIOMES.length — that counts BANDS, so it
+  // would print "deeper (2)" the moment you left the Crypt.
   const cycle = passFor(level) + 1;
   const suffix = cycle > 1 ? ` · deeper (${cycle})` : "";
   // The archetype names the SHAPE the player is about to walk into, so a Great
@@ -509,13 +508,9 @@ function buildLevel(level: number): void {
   // Biome flavour keeps the chapter feel; the archetype line is appended only
   // when the floor's shape is actually unusual, so level 1 reads as it always did.
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
-  // The mega warning NAMES the guardian that is actually down there. It used to
-  // say REAPER KING on every mega floor, including the ones the King does not
-  // guard — the same class of lie as the depth-select screen's schedule.
-  const sub =
-    level % BOSS_EVERY === 0
-      ? `☠ a MEGA ${guardianFor(level).label} guards the stairs ☠`
-      : `${flavour}${suffix}`;
+  // The mega warning NAMES the guardian actually down there; it used to shout
+  // REAPER KING on every mega floor, including the ones he does not guard.
+  const sub = level % BOSS_EVERY === 0 ? `☠ a MEGA ${guardianFor(level).label} guards the stairs ☠` : `${flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
   // Arrival sting. Paired with the toast rather than the geometry build so the
   // sound and the card land together.
