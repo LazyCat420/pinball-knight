@@ -34,6 +34,18 @@ import {
 import { type Grid, isWalkable, isLowWall, tileCenter, at, shapeAt, surfaceAt, T_CRACKED, idx } from "./generator";
 import { wallSurface, floorSurface, WALL_STONE, FLOOR_STONE, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL } from "../engine/surfaces";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "../engine/tile-shape";
+import {
+  legacyTriage,
+  compileWallRuns,
+  CAP_ALL,
+  CAP_N,
+  CAP_E,
+  CAP_S,
+  CAP_W,
+  type WallLook,
+  type WallPiece,
+  type WallRunPlan,
+} from "./wall-runs";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
 import { buildArcLanes, type ArcLaneVisual } from "../render/arc-lanes";
 import type { LevelPlan } from "./decorate";
@@ -89,6 +101,11 @@ function cachedTexture(key: string, make: () => THREE.CanvasTexture): THREE.Canv
   const hit = textureCache.get(k);
   if (hit) return hit;
   const tex = make();
+  // Name it after its cache key. three.js leaves `name` empty, and an unnamed
+  // texture makes a rendered mesh anonymous to anything inspecting the scene —
+  // which is exactly what `__lab.walls.digest()` has to do to prove the shipped
+  // wall look did not move.
+  tex.name = k;
   textureCache.set(k, tex);
   return tex;
 }
@@ -625,13 +642,17 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
 }
 
 /**
- * Wall cap: ONE grid cell per tile — solid border, DARK stone fill (clearly
- * darker than the floor, so corridors read as bright paths between dark wall
- * bands), a subtle top-edge bevel. This is what stops rows of walls fusing
- * into anonymous rectangle slabs: every wall tile reads as a square on the
- * grid.
+ * Wall cap — the TOP face of a wall box.
+ *
+ * `mask` says which sides draw the grid border (CAP_N/E/S/W from
+ * maze/wall-runs.ts). The shipped look passes CAP_ALL: every tile is a square,
+ * which is what stopped rows of walls fusing into anonymous slabs — and is
+ * also why a ten-tile wall reads as ten objects. The run look passes the
+ * OUTLINE of the wall mass instead, so the border appears where the stone
+ * actually ends and the carved panel is dropped inside a run (a panel per tile
+ * is the same fragmentation by another name).
  */
-function makeCapTexture(): THREE.CanvasTexture {
+function makeCapTexture(mask: number = CAP_ALL): THREE.CanvasTexture {
   return pixelTexture(
     TILE_PX,
     (ctx) => {
@@ -648,18 +669,23 @@ function makeCapTexture(): THREE.CanvasTexture {
         }
       }
 
-      // tile border — the grid line
+      // tile border — the grid line, on the sides the mask asks for
       ctx.fillStyle = css(1);
-      ctx.fillRect(0, 0, TILE_PX, 1);
-      ctx.fillRect(0, TILE_PX - 1, TILE_PX, 1);
-      ctx.fillRect(0, 0, 1, TILE_PX);
-      ctx.fillRect(TILE_PX - 1, 0, 1, TILE_PX);
+      if (mask & CAP_N) ctx.fillRect(0, 0, TILE_PX, 1);
+      if (mask & CAP_S) ctx.fillRect(0, TILE_PX - 1, TILE_PX, 1);
+      if (mask & CAP_W) ctx.fillRect(0, 0, 1, TILE_PX);
+      if (mask & CAP_E) ctx.fillRect(TILE_PX - 1, 0, 1, TILE_PX);
       // top bevel just inside the border (north edge catches the "light")
-      ctx.fillStyle = css(4);
-      ctx.fillRect(1, 1, TILE_PX - 2, 1);
+      if (mask & CAP_N) {
+        ctx.fillStyle = css(4);
+        ctx.fillRect(1, 1, TILE_PX - 2, 1);
+      }
 
       // carved inner panel — an inset square with nicked corners, so caps
-      // read as dressed stone instead of blank slabs
+      // read as dressed stone instead of blank slabs. Only on a tile that is
+      // an object in its own right: inside a run it is the panel, repeated
+      // every metre, that makes one wall look like a row of crates.
+      if (mask !== CAP_ALL) return;
       ctx.strokeStyle = css(1);
       ctx.lineWidth = 1;
       ctx.strokeRect(9.5, 9.5, TILE_PX - 19, TILE_PX - 19);
@@ -948,6 +974,12 @@ export interface MazeHandle {
    *  each frame (render/arc-lanes.updateArcLanes). Empty on floors whose sweeps
    *  drew no lanes. */
   arcLanes: ArcLaneVisual[];
+  /**
+   * The compiled wall runs, when this floor was built with a non-legacy look
+   * (null otherwise). The overlay and `__lab.walls()` read it; nothing in the
+   * game loop does.
+   */
+  wallRuns: WallRunPlan | null;
   dispose(): void;
 }
 
@@ -1149,7 +1181,14 @@ function arcSweepGeometry(arcs: readonly ArcFeature[], grid: Grid, heightFor: (f
   return geo;
 }
 
-export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
+export function buildMaze(
+  scene: THREE.Scene,
+  grid: Grid,
+  plan: LevelPlan,
+  arcs: ArcCorner[] = [],
+  opts: { look?: WallLook } = {},
+): MazeHandle {
+  const look: WallLook = opts.look ?? "legacy";
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
 
@@ -1242,75 +1281,34 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     }
   }
 
-  // ── Walls — sort into full (back) and low (camera-side rim) ──
-  // Only wall tiles with at least one walkable neighbour (8-way) get an
-  // instance: a wall buried inside a solid block can never be seen.
-  const fullCells: Array<{ x: number; z: number; i: number; j: number }> = [];
-  const mossCells: Array<{ x: number; z: number; i: number; j: number }> = [];
-  const lowCells: Array<{ x: number; z: number; i: number; j: number }> = [];
-  const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
-  // Shaped (slant) wall tiles are drawn as triangular prisms, not boxes.
-  const slantCells: Array<{ x: number; z: number; i: number; j: number; shape: TileShape; low: boolean }> = [];
-  // Per arc-sweep feature: does any of its slices sit on the camera-side rim?
-  const arcRim = new Map<number, boolean>();
-  for (let j = 0; j < grid.h; j++) {
-    for (let i = 0; i < grid.w; i++) {
-      if (isWalkable(grid, i, j)) continue;
-      if (at(grid, i, j) === T_CRACKED) continue; // secret bands get their own removable meshes below
-      let exposed = false;
-      for (let dj = -1; dj <= 1 && !exposed; dj++) {
-        for (let di = -1; di <= 1; di++) {
-          if (isWalkable(grid, i + di, j + dj)) {
-            exposed = true;
-            break;
-          }
-        }
-      }
-      if (!exposed) continue;
-      // The Diablo rule, isometric edition — see engine/grid.ts isLowWall. It
-      // lives there rather than here because the croaker's hop reads it too,
-      // and a frog clearing a wall this file drew full-height is a bug.
-      const rim = isLowWall(grid, i, j);
-      const cc = tileCenter(grid, i, j);
-      const c = { x: cc.x, z: cc.z, i, j };
-      // A SHAPED tile (slant prism / round shell) is built below, never a box.
-      const shape = shapeAt(grid, i, j);
-      if (isShaped(shape)) {
-        if (isArc(shape)) {
-          // A multi-tile arc slice — rendered as one feature shell below, not
-          // per-tile. Remember whether ANY slice is camera-side rim so the
-          // whole sweep takes the knee-high treatment (Diablo rule).
-          const fid = grid.arcIdx ? grid.arcIdx[idx(grid, i, j)] : -1;
-          if (fid >= 0) arcRim.set(fid, (arcRim.get(fid) ?? false) || rim);
-        } else {
-          slantCells.push({ x: cc.x, z: cc.z, i, j, shape, low: rim });
-        }
-        continue;
-      }
-      if (rim) {
-        lowCells.push(c);
-      } else if ((i * 7 + j * 13) % 4 === 0) {
-        mossCells.push(c); // every ~4th tall wall grows moss — breaks up runs
-      } else {
-        fullCells.push(c);
-      }
-      // Tall walls with a corridor to their SOUTH show their big face to the
-      // camera — those faces are where the architecture hangs.
-      if (!rim && isWalkable(grid, i, j + 1)) southFaces.push({ x: c.x, z: c.z, i, j });
-    }
-  }
+  // ── Walls ──
+  // The per-tile triage (which tiles are drawn, at which height, with moss)
+  // lives in maze/wall-runs.ts so the run compiler and this renderer cannot
+  // hold two different opinions about which stone the player can see.
+  const triage = legacyTriage(grid);
+  const { slant: slantCells, arcRim } = triage;
 
-  const capTex = cachedTexture("cap", makeCapTexture);
   const capNorm = cachedTexture("cap-norm", () => normalTexture(TILE_PX, capHeight, 1, 1, 2.5));
-  const capMat = track(
-    new THREE.MeshStandardMaterial({
-      map: capTex,
-      normalMap: capNorm,
-      normalScale: new THREE.Vector2(1.0, 1.0),
-      roughness: 0.95,
-      metalness: 0.0,
-    }),
-  );
+  // One material per border mask. The texture cache is module-lifetime and
+  // keyed by biome, so a mask costs one 64px canvas the first time a floor in
+  // that biome needs it and nothing after.
+  const capMats = new Map<number, THREE.MeshStandardMaterial>();
+  const capMatFor = (mask: number): THREE.MeshStandardMaterial => {
+    let mat = capMats.get(mask);
+    if (mat) return mat;
+    mat = track(
+      new THREE.MeshStandardMaterial({
+        map: cachedTexture(mask === CAP_ALL ? "cap" : `cap-m${mask}`, () => makeCapTexture(mask)),
+        normalMap: capNorm,
+        normalScale: new THREE.Vector2(1.0, 1.0),
+        roughness: 0.95,
+        metalness: 0.0,
+      }),
+    );
+    capMats.set(mask, mat);
+    return mat;
+  };
+  const capMat = capMatFor(CAP_ALL);
 
   // Tile → the wall instance drawing it, so a high-speed smash (secrets.ts
   // smashWallAt) can pop a single wall out of its InstancedMesh at runtime.
@@ -1343,7 +1341,12 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     mesh.setColorAt(k, surf.id === WALL_STONE ? tintScratch.setRGB(1, 1, 1) : tintScratch.setHex(surf.hex, THREE.SRGBColorSpace));
   };
 
-  const addWallMesh = (cells: Array<{ x: number; z: number; i: number; j: number }>, height: number, mossy: boolean): void => {
+  const addWallMesh = (
+    cells: Array<{ x: number; z: number; i: number; j: number }>,
+    height: number,
+    mossy: boolean,
+    capMaterial: THREE.Material = capMat,
+  ): void => {
     if (!cells.length) return;
     const low = height < 0.6;
     // Faces stretch their square texture over the (slightly non-1) wall height
@@ -1369,7 +1372,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const geo = track(new THREE.BoxGeometry(1, height, 1));
     // BoxGeometry material order: +x, -x, +y, -y, +z, -z — bordered grid cap
     // on top so the coursed texture doesn't smear across a horizontal face.
-    const mesh = new THREE.InstancedMesh(geo, [faceMat, faceMat, capMat, capMat, faceMat, faceMat], cells.length);
+    const mesh = new THREE.InstancedMesh(geo, [faceMat, faceMat, capMaterial, capMaterial, faceMat, faceMat], cells.length);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     const m = new THREE.Matrix4();
@@ -1386,9 +1389,48 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     disposables.push({ dispose: () => mesh.dispose() });
   };
 
-  addWallMesh(fullCells, WALL_H, false);
-  addWallMesh(mossCells, WALL_H, true);
-  addWallMesh(lowCells, WALL_LOW, false);
+  /**
+   * WHICH WALL LOOK THIS FLOOR IS BUILT WITH.
+   *
+   *   "legacy" — one bordered square per tile, moss dithered every ~4th tall
+   *              tile. What ships today.
+   *   "runs"   — the wall mass is outlined, not tiled: the border is drawn
+   *              where the stone ends, the carved panel only on tiles that are
+   *              an object in their own right, and moss is a property of a
+   *              whole run instead of a per-tile dither.
+   *   "tiles"  — the shipped square, but everything else run-aware (moss per
+   *              run, dressing on run middles only).
+   *
+   * `runs` and `tiles` are the two candidates behind `__lab.walls(...)`; the
+   * default is and stays `legacy` until one of them is chosen.
+   */
+  let dressFaces: Array<{ x: number; z: number; i: number; j: number }> = triage.southFaces;
+  let wallRuns: WallRunPlan | null = null;
+  if (look === "legacy") {
+    addWallMesh(triage.full, WALL_H, false);
+    addWallMesh(triage.moss, WALL_H, true);
+    addWallMesh(triage.low, WALL_LOW, false);
+  } else {
+    wallRuns = compileWallRuns(grid, look);
+    // One InstancedMesh per (cap border, height, moss). The bucket count is
+    // bounded by 16 masks x 2 heights x 2 moss states, but a real floor uses a
+    // fraction of that — `__lab.walls()` prints the live number.
+    const buckets = new Map<string, WallPiece[]>();
+    for (const piece of wallRuns.pieces) {
+      const key = `${piece.capMask}:${piece.low ? 1 : 0}:${piece.moss ? 1 : 0}`;
+      let arr = buckets.get(key);
+      if (!arr) buckets.set(key, (arr = []));
+      arr.push(piece);
+    }
+    for (const [key, pieces] of buckets) {
+      const [maskStr, lowStr, mossStr] = key.split(":");
+      addWallMesh(pieces, lowStr === "1" ? WALL_LOW : WALL_H, mossStr === "1", capMatFor(Number(maskStr)));
+    }
+    // Pilasters and banners hang on the MIDDLE of a wall. Bolting a column to
+    // the last tile before a corner is the same "cluster of edge pieces" read
+    // the runs exist to fix, so the dressing takes bodies only.
+    dressFaces = wallRuns.pieces.filter((piece) => piece.role === "body" && !piece.low && piece.faceS);
+  }
 
   // ── Shaped walls — SLANT tiles as triangular prisms (face + cap material),
   // ROUND tiles as capless curved shells (DoubleSide, tied to the real collider
@@ -1544,7 +1586,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const stoneMat = track(new THREE.MeshStandardMaterial({ color: css(3), roughness: 0.9 }));
 
   // Pilasters: engaged columns on tall south faces — shaft + capital + plinth.
-  const pilasterAt = southFaces.filter((f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY === 0);
+  const pilasterAt = dressFaces.filter((f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY === 0);
   if (pilasterAt.length) {
     const shaftGeo = track(new THREE.BoxGeometry(0.16, WALL_H + 0.04, 0.12));
     const capGeo = track(new THREE.BoxGeometry(0.26, 0.08, 0.18));
@@ -1565,7 +1607,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   }
 
   // Banners: swallowtail cloth on tall faces, two liveries. Skip pilaster tiles.
-  const bannerAt = southFaces.filter(
+  const bannerAt = dressFaces.filter(
     (f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY !== 0 && (f.i * 13 + f.j * 41) % BANNER_EVERY === 0,
   );
   if (bannerAt.length) {
@@ -1837,6 +1879,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     wallAt,
     arcKickers,
     arcLanes,
+    wallRuns,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());

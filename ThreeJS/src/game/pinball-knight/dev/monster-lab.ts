@@ -29,6 +29,7 @@
  */
 import { KIND_IDS, KIND_INFO } from "../bestiary";
 import { floorLock, setFloorLock } from "./floor-lock";
+import { makeWallLab } from "./wall-lab";
 import { importedArtEnabled } from "../boot/sheets";
 import { DEFAULT_PLAYER_SHEET, playerSheetName, switchPlayerSheet } from "../render/knight-sheets";
 import { state } from "../state";
@@ -73,6 +74,7 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         "  __lab.floor(5)                jump to a floor",
         "  __lab.lock() / __lab.lock(3)  PIN every descent to that floor",
         "  __lab.unlock()                back to normal progression",
+        '  __lab.walls() / .walls("runs") WALL LOOK: counts, ends, switch',
         "  __lab.clear()                 clear all enemies",
         "  __lab.kinds()                 roster as an array",
         "  __lab.tide()                  THE TIDE: ramp, target, live, next pulse",
@@ -187,6 +189,15 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
     },
 
     lockState: (): number | null => floorLock(),
+
+    /** The wall look: what this floor is built from, and switch between the
+     *  two candidates (dev/wall-lab.ts). */
+    walls: makeWallLab({
+      rebuild: () => {
+        if (!state.gameOver) startLevel(state.level);
+      },
+      level: () => state.level,
+    }),
 
     /**
      * Imported art on/off, then RELOAD. The A/B this whole pipeline exists for.

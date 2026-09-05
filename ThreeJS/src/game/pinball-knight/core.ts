@@ -92,6 +92,7 @@ import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
+import { wallLook } from "./dev/wall-look";
 import { hordeFlowField } from "./engine/flow-field";
 import { updatePlayer } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
@@ -453,7 +454,7 @@ function buildLevel(level: number): void {
     const t = worldToTile(grid, a.cx, a.cz);
     return !partTiles.has(`${t.i},${t.j}`);
   });
-  state.maze = buildMaze(state.scene, grid, plan, state.arcCorners);
+  state.maze = buildMaze(state.scene, grid, plan, state.arcCorners, { look: wallLook() });
   createPinballParts(plan.parts, grid, state.scene);
   // The braziers are now built; raise the sealed vault chest they open.
   if (lampPuzzlePlan) installLampPuzzle(lampPuzzlePlan, grid, state.scene);
