@@ -12,6 +12,7 @@
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape, shapeAt } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "../engine/tile-shape";
+import { runInteriorMask, runLengthMask } from "./wall-runs";
 import { createSpacingGrid } from "../engine/spacing-grid";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { chuteTiles, type LaunchChute } from "./track-launch";
@@ -1425,8 +1426,49 @@ function furnishRooms(
  * BOTH backing neighbours stay full squares (not themselves candidates). Leaves
  * tiny 2×2 nubs square and never opens a leak.
  */
-function assignCornerShapes(g: Grid): void {
+function assignCornerShapes(g: Grid, policy: { grammar?: boolean } = {}): void {
   const cand = new Int8Array(g.w * g.h).fill(-1); // -1 = none, else the TileShape
+  /**
+   * WHERE A CURVE IS ALLOWED TO LAND (maze/wall-runs.ts).
+   *
+   * Measured over 31 floors before this existed: 41,484 wall boxes fell into
+   * 16,260 runs — a mean of 2.55 tiles — and the single commonest thing ENDING
+   * a run was a shaped tile, 10,755 of them, ahead of "the wall genuinely
+   * stops" at 10,116. The curves were not decorating the walls; they were
+   * cutting them up. A round shell is drawn CAPLESS, so one in the middle of a
+   * wall is a hole in that wall's top surface, and the two halves left either
+   * side read as separate lumps — which is exactly the complaint this answers.
+   *
+   * Two vetoes, both computed on the grid as it stands BEFORE any shape is
+   * assigned, which is the wall the player would have seen without the curve:
+   *
+   *   V1  a candidate in the MIDDLE of a run of 3+ tiles. Only concave crooks
+   *       can be interior — a convex tip has floor on one side of each axis —
+   *       so this is precisely the "hole punched in a continuous wall" case.
+   *   V2  a candidate on a run of 1-2 tiles. There is no wall left to end:
+   *       curving a stub that short turns the whole thing into ornament.
+   *
+   * A curve at the END of a real wall is untouched, which is the shape the
+   * complaint actually asked for: rounded ends, straight middles.
+   *
+   * ── WHICH ONE ACTUALLY DOES THE WORK, measured over the same 31 floors ──
+   *                         shells   run ends cut by a curve
+   *   as shipped              8291                    10755
+   *   V1 only                 8182                    10511
+   *   V2 only                 3360                     5684
+   *   V1 + V2                 3251                     5459
+   *
+   * V1 was the hypothesis and it is worth ~1%: a curve genuinely stranded in
+   * the middle of a long wall is rare. **60% of every quarter-round shell on a
+   * floor is stuck to a wall fragment one or two tiles long** — they are not
+   * decorating walls, they are decorating debris, which is what "clusters of
+   * edge pieces trying to make a corner or a wall" turned out to mean. V1 is
+   * kept because it is free and the defect it names is real, but the number
+   * belongs to V2 and the record should say so.
+   */
+  const interior = policy.grammar ? runInteriorMask(g, 3) : null;
+  const runLen = policy.grammar ? runLengthMask(g) : null;
+  const NUB_MAX = 2;
   // Mix: ~3/4 of the corners CURVE, the rest bevel — deterministic by position.
   // (Was 50/50; playtest 07-23 read the maze as "still all boxes", so rounds
   // now dominate and the bevels are the accent.)
@@ -1489,6 +1531,8 @@ function assignCornerShapes(g: Grid): void {
     for (let i = 1; i < g.w - 1; i++) {
       const shape = cand[idx(g, i, j)] as TileShape;
       if (shape < 0) continue;
+      if (interior && interior[idx(g, i, j)]) continue; // V1 — no hole in a wall's middle
+      if (runLen && runLen[idx(g, i, j)] <= NUB_MAX) continue; // V2 — nothing to round off
       const back = shapeBacking(shape)!;
       const b0i = i + back[0].x;
       const b0j = j + back[0].z;
@@ -2245,7 +2289,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -3443,7 +3487,7 @@ export function decorateMaze(
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch
   // break-throughs, secrets) is final. Only reshapes existing walls — never
   // changes walkability, so AI/flow-field/spawns are unaffected. ──
-  assignCornerShapes(g);
+  assignCornerShapes(g, { grammar: extras.wallGrammar ?? false });
 
   // ── ITEM RARITY, stamped in ONE place ──
   // Every weapon/gear drop on this floor rolls its rarity here rather than at

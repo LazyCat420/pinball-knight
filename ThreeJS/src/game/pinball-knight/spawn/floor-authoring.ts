@@ -50,6 +50,7 @@ import { buildTrackFloor } from "../maze/track-floor";
 import { nearSealed } from "../maze/track-socket";
 import { pruneSealedBands, stampSecretBands } from "../secrets";
 import { resetZombieNid } from "../spawn/factory";
+import { wallLook } from "../dev/wall-look";
 
 /**
  * What authoring produced. Exactly the values the population half still needs —
@@ -342,6 +343,10 @@ export function authorFloor(level: number): AuthoredFloor {
       // decorate places content into finished geometry instead of building more
       // of it. The legacy branch passes nothing and keeps its own bank pass.
       wallsAuthored: !!track,
+      // The curve vetoes ride the same dev flag as the wall look, so a
+      // candidate look is judged WITH the shape rules that belong to it and
+      // "legacy" stays exactly the floor that ships today (maze/wall-runs.ts).
+      wallGrammar: wallLook() !== "legacy",
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
       doorways: track?.doorways,
     },

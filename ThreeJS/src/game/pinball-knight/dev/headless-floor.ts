@@ -145,7 +145,7 @@ export interface HeadlessPlan extends HeadlessFloor {
   modifier: string;
 }
 
-export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = false): HeadlessPlan | null {
+export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = false, wallGrammar = false): HeadlessPlan | null {
   const rng = floorRng(runSeed, level);
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
@@ -186,6 +186,7 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
       chute: track.chute ?? null,
       orbit: track.orbit ?? null,
       wallsAuthored: true,
+      wallGrammar,
       floor: level,
       // MUST mirror spawn/floor-authoring.ts, or this harness measures a
       // different floor's machine layer than the one that ships.
