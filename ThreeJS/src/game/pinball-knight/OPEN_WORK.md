@@ -72,6 +72,45 @@ call — but it is a disagreement, and it is the last one.
 
 ---
 
+### 1.3 The wall look is waiting on ONE decision — OPEN 2026-09-05
+
+The complaint was that walls read as "clusters of edge pieces clustered to try
+to make a corner or a wall". `maze/wall-runs.ts` now compiles the finished grid
+into wall RUNS and measures it: over 31 floors, 41,484 wall boxes fell into
+16,260 runs — a mean of 2.55 tiles — and the commonest thing ending a run was a
+shaped tile (10,755), ahead of "the wall genuinely stops" (10,116). **60% of
+every quarter-round shell on a floor is stuck to a wall fragment one or two
+tiles long.**
+
+Two treatments are built and switchable, default off:
+
+    __lab.walls("runs")    the wall mass is outlined, no panel inside a run
+    __lab.walls("tiles")   the shipped square kept, everything else run-aware
+    __lab.walls("legacy")  what ships today
+    __lab.walls()          counts, run lengths, and what is ending the runs
+
+Both candidates carry the curve vetoes (`decorate.ts assignCornerShapes`,
+`extras.wallGrammar`); `legacy` carries none of it and is byte-identical to the
+floor that shipped before — measured, not asserted, by building the same pinned
+floor from both checkouts and diffing all 35 draw-census rows.
+
+**What is open is the choice, and it is the user's.** Whichever wins, the loser
+goes: `dev/wall-look.ts`, the `look` parameter in `maze/build.ts`, and the
+losing cap textures all come out, because two wall renderers is not a state to
+ship and co-op peers on different looks would disagree about `grid.shapes` —
+which the collider reads. `BLUEPRINT.md` lines 19-29 state the per-tile square
+cap as design intent ("so wall runs never fuse into anonymous rectangles"); if
+`runs` wins, that paragraph is the thing being overturned and must be rewritten
+rather than left to contradict the code.
+
+Not attempted, and named so it is not mistaken for an oversight: the remaining
+fragmentation after the vetoes is the knee-high/full height flip
+(`engine/grid.ts isLowWall`), which is the Diablo visibility rule AND the
+croaker's hop — gameplay, not styling. A wall that changes height genuinely is
+two objects.
+
+---
+
 ## Tier 2 — the game says something that is not true
 
 ### 2.0 The flipper — CLOSED 2026-08-28
