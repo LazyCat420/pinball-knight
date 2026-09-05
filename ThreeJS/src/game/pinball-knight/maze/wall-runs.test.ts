@@ -131,8 +131,8 @@ describe("G0 legacy triage parity", () => {
 });
 
 // ── G1: coverage ─────────────────────────────────────────────────────────────
-// SABOTAGE SEEN RED: skip the ownership re-segment, so a corner tile joins two
-// runs — pieces.length then exceeds the box count.
+// SABOTAGE SEEN RED: skip the ownership re-segment (drop the `ownerX` test in
+// the run-head check). The compiler's own invariant names the orphaned tile.
 describe("G1 coverage", () => {
   for (const { f, plan } of RUNS) {
     it(`covers every drawn box exactly once on ${label(f)}`, () => {
@@ -310,7 +310,11 @@ describe("G6 footprint exclusion", () => {
 });
 
 // ── G7: what the run look draws is what the shipped look draws ───────────────
-// SABOTAGE SEEN RED: read the south face from j-1.
+// SABOTAGE SEEN RED: an extra piece emitted for a buried tile.
+// NOTE: reading the south face from j-1 does NOT fail this gate — it fails G1
+// and G5, because the drawn SET does not depend on the face. Recorded because
+// a sabotage attributed to the wrong gate is how a gate gets believed for
+// something it never checked.
 describe("G7 render parity with the shipped triage", () => {
   for (const { f, plan } of RUNS) {
     it(`draws the same tiles at the same heights as build.ts on ${label(f)}`, () => {
