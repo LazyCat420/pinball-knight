@@ -28,10 +28,12 @@
  * with the boss about who it is aiming at.
  */
 import * as THREE from "three";
-import type { BarrageSpec, ChargeSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec } from "./boss-kinds";
+import type { BarrageSpec, ChargeSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import { moveCircle } from "./engine/collision";
+import { isWalkable, worldToTile } from "./maze/generator";
+import { facingFromWorld } from "./entities/zombie";
 
 /** What a primitive is allowed to know and do. */
 export interface MoveCtx {
@@ -45,8 +47,10 @@ export interface MoveCtx {
   bodyR: number;
   /** Damage the knight if they are within `r` of (x, z). Returns true on a hit. */
   hitAt(x: number, z: number, r: number, damage: number, launch: number): boolean;
-  /** Move the boss. Used only by the charge. */
+  /** Move the boss. Used only by the charge and teleport. */
   moveTo(x: number, z: number): void;
+  playAnim?(clip: string, opts?: { force?: boolean }): void;
+  setFacing?(dir: "N" | "S" | "E" | "W"): void;
 }
 
 function add(mesh: THREE.Mesh): THREE.Mesh {
@@ -267,6 +271,7 @@ export function updateSlam(rt: SlamRt, spec: SlamSpec, ctx: MoveCtx): void {
     const ring = groundRing(spec.radius, spec.color);
     ring.position.set(rt.x, 0.04, rt.z);
     rt.ring = add(ring);
+    ctx.playAnim?.("attack", { force: true });
   }
   if (rt.phase === "telegraph") {
     pulse(rt.ring, rt.t);
@@ -275,6 +280,7 @@ export function updateSlam(rt: SlamRt, spec: SlamSpec, ctx: MoveCtx): void {
       state.shakeT = Math.max(state.shakeT, 0.35);
       state.hitstopT = Math.max(state.hitstopT, 0.06);
       ctx.hitAt(rt.x, rt.z, spec.radius, spec.damage, spec.launch);
+      ctx.playAnim?.("attack", { force: true });
       if (spec.echo) {
         // The second ring is WIDER, so the roll that saved you from the first
         // is what puts you inside the second. Swap the ring rather than adding
@@ -481,6 +487,167 @@ export function updateNova(rt: NovaRt, spec: NovaSpec, ctx: MoveCtx): void {
       rt.age = 0;
       rt.hit = false;
       state.shakeT = Math.max(state.shakeT, 0.2);
+    }
+  }
+}
+
+// ── TELEPORT & FIRE SPRAY ──────────────────────────────────────────────────
+
+export interface TeleportFireRt {
+  t: number;
+  phase: "idle" | "telegraph" | "spray";
+  destX: number;
+  destZ: number;
+  ring: THREE.Mesh | null;
+  sprayT: number;
+  sprayInterval: number;
+  sprayTimer: number;
+  shotsFired: number;
+}
+
+export function freshTeleportFire(spec: TeleportFireSpec): TeleportFireRt {
+  return {
+    t: spec.interval,
+    phase: "idle",
+    destX: 0,
+    destZ: 0,
+    ring: null,
+    sprayT: 0,
+    sprayInterval: spec.fireDuration / Math.max(1, spec.shotCount),
+    sprayTimer: 0,
+    shotsFired: 0,
+  };
+}
+
+export function teleportFireHoldsMovement(rt: TeleportFireRt): boolean {
+  return rt.phase === "telegraph" || rt.phase === "spray";
+}
+
+export function findTeleportDestination(
+  tx: number,
+  tz: number,
+  dist: number,
+  grid: Grid | null,
+  bodyR: number
+): { x: number; z: number } {
+  if (!grid) return { x: tx + dist, z: tz };
+  const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4, Math.PI, -(3 * Math.PI) / 4, -Math.PI / 2, -Math.PI / 4];
+  for (let i = 0; i < angles.length; i++) {
+    const a = angles[i];
+    const testX = tx + Math.cos(a) * dist;
+    const testZ = tz + Math.sin(a) * dist;
+    const t = worldToTile(grid, testX, testZ);
+    if (t.i >= 1 && t.i < grid.w - 1 && t.j >= 1 && t.j < grid.h - 1) {
+      if (isWalkable(grid, t.i, t.j)) {
+        const res = moveCircle(grid, tx, tz, bodyR, testX - tx, testZ - tz);
+        if (Math.hypot(res.x - testX, res.z - testZ) < 0.5) {
+          return { x: testX, z: testZ };
+        }
+      }
+    }
+  }
+  return { x: tx + dist * 0.7, z: tz + dist * 0.7 };
+}
+
+export function fireMouthFlame(
+  bx: number,
+  bz: number,
+  tx: number,
+  tz: number,
+  spec: TeleportFireSpec,
+  shots: BossShot[]
+): void {
+  const spread = (Math.random() - 0.5) * 0.4;
+  const dx = tx - bx;
+  const dz = tz - bz;
+  const baseAngle = Math.atan2(dz, dx) + spread;
+  const vx = Math.cos(baseAngle) * spec.fireSpeed;
+  const vz = Math.sin(baseAngle) * spec.fireSpeed;
+
+  const geo = new THREE.SphereGeometry(0.24, 8, 6);
+  const mat = new THREE.MeshBasicMaterial({ color: spec.color });
+  const mesh = add(new THREE.Mesh(geo, mat));
+  mesh.renderOrder = 13;
+  mesh.position.set(bx, 1.45, bz);
+
+  // Spark burst at the mouth
+  state.vfx?.burst(bx, 1.45, bz, 0xffbb00, 6, 3);
+
+  shots.push({
+    mesh,
+    x: bx,
+    z: bz,
+    vx,
+    vz,
+    dist: 0,
+    damage: spec.damage,
+    maxDist: 16,
+    slowFor: 0,
+  });
+}
+
+export function updateTeleportFire(
+  rt: TeleportFireRt,
+  spec: TeleportFireSpec,
+  ctx: MoveCtx,
+  shots: BossShot[]
+): void {
+  if (rt.phase === "spray") {
+    rt.sprayT -= ctx.dt;
+    rt.sprayTimer -= ctx.dt;
+    if (rt.sprayTimer <= 0 && rt.shotsFired < spec.shotCount) {
+      rt.sprayTimer = rt.sprayInterval;
+      rt.shotsFired++;
+      ctx.setFacing?.(facingFromWorld(ctx.target.x - ctx.x, ctx.target.z - ctx.z, "S"));
+      ctx.playAnim?.("attack", { force: true });
+      fireMouthFlame(ctx.x, ctx.z, ctx.target.x, ctx.target.z, spec, shots);
+    }
+    if (rt.sprayT <= 0 || rt.shotsFired >= spec.shotCount) {
+      rt.phase = "idle";
+      rt.t = spec.interval;
+    }
+    return;
+  }
+
+  rt.t -= ctx.dt;
+  if (rt.phase === "idle" && rt.t <= spec.telegraph) {
+    rt.phase = "telegraph";
+    const dest = findTeleportDestination(ctx.target.x, ctx.target.z, spec.distance, ctx.grid, ctx.bodyR);
+    rt.destX = dest.x;
+    rt.destZ = dest.z;
+    const ring = groundRing(1.8, 0x8822bb, 0.15); // dark purple necrotic tell
+    ring.position.set(ctx.x, 0.04, ctx.z);
+    rt.ring = add(ring);
+    state.vfx?.burst(ctx.x, 0.5, ctx.z, 0xff5500, 8, 3);
+  }
+
+  if (rt.phase === "telegraph") {
+    pulse(rt.ring, rt.t);
+    state.vfx?.burst(ctx.x, 1.2, ctx.z, 0xff6600, 2, 1);
+    if (rt.t <= 0) {
+      disposeMesh(rt.ring);
+      rt.ring = null;
+
+      // Burst of shadowy smoke and sparks at departure
+      state.vfx?.burst(ctx.x, 1.2, ctx.z, 0x220033, 24, 5);
+      state.vfx?.burst(ctx.x, 1.2, ctx.z, 0xff4500, 16, 4);
+
+      // Relocate boss
+      ctx.moveTo(rt.destX, rt.destZ);
+
+      // Burst of shadowy smoke and fiery arrival
+      state.vfx?.burst(rt.destX, 1.2, rt.destZ, 0x220033, 28, 6);
+      state.vfx?.burst(rt.destX, 1.2, rt.destZ, 0xff4500, 24, 5);
+      state.shakeT = Math.max(state.shakeT, 0.28);
+
+      ctx.setFacing?.(facingFromWorld(ctx.target.x - rt.destX, ctx.target.z - rt.destZ, "S"));
+      ctx.playAnim?.("attack", { force: true });
+
+      rt.phase = "spray";
+      rt.sprayT = spec.fireDuration;
+      rt.sprayInterval = spec.fireDuration / Math.max(1, spec.shotCount);
+      rt.sprayTimer = 0;
+      rt.shotsFired = 0;
     }
   }
 }

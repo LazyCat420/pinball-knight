@@ -49,14 +49,17 @@ import {
   freshNova,
   freshSlam,
   freshSummon,
+  freshTeleportFire,
   makeOrbiter,
   syncOrbit,
+  teleportFireHoldsMovement,
   updateBarrage,
   updateCharge,
   updateNova,
   updateShots,
   updateSlam,
   updateSummon,
+  updateTeleportFire,
   type BarrageRt,
   type BossShot,
   type ChargeRt,
@@ -65,6 +68,7 @@ import {
   type Orbiter,
   type SlamRt,
   type SummonRt,
+  type TeleportFireRt,
 } from "./boss-moves";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
@@ -230,6 +234,7 @@ interface BossState {
   charge: ChargeRt | null;
   summon: SummonRt | null;
   nova: NovaRt | null;
+  teleportFire: TeleportFireRt | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -332,6 +337,7 @@ export function spawnBoss(
     charge: null,
     summon: null,
     nova: null,
+    teleportFire: null,
     adds: [],
     spawnAdd,
     portal: null,
@@ -455,7 +461,7 @@ export function updateBoss(dt: number): void {
   // this he would simply stand wherever the leash tripped — which is worse than
   // chasing, because the exit ends up unguarded AND he is loitering in a
   // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
-  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge))) {
+  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire))) {
     const step = boss.z.speed * KING_RETURN_SPEED * dt;
     const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
     boss.z.x = res.x;
@@ -498,6 +504,7 @@ export function updateBoss(dt: number): void {
       boss.summon.alive = alive; // the brood does not vanish at the threshold
     }
     if (p2.moves.nova) boss.nova = freshNova(p2.moves.nova);
+    if (p2.moves.teleportFire) boss.teleportFire = freshTeleportFire(p2.moves.teleportFire);
     if (p2.speedMult) boss.z.speed *= p2.speedMult;
     syncOrbiters();
     showToast(p2.title, boss.spec.tagline);
@@ -506,12 +513,6 @@ export function updateBoss(dt: number): void {
   }
 
   const moves = movesAt(boss.spec, hpFrac());
-
-  // ── The ring wheels ──
-  if (moves.orbit) {
-    boss.orbitT += dt * moves.orbit.speed;
-    syncOrbit(boss.orbiters, moves.orbit, bx, bz, boss.orbitT);
-  }
 
   // ── The moveset. A boss runs only the moves its row names. ──
   if (moves.barrage) {
@@ -547,6 +548,17 @@ export function updateBoss(dt: number): void {
   if (moves.nova) {
     boss.nova ??= freshNova(moves.nova);
     updateNova(boss.nova, moves.nova, ctx);
+  }
+
+  if (moves.teleportFire) {
+    boss.teleportFire ??= freshTeleportFire(moves.teleportFire);
+    updateTeleportFire(boss.teleportFire, moves.teleportFire, ctx, boss.shots);
+  }
+
+  // ── The ring wheels (after moves so teleports track orbiters instantly) ──
+  if (moves.orbit) {
+    boss.orbitT += dt * moves.orbit.speed;
+    syncOrbit(boss.orbiters, moves.orbit, boss.z.x, boss.z.z, boss.orbitT);
   }
 }
 
@@ -588,6 +600,12 @@ function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
       b.z.z = z;
       syncActorMesh(b.z);
     },
+    playAnim(clip, opts) {
+      b.z.anim.play(clip as any, opts);
+    },
+    setFacing(dir) {
+      b.z.anim.setFacing(dir);
+    },
   };
 }
 
@@ -613,6 +631,10 @@ function clearTelegraphs(): void {
   if (boss.nova?.ring) {
     disposeMesh(boss.nova.ring);
     boss.nova.ring = null;
+  }
+  if (boss.teleportFire?.ring) {
+    disposeMesh(boss.teleportFire.ring);
+    boss.teleportFire.ring = null;
   }
 }
 
@@ -924,6 +946,7 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     charge: null,
     summon: null,
     nova: null,
+    teleportFire: null,
     adds: [],
     // Adds cannot be adopted: the previous authority's brood is in
     // `state.zombies` as ordinary monsters and stays that way.
@@ -934,7 +957,7 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     // scaledFor with the CURRENT knight count so the next tick doesn't double it.
     scaledFor: knightsOnFloor(),
   };
-  if (hpFrac() <= spec.phase2.at) boss.phase = 2;
+  if (boss && hpFrac() <= spec.phase2.at) boss.phase = 2;
   syncOrbiters();
   state.exitLocked = true;
 }

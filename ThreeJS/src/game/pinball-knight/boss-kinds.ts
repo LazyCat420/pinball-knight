@@ -107,6 +107,25 @@ export interface NovaSpec {
   color: number;
 }
 
+/** Teleport to a vantage point and spray fire from mouth. */
+export interface TeleportFireSpec {
+  interval: number;
+  /** Seconds the tell gathers before vanishing. */
+  telegraph: number;
+  /** Distance from target to re-appear at. */
+  distance: number;
+  /** Duration in seconds of the flame spray. */
+  fireDuration: number;
+  /** Projectile speed. */
+  fireSpeed: number;
+  /** Damage per flame projectile. */
+  damage: number;
+  /** Number of flame shots emitted over fireDuration. */
+  shotCount: number;
+  /** Flame color. */
+  color: number;
+}
+
 export interface BossMoves {
   orbit?: OrbitSpec;
   barrage?: BarrageSpec;
@@ -114,6 +133,7 @@ export interface BossMoves {
   charge?: ChargeSpec;
   summon?: SummonSpec;
   nova?: NovaSpec;
+  teleportFire?: TeleportFireSpec;
 }
 
 export interface BossSpec {
@@ -166,31 +186,40 @@ export interface BossSpec {
 export const BOSSES: Record<BossKind, BossSpec> = {
   // ══ THE COLD CRYPT — bumpers, lanes, a flipper or two ══════════════════
   //
-  // The original, unchanged in shape: a ring of skulls, one flung at you on a
-  // cadence, and a telegraphed ground-pound. What IS changed is that the
-  // barrage now winds up. It never did, which made the one attack you could
-  // not dodge also the one that fired most often.
+  // Japanese Salaryman hybrid with Reaper King:
+  // Orbiting floating skulls, giant scythe swinging cleave, and a demonic
+  // teleport + mouth fire spray special attack.
   reaper_king: {
     kind: "reaper_king",
     biome: "crypt",
     title: "☠ THE REAPER KING ☠",
-    tagline: "slay it — only then does the portal open",
+    tagline: "overtime is eternal — slay him or join the payroll",
     label: "REAPER KING",
     art: { sheetKey: "reaper", tint: null, scale: 2.17 },
     hpMult: 1,
     speedMult: 1,
     moves: {
       orbit: { count: 5, radius: 1.5, speed: 1.1, color: 0xe8e2d0 },
-      barrage: { interval: 2.6, windup: 0.45, speed: 9, damage: 1, maxDist: 16, color: 0xd8c8a8 },
-      slam: { interval: 4.2, telegraph: 1.1, radius: 2.6, damage: 2, launch: 16, color: 0xff3050 },
+      barrage: { interval: 2.8, windup: 0.45, speed: 9, damage: 1, maxDist: 16, color: 0xd8c8a8 },
+      slam: { interval: 4.5, telegraph: 1.1, radius: 2.6, damage: 2, launch: 16, color: 0xff3050 },
+      teleportFire: {
+        interval: 7.5,
+        telegraph: 0.9,
+        distance: 4.5,
+        fireDuration: 1.2,
+        fireSpeed: 10,
+        damage: 1,
+        shotCount: 6,
+        color: 0xff6600,
+      },
     },
     phase2: {
       at: 0.5,
-      title: "☠ THE KING SHEDS HIS CROWN",
+      title: "☠ THE KING SHEDS HIS CROWN: UNLIMITED OVERTIME",
       // A pattern LAYER, not a reskin: the slam gains a second, wider ring a
-      // beat after the first, so the safe spot you rolled to stops being safe.
+      // beat after the first, and teleport fire spray intensifies!
       moves: {
-        barrage: { interval: 1.7, windup: 0.35, speed: 11, damage: 1, maxDist: 16, color: 0xd8c8a8 },
+        barrage: { interval: 1.8, windup: 0.35, speed: 11, damage: 1, maxDist: 16, color: 0xd8c8a8 },
         slam: {
           interval: 3.4,
           telegraph: 0.9,
@@ -198,10 +227,17 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           damage: 2,
           launch: 16,
           color: 0xff3050,
-          // 3.0 is a BUDGET, not a taste: BOSS_ARENA_R is derived from the widest
-          // thing you must walk out of, and 4.0 would have demanded 8-tile halls on
-          // every floor. See boss.ts SLAM_RADIUS.
           echo: { delay: 0.5, radius: 3.0, damage: 1 },
+        },
+        teleportFire: {
+          interval: 5.0,
+          telegraph: 0.65,
+          distance: 4.0,
+          fireDuration: 1.4,
+          fireSpeed: 12,
+          damage: 2,
+          shotCount: 8,
+          color: 0xff3300,
         },
       },
     },

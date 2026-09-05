@@ -361,3 +361,47 @@ test("a boss killed mid-telegraph leaves no ring on the floor", () => {
   const flat = state.scene!.children.filter((c) => Math.abs(c.rotation.x + Math.PI / 2) < 1e-6);
   expect(flat, "a telegraph outlived the boss that cast it").toEqual([]);
 });
+
+test("reaper_king configures teleportFire and escalates attack cadence in phase 2", () => {
+  const rk = BOSSES.reaper_king;
+  expect(rk.moves.teleportFire).toBeDefined();
+  expect(rk.moves.teleportFire!.shotCount).toBeGreaterThanOrEqual(4);
+  expect(rk.moves.orbit!.count).toBe(5);
+
+  const p2 = rk.phase2.moves.teleportFire;
+  expect(p2).toBeDefined();
+  expect(p2!.interval).toBeLessThan(rk.moves.teleportFire!.interval);
+  expect(p2!.shotCount).toBeGreaterThan(rk.moves.teleportFire!.shotCount);
+});
+
+test("reaper_king executes teleport and fire spray special while retaining orbiting skulls", () => {
+  let playAnimCalled = false;
+  disposeBoss();
+  state.zombies = [];
+  state.scene = new THREE.Scene();
+  let king!: Zombie;
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 100, BOSSES.reaper_king, (x: number, zz: number, hp: number) => {
+    king = fakeZombie(x, zz, hp);
+    king.anim.play = (clip) => {
+      if (clip === "attack") playAnimCalled = true;
+    };
+    state.zombies.push(king);
+    return king;
+  });
+
+  state.flowField = new Int32Array(49);
+  state.player!.x = king.x;
+  state.player!.z = king.z + 1.0;
+
+  // Run 8 seconds to allow teleportFire (interval 7.5s, telegraph 0.9s) to trigger
+  for (let t = 0; t < 8 * 60; t++) {
+    updateBoss(1 / 60);
+  }
+
+  // Attack animation should be played during scythe slam or mouth fire spray
+  expect(playAnimCalled).toBe(true);
+  // Orbiting skulls should remain in the scene and active
+  const meshes = state.scene!.children.filter((c) => c instanceof THREE.Mesh);
+  expect(meshes.length).toBeGreaterThanOrEqual(5);
+});
+
