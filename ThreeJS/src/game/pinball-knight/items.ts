@@ -368,6 +368,7 @@ export type PotionId =
   | "freeze"
   | "multiball"
   | "curveshot"
+  | "magnetcore"
   | "magnetboots"
   // ── Craft-only brews (Tavern Alchemist; see recipes.ts) ──
   | "regen"
@@ -431,8 +432,9 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", color: 0xb06fe8, heal: 0, duration: 14, description: "two echo knights ram for you" },
   // Curve Shot: your projectiles bend around corners along your sweep.
   curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12, description: "bending projectiles" },
-  // Magnet Boots: repel the magnet crawlers, LAUNCH off the magnet strips.
-  magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18, description: "repel crawlers · strips LAUNCH" },
+  // Magnet Core: turns the ball into a magnetic dynamo that pulls metal monsters and loot.
+  magnetcore: { id: "magnetcore", label: "Magnet Core", icon: "🧲", color: 0x4f8fdb, heal: 0, duration: 16, description: "vacuum metal loot · crush metal monsters" },
+  magnetboots: { id: "magnetboots", label: "Magnet Core", icon: "🧲", color: 0x4f8fdb, heal: 0, duration: 16, description: "vacuum metal loot · crush metal monsters" },
   // ── Craft-only brews — no shop row, no floor spawn; you BREW these at the
   // Alchemist from monster reagents (recipes.ts). Each is a distinct buff that
   // reads at one existing combat choke point. ──
@@ -450,7 +452,7 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   elixir: { id: "elixir", label: "Elixir of Life", icon: "🌟", color: 0xff8fae, heal: 0, duration: 0, description: "full heal · +2 max hearts (run)" },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "laser", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "regen", "venomcoat", "stoneskin", "static", "greed", "elixir"];
+export const POTION_IDS: PotionId[] = ["health", "laser", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetcore", "regen", "venomcoat", "stoneskin", "static", "greed", "elixir"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

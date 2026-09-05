@@ -557,7 +557,11 @@ export function updateZombies(dt: number): void {
       z.x = sres.x;
       z.z = sres.z;
       z.sprite.mesh.position.set(z.x, z.sprite.mesh.position.y, z.z);
-      z.anim.play("idle");
+      z.anim.play("stumble");
+      if (sres.hitN) {
+        damageZombie(z, 5, sres.hitN.nx, sres.hitN.nz, 0.4);
+        state.vfx?.burst(z.x, 0.35, z.z, 0xffffff, 4, 1.2);
+      }
       continue;
     }
 

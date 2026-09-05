@@ -59,7 +59,32 @@ import {
   LIGHTNING_ROD_RANGE,
   LIGHTNING_ROD_DAMAGE,
   LIGHTNING_ROD_TICK,
+  WATER_WAKE_MIN_SPEED,
+  WATER_WAKE_SPACING,
+  WATER_WAKE_RADIUS,
+  WATER_WAKE_LIFE,
+  WATER_MARBLE_GLIDE_T,
+  STONE_WAKE_MIN_SPEED,
+  STONE_WAKE_SPACING,
+  STONE_WAKE_RADIUS,
+  STONE_WAKE_LIFE,
+  STORM_WAKE_MIN_SPEED,
+  STORM_WAKE_SPACING,
+  STORM_WAKE_RADIUS,
+  STORM_WAKE_LIFE,
+  SHADOW_WAKE_MIN_SPEED,
+  SHADOW_WAKE_SPACING,
+  SHADOW_WAKE_RADIUS,
+  SHADOW_WAKE_LIFE,
+  DIAMOND_WAKE_MIN_SPEED,
+  DIAMOND_WAKE_SPACING,
+  DIAMOND_WAKE_RADIUS,
+  DIAMOND_WAKE_LIFE,
+  MAGNET_PULSE_SPACING,
+  MAGNET_PULSE_RADIUS,
+  MAGNET_PULSE_LIFE,
 } from "../constants";
+import { sfxSplash } from "../sfx";
 import { ambience, type AmbienceId } from "../sfx/ambience";
 import { PALETTE_HEX } from "../render/palette";
 import { skillAgg } from "../skill-runtime";
@@ -494,6 +519,106 @@ export function meltFloor(x: number, z: number, speed: number, dirX = 0, dirZ = 
   if (state.vfx && Math.random() < 0.05) state.vfx.smoke(x, 0.12, z, 1, 0.28);
 }
 
+// ── MARBLE BALL WAKES (Water, Stone, Storm, Shadow, Diamond, Magnet) ─────────
+
+let lastWaterX = 0, lastWaterZ = 0, hasWaterWake = false;
+/** 💧 Water Ball Wake: leaves slippery puddles that monsters and the ball glide on. */
+export function waterWakeFloor(x: number, z: number, speed: number, _dirX = 0, _dirZ = 0): void {
+  if (speed < WATER_WAKE_MIN_SPEED) return;
+  if (hasWaterWake && Math.hypot(x - lastWaterX, z - lastWaterZ) < WATER_WAKE_SPACING) return;
+  hasWaterWake = true;
+  lastWaterX = x;
+  lastWaterZ = z;
+  const bite = Math.min(1, speed / PINBALL_MAX_SPEED);
+  spawnFloorFx("slick", x, z, WATER_WAKE_RADIUS * (0.8 + bite * 0.4), WATER_WAKE_LIFE);
+  if (state.vfx && Math.random() < 0.25) {
+    state.vfx.burst(x, 0.08, z, PALETTE_HEX[30], 3, 1.2);
+  }
+  if (Math.random() < 0.08) sfxSplash();
+}
+
+let lastStoneX = 0, lastStoneZ = 0, hasStoneWake = false;
+/** 🪨 Stone Ball Wake: heavily ruts the floor with grooves and kicks up dust. */
+export function stoneRumbleFloor(x: number, z: number, speed: number, dirX = 0, dirZ = 0): void {
+  if (speed < STONE_WAKE_MIN_SPEED) return;
+  if (hasStoneWake && Math.hypot(x - lastStoneX, z - lastStoneZ) < STONE_WAKE_SPACING) return;
+  hasStoneWake = true;
+  lastStoneX = x;
+  lastStoneZ = z;
+  const bite = Math.min(1, speed / PINBALL_MAX_SPEED);
+  spawnFloorFx("groove", x, z, STONE_WAKE_RADIUS * (0.8 + bite * 0.4), STONE_WAKE_LIFE);
+  const scar = state.floorFx[state.floorFx.length - 1];
+  if (scar && scar.kind === "groove") {
+    const l = Math.hypot(dirX, dirZ);
+    scar.dirX = l > 1e-6 ? dirX / l : 1;
+    scar.dirZ = l > 1e-6 ? dirZ / l : 0;
+  }
+  if (state.vfx && Math.random() < 0.2) {
+    state.vfx.dust(x, 0.06, z);
+  }
+}
+
+let lastStormX = 0, lastStormZ = 0, hasStormWake = false;
+/** ⚡ Storm Ball Wake: crackles with static sparks and electric motes along the floor. */
+export function stormCrackleFloor(x: number, z: number, speed: number, dirX = 0, dirZ = 0): void {
+  if (speed < STORM_WAKE_MIN_SPEED) return;
+  if (hasStormWake && Math.hypot(x - lastStormX, z - lastStormZ) < STORM_WAKE_SPACING) return;
+  hasStormWake = true;
+  lastStormX = x;
+  lastStormZ = z;
+  if (state.vfx) {
+    state.vfx.sparks(x, 0.15, z, dirX, dirZ, 3);
+    if (Math.random() < 0.3) {
+      state.vfx.mote(x + (Math.random() - 0.5) * 0.3, 0.2, z + (Math.random() - 0.5) * 0.3);
+    }
+  }
+}
+
+let lastShadowX = 0, lastShadowZ = 0, hasShadowWake = false;
+/** 🌑 Shadow Ball Wake: leaves shadowy void motes and abyssal mist. */
+export function shadowMistFloor(x: number, z: number, speed: number, _dirX = 0, _dirZ = 0): void {
+  if (speed < SHADOW_WAKE_MIN_SPEED) return;
+  if (hasShadowWake && Math.hypot(x - lastShadowX, z - lastShadowZ) < SHADOW_WAKE_SPACING) return;
+  hasShadowWake = true;
+  lastShadowX = x;
+  lastShadowZ = z;
+  if (state.vfx) {
+    state.vfx.mote(x, 0.12, z);
+    if (Math.random() < 0.2) state.vfx.burst(x, 0.15, z, 0x3a2050, 3, 0.8);
+  }
+}
+
+let lastDiamondX = 0, lastDiamondZ = 0, hasDiamondWake = false;
+/** 💎 Diamond Ball Wake: leaves glittering diamond shards and prismatic glints. */
+export function diamondGlintFloor(x: number, z: number, speed: number, _dirX = 0, _dirZ = 0): void {
+  if (speed < DIAMOND_WAKE_MIN_SPEED) return;
+  if (hasDiamondWake && Math.hypot(x - lastDiamondX, z - lastDiamondZ) < DIAMOND_WAKE_SPACING) return;
+  hasDiamondWake = true;
+  lastDiamondX = x;
+  lastDiamondZ = z;
+  spawnFloorFx("shard-field", x, z, DIAMOND_WAKE_RADIUS, DIAMOND_WAKE_LIFE);
+  if (state.vfx && Math.random() < 0.3) {
+    state.vfx.burst(x, 0.18, z, PALETTE_HEX[31], 2, 1.2);
+  }
+}
+
+let lastMagnetX = 0, lastMagnetZ = 0, hasMagnetWake = false;
+/** 🧲 Magnet Ball Wake: induction pulses and alternating polarized magnetic sparks. */
+export function magnetPulseFloor(x: number, z: number, speed: number, dirX = 0, dirZ = 0): void {
+  if (speed < 3.8) return;
+  if (hasMagnetWake && Math.hypot(x - lastMagnetX, z - lastMagnetZ) < MAGNET_PULSE_SPACING) return;
+  hasMagnetWake = true;
+  lastMagnetX = x;
+  lastMagnetZ = z;
+  if (state.vfx) {
+    state.vfx.sparks(x, 0.14, z, -dirZ, dirX, 2);
+    if (Math.random() < 0.35) {
+      const tint = Math.random() < 0.5 ? 0x4f8fdb : 0xe05a6f;
+      state.vfx.burst(x, 0.15, z, tint, 3, 1.0);
+    }
+  }
+}
+
 /**
  * What a rut DOES once it exists — the whole reason this isn't a decal.
  *
@@ -641,7 +766,13 @@ function despawn(index: number): void {
 
 export function clearFloorFx(): void {
   hasGroove = false; // a new floor starts unscarred — no seam from the last one
-  hasMelt = false; // …and unmelted. A stale cursor SUPPRESSES the first stamp
+  hasMelt = false; // …and unmelted.
+  hasWaterWake = false;
+  hasStoneWake = false;
+  hasStormWake = false;
+  hasShadowWake = false;
+  hasDiamondWake = false;
+  hasMagnetWake = false;
   // of the next floor whenever the player happens to arrive near where the last
   // one ended, which reads as "the trail sometimes doesn't start".
   for (let i = state.floorFx.length - 1; i >= 0; i--) despawn(i);
@@ -835,17 +966,17 @@ export function updateFloorFx(dt: number): void {
       }
     }
 
-    // ── The ball glides on oil AND on ice ── the existing oil-flask state (no
+    // ── The ball glides on oil, ice, and water slick ── the existing oil-flask state (no
     // friction, dead steering) is exactly the "faster and slicker" ride, topped
-    // up for every frame the rolling knight stays on the pool. Frost gets the
-    // same channel deliberately: a rune field is a slow for the horde and a
-    // SKATING RINK for the ball, which is what makes laying one a decision.
-    if ((fx.kind === "oil" || fx.kind === "frost") && p && p.momSpeed > 0) {
+    // up for every frame the rolling knight stays on the pool. Frost and water slick get the
+    // same channel: water lets the ball hydroplane at high speed.
+    if ((fx.kind === "oil" || fx.kind === "frost" || fx.kind === "slick") && p && p.momSpeed > 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;
       if (dx * dx + dz * dz <= rr * rr) {
-        p.oilT = Math.max(p.oilT, OIL_MARBLE_T);
+        const glideT = fx.kind === "slick" ? WATER_MARBLE_GLIDE_T : OIL_MARBLE_T;
+        p.oilT = Math.max(p.oilT, glideT);
         if (ticked) state.vfx?.mote(p.x, 0.1, p.z);
       }
     }

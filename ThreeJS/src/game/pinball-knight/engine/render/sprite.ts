@@ -1336,7 +1336,7 @@ export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = 
     // The six MARBLE BODIES. Cheap despite the count: each is authored once and
     // handed to all three facings by reference, so the dedupe below packs 4
     // frames per material rather than 12.
-    "diamondball", "waterball", "stoneball", "stormball", "shadowball", "lavaball",
+    "diamondball", "waterball", "stoneball", "stormball", "shadowball", "lavaball", "magnetball",
     // The ricochet forms (bolt / laser) — same one-off authoring, same sharing.
     "boltform", "laserform",
     "equip", "forge", "crouch", "wait", "wake", "stumble",

@@ -62,3 +62,19 @@ export function sfxRoll(): void {
   burst(b, 0.16, 0.11, "lowpass", 700 * p);
   beep(b, { type: "sine", f0: 260 * p, f1: 90 * p, dur: 0.14, vol: 0.05 });
 }
+
+/** Magnet Ball / attraction hum — an oscillating electromagnetic dual-tone. */
+export function sfxMagnet(): void {
+  const b = bus("pinball");
+  if (!b) return;
+  beep(b, { type: "sawtooth", f0: 160, f1: 340, dur: 0.22, vol: 0.12 });
+  beep(b, { type: "sine", f0: 440, f1: 880, dur: 0.16, vol: 0.08, at: 0.04 });
+}
+
+/** Magnet latch / metal clank — snapping coins, items, or metal enemy contact. */
+export function sfxMagnetClank(): void {
+  const b = bus("pinball");
+  if (!b) return;
+  beep(b, { type: "triangle", f0: 920, f1: 380, dur: 0.08, vol: 0.14 });
+  burst(b, 0.06, 0.12, "highpass", 2400);
+}

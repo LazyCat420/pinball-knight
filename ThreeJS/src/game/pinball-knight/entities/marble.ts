@@ -17,7 +17,7 @@
  * spawnFloorFx (new floor scars), damageZombie + the pounce dust-ring for the
  * shockwave, and vfx.ghost for the aura tint.
  */
-import { state, type MarbleMaterial, type EnemyKind } from "../state";
+import { state, type MarbleMaterial, type EnemyKind, type Zombie } from "../state";
 import {
   MATERIAL_DURATION,
   MATERIAL_FUSION_TIME,
@@ -113,6 +113,11 @@ import {
   SHADOW_LIFESTEAL_CD,
   SHADOW_PHASE_GRACE,
   BALL_RAM_COOLDOWN,
+  MAGNET_PULL_RADIUS,
+  MAGNET_MONSTER_PULL,
+  MAGNET_LOOT_PULL_SPEED,
+  MAGNET_METAL_CRUSH_MULT,
+  MAGNET_RAIL_BOOST,
 } from "../constants";
 import { worldDirToScreen } from "../engine/camera";
 import { playerMaxHp } from "../skill-runtime";
@@ -126,7 +131,7 @@ import { spawnFloorFx } from "./floor-fx";
 import { lavaMeltWall } from "./wall-erosion";
 import { enterRicochetForm } from "./ricochet-form";
 import { damageZombie } from "./combat";
-import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame } from "../sfx";
+import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame, sfxMagnet, sfxMagnetClank } from "../sfx";
 
 export interface MaterialMeta {
   label: string;
@@ -147,12 +152,13 @@ export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
   storm: { label: "Storm", icon: "⚡", tint: 0xf0e05a, trail: 0xfff3a0, sfx: sfxBumper },
   shadow: { label: "Shadow", icon: "🌑", tint: 0x2a1e3a, trail: 0x140a1e, sfx: sfxSpin },
   lava: { label: "Lava", icon: "🔥", tint: 0xf0a63c, trail: 0xd97b29, sfx: sfxFlame },
+  magnet: { label: "Magnet", icon: "🧲", tint: 0x4f8fdb, trail: 0xe05a6f, sfx: sfxMagnet },
 };
 
-export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm", "shadow", "lava"];
+export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm", "shadow", "lava", "magnet"];
 
 export function isMaterial(id: string): id is MarbleMaterial {
-  return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow" || id === "lava";
+  return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow" || id === "lava" || id === "magnet";
 }
 
 /**
@@ -222,6 +228,61 @@ export function updateMaterial(dt: number): void {
     p.materialT = Math.max(0, p.materialT - dt);
     if (Math.ceil(before) !== Math.ceil(p.materialT) || p.materialT === 0) state.hudDirty = true;
     if (p.materialT === 0) p.material = null;
+    else if (p.material === "magnet") updateMagnetPull(dt);
+  }
+}
+
+/**
+ * 🧲 Active Magnet Field: continuously vacuums metallic loot (groundItems)
+ * and pulls metal-based monsters toward the ball.
+ */
+export function updateMagnetPull(dt: number): void {
+  const p = state.player;
+  if (!p || activeMaterial() !== "magnet") return;
+
+  const R = MAGNET_PULL_RADIUS;
+  const R2 = R * R;
+
+  // 1. Pull metal-based monsters
+  for (const z of state.zombies) {
+    if (z.mode === "dead") continue;
+    const isMetal = z.kind === "magnet" || z.kind === "rotortail" || z.kind === "warden" || z.kind === "golem";
+    if (!isMetal) continue;
+    const dx = p.x - z.x;
+    const dz = p.z - z.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq <= R2 && distSq > 0.04) {
+      const dist = Math.sqrt(distSq);
+      const pull = MAGNET_MONSTER_PULL * (1 - dist / R) * dt;
+      z.x += (dx / dist) * pull;
+      z.z += (dz / dist) * pull;
+      if (z.sprite?.mesh) {
+        z.sprite.mesh.position.set(z.x, z.sprite.mesh.position.y, z.z);
+      }
+      if (Math.random() < 0.2) {
+        state.vfx?.sparks(z.x, 0.35, z.z, dx / dist, dz / dist, 1);
+      }
+    }
+  }
+
+  // 2. Metallic loot vacuum (weapons, gear, reagents on the ground)
+  // (Coins are handled in updateCoins via widened capture range)
+  for (const it of state.groundItems) {
+    if (it.blockedUntilAway) continue;
+    if (it.kind === "coin") continue;
+    const dx = p.x - it.x;
+    const dz = p.z - it.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq <= R2) {
+      const d = Math.max(0.1, Math.sqrt(distSq));
+      const step = Math.min(d, MAGNET_LOOT_PULL_SPEED * dt);
+      it.x += (dx / d) * step;
+      it.z += (dz / d) * step;
+      if (it.sprite?.mesh) {
+        it.sprite.mesh.position.x = it.x;
+        it.sprite.mesh.position.z = it.z;
+      }
+    }
   }
 }
 
@@ -315,9 +376,16 @@ export function materialRamKnockback(): number {
  * bare-ball baseline; Stone (the boulder pickup) hits harder still; the other
  * materials trade mass for their own effects and stay neutral.
  */
-export function materialRamDamageMult(): number {
+export function materialRamDamageMult(zmb?: Zombie): number {
   const m = activeMaterial();
   if (m === "stone") return STONE_RAM_DAMAGE_MULT;
+  if (m === "magnet") {
+    if (zmb) {
+      const isMetal = zmb.kind === "magnet" || zmb.kind === "rotortail" || zmb.kind === "warden" || zmb.kind === "golem";
+      if (isMetal) return MAGNET_METAL_CRUSH_MULT;
+    }
+    return 1;
+  }
   return !m && steelBall() ? STEEL_RAM_DAMAGE_MULT : 1;
 }
 
@@ -333,11 +401,12 @@ export function materialCornerAddMult(): number {
   return activeMaterial() === "stone" ? STONE_CORNER_ADD_MULT : 1;
 }
 
-/** Multiplier on bumper kick (stone ignores small forces; lava is explosive). */
+/** Multiplier on bumper kick (stone ignores small forces; lava is explosive; magnet rails). */
 export function materialBumperMult(): number {
   switch (activeMaterial()) {
     case "stone": return STONE_BUMPER_KICK_MULT;
     case "lava": return LAVA_BUMPER_MULT;
+    case "magnet": return MAGNET_RAIL_BOOST;
     default: return 1;
   }
 }
@@ -715,6 +784,8 @@ export function emitMaterialOnBounce(nx: number, nz: number): void {
       // (the fire floor-fx ticks burn DoT to anything standing in it).
       spawnFloorFx("fire", cx, cz, FIRE_PUDDLE_RADIUS, FIRE_PUDDLE_LIFE);
       state.vfx?.burst(cx, 0.2, cz, MATERIALS.lava.tint, 6, 2.5);
+    } else if (m === "magnet") {
+      magnetShockwave(cx, cz);
     }
   }
 }
@@ -819,6 +890,8 @@ export function materialSlam(): void {
       }
       state.vfx?.burst(p.x, 0.4, p.z, MATERIALS.lava.tint, 18, 4);
       state.shakeT = Math.max(state.shakeT, 0.3);
+    } else if (m === "magnet") {
+      magnetSlam();
     }
   }
 }
@@ -894,6 +967,66 @@ function stoneShockwave(x: number, z: number, radius: number, dmg: number): void
     state.vfx?.dust(x + Math.cos(a) * radius * 0.7, 0.05, z + Math.sin(a) * radius * 0.7);
   }
   state.vfx?.burst(x, 0.1, z, MATERIALS.stone.trail, 8, radius * 3);
+}
+
+/** 🧲 A magnet shockwave: polarized electromagnetic pulse at the contact point. */
+function magnetShockwave(cx: number, cz: number): void {
+  sfxMagnet();
+  const R = MAGNET_PULL_RADIUS * 0.8;
+  const R2 = R * R;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = cx - zmb.x;
+    const dz = cz - zmb.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > R2) continue;
+    const d = Math.hypot(dx, dz) || 1;
+    const isMetal = zmb.kind === "magnet" || zmb.kind === "rotortail" || zmb.kind === "warden" || zmb.kind === "golem";
+    if (isMetal) {
+      zmb.x += (dx / d) * 1.5;
+      zmb.z += (dz / d) * 1.5;
+      damageZombie(zmb, 12, -dx / d, -dz / d, 0.2);
+      state.vfx?.sparks(zmb.x, 0.35, zmb.z, dx / d, dz / d, 5);
+      sfxMagnetClank();
+    } else {
+      damageZombie(zmb, 4, -dx / d, -dz / d, 0.1);
+    }
+  }
+  state.vfx?.burst(cx, 0.3, cz, MATERIALS.magnet.tint, 8, 2.5);
+  state.vfx?.burst(cx, 0.3, cz, MATERIALS.magnet.trail, 6, 1.8);
+}
+
+/** 🧲 Active Magnet Slam: EMP burst + violently pulls all nearby metal foes and items. */
+function magnetSlam(): void {
+  const p = state.player;
+  if (!p) return;
+  sfxMagnet();
+  sfxMagnetClank();
+  const R = MAGNET_PULL_RADIUS * 1.5;
+  const R2 = R * R;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = p.x - zmb.x;
+    const dz = p.z - zmb.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > R2) continue;
+    const d = Math.hypot(dx, dz) || 1;
+    const isMetal = zmb.kind === "magnet" || zmb.kind === "rotortail" || zmb.kind === "warden" || zmb.kind === "golem";
+    const pullDist = isMetal ? d * 0.8 : d * 0.35;
+    zmb.x += (dx / d) * pullDist;
+    zmb.z += (dz / d) * pullDist;
+    const dmg = isMetal ? 25 : 8;
+    damageZombie(zmb, dmg, -dx / d, -dz / d, 0.3);
+    if (isMetal) {
+      zmb.slipT = 1.0;
+      zmb.slipVX = 0;
+      zmb.slipVZ = 0;
+      state.vfx?.sparks(zmb.x, 0.4, zmb.z, dx / d, dz / d, 6);
+    }
+  }
+  state.vfx?.burst(p.x, 0.4, p.z, MATERIALS.magnet.tint, 24, 4);
+  state.vfx?.burst(p.x, 0.4, p.z, MATERIALS.magnet.trail, 18, 3);
+  state.shakeT = Math.max(state.shakeT, 0.35);
 }
 
 // ── MATERIAL × TERRAIN REACTIONS ────────────────────────────────

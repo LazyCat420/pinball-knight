@@ -45,6 +45,7 @@ function fpsFor(clip: ClipName): number {
     case "stormball":
     case "shadowball":
     case "lavaball":
+    case "magnetball":
     // The ricochet forms ride the ball cadence too — they are the same
     // four-beat spin, drawn as a bolt / a beam instead of a sphere.
     case "boltform":
@@ -81,6 +82,7 @@ const LOOPS: Record<ClipName, boolean> = {
   stormball: true,
   shadowball: true,
   lavaball: true,
+  magnetball: true,
   boltform: true,
   laserform: true,
   equip: false,

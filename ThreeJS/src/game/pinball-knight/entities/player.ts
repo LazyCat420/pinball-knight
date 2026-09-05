@@ -167,7 +167,16 @@ import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../engine
 import { InputHandle } from "../engine/input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
-import { carveGroove, meltFloor } from "./floor-fx";
+import {
+  carveGroove,
+  meltFloor,
+  waterWakeFloor,
+  stoneRumbleFloor,
+  stormCrackleFloor,
+  shadowMistFloor,
+  diamondGlintFloor,
+  magnetPulseFloor,
+} from "./floor-fx";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
 import {
@@ -198,9 +207,10 @@ import {
   shadowVampire,
   phaseMove,
   lavaMeltIfActive,
+  activeMaterial,
 } from "./marble";
 import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
-import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
+import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper, sfxMagnetClank } from "../sfx";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 import { resolvePinballSteering } from "./pinball-steering";
 
@@ -333,6 +343,8 @@ function updateBuffTells(dt: number): void {
     // reads as a granite shell, Magnet Boots as a faint dark-iron field. Both
     // stack with the tells above (they change WHAT you are, not how fast).
     if (p.stoneT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_STONE, 0.3, 0.3);
+    if (p.venomCoatT > 0) state.vfx.ghost(p.sprite.mesh, 0x44bb44, 0.26, 0.25);
+    if (p.staticT > 0) state.vfx.ghost(p.sprite.mesh, 0xf0e05a, 0.26, 0.25);
     if (p.magBootsT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_MAGBOOTS, 0.26, 0.22);
     // MARBLE MATERIAL — the ball's substance gets its own trail hue (distinct
     // from every potion tell), stacking with the buff ghosts above. During a
@@ -363,8 +375,20 @@ function updateBuffTells(dt: number): void {
       else if (p.material === "storm") state.vfx.burst(mx, 0.3 + Math.random() * 0.5, mz, MATERIALS.storm.trail, 2, 1.2);
       else if (p.material === "shadow") state.vfx.mote(mx, 0.2 + Math.random() * 0.4, mz);
       else if (p.material === "lava") state.vfx.ember(mx, 0.1, mz);
+      else if (p.material === "magnet") {
+        const c = Math.random() < 0.5 ? MATERIALS.magnet.tint : MATERIALS.magnet.trail;
+        state.vfx.sparks(mx, 0.25, mz, (Math.random() - 0.5), (Math.random() - 0.5), 1);
+        state.vfx.burst(mx, 0.2, mz, c, 1, 0.4);
+      }
       else state.vfx.dust(mx, 0.05, mz);
     }
+  }
+
+  if (p.venomCoatT > 0 && Math.random() < 0.3) {
+    state.vfx.mote(p.x + (Math.random() - 0.5) * 0.4, 0.25, p.z + (Math.random() - 0.5) * 0.4);
+  }
+  if (p.staticT > 0 && Math.random() < 0.35) {
+    state.vfx.sparks(p.x, 0.4, p.z, (Math.random() - 0.5), (Math.random() - 0.5), 2);
   }
 
   // 🪩 The chrome bearing glints even standing still — the same idle-sparkle
@@ -1832,7 +1856,12 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       //
       // 🌑 Shadow multiplies against the wall-phasers (ghost/reaper/wisp): the
       // enemies you cannot corner are answered by BECOMING one.
-      damageZombie(z, playerDamage(dmg * shadowSlayerMult(z.kind)), p.momX, p.momZ, ramKb, false, "bounce");
+      const metalMult = isBall && activeMaterial() === "magnet" ? materialRamDamageMult(z) : 1;
+      damageZombie(z, playerDamage(dmg * shadowSlayerMult(z.kind) * metalMult), p.momX, p.momZ, ramKb, false, "bounce");
+      if (metalMult > 1) {
+        sfxMagnetClank();
+        state.vfx?.sparks(z.x, 0.4, z.z, p.momX, p.momZ, 8);
+      }
       applyCardOnHit(z);
       shadowVampire(); // …and shadow feeds on what it touches (cooldowned)
       if (cutting) {
@@ -1877,12 +1906,13 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     p.anim.play(clip ?? (p.ironT > 0 ? "steelball" : "ball"));
     // …and only a ball THAT heavy engraves the floor it crosses.
     if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed, p.momX, p.momZ);
-    // …and only one THAT hot melts it. Gated on the CLIP, not on the material
-    // timer, so the wake exists exactly while the lava sphere is the thing on
-    // screen: a knight tumbling in `roll` with the lava buff still ticking is
-    // not a ball of magma, and leaving a molten line under him would be the
-    // floor reacting to something the player cannot see.
     if (clip === "lavaball") meltFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "waterball") waterWakeFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "stoneball") stoneRumbleFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "stormball") stormCrackleFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "shadowball") shadowMistFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "diamondball") diamondGlintFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    else if (clip === "magnetball") magnetPulseFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
   } else {
     p.anim.setRate(1.4);
     p.anim.play("roll");
@@ -2071,14 +2101,13 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.chomperGrabHost = null;
     } else {
       p.chomperGrabT = Math.max(0, (p.chomperGrabT ?? 0) - dt);
+      const ax = input.axis();
       const spammed =
         input.consumeAttack() ||
         input.consumeDodge() ||
-        input.consumeRoll() ||
-        input.consumeAbility(0) ||
-        input.consumeAbility(1) ||
-        input.moveX !== 0 ||
-        input.moveZ !== 0;
+        input.consumeFlip() ||
+        ax.x !== 0 ||
+        ax.z !== 0;
       if (spammed) {
         p.chomperGrabEscape = Math.max(0, (p.chomperGrabEscape ?? 5) - 1);
         state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 4);

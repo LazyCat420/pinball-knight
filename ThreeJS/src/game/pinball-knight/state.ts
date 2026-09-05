@@ -50,7 +50,7 @@ export interface Actor {
  * shoot-out, floor scarring). Held one at a time; a fresh pickup opens a brief
  * fusion window where the previous material co-fires before it expires.
  */
-export type MarbleMaterial = "diamond" | "water" | "stone" | "storm" | "shadow" | "lava";
+export type MarbleMaterial = "diamond" | "water" | "stone" | "storm" | "shadow" | "lava" | "magnet";
 
 export interface Player extends Actor {
   hp: number;

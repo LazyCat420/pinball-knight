@@ -1094,13 +1094,54 @@ export const MAGSTRIP_BOOTS_COOLDOWN = 0.4; // lockout after a boots-inverted st
 // the same choke points that branch on springT/turboT/oilT, plus on-bounce and
 // on-slam emitters. See entities/marble.ts and state.MarbleMaterial.
 /** How long a picked-up material lasts (seconds), by material. */
-export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16, shadow: 12, lava: 14 } as const;
+export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16, shadow: 12, lava: 14, magnet: 16 } as const;
 /** Fusion window: after a 2nd pickup, both materials co-fire this long. */
 export const MATERIAL_FUSION_TIME = 2;
 /** Min momentum (u/s) before a bounce emits anything — rewards flow, kills spam. */
 export const MATERIAL_EMIT_SPEED = 6;
 /** Min seconds between on-bounce emissions. */
 export const MATERIAL_EMIT_COOLDOWN = 0.12;
+
+// 🧲 Magnet — attraction / hardware / metal crush
+export const MAGNET_PULL_RADIUS = 4.8; // radius (tiles) for pulling metal monsters and loot
+export const MAGNET_MONSTER_PULL = 6.5; // pull velocity toward the magnet ball
+export const MAGNET_LOOT_PULL_SPEED = 9.5; // pull velocity for coins and metal drops
+export const MAGNET_METAL_CRUSH_MULT = 2.0; // ram damage multiplier against metal-based foes
+export const MAGNET_RAIL_BOOST = 1.25; // bounce kick multiplier off metal bumpers/rails
+export const MAGNET_PULSE_SPACING = 0.32; // spacing between floor induction pulses
+export const MAGNET_PULSE_RADIUS = 0.55;
+export const MAGNET_PULSE_LIFE = 1.6;
+
+// 💧 Water Wake Constants
+export const WATER_WAKE_MIN_SPEED = 3.8;
+export const WATER_WAKE_SPACING = 0.28;
+export const WATER_WAKE_RADIUS = 0.52;
+export const WATER_WAKE_LIFE = 4.5;
+export const WATER_MARBLE_GLIDE_T = 0.35; // hydroplane glide duration when riding slick
+
+// 🪨 Stone Wake Constants
+export const STONE_WAKE_MIN_SPEED = 4.2;
+export const STONE_WAKE_SPACING = 0.35;
+export const STONE_WAKE_RADIUS = 0.58;
+export const STONE_WAKE_LIFE = 3.0;
+
+// ⚡ Storm Wake Constants
+export const STORM_WAKE_MIN_SPEED = 3.8;
+export const STORM_WAKE_SPACING = 0.30;
+export const STORM_WAKE_RADIUS = 0.45;
+export const STORM_WAKE_LIFE = 2.0;
+
+// 🌑 Shadow Wake Constants
+export const SHADOW_WAKE_MIN_SPEED = 3.8;
+export const SHADOW_WAKE_SPACING = 0.28;
+export const SHADOW_WAKE_RADIUS = 0.50;
+export const SHADOW_WAKE_LIFE = 2.4;
+
+// 💎 Diamond Wake Constants
+export const DIAMOND_WAKE_MIN_SPEED = 3.8;
+export const DIAMOND_WAKE_SPACING = 0.28;
+export const DIAMOND_WAKE_RADIUS = 0.45;
+export const DIAMOND_WAKE_LIFE = 2.0;
 
 // 💎 Diamond — offense / projectiles
 export const DIAMOND_RESTITUTION = 1.0; // perfectly elastic flat walls

@@ -44,3 +44,12 @@ export function sfxFreeze(): void {
   beep(b, { type: "triangle", f0: 1760, f1: 440, dur: 0.5, vol: 0.14 });
   burst(b, 0.4, 0.06, "highpass", 3000, 0.05);
 }
+
+/** Water splash — a wet fluid burst and liquid droplet resonance. */
+export function sfxSplash(): void {
+  const b = bus("weapons");
+  if (!b) return;
+  burst(b, 0.15, 0.16, "lowpass", 800);
+  burst(b, 0.10, 0.09, "bandpass", 1500, 0.02);
+  beep(b, { type: "sine", f0: 420, f1: 180, dur: 0.11, vol: 0.07 });
+}

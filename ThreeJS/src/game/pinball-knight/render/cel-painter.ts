@@ -1239,7 +1239,7 @@ function knightSteelBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: K
  *   void  — inverted lighting: darkest where the highlight should be.
  *   crust — dark plates with light leaking from BETWEEN them, not off them.
  */
-type MarbleTreatment = "facet" | "fluid" | "rough" | "arc" | "void" | "crust";
+type MarbleTreatment = "facet" | "fluid" | "rough" | "arc" | "void" | "crust" | "flux";
 
 interface MarbleSkin {
   treatment: MarbleTreatment;
@@ -1289,6 +1289,17 @@ function pc(i: number, a = 1): string {
 }
 
 export const MARBLE_SKINS: Record<MarbleMaterial, MarbleSkin> = {
+  // 🧲 Gunmetal core with polarized cobalt (+) and crimson (-) electromagnetic rings.
+  magnet: {
+    treatment: "flux",
+    ramp: [pc(22), pc(21), pc(20), pc(1)],
+    rim: pc(30, 0.95),
+    gloss: 0.8,
+    r: 20,
+    weight: 1.1,
+    accent: pc(13),
+    spec: pc(22),
+  },
   // 💎 Cut, not polished. Built on the STEEL highlights (21-22) with arcane
   // depths (29-31) — the palette's coldest, brightest ramp, which is as close
   // to "white fire" as 32 colours get.
@@ -1748,6 +1759,45 @@ function paintTreatment(ctx: CanvasRenderingContext2D, skin: MarbleSkin, spin: n
       }
       break;
     }
+
+    // ── FLUX: magnetic poles and electromagnetic field arcs ──
+    case "flux": {
+      ctx.save();
+      ctx.rotate(spin);
+      // Concentric magnetic induction rings
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, (R * i) / 3.4, 0, Math.PI * 2);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = pc(30, 0.5 + i * 0.15); // blue flux ring
+        ctx.stroke();
+      }
+      // Polar counter-charge caps: Blue (+) at top-left, Red (-) at bottom-right
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.9, -Math.PI * 0.8, -Math.PI * 0.2);
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = pc(31, 0.9); // intense cobalt positive pole
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.9, Math.PI * 0.2, Math.PI * 0.8);
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = pc(13, 0.85); // crimson negative pole
+      ctx.stroke();
+
+      // Electric spark arcs across poles
+      for (let i = 0; i < 3; i++) {
+        const a = rnd(i + frame * 3) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * R * 0.4, Math.sin(a) * R * 0.4);
+        ctx.lineTo(Math.cos(a + 0.5) * R * 0.8, Math.sin(a + 0.5) * R * 0.8);
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = pc(22, 0.8);
+        ctx.stroke();
+      }
+      ctx.restore();
+      break;
+    }
   }
 }
 
@@ -2008,6 +2058,7 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
     storm: marbleBallFrames("storm"),
     shadow: marbleBallFrames("shadow"),
     lava: marbleBallFrames("lava"),
+    magnet: marbleBallFrames("magnet"),
   };
   const ricochetFrames = { bolt: ricochetFormFrames("bolt"), laser: ricochetFormFrames("laser") };
   const steelBallFrames: FramePaint[] = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((spin) =>
@@ -2145,6 +2196,7 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
     stormball: marbleFrames.storm,
     shadowball: marbleFrames.shadow,
     lavaball: marbleFrames.lava,
+    magnetball: marbleFrames.magnet,
 
     // ── RICOCHET FORMS: not a sphere at all — a bolt and a beam. ──
     boltform: ricochetFrames.bolt,
@@ -4654,7 +4706,8 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   freeze: potionItem("#bfe8ff"),
   multiball: potionItem("#b06fe8"),
   curveshot: potionItem("#6fd0e8"),
-  magnetboots: potionItem("#a83244"),
+  magnetcore: potionItem("#4f8fdb"),
+  magnetboots: potionItem("#4f8fdb"),
   // Craft brews that can land on the belt but never on the floor still take a
   // flask sprite for HUD icon fallbacks (renderPaintIcon reads ITEM_PAINTS).
   regen: potionItem("#8fd46b"),
@@ -4672,6 +4725,7 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   storm: gemItem("#f0e05a"),
   shadow: gemItem("#3a2a55"),
   lava: gemItem("#f0a63c"),
+  magnet: gemItem("#4f8fdb"),
 };
 
 // ══════════════════════════════════════════════════════════════════

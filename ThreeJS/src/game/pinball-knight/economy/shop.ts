@@ -9,6 +9,7 @@ import { addGold, getBalance, spendGold } from "../../../utils/gold-wallet";
 import { sfxBumper, sfxFreeze } from "../sfx";
 import { spawnMultiBall } from "../entities/multiball";
 import { enterRicochetForm } from "../entities/ricochet-form";
+import { applyMaterial } from "../entities/marble";
 import { rippleGlobe } from "../gui/globe-ripple";
 import { faceOnHeal, faceOnSpecial } from "../hud-face";
 import { ELIXIR_MAXHP_BONUS, POTIONS, REGEN_TICK_INTERVAL, freshWeapon, type PotionId } from "../items";
@@ -30,7 +31,7 @@ export const SHOP_STOCK: ShopEntry[] = [
   { id: "ballform", label: "Ball Form", icon: "🪩", price: 24, detail: `${POTIONS.ballform.duration}s ${POTIONS.ballform.description}` },
   { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: `${POTIONS.multiball.duration}s ${POTIONS.multiball.description}` },
   { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: `${POTIONS.curveshot.duration}s ${POTIONS.curveshot.description}` },
-  { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: `${POTIONS.magnetboots.duration}s ${POTIONS.magnetboots.description}` },
+  { id: "magnetcore", label: "Magnet Core", icon: "🧲", price: 24, detail: `${POTIONS.magnetcore.duration}s ${POTIONS.magnetcore.description}` },
   // ✨ Laser. Priciest row on the cart, and the only one whose blurb carries no
   // duration — it is not a buff with a countdown, it hands you to the ricochet
   // form, which owns its own two-and-a-bit seconds (POTIONS.laser.duration is 0
@@ -189,7 +190,8 @@ export function applyPotion(id: PotionId): void {
       p.curveT = def.duration;
       state.vfx?.burst(p.x, 0.6, p.z, def.color, 12, 3.5);
     }
-    if (id === "magnetboots") {
+    if (id === "magnetboots" || id === "magnetcore") {
+      applyMaterial("magnet");
       p.magBootsT = def.duration;
       state.vfx?.ring(p.x, p.z, def.color, 1.0, 0.4, { inward: true, thin: true });
     }

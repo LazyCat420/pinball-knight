@@ -60,6 +60,7 @@ export type ClipName =
   | "stormball"
   | "shadowball"
   | "lavaball"
+  | "magnetball"
   /**
    * RICOCHET FORMS (entities/ricochet-form.ts) — the two seconds where the ball
    * is not yours. Not marble bodies: while these run you are not a sphere at
