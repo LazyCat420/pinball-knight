@@ -85,4 +85,5 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   overlord: makeBossPaints,
   archivist: makeGhostPaints,
   dragon: makeBossPaints,
+  trex: makeBossPaints,
 };

@@ -23,8 +23,8 @@ describe("Boss Roster and Modular Boss Art Verification", () => {
     state.scene = new THREE.Scene();
   });
 
-  it("registers all 5 bosses in BOSSES table with valid specs", () => {
-    const expectedBosses: BossKind[] = ["reaper_king", "broodmother", "overlord", "archivist", "dragon"];
+  it("registers all bosses in BOSSES table with valid specs", () => {
+    const expectedBosses: BossKind[] = ["reaper_king", "broodmother", "overlord", "archivist", "dragon", "trex"];
     expect(BOSS_KINDS).toEqual(expect.arrayContaining(expectedBosses));
 
     for (const kind of expectedBosses) {
@@ -41,7 +41,7 @@ describe("Boss Roster and Modular Boss Art Verification", () => {
   });
 
   it("wires every boss sheetKey to IMPORTED_ART and SHEET_PAINTERS", () => {
-    const bossSheetKeys: SheetKey[] = ["reaper", "broodmother", "overlord", "archivist", "dragon"];
+    const bossSheetKeys: SheetKey[] = ["reaper", "broodmother", "overlord", "archivist", "dragon", "trex"];
 
     for (const key of bossSheetKeys) {
       expect(IMPORTED_ART[key], `IMPORTED_ART has entry for ${key}`).toBe(key);
@@ -50,7 +50,7 @@ describe("Boss Roster and Modular Boss Art Verification", () => {
   });
 
   it("builds valid SpriteSheet with complete animation clips for each boss", () => {
-    const bossSheetKeys: SheetKey[] = ["reaper", "broodmother", "overlord", "archivist", "dragon"];
+    const bossSheetKeys: SheetKey[] = ["reaper", "broodmother", "overlord", "archivist", "dragon", "trex"];
 
     for (const key of bossSheetKeys) {
       const sheet = sheetFor(key);

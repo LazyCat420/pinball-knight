@@ -36,7 +36,7 @@
  */
 import type { SheetKey } from "./boot/sheets";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -322,6 +322,42 @@ export const BOSSES: Record<BossKind, BossSpec> = {
       moves: {
         barrage: { interval: 1.6, windup: 0.35, speed: 16, damage: 2, maxDist: 18, color: 0xff3a00 },
         slam: { interval: 3.8, telegraph: 0.85, radius: 2.8, damage: 3, launch: 22, color: 0xff1a00, echo: { delay: 0.4, radius: 3.0, damage: 2 } },
+      },
+    },
+  },
+
+  // ══ THE BLOODWORKS / PREHISTORIC ARENA — sunglasses down, tail whip ready ════════════
+  //
+  // Chad T-Rex boss: lowers his retro sunglasses, winks at the camera with a
+  // bright sparkle tell, and whips into a 360-degree centrifugal tail spin.
+  trex: {
+    kind: "trex",
+    biome: "bloodworks",
+    title: "🦖 TYRANNOSAURUS REX 🦖",
+    tagline: "sunglasses down. tail whip incoming.",
+    label: "T-REX",
+    art: { sheetKey: "trex", tint: null, scale: 2.25 },
+    hpMult: 1.35,
+    speedMult: 1.0,
+    moves: {
+      slam: { interval: 4.5, telegraph: 1.1, radius: 3.2, damage: 2, launch: 22, color: 0xff8c00 },
+      charge: { interval: 5.5, telegraph: 0.9, speed: 16, damage: 2, distance: 12, launch: 18, color: 0xff4500 },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🦖 T-REX ENRAGES: SHADES LOCKED",
+      speedMult: 1.25,
+      moves: {
+        slam: {
+          interval: 3.2,
+          telegraph: 0.8,
+          radius: 3.4,
+          damage: 3,
+          launch: 25,
+          color: 0xff2200,
+          echo: { delay: 0.4, radius: 3.8, damage: 2 },
+        },
+        charge: { interval: 3.6, telegraph: 0.65, speed: 19, damage: 3, distance: 13, launch: 20, color: 0xff1100 },
       },
     },
   },

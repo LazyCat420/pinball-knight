@@ -30,7 +30,7 @@ dist/
 # them (engine/render/sandbox-*-death-trace.test.ts) and by scripts/death-lab.mjs.
 # Evidence, not source: committing it leaves the working tree dirty, and the
 # ship guard refuses a working tree it cannot identify.
-ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/sandbox-output/
+ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/
 ThreeJS/.death-lab/
 ThreeJS/.pipeline-forensics/
 ThreeJS/.death-audit/
