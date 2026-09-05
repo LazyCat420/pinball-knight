@@ -336,11 +336,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     title: "🦖 TYRANNOSAURUS REX 🦖",
     tagline: "sunglasses down. tail whip incoming.",
     label: "T-REX",
-    art: { sheetKey: "trex", tint: null, scale: 2.25 },
+    art: { sheetKey: "trex", tint: null, scale: 2.17 },
     hpMult: 1.35,
     speedMult: 1.0,
     moves: {
-      slam: { interval: 4.5, telegraph: 1.1, radius: 3.2, damage: 2, launch: 22, color: 0xff8c00 },
+      slam: { interval: 4.5, telegraph: 1.1, radius: 2.8, damage: 2, launch: 20, color: 0xff8c00 },
       charge: { interval: 5.5, telegraph: 0.9, speed: 16, damage: 2, distance: 12, launch: 18, color: 0xff4500 },
     },
     phase2: {
@@ -351,11 +351,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         slam: {
           interval: 3.2,
           telegraph: 0.8,
-          radius: 3.4,
+          radius: 2.8,
           damage: 3,
-          launch: 25,
+          launch: 22,
           color: 0xff2200,
-          echo: { delay: 0.4, radius: 3.8, damage: 2 },
+          echo: { delay: 0.4, radius: 3.0, damage: 2 },
         },
         charge: { interval: 3.6, telegraph: 0.65, speed: 19, damage: 3, distance: 13, launch: 20, color: 0xff1100 },
       },
