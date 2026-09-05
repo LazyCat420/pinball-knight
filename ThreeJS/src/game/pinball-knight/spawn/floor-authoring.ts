@@ -88,13 +88,13 @@ export function authorFloor(level: number): AuthoredFloor {
   const cfg = levelConfig(level);
 
   // Depth grading: each biome down shifts the fill palette a family over.
-  const biome = biomeForSeed(level, state.runSeed);
+  const biome = biomeForSeed(level);
   tintLights(biome);
   // ...and the STONE changes family with it, not just the light on it. A grade
   // cannot move a quantized palette entry onto a different one, so the masonry
   // painters remap their own three stone tones per biome (maze/build.ts
   // BIOME_STONE). Must run before buildMaze — the textures bake it in.
-  setMazeBiome(themeIndexFor(level, state.runSeed));
+  setMazeBiome(themeIndexFor(level));
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
@@ -123,7 +123,7 @@ export function authorFloor(level: number): AuthoredFloor {
   // `theme.enemies` biases the horde (spawn/factory.ts), and both of those ship
   // on every floor. Only the prefab POOLS — `theme.pool` / `theme.landmarks` —
   // are legacy-branch-only. Consumes no rng: it is a hash of (level, runSeed).
-  const theme = themeFor(level, state.runSeed);
+  const theme = themeFor(level);
   // ── TRACK-FIRST base grid ────────────────────────────────────────────────
   //
   // The floor's main artery used to be DERIVED from the random maze: carve a

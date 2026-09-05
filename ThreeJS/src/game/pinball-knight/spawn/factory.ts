@@ -303,7 +303,7 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
 
 /** Weighted-pick a themed kind from the hash, or null if the biome sets none. */
 function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
-  const theme = themeFor(level, state.runSeed);
+  const theme = themeFor(level);
   if (!theme.enemies || hash % 100 >= THEME_HORDE_BIAS) return null;
   const kinds = Object.keys(theme.enemies) as EnemyKind[];
   let total = 0;

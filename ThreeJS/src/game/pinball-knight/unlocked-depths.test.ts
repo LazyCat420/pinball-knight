@@ -8,6 +8,9 @@ import {
   clearUnlockedDepths,
   depthMetadata,
 } from "./unlocked-depths";
+import { CYCLE_FLOORS, THEMES, themeFor } from "./maze/prefabs";
+import { BOSSES, BOSS_KINDS, guardianFor } from "./boss-kinds";
+import { biomeFor } from "./boot/biomes";
 
 function stubStorage(initial?: Record<string, string>): void {
   const store = new Map(Object.entries(initial ?? {}));
@@ -84,5 +87,64 @@ describe("unlocked-depths", () => {
     const f25 = depthMetadata(25);
     expect(f25.isBoss).toBe(true);
     expect(f25.bossName).toBe("The Ancient Dragon");
+  });
+});
+
+/**
+ * THE SCREEN IS A PROMISE TO THE PLAYER, AND IT WAS FALSE.
+ *
+ * `depthMetadata` used to carry its own hand-written schedule — "1-5 crypt,
+ * 6-10 web, 11-15 flesh, 16-20 arcane, 21+ magma" — while the generator
+ * shuffled four themes per run and had no magma at all. Every row the screen
+ * drew was wrong, and the boss it named at 21+ could not be reached at any
+ * depth by any seed.
+ *
+ * These compare the screen against the FLOOR GENERATOR's own functions — the
+ * ones `spawn/floor-authoring.ts` and `spawn/floor-populate.ts` call — not
+ * against a second copy of the schedule. A test that re-lists the bands beside
+ * the table is one transcription agreeing with another.
+ */
+describe("the depth screen matches the floor the generator will build", () => {
+  it("names the biome the generator gives that floor, at every depth", () => {
+    for (let f = 1; f <= CYCLE_FLOORS * 2 + 3; f++) {
+      expect(depthMetadata(f).biome, `floor ${f}`).toBe(themeFor(f).name);
+    }
+  });
+
+  it("names the guardian the spawner will actually put on that floor", () => {
+    for (let f = 1; f <= CYCLE_FLOORS * 2 + 3; f++) {
+      const meta = depthMetadata(f);
+      if (!meta.isBoss) {
+        expect(meta.bossName, `floor ${f} is not a milestone`).toBeUndefined();
+        continue;
+      }
+      expect(meta.bossName, `floor ${f}`).toBe(guardianFor(f).name);
+    }
+  });
+
+  it("calls the place what the descent card calls it", () => {
+    // The screen used to say "Spider Cavern" for the place the game announces
+    // as The Rotting Warren.
+    for (let f = 1; f <= CYCLE_FLOORS; f++) {
+      expect(depthMetadata(f).name, `floor ${f}`).toContain(biomeFor(f).name);
+    }
+  });
+
+  it("reaches every biome and every guardian across the depths it advertises", () => {
+    // Set equality both ways against the generator's tables, so a band that
+    // silently drops out of the schedule fails here too.
+    const deep = CYCLE_FLOORS * 2;
+    const biomes = new Set<string>();
+    const bosses = new Set<string>();
+    for (let f = 1; f <= deep; f++) {
+      const meta = depthMetadata(f);
+      biomes.add(meta.biome);
+      if (meta.bossName) bosses.add(meta.bossName);
+    }
+    for (const t of THEMES) expect(biomes.has(t.name), `no advertised floor is ${t.name}`).toBe(true);
+    for (const b of biomes) expect(THEMES.map((t) => t.name)).toContain(b);
+    for (const kind of BOSS_KINDS) {
+      expect(bosses.has(BOSSES[kind].name), `${kind} is never advertised in 1..${deep}`).toBe(true);
+    }
   });
 });

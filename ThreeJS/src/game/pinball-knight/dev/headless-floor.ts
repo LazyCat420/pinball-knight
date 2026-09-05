@@ -151,7 +151,7 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
   const arch = archetypeFor(level);
   const modifier = rollModifier(level, rng);
   const windiness = windinessFor(level, arch, rng);
-  const theme = themeFor(level, runSeed);
+  const theme = themeFor(level);
   const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
     profile: arch.track,
     density: Math.max(0.35, Math.min(0.85, windiness)),

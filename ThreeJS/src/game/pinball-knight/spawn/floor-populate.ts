@@ -14,9 +14,8 @@ import { state, freshPlayerFields } from "../state";
 import { invalidateMeterBlocks } from "../hud-meter";
 import type { AuthoredFloor } from "./floor-authoring";
 import { playerSheetFor, sheetFor } from "../boot/sheets";
-import { themeFor } from "../maze/prefabs";
 import { spawnBoss } from "../boss";
-import { bossForBiome } from "../boss-kinds";
+import { guardianFor } from "../boss-kinds";
 import { BOSS_EVERY, BOSS_SPEED_FACTOR, BRUTE_SPEED_FACTOR, KING_HP_BASE, KING_HP_PER_FLOOR, MERCHANT_FROM_LEVEL, MERCHANT_SPAWN_MIN_RING, PIN_FROM_LEVEL, PLUNGER_SKILL_RANGE } from "../constants";
 import { isReplica } from "../coop";
 import { nextItemNid } from "../economy/ground-items";
@@ -162,10 +161,10 @@ export function populateFloor(f: AuthoredFloor): void {
   // (Live QA ask: "a boss at the end to get to the next level, even solo".)
   // Until 2026-08-28 that was the Reaper King on every floor of every run —
   // floor 1 and floor 17 were the same fight and BOSS_EVERY only doubled his
-  // HP. `bossForBiome` reads the floor's own theme, and the themes are already
-  // permuted per run (maze/prefabs.ts themeIndexFor), so two runs meet the four
-  // guardians in a different order and the one you fight is always the one
-  // whose horde you just cut through.
+  // HP. `guardianFor` takes the DEPTH and resolves the whole chain itself: the
+  // band schedule picks the biome, the biome picks its guardian, and the pass
+  // through the schedule picks WHICH guardian where a biome has two. The one
+  // you fight is always the one whose horde you just cut through.
   //
   // While it lives `state.exitLocked` holds the stairs shut, and its death
   // blooms the exit PORTAL. HP scales with the floor and then by the boss's own
@@ -176,7 +175,7 @@ export function populateFloor(f: AuthoredFloor): void {
     const bhp = Math.round((KING_HP_BASE + KING_HP_PER_FLOOR * (level - 1)) * (mega ? 2 : 1));
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
     const speed = cfg.zombieSpeed * BOSS_SPEED_FACTOR;
-    const spec = bossForBiome(themeFor(level, state.runSeed).name);
+    const spec = guardianFor(level);
     spawnBoss(
       grid,
       spot,

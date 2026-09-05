@@ -8,13 +8,23 @@
  */
 import { loadBestDepth } from "./best-depth";
 import { loadResumeFloor } from "./corpse-run";
+import { guardianFor } from "./boss-kinds";
+import { biomeFor } from "./boot/biomes";
+import { bandFloorFor, themeFor } from "./maze/prefabs";
+import { BOSS_EVERY } from "./constants/enemies";
 
 const UNLOCKED_KEY = "pinball-knight-unlocked-depth";
 
 export interface DepthInfo {
   floor: number;
   name: string;
-  biome: "crypt" | "web" | "flesh" | "arcane" | "magma";
+  /**
+   * The floor's biome, as `maze/prefabs.ts` THEMES names it — the generator's
+   * own word for it, not a second vocabulary. This used to be a hand-written
+   * union ("web", "flesh") that named two biomes the generator calls "warren"
+   * and "bloodworks", and a fifth ("magma") that did not exist at all.
+   */
+  biome: string;
   isBoss: boolean;
   bossName?: string;
   danger: "Safe" | "Standard" | "Challenging" | "Deadly" | "BOSS";
@@ -85,31 +95,33 @@ export function clearUnlockedDepths(): void {
 
 /**
  * Returns display metadata for a floor depth (name, biome, boss milestone, danger rating).
+ *
+ * ⚠️ EVERY FIELD IS DERIVED FROM THE GENERATOR'S OWN TABLES. Nothing here is
+ * transcribed, on purpose.
+ *
+ * What used to be here was a hand-written if-chain — "1-5 crypt, 6-10 web,
+ * 11-15 flesh, 16-20 arcane, 21+ magma" with five boss names beside it — and
+ * every clause of it was false. The generator shuffled FOUR themes per run, so
+ * no floor's biome matched the band this screen advertised; two of the names
+ * ("web", "flesh") were a private vocabulary for biomes the generator calls
+ * warren and bloodworks; and the magma band it promised did not exist at all,
+ * which is why the Ancient Dragon it named was unreachable at every depth.
+ *
+ * The schedule now lives once, in `FloorTheme.from`, and this reads it. A test
+ * that compares this function against a copy of the same numbers would agree
+ * with itself and prove nothing, so `unlocked-depths.test.ts` compares it
+ * against `themeFor`/`guardianFor` — the functions the SPAWNER calls.
  */
 export function depthMetadata(floor: number): DepthInfo {
   const f = Math.max(1, Math.floor(floor));
-  const isBoss = f % 5 === 0;
+  // The MILESTONE floors: every floor is boss-gated (see spawn/floor-populate),
+  // but every BOSS_EVERY-th one is the MEGA at double HP, and that is the row
+  // this screen paints red.
+  const isBoss = f % BOSS_EVERY === 0;
 
-  // 5 biomes of 5 floors each: 1-5 crypt, 6-10 web, 11-15 flesh, 16-20 arcane, 21+ magma
-  let biome: DepthInfo["biome"] = "crypt";
-  let bossName: string | undefined = undefined;
-
-  if (f <= 5) {
-    biome = "crypt";
-    if (isBoss) bossName = "The Reaper King";
-  } else if (f <= 10) {
-    biome = "web";
-    if (isBoss) bossName = "The Broodmother";
-  } else if (f <= 15) {
-    biome = "flesh";
-    if (isBoss) bossName = "The Overlord";
-  } else if (f <= 20) {
-    biome = "arcane";
-    if (isBoss) bossName = "The Archivist";
-  } else {
-    biome = "magma";
-    if (isBoss) bossName = "The Ancient Dragon";
-  }
+  const biome = themeFor(f).name;
+  const guardian = guardianFor(f);
+  const bossName = isBoss ? guardian.name : undefined;
 
   let danger: DepthInfo["danger"] = "Standard";
   if (isBoss) {
@@ -124,17 +136,15 @@ export function depthMetadata(floor: number): DepthInfo {
     danger = "Deadly";
   }
 
-  const biomeNames: Record<DepthInfo["biome"], string> = {
-    crypt: "Crypt",
-    web: "Spider Cavern",
-    flesh: "Flesh Pits",
-    arcane: "Arcane Deep",
-    magma: "Magma Abyss",
-  };
+  // The place's name comes from BIOMES — the same string the descent card
+  // shouts when you actually arrive — so the screen and the floor agree on what
+  // the player is looking at. The old local table said "Spider Cavern" for a
+  // place the game itself calls The Rotting Warren.
+  const placeName = biomeFor(f).name;
 
   const name = isBoss
-    ? `${biomeNames[biome]} Guardian · ${bossName}`
-    : `${biomeNames[biome]} · Level ${((f - 1) % 5) + 1}`;
+    ? `${placeName} Guardian · ${bossName}`
+    : `${placeName} · Level ${bandFloorFor(f)}`;
 
   return {
     floor: f,

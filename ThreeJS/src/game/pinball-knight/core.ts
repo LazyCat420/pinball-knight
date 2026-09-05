@@ -86,7 +86,8 @@ import { buildTrackFloor } from "./maze/track-floor";
 import { walkableCount } from "./maze/floor-metrics";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle } from "./lamp-puzzle";
-import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
+import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor, passFor } from "./maze/prefabs";
+import { guardianFor } from "./boss-kinds";
 import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
@@ -497,7 +498,10 @@ function buildLevel(level: number): void {
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
-  const cycle = Math.floor((level - 1) / BIOMES.length) + 1;
+  // Which time round the band schedule this is — `passFor`, not a modulo over
+  // BIOMES.length, which counts BANDS and would print "deeper (2)" the moment
+  // you left the Crypt.
+  const cycle = passFor(level) + 1;
   const suffix = cycle > 1 ? ` · deeper (${cycle})` : "";
   // The archetype names the SHAPE the player is about to walk into, so a Great
   // Hall or a Cavern reads as intentional rather than as the maze glitching.
@@ -505,7 +509,13 @@ function buildLevel(level: number): void {
   // Biome flavour keeps the chapter feel; the archetype line is appended only
   // when the floor's shape is actually unusual, so level 1 reads as it always did.
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
-  const sub = level % BOSS_EVERY === 0 ? "☠ a MEGA REAPER KING guards the stairs ☠" : `${flavour}${suffix}`;
+  // The mega warning NAMES the guardian that is actually down there. It used to
+  // say REAPER KING on every mega floor, including the ones the King does not
+  // guard — the same class of lie as the depth-select screen's schedule.
+  const sub =
+    level % BOSS_EVERY === 0
+      ? `☠ a MEGA ${guardianFor(level).label} guards the stairs ☠`
+      : `${flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
   // Arrival sting. Paired with the toast rather than the geometry build so the
   // sound and the card land together.

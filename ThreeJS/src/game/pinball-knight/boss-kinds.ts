@@ -35,6 +35,7 @@
  * and the tests all read.
  */
 import type { SheetKey } from "./boot/sheets";
+import { passFor, themeFor } from "./maze/prefabs";
 
 export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
 
@@ -140,6 +141,15 @@ export interface BossSpec {
   kind: BossKind;
   /** The biome this one guards (`maze/prefabs.ts` THEMES `name`). */
   biome: string;
+  /**
+   * Display name, as the depth-select screen and the descent card print it.
+   *
+   * `title` is the toast headline (emoji, shouting) and `label` is the HUD bar;
+   * neither is a sentence. The screen used to carry its own hand-written copy
+   * of these five strings, which is how it came to promise an Ancient Dragon
+   * no floor could produce. It reads this field now.
+   */
+  name: string;
   /** Toast headline and the line under it. */
   title: string;
   tagline: string;
@@ -191,6 +201,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
   // teleport + mouth fire spray special attack.
   reaper_king: {
     kind: "reaper_king",
+    name: "The Reaper King",
     biome: "crypt",
     title: "☠ THE REAPER KING ☠",
     tagline: "overtime is eternal — slay him or join the payroll",
@@ -251,6 +262,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
   // actually about — and fills the room with children while you scrape it off.
   broodmother: {
     kind: "broodmother",
+    name: "The Broodmother",
     biome: "warren",
     title: "🕷 THE BROODMOTHER 🕷",
     tagline: "the warren is her nest — cut it out",
@@ -282,6 +294,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
   // all — the biome's own furniture is the ranged threat.
   overlord: {
     kind: "overlord",
+    name: "The Overlord",
     biome: "bloodworks",
     title: "🩸 THE OVERLORD 🩸",
     tagline: "it does not throw. it arrives.",
@@ -311,6 +324,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
   // and the barrage exists to punish you for taking it.
   archivist: {
     kind: "archivist",
+    name: "The Archivist",
     biome: "arcane",
     title: "🔮 THE ARCHIVIST 🔮",
     tagline: "it reads the room faster than you cross it",
@@ -340,6 +354,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
   // the earth with ground-shattering quakes.
   dragon: {
     kind: "dragon",
+    name: "The Ancient Dragon",
     biome: "magma",
     title: "🔥 THE ANCIENT DRAGON 🔥",
     tagline: "the apex predator of the molten abyss",
@@ -362,12 +377,20 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     },
   },
 
-  // ══ THE BLOODWORKS / PREHISTORIC ARENA — sunglasses down, tail whip ready ════════════
+  // ══ THE BLOODWORKS, SECOND PASS — sunglasses down, tail whip ready ═══════
   //
   // Chad T-Rex boss: lowers his retro sunglasses, winks at the camera with a
   // bright sparkle tell, and whips into a 360-degree centrifugal tail spin.
+  //
+  // He shares the Bloodworks with the Overlord and is its SECOND-pass guardian
+  // (floors 36-40), which is what `bossForBiome`'s `pass` argument is for. Until
+  // 2026-09-04 that sharing made him unreachable outright — the lookup was a
+  // `.find()` and the Overlord's row comes first — and no test could see it,
+  // because the roster test asked for a biome by name instead of asking the
+  // floor generator what it produces.
   trex: {
     kind: "trex",
+    name: "Tyrannosaurus Rex",
     biome: "bloodworks",
     title: "🦖 TYRANNOSAURUS REX 🦖",
     tagline: "sunglasses down. tail whip incoming.",
@@ -401,19 +424,49 @@ export const BOSSES: Record<BossKind, BossSpec> = {
 
 export const BOSS_KINDS: BossKind[] = Object.keys(BOSSES) as BossKind[];
 
+/** Every guardian that claims a biome, in table order. Usually one. */
+export function guardiansOf(biome: string): BossSpec[] {
+  return BOSS_KINDS.map((k) => BOSSES[k]).filter((b) => b.biome === biome);
+}
+
 /**
- * Which boss guards a floor, from the floor's own theme.
+ * Which boss guards a biome on a given PASS through the depth schedule.
  *
- * The themes are already permuted per run (`maze/prefabs.ts` themeIndexFor), so
- * two runs meet the four bosses in a different order without this needing a
- * shuffle of its own — and the boss you fight is always the one whose horde you
- * just cut through, which is the point of keying it to the biome at all.
+ * ── WHY THERE IS A PASS ────────────────────────────────────────────────────
+ *
+ * This used to be `.find()`, which returns the FIRST row matching the biome and
+ * silently discards the rest. That is not a hypothetical: the T-Rex shipped
+ * claiming `bloodworks`, which the Overlord already held, so `find` never
+ * returned him and no floor at any depth could ever spawn him. Nothing caught
+ * it, because the only test called this function with a biome STRING and got a
+ * row back — which proves the row exists and says nothing about reachability.
+ *
+ * The schedule repeats every `CYCLE_FLOORS` floors, so a biome comes round
+ * again; a biome with two guardians hands over the second one on the second
+ * pass. Floors 11-15 are the Overlord's Bloodworks, floors 36-40 are the
+ * T-Rex's. `boss-roster.test.ts` drives the real generator and asserts every
+ * row in this table is reached by some depth — set equality, both directions.
  *
  * Falls back to the King: a biome added without a guardian should still gate
  * its exit, not ship a floor whose stairs never unlock.
  */
-export function bossForBiome(biome: string): BossSpec {
-  return BOSS_KINDS.map((k) => BOSSES[k]).find((b) => b.biome === biome) ?? BOSSES.reaper_king;
+export function bossForBiome(biome: string, pass = 0): BossSpec {
+  const guardians = guardiansOf(biome);
+  if (!guardians.length) return BOSSES.reaper_king;
+  const n = guardians.length;
+  return guardians[(((pass | 0) % n) + n) % n];
+}
+
+/**
+ * Which boss guards a FLOOR — the form the spawner, the screen and the descent
+ * card all want, and the only one that can be checked for reachability.
+ *
+ * Callers must not re-derive this from a biome string plus a pass they worked
+ * out themselves: that is two transcriptions of one schedule, and the pair
+ * drifts. Depth in, guardian out.
+ */
+export function guardianFor(level: number): BossSpec {
+  return bossForBiome(themeFor(level).name, passFor(level));
 }
 
 /** The moveset in force at a given HP fraction — phase 2 merged over phase 1. */

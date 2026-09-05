@@ -30,7 +30,7 @@
  *
  * DOM- and three-free: tested (prefabs.test.ts).
  */
-import { type Grid, type TilePos, T_FLOOR, T_WALL, at, setTile, mulberry32 } from "./generator";
+import { type Grid, type TilePos, T_FLOOR, T_WALL, at, setTile } from "./generator";
 import type { PrefabAnchor, PartSpotKind } from "./decorate";
 import type { EnemyKind } from "../state";
 
@@ -326,6 +326,19 @@ export class ShuffleBag<T> {
  */
 export interface FloorTheme {
   name: string;
+  /**
+   * FIRST DEPTH THIS THEME GOVERNS — the band schedule, and its only copy.
+   *
+   * A band runs from this `from` to the next theme's `from - 1`; the last band
+   * runs to `CYCLE_FLOORS`, after which the schedule repeats. The depth-select
+   * screen RENDERS these bands rather than transcribing them (see
+   * `unlocked-depths.ts`), because a hand-copied schedule drifts and a test
+   * that compares two copies of one transcription agrees with itself while
+   * both are wrong. That is exactly what shipped: the screen advertised
+   * "1-5 crypt / 6-10 web / 11-15 flesh / 16-20 arcane / 21+ magma" while the
+   * generator shuffled four themes and had no magma at all.
+   */
+  from: number;
   pool: string[]; // prefab names in this theme's bag
   /**
    * LANDMARK names (see LANDMARKS) this theme can draw its one set piece from.
@@ -343,6 +356,7 @@ export const THEMES: FloorTheme[] = [
   {
     // The Cold Crypt — the classic table: bumpers, lanes, a flipper or two.
     name: "crypt",
+    from: 1,
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     landmarks: ["tilttable", "pachinko"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
@@ -351,6 +365,7 @@ export const THEMES: FloorTheme[] = [
   {
     // The Rotting Warren — everything is slick and nothing brakes.
     name: "warren",
+    from: 6,
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     landmarks: ["nest", "grinder"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
@@ -359,6 +374,7 @@ export const THEMES: FloorTheme[] = [
   {
     // The Bloodworks — the punch factory.
     name: "bloodworks",
+    from: 11,
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     landmarks: ["grinder", "pachinko"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
@@ -367,47 +383,100 @@ export const THEMES: FloorTheme[] = [
   {
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
     name: "arcane",
+    from: 16,
     pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
     landmarks: ["observatory", "tilttable"],
     deal: ["spinpad", "bumper", "mirror", "spring", "oil", "glove", "flipper", "slingshot", "mirror"],
     enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2, necromancer: 2, warden: 1, crystalback: 1 },
   },
+  {
+    // The Magma Abyss — the deepest band, and the one the depth-select screen
+    // has been promising since it was written. Pits and squeezes over a floor
+    // that wants to launch you: the Ancient Dragon's own arena.
+    //
+    // Its horde is the burning half of the roster — the bloater's death puddle
+    // is fire, the golem and crystalback are the rock, and the mimic is what a
+    // glowing thing on the ground down here turns out to be.
+    name: "magma",
+    from: 21,
+    pool: ["pitroom", "squeeze", "gauntlet", "bullring", "pitstop", "sbend"],
+    landmarks: ["grinder", "pachinko"],
+    deal: ["spring", "bumper", "ramp", "glove", "spring", "flipper", "slingshot", "bumper", "spinpad"],
+    enemies: { bloater: 3, golem: 3, brute: 2, spitter: 2, hound: 2, chomper: 2, crystalback: 2, mimic: 1 },
+  },
 ];
 
 /**
- * Which theme SLOT a depth uses, as a per-run permutation.
+ * ONE FULL PASS THROUGH THE BAND SCHEDULE, in floors.
  *
- * The plain `(level-1) % 4` meant floors 1, 5, 9, 13 were always the Crypt, in
- * every run forever — the archetype cycles every 5 so the *pair* took 20 floors
- * to repeat, but the theme itself was fully predictable from the depth. Here the
- * four slots are shuffled per run AND per cycle-of-four, so the order differs
- * between runs and between a run's first four floors and its next four, while
- * still never repeating a theme inside any block of four.
+ * Floors 1..CYCLE_FLOORS walk the bands in order; floor CYCLE_FLOORS+1 starts
+ * the next pass at the first band again. An endless descent therefore keeps
+ * changing biome instead of pinning the deepest one forever — the "21+ magma"
+ * the screen used to advertise would have made every floor past 20 the same
+ * place with the same guardian.
  *
- * `runSeed 0` yields the identity order — the old behaviour — so a caller that
- * has no run seed (tests, tools) sees exactly what it always did.
+ * `prefabs.test.ts` asserts this against the `from` values rather than reading
+ * it as gospel: bands must start at 1, strictly increase, and the last one must
+ * be as long as the rest, or the wrap lands mid-band.
+ */
+export const CYCLE_FLOORS = 25;
+
+/**
+ * Which theme SLOT a depth uses — a fixed band schedule, read off `from`.
+ *
+ * ── WHY THIS IS NO LONGER SHUFFLED (2026-09-04) ────────────────────────────
+ *
+ * It used to permute the four themes per run and per cycle-of-four, so that
+ * floors 1/5/9 were not always the Crypt. The cost was that a floor's biome
+ * was unknowable before you stood in it — and the depth-select screen was
+ * meanwhile printing a fixed 1-5/6-10/11-15/16-20/21+ schedule to the player,
+ * naming a magma band the generator did not have and a guardian nothing could
+ * reach. A screen is a promise; the shuffle made it impossible to keep.
+ *
+ * So the ORDER is now fixed and the schedule has ONE home (`FloorTheme.from`),
+ * which the screen renders. Variety did not go away with the shuffle: the
+ * prefab bag, the corridor deal, the archetype and the modifiers are all still
+ * seeded per floor, so two runs of floor 7 are two different Warrens.
+ *
+ * Past `CYCLE_FLOORS` the schedule REPEATS rather than sticking on the deepest
+ * band, so an endless descent keeps moving through places. Which guardian you
+ * meet on a repeat is `passFor`'s job — see `boss-kinds.ts`.
  *
  * IMPORTANT: core.ts's BIOMES are paired with THEMES by INDEX (crypt↔crypt,
  * warren↔warren, …), so a floor's palette matches its furniture pool. Both must
  * go through this one function or they drift apart.
  */
-export function themeIndexFor(level: number, runSeed = 0): number {
-  const n = THEMES.length;
-  const l = Math.max(1, level);
-  const slot = (l - 1) % n;
-  if (!runSeed) return slot;
-  const cycle = Math.floor((l - 1) / n);
-  const rng = mulberry32((runSeed ^ ((cycle + 1) * 0x85ebca6b)) >>> 0);
-  const order = Array.from({ length: n }, (_, k) => k);
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  return order[slot];
+export function themeIndexFor(level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  const inCycle = ((l - 1) % CYCLE_FLOORS) + 1;
+  let idx = 0;
+  for (let i = 0; i < THEMES.length; i++) if (THEMES[i].from <= inCycle) idx = i;
+  return idx;
 }
 
-export function themeFor(level: number, runSeed = 0): FloorTheme {
-  return THEMES[themeIndexFor(level, runSeed)];
+export function themeFor(level: number): FloorTheme {
+  return THEMES[themeIndexFor(level)];
+}
+
+/**
+ * Which PASS through the schedule a depth is on: 0 for floors 1..CYCLE_FLOORS,
+ * 1 for the next block, and so on. The guardian roster uses it to hand a biome
+ * a different boss on a later pass, which is the only reason a biome may hold
+ * more than one guardian at all.
+ */
+export function passFor(level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  return Math.floor((l - 1) / CYCLE_FLOORS);
+}
+
+/**
+ * Which floor of its own band a depth is — 1-based, for the screen's
+ * "· Level 3" suffix. Derived from the band table, never counted by hand.
+ */
+export function bandFloorFor(level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  const inCycle = ((l - 1) % CYCLE_FLOORS) + 1;
+  return inCycle - THEMES[themeIndexFor(l)].from + 1;
 }
 
 const ANCHOR_KINDS: Record<string, PrefabAnchor["kind"]> = {

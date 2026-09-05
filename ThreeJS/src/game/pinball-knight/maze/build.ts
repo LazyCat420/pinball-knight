@@ -318,6 +318,17 @@ export const BIOME_STONE: ReadonlyArray<readonly [number, number, number]> = [
   [6, 7, 8], // 1 The Rotting Warren — mossed-through stone, near-identical values
   [11, 12, 13], // 2 The Bloodworks — the walls weep red: one blood ramp, 10 spare below
   [29, 30, 4], // 3 The Arcane Deep — cold blue rock, neutral stone highlights
+  // 4 The Magma Abyss — charred basalt (the leather/wood ramp, which is the
+  // palette's only warm EARTH family) lit by a molten seam. The torch ramp is
+  // the obvious choice for a magma floor and is not usable here: its darkest
+  // entry, ember 14, sits at luma 0.288 — brighter than the baseline's MORTAR
+  // (0.187) and nearly at its face tone, so a wall built from it would glow
+  // more than the torches standing against it. 27/28 hold the crypt's own
+  // values (0.217 / 0.317 against 0.187 / 0.305) so the Abyss is a different
+  // rock rather than merely a darker or hotter one, and the sparse highlight
+  // borrows blood light for the glow in the cracks — the same LIGHT-tone
+  // exemption the Arcane Deep already takes.
+  [27, 28, 13],
 ];
 let biomeIdx = 0;
 

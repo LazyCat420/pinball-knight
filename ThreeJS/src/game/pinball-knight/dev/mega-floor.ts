@@ -163,7 +163,7 @@ export function buildMegaFloor(opts: MegaFloorOptions = {}): MegaFloor | null {
   const arch = archetypeFor(level);
   const modifier = rollModifier(level, rng);
   const windiness = windinessFor(level, arch, rng);
-  const theme = themeFor(level, runSeed);
+  const theme = themeFor(level);
 
   const t0 = Date.now();
   const track = buildTrackFloor(cellsW, cellsH, rng, {

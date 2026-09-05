@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, T_FLOOR, T_WALL } from "./generator";
-import { PREFABS, LANDMARKS, THEMES, ShuffleBag, rotatePrefab, mirrorPrefab, variantsOf, stampPrefabs, stampLandmark, pickFocusCells, fullyReachable, themeFor, themeIndexFor } from "./prefabs";
+import { PREFABS, LANDMARKS, THEMES, CYCLE_FLOORS, ShuffleBag, rotatePrefab, mirrorPrefab, variantsOf, stampPrefabs, stampLandmark, pickFocusCells, fullyReachable, themeFor, themeIndexFor, passFor, bandFloorFor } from "./prefabs";
 
 describe("prefab stamps", () => {
   it("every stamp preserves full reachability (floor-only carving)", () => {
@@ -70,10 +70,15 @@ describe("prefab stamps", () => {
     }
   });
 
-  it("themeFor cycles through all themes by depth", () => {
+  it("themeFor reaches every theme inside one pass of the schedule", () => {
+    // Set equality BOTH WAYS against the table, not a count: an allowlist can
+    // drift in both directions at once and keep its length. Two missing themes
+    // and two invented ones would satisfy `seen.size === THEMES.length`.
     const seen = new Set<string>();
-    for (let l = 1; l <= THEMES.length; l++) seen.add(themeFor(l).name);
-    expect(seen.size).toBe(THEMES.length);
+    for (let l = 1; l <= CYCLE_FLOORS; l++) seen.add(themeFor(l).name);
+    const declared = new Set(THEMES.map((t) => t.name));
+    for (const n of declared) expect(seen.has(n), `${n} is declared but no depth produces it`).toBe(true);
+    for (const n of seen) expect(declared.has(n), `depth produced ${n}, which is not a theme`).toBe(true);
   });
 });
 
@@ -287,35 +292,70 @@ describe("stamp legend sanity", () => {
 });
 
 /**
- * PER-RUN THEME ORDER. `(level-1) % 4` made floors 1/5/9 the Crypt in every run
- * forever. These pin the replacement: still a permutation (no repeats inside a
- * block of four), but a different one per run and per cycle.
+ * THE BAND SCHEDULE. It used to be a per-run permutation of four themes, which
+ * meant a floor's biome could not be known before you stood in it — while the
+ * depth-select screen printed a fixed five-band schedule to the player anyway.
+ *
+ * These pin the replacement, and they check the SCHEDULE'S SHAPE rather than
+ * re-listing the numbers: a test that says "band 2 starts at 6" beside a table
+ * that says `from: 6` is one transcription checked against another.
  */
-describe("themeIndexFor", () => {
-  it("is the plain depth cycle when there is no run seed (the old behaviour)", () => {
-    for (let l = 1; l <= 12; l++) expect(themeIndexFor(l, 0)).toBe((l - 1) % THEMES.length);
+describe("the band schedule", () => {
+  const starts = THEMES.map((t) => t.from);
+
+  it("is a well-formed contiguous schedule that fills exactly one cycle", () => {
+    expect(starts[0], "the first band must start at floor 1").toBe(1);
+    for (let i = 1; i < starts.length; i++) {
+      expect(starts[i], `band ${i} starts at or before band ${i - 1}`).toBeGreaterThan(starts[i - 1]);
+    }
+    // Every band the same length, INCLUDING the last — the wrap happens at
+    // CYCLE_FLOORS, so a short or long final band puts the repeat mid-band and
+    // hands floor CYCLE_FLOORS+1 the wrong biome.
+    const spans = starts.map((s, i) => (i + 1 < starts.length ? starts[i + 1] : CYCLE_FLOORS + 1) - s);
+    for (const [i, span] of spans.entries()) {
+      expect(span, `band ${i} (${THEMES[i].name}) spans ${span} floors, not ${spans[0]}`).toBe(spans[0]);
+    }
   });
 
-  it("never repeats a theme inside a block of four, for any run seed", () => {
-    for (const seed of [1, 7, 99, 12345, 0x7fffffff]) {
-      for (let block = 0; block < 5; block++) {
-        const seen = new Set<number>();
-        for (let k = 0; k < THEMES.length; k++) seen.add(themeIndexFor(block * THEMES.length + k + 1, seed));
-        expect(seen.size, `seed ${seed} block ${block}`).toBe(THEMES.length);
+  it("gives every floor of a band that band's theme, and nothing else", () => {
+    for (const [i, theme] of THEMES.entries()) {
+      const end = (i + 1 < THEMES.length ? THEMES[i + 1].from : CYCLE_FLOORS + 1) - 1;
+      for (let l = theme.from; l <= end; l++) {
+        expect(themeIndexFor(l), `floor ${l} should be band ${i} (${theme.name})`).toBe(i);
       }
     }
   });
 
-  it("is stable for a run — the same depth always resolves to the same theme", () => {
-    for (let l = 1; l <= 20; l++) expect(themeIndexFor(l, 4242)).toBe(themeIndexFor(l, 4242));
+  it("is 1-based within the band, for the screen's level suffix", () => {
+    for (const [i, theme] of THEMES.entries()) {
+      const end = (i + 1 < THEMES.length ? THEMES[i + 1].from : CYCLE_FLOORS + 1) - 1;
+      expect(bandFloorFor(theme.from), `${theme.name} starts at its own level 1`).toBe(1);
+      expect(bandFloorFor(end), `${theme.name} ends at level ${end - theme.from + 1}`).toBe(end - theme.from + 1);
+    }
   });
 
-  it("actually differs between runs, and between cycles within a run", () => {
-    const runA = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 1, 11));
-    const runB = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 1, 22));
-    const laterCycle = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 5, 11));
-    expect(runA).not.toEqual(runB);
-    expect(runA).not.toEqual(laterCycle);
+  it("repeats after a full cycle instead of sticking on the deepest band", () => {
+    // The bug this replaces: "21+ magma" made every floor past 20 the same
+    // place with the same guardian, forever.
+    for (let l = 1; l <= CYCLE_FLOORS * 2; l++) {
+      expect(themeIndexFor(l + CYCLE_FLOORS), `floor ${l + CYCLE_FLOORS} vs ${l}`).toBe(themeIndexFor(l));
+    }
+    expect(themeIndexFor(CYCLE_FLOORS + 1), "the cycle restarts at the first band").toBe(0);
+  });
+
+  it("counts the passes, so a repeated band can hand over a different guardian", () => {
+    expect(passFor(1)).toBe(0);
+    expect(passFor(CYCLE_FLOORS)).toBe(0);
+    expect(passFor(CYCLE_FLOORS + 1)).toBe(1);
+    expect(passFor(CYCLE_FLOORS * 2 + 1)).toBe(2);
+  });
+
+  it("clamps depths below 1 rather than indexing off the front of the table", () => {
+    for (const l of [0, -1, -99]) {
+      expect(themeIndexFor(l)).toBe(0);
+      expect(passFor(l)).toBe(0);
+      expect(bandFloorFor(l)).toBe(1);
+    }
   });
 });
 
