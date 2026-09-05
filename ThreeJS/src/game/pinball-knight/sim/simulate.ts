@@ -102,7 +102,7 @@ export function simulate(dt: number): void {
       p.regenTickT = REGEN_TICK_INTERVAL;
       if (p.hp < playerMaxHp()) {
         p.hp = Math.min(playerMaxHp(), p.hp + REGEN_HEAL_PER_TICK);
-        state.vfx?.blood(p.x, 0.6, p.z, "red", 4);
+        state.vfx?.heal(p.x, 0.6, p.z, 0x8fd46b, 6);
         state.hudDirty = true;
       }
     }

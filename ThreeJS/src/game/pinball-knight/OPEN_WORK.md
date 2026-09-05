@@ -162,14 +162,11 @@ never generates — read its header before writing another maze test.
 
 Console: `__dungeonPlaza()` censuses what this floor actually got.
 
-### 2.1 The sporeling's spore cloud does not exist
+### 2.1 The sporeling's spore cloud does not exist — CLOSED 2026-09-04
 `bestiary.ts` promises "a walking fruiting body; **it bursts a spore cloud when
-it dies**". `killZombie` (`entities/combat.ts`) has death handlers for slime,
-bloater, golem and pin — and no sporeling branch. `grep -rn "spore"` outside
-`render/monsters/sporeling.ts` finds only the blurb, the drop table and sheet
-plumbing. Its stats are a zombie clone at 1.15x windup, its damage is
-`ZOMBIE_DAMAGE`, its movement is `"chase"`. Zero unique behaviour, and it is
-admitted on **floor 1**, so it is one of the first things a player meets.
+it dies**". Closed: `killZombie` (`entities/combat.ts`) now wires
+`onSporelingBurst` from `boot/wiring.ts`, spawning a toxic spore cloud volume
+(`vfx.sporeCloud`) and slippery ground residue on death.
 
 ### 2.2 Fish Feet's "heavy kick strikes" is still a bite
 Half-closed on 2026-08-27: it now spawns at all, and `FISH_FEET_DAMAGE` is 2

@@ -839,6 +839,12 @@ export function setBloaterBurstHandler(fn: (x: number, z: number) => void): void
   onBloaterBurst = fn;
 }
 
+/** SPORELING death → a toxic spore cloud (OPEN_WORK 2.1). */
+let onSporelingBurst: ((x: number, z: number) => void) | null = null;
+export function setSporelingBurstHandler(fn: (x: number, z: number) => void): void {
+  onSporelingBurst = fn;
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -933,6 +939,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
+  // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
+  if (z.kind === "sporeling") onSporelingBurst?.(z.x, z.z);
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;

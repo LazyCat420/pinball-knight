@@ -26,7 +26,7 @@ import { DamageTextPool, type DamageTextKind } from "../engine/render/damage-tex
 import { profBegin, profCount, profEnd } from "../engine/profiler";
 import { SMOKE, STEAM, makeSmokePool, makeSteamPool } from "./puffs";
 import { linColor } from "./color";
-import { C_BLOOD_G, C_BLOOD_R, C_DUST, C_EMBER, C_SPARK, C_SPARK2, rnd } from "./pools/shared";
+import { C_BLOOD_G, C_BLOOD_R, C_DUST, C_EMBER, C_SPARK, C_SPARK2, C_HEAL, C_GOLD, rnd } from "./pools/shared";
 import { ParticlePool } from "./pools/particle-pool";
 import { type SlashOpts } from "./pools/slash-pool";
 import { type RingOpts } from "./pools/ring-pool";
@@ -79,8 +79,10 @@ export interface VfxSystem {
   blood(x: number, y: number, z: number, kind: "green" | "red", count?: number): void;
   /** A single rising ember (emit a few per second from torches). */
   ember(x: number, y: number, z: number): void;
-  /** A dim drifting dust mote — ambient atmosphere, not an event. */
-  mote(x: number, y: number, z: number): void;
+  /** A dim drifting dust mote — ambient atmosphere, or tinted gold shimmer for pickups. */
+  mote(x: number, y: number, z: number, color?: number): void;
+  /** Restorative healing motes rising upward with a warm ground ring. */
+  heal(x: number, y: number, z: number, color?: number, count?: number): void;
   /** A puff of floor dust (footsteps, landings). */
   dust(x: number, y: number, z: number): void;
   /**
@@ -112,6 +114,10 @@ export interface VfxSystem {
   /** A melee slash crescent in the facing direction. `opts` restyles it per
    *  combo step (roll/scale/mirror/life) — see SlashOpts. */
   slash(x: number, y: number, z: number, facing: string, color: number, opts?: SlashOpts): void;
+  /** A 360-degree circular melee sweep around the actor (chair, wrecking ball). */
+  slashCircle(x: number, y: number, z: number, color: number, scale?: number): void;
+  /** A poisonous / fungal spore cloud bursting outward and eroding. */
+  sporeCloud(x: number, y: number, z: number, radius?: number): void;
   /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
   bolt(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void;
   /**
@@ -307,13 +313,28 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
         C_EMBER, rnd(2, 4), rnd(0.6, 1.2), -0.6, 0.6, // negative gravity → floats UP
       );
     },
-    mote(x, y, z) {
-      // barely-there, near-weightless, long-lived — atmosphere, not an event
+    mote(x, y, z, color) {
+      // barely-there, near-weightless, long-lived — atmosphere, or gold dust shimmer
+      const c = color !== undefined ? linColor(color) : C_DUST;
       additive.spawn(
         x, y, z,
         rnd(-0.12, 0.12), rnd(-0.05, 0.08), rnd(-0.12, 0.12),
-        C_DUST, rnd(1.5, 2.5), rnd(1.6, 3.2), -0.01, 0.2,
+        c, rnd(1.5, 2.5), rnd(1.6, 3.2), -0.01, 0.2,
       );
+    },
+    heal(x, y, z, color, count = 12) {
+      const pal = color !== undefined ? [linColor(color), C_SPARK] : C_HEAL;
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const dist = rnd(0.1, 0.5);
+        additive.spawn(
+          x + Math.cos(a) * dist, y + rnd(0, 0.25), z + Math.sin(a) * dist,
+          rnd(-0.3, 0.3), rnd(1.6, 3.4), rnd(-0.3, 0.3),
+          pal[(Math.random() * pal.length) | 0],
+          rnd(3, 6), rnd(0.45, 0.85), -1.2, 1.4,
+        );
+      }
+      rings.spawn(x, z, color ?? 0x8fd46b, 0.9, 0.45, { thin: true });
     },
     dust(x, y, z) {
       for (let i = 0; i < 4; i++) {
@@ -368,6 +389,27 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     },
     slash(x, y, z, facing, color, opts) {
       slashes.spawn(x, y, z, facing, color, opts);
+    },
+    slashCircle(x, y, z, color, scale = 1.35) {
+      slashes.spawn(x + 0.35, y, z, "E", color, { scale });
+      slashes.spawn(x - 0.35, y, z, "W", color, { scale });
+      slashes.spawn(x, y, z + 0.35, "S", color, { scale });
+      slashes.spawn(x, y, z - 0.35, "N", color, { scale });
+      rings.spawn(x, z, color, scale * 1.25, 0.22, { thin: true });
+    },
+    sporeCloud(x, y, z, radius = 1.6) {
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = rnd(0.2, radius);
+        additive.spawn(
+          x + Math.cos(a) * r, y + rnd(0.1, 0.6), z + Math.sin(a) * r,
+          rnd(-0.25, 0.25), rnd(0.2, 0.8), rnd(-0.25, 0.25),
+          linColor(0x8fc46b), rnd(3, 5), rnd(0.8, 1.5), -0.1, 0.8,
+        );
+      }
+      smokePool.spawn(x, y, z, rnd(-0.2, 0.2), rnd(0.2, 0.5), rnd(-0.2, 0.2), SMOKE.colors[0]!, 18, 1.2, SMOKE.rise, SMOKE.drag);
+      smokePool.spawn(x + rnd(-0.4, 0.4), y, z + rnd(-0.4, 0.4), rnd(-0.2, 0.2), rnd(0.2, 0.5), rnd(-0.2, 0.2), SMOKE.colors[1]!, 16, 1.4, SMOKE.rise, SMOKE.drag);
+      rings.spawn(x, z, 0x5f8a4f, radius, 0.6, { thin: true, opacity: 0.5 });
     },
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);

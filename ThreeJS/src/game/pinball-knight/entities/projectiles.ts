@@ -783,6 +783,8 @@ export function updateProjectiles(dt: number): void {
           z.burnT = FLAME_BURN_IMMUNITY;
           damageZombie(z, pr.damage, pr.vx, pr.vz, 0.06);
           applyCardOnHit(z);
+          state.vfx?.ember(z.x, 0.4, z.z);
+          if (Math.random() < 0.4) state.vfx?.smoke(z.x, 0.5, z.z, 1, 0.2);
         }
       } else {
         // `"ranged"` is what the "dodges-ranged" sub-type exception reads: a
@@ -795,9 +797,19 @@ export function updateProjectiles(dt: number): void {
         // threads a line of enemies) until the pierce budget is spent.
         if ((pr.pierced ?? 0) > 0) {
           pr.pierced = (pr.pierced ?? 0) - 1;
-          state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 4);
+          state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 6);
+          if (pr.kind === "arrow") state.vfx?.dust(z.x, 0.1, z.z);
         } else {
           consumed = true;
+          if (pr.kind === "bullet") {
+            state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 8);
+            state.vfx?.burst(z.x, PROJECTILE_Y, z.z, PALETTE_HEX[18], 4, 2.8);
+          } else if (pr.kind === "arrow") {
+            state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 5);
+            state.vfx?.dust(z.x, 0.1, z.z);
+          } else if (pr.kind === "shard") {
+            state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, -pr.vx, -pr.vz, 4);
+          }
         }
         break;
       }

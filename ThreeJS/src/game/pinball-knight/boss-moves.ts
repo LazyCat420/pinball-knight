@@ -139,6 +139,9 @@ export function updateShots(shots: BossShot[], ctx: MoveCtx): void {
     b.dist += Math.hypot(b.vx, b.vz) * ctx.dt;
     b.mesh.position.set(b.x, SHOT_Y, b.z);
     b.mesh.rotation.y += ctx.dt * 8;
+    if (Math.random() < ctx.dt * 20) {
+      state.vfx?.mote(b.x, SHOT_Y, b.z, 0xb06fe8);
+    }
     const hit = ctx.hitAt(b.x, b.z, SHOT_HIT_R, b.damage, 0);
     if (hit) {
       state.vfx?.burst(b.x, SHOT_Y, b.z, 0xe8e2d0, 8, 4);
@@ -277,6 +280,9 @@ export function updateSlam(rt: SlamRt, spec: SlamSpec, ctx: MoveCtx): void {
     pulse(rt.ring, rt.t);
     if (rt.t <= 0) {
       state.vfx?.burst(rt.x, 0.2, rt.z, spec.color, 26, 7);
+      state.vfx?.ring(rt.x, rt.z, spec.color, spec.radius * 1.25, 0.45, { thin: true });
+      state.vfx?.dust(rt.x, 0.1, rt.z);
+      state.vfx?.sparks(rt.x, 0.3, rt.z, 0, 0, 14);
       state.shakeT = Math.max(state.shakeT, 0.35);
       state.hitstopT = Math.max(state.hitstopT, 0.06);
       ctx.hitAt(rt.x, rt.z, spec.radius, spec.damage, spec.launch);
@@ -337,6 +343,9 @@ export function updateCharge(rt: ChargeRt, spec: ChargeSpec, ctx: MoveCtx): void
       ctx.moveTo(nx, nz);
     }
     ctx.hitAt(ctx.x, ctx.z, ctx.bodyR + 0.35, spec.damage, spec.launch);
+    if (Math.random() < ctx.dt * 18) {
+      state.vfx?.dust(ctx.x, 0.05, ctx.z);
+    }
     rt.left -= step;
     if (rt.left <= 0) {
       state.shakeT = Math.max(state.shakeT, 0.25);
@@ -483,6 +492,8 @@ export function updateNova(rt: NovaRt, spec: NovaSpec, ctx: MoveCtx): void {
       const ring = groundRing(spec.radius, spec.color, 0.14);
       ring.position.set(rt.x, 0.05, rt.z);
       rt.ring = add(ring);
+      state.vfx?.burst(rt.x, 0.25, rt.z, spec.color, 16, 4.5);
+      state.vfx?.ring(rt.x, rt.z, spec.color, spec.radius, spec.sweep, { thin: true });
       rt.phase = "sweeping";
       rt.age = 0;
       rt.hit = false;
