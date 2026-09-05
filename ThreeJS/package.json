@@ -27,6 +27,7 @@
     "@types/ws": "^8.5.14",
     "canvas": "^3.2.1",
     "esbuild": "^0.28.1",
+    "playwright": "^1.62.0",
     "typescript": "^6.0.3",
     "vite": "^6.2.0",
     "vitest": "^4.1.0"

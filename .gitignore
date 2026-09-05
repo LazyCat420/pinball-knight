@@ -35,5 +35,6 @@ ThreeJS/.death-lab/
 ThreeJS/.pipeline-forensics/
 ThreeJS/.death-audit/
 
-# death-swarm capture artefacts (screenshots, contact sheets, report.json)
-ThreeJS/.death-swarm/
+# death-swarm and boss-death-lab capture artefacts (screenshots, contact sheets, report.json)
+ThreeJS/.death-swarm*/
+ThreeJS/.boss-death-lab*/
