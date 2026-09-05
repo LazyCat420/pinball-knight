@@ -95,7 +95,7 @@ export function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetcore", "magnetboots"].forEach((id, i, arr) => {
+  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetcore"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
     const a = (i / arr.length) * Math.PI * 2;

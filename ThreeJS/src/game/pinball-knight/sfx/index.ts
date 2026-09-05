@@ -62,8 +62,8 @@ export { SFX, SFX_CATEGORY, SFX_NAMES, playSfx } from "./registry";
 export type { SfxName, SfxTrigger } from "./registry";
 
 export { sfxSwing, sfxHeavy, sfxHit, sfxHurt, sfxBreak } from "./combat";
-export { sfxGun, sfxBow, sfxFlame, sfxFreeze, sfxSplash } from "./weapons";
-export { sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxRoll, sfxMagnet, sfxMagnetClank } from "./pinball";
+export { sfxGun, sfxBow, sfxFlame, sfxFreeze } from "./weapons";
+export { sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxRoll } from "./pinball";
 export { sfxGroan, sfxZombieDie, sfxGoblin, sfxCackle, sfxRibbit, sfxCartBell } from "./monsters";
 export { sfxPickup, sfxTrapdoor, sfxCoin } from "./world";
 export { sfxLevelStart, sfxModifier, sfxBossReveal, sfxStairs, sfxGameOver } from "./run";

@@ -44,7 +44,6 @@ export const RECIPES: Record<RecipeId, RecipeDef> = {
   shield: { id: "shield", label: "Shield", icon: "🛡️", output: "shield", inputs: { ironshard: 1, lodestone: 1 }, flasks: 1, tier: "uncommon" },
   curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", output: "curveshot", inputs: { silk: 1, fang: 1 }, flasks: 1, tier: "uncommon" },
   magnetcore: { id: "magnetcore", label: "Magnet Core", icon: "🧲", output: "magnetcore", inputs: { lodestone: 2 }, flasks: 1, tier: "uncommon" },
-  magnetboots: { id: "magnetboots", label: "Magnet Core", icon: "🧲", output: "magnetcore", inputs: { lodestone: 2 }, flasks: 1, tier: "uncommon" },
   ballform: { id: "ballform", label: "Ball Form", icon: "🪩", output: "ballform", inputs: { ironshard: 1, lodestone: 1, steelpin: 1 }, flasks: 1, tier: "uncommon" },
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", output: "freeze", inputs: { ectoplasm: 1, silk: 2 }, flasks: 1, tier: "rare" },
   multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", output: "multiball", inputs: { lodestone: 1, ectoplasm: 1 }, flasks: 1, tier: "rare" },

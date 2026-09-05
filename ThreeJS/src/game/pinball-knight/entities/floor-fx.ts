@@ -84,7 +84,7 @@ import {
   MAGNET_PULSE_RADIUS,
   MAGNET_PULSE_LIFE,
 } from "../constants";
-import { sfxSplash } from "../sfx";
+import { sfxSplash } from "../sfx/weapons";
 import { ambience, type AmbienceId } from "../sfx/ambience";
 import { PALETTE_HEX } from "../render/palette";
 import { skillAgg } from "../skill-runtime";

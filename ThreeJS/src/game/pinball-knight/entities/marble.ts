@@ -131,7 +131,8 @@ import { spawnFloorFx } from "./floor-fx";
 import { lavaMeltWall } from "./wall-erosion";
 import { enterRicochetForm } from "./ricochet-form";
 import { damageZombie } from "./combat";
-import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame, sfxMagnet, sfxMagnetClank } from "../sfx";
+import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame } from "../sfx";
+import { sfxMagnet, sfxMagnetClank } from "../sfx/pinball";
 
 export interface MaterialMeta {
   label: string;

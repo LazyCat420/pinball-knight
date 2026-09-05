@@ -369,7 +369,6 @@ export type PotionId =
   | "multiball"
   | "curveshot"
   | "magnetcore"
-  | "magnetboots"
   // ── Craft-only brews (Tavern Alchemist; see recipes.ts) ──
   | "regen"
   | "venomcoat"
@@ -434,7 +433,6 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12, description: "bending projectiles" },
   // Magnet Core: turns the ball into a magnetic dynamo that pulls metal monsters and loot.
   magnetcore: { id: "magnetcore", label: "Magnet Core", icon: "🧲", color: 0x4f8fdb, heal: 0, duration: 16, description: "vacuum metal loot · crush metal monsters" },
-  magnetboots: { id: "magnetboots", label: "Magnet Core", icon: "🧲", color: 0x4f8fdb, heal: 0, duration: 16, description: "vacuum metal loot · crush metal monsters" },
   // ── Craft-only brews — no shop row, no floor spawn; you BREW these at the
   // Alchemist from monster reagents (recipes.ts). Each is a distinct buff that
   // reads at one existing combat choke point. ──

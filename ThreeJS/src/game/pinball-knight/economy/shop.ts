@@ -190,7 +190,7 @@ export function applyPotion(id: PotionId): void {
       p.curveT = def.duration;
       state.vfx?.burst(p.x, 0.6, p.z, def.color, 12, 3.5);
     }
-    if (id === "magnetboots" || id === "magnetcore") {
+    if (id === "magnetcore") {
       applyMaterial("magnet");
       p.magBootsT = def.duration;
       state.vfx?.ring(p.x, p.z, def.color, 1.0, 0.4, { inward: true, thin: true });

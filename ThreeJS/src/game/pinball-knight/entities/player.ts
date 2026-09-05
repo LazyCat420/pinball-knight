@@ -210,7 +210,8 @@ import {
   activeMaterial,
 } from "./marble";
 import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
-import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper, sfxMagnetClank } from "../sfx";
+import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
+import { sfxMagnetClank } from "../sfx/pinball";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 import { resolvePinballSteering } from "./pinball-steering";
 
