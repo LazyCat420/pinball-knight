@@ -26,6 +26,20 @@ session rate limit killed the rest. The three that produced nothing are named in
 open gaps, not silently omitted. Raw findings live in the session scratchpad; the recovered
 retired plans are at `<scratchpad>/recovered/all22/`.
 
+> ⚠️ **Line numbers were captured at `3f169dfb` and some have since drifted.** While this
+> research ran, a parallel session landed `a92ed698` (the seesaw shortcut system, §10.2),
+> which added lines to six of the files cited here: `entities/pinball-collide.ts` (+73),
+> `render/pinball-parts.ts` (+115), `maze/decorate.ts` (+68), `entities/player.ts` (+31),
+> `state.ts` (+14) and `constants/pinball.ts` (+9). Citations in those six files may be low
+> by a few dozen lines — e.g. `trySkillShot`'s five call sites read 420/582/630/765/1058 at
+> the research baseline and are **426/588/636/771/1064** on `84ed67a9`. **Grep for the symbol,
+> do not trust the line.** Every other file's citations were unaffected.
+>
+> Five load-bearing claims were re-verified by hand against `84ed67a9` after the drift was
+> found: the track destructured as a local (§1.1), the camera's pinned aim y (§1.2), the
+> unreset run ledger (§2.1), the bumper's missing `trySkillShot` (§2.2), and the free
+> `Grid.surfaces` ids (§1.5). All five hold.
+
 ---
 
 ## 1. The five facts that reshape the whole request
