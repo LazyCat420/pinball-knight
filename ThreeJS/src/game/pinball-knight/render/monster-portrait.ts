@@ -40,6 +40,7 @@ import {
   makeMagnetPaints,
   makeWebspinnerPaints,
   makeReaperPaints,
+  makeBossPaints,
   ZOMBIE_VARIANTS,
   type ActorPaints,
   type FramePaint,
@@ -57,6 +58,11 @@ import { makeRotortailPaints } from "./monsters/rotortail";
 import { makeStiltneckPaints } from "./monsters/stiltneck";
 import { makeHoundPaints } from "./monsters/hound";
 import { makeFishFeetPaints } from "./monsters/fish_feet";
+import { makeBloaterPaints } from "./monsters/bloater";
+import { makeWardenPaints } from "./monsters/warden";
+import { makeNecroPaints } from "./monsters/necro";
+import { makePlatypusPaints } from "./monsters/platypus";
+import { makeEspressoPaints } from "./monsters/espresso";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -102,13 +108,16 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   chomper: { paints: makeChomperPaints },
   magnet: { paints: makeMagnetPaints },
   webspinner: { paints: makeWebspinnerPaints },
-  bloater: { paints: makeSlimePaints },
-  necromancer: { paints: makeSpitterPaints },
-  warden: { paints: makeBrutePaints },
+  bloater: { paints: makeBloaterPaints },
+  necromancer: { paints: makeNecroPaints },
+  warden: { paints: makeWardenPaints },
   wisp: { paints: makeGhostPaints },
   sapper: { paints: makeMagnetPaints },
   crystalback: { paints: makeGolemPaints },
   mimic: { paints: makeGolemPaints },
+  platypus: { paints: makePlatypusPaints },
+  espresso: { paints: makeEspressoPaints },
+  jade_buddha: { paints: makeBossPaints },
 };
 
 /**

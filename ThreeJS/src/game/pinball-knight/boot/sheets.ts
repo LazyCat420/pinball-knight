@@ -152,8 +152,8 @@ export type SheetKey =
   | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
-  | "necromancer" | "crystalback" | "mimic"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
+  | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso"
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -162,7 +162,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -387,6 +387,7 @@ export function buildMonsterSheets(): void {
 // but labels it with the game's kind — this map is that bridge, and a copy
 // of it in the forge would be the two-writers drift all over again.
 export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
+  bloater: "bloater",
   brute: "brute",
   jester: "jester",
   rotortail: "crawler",
@@ -417,6 +418,9 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   dragon: "dragon",
   trex: "trex",
   boss: "overlord",
+  platypus: "platypus",
+  espresso: "espresso",
+  jade_buddha: "jade_buddha",
 };
 
 
@@ -529,10 +533,10 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
 export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", "boss"];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
-  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost");
+  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
-  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex");
+  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha");
   return keys;
 }
 

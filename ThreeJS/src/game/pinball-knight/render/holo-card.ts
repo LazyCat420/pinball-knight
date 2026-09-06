@@ -44,6 +44,7 @@
 import { RARITY_HEX, cardDef, cardPower, modifierRows, type CardDef, type CardId, type CardRarity, type ModifierRow } from "../cards";
 import { KIND_INFO } from "../bestiary";
 import { monsterPortrait, portraitScale } from "./monster-portrait";
+import { getCardArtImage } from "./card-art-loader";
 import { drawGlyph, glyphPip, glyphSparkle, sigilFor, type Glyph } from "./card-glyphs";
 import { elementFor, metalFor, styleForCard, type CardStyle, type Metal } from "./card-styles";
 import { mulberry32 } from "../../../utils/rng";
@@ -414,7 +415,10 @@ function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.fillStyle = shaft;
   ctx.fillRect(ax, ay, aw, ah);
 
-  if (portrait) {
+  const customArt = getCardArtImage(c.id);
+  if (customArt) {
+    ctx.drawImage(customArt, ax, ay, aw, ah);
+  } else if (portrait) {
     paintPortrait(ctx, portrait, c, ax, ay, aw, ah, st, rarityCol);
   } else {
     paintSigil(ctx, sigilFor(c.base ?? c.id), ax, ay, aw, ah, st, metal, rand);
@@ -427,16 +431,27 @@ function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.fillStyle = haze;
   ctx.fillRect(ax, ay + ah * 0.8, aw, ah * 0.2);
 
-  // SHINY — a scatter of hard four-point sparkles. Hard-edged on purpose: this
-  // has to survive being downscaled to a 74px thumbnail, where another soft
-  // speck pass would just brighten into haze.
+  // SHINY / HOLOGRAPHIC — Pokémon-style iridescent rainbow foil wash + galaxy sparkles.
   if (shiny) {
-    for (let i = 0; i < 13; i++) {
+    // 1. Rainbow iridescent gradient wash across the art window
+    const foilGrad = ctx.createLinearGradient(ax, ay, ax + aw, ay + ah);
+    foilGrad.addColorStop(0.00, "rgba(255, 60, 60, 0.22)");
+    foilGrad.addColorStop(0.20, "rgba(255, 180, 40, 0.22)");
+    foilGrad.addColorStop(0.40, "rgba(255, 255, 60, 0.22)");
+    foilGrad.addColorStop(0.60, "rgba(40, 255, 140, 0.22)");
+    foilGrad.addColorStop(0.80, "rgba(40, 160, 255, 0.22)");
+    foilGrad.addColorStop(1.00, "rgba(220, 60, 255, 0.22)");
+    ctx.fillStyle = foilGrad;
+    ctx.fillRect(ax, ay, aw, ah);
+
+    // 2. Galaxy cosmic four-point star glints
+    for (let i = 0; i < 15; i++) {
       const sx = ax + 14 + rand() * (aw - 28);
       const sy = ay + 14 + rand() * (ah - 28);
       const r = 5 + rand() * 12;
       const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
-      g.addColorStop(0, "rgba(255,255,255,0.85)");
+      g.addColorStop(0, "rgba(255,255,255,0.92)");
+      g.addColorStop(0.5, "rgba(255,240,200,0.45)");
       g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
       ctx.fillRect(sx - r * 1.8, sy - r * 1.8, r * 3.6, r * 3.6);

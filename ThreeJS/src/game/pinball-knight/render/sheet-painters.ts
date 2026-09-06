@@ -45,6 +45,11 @@ import { makeRotortailPaints } from "./monsters/rotortail";
 import { makeStiltneckPaints } from "./monsters/stiltneck";
 import { makeFishFeetPaints } from "./monsters/fish_feet";
 import { makeHoundPaints } from "./monsters/hound";
+import { makeBloaterPaints } from "./monsters/bloater";
+import { makeWardenPaints } from "./monsters/warden";
+import { makeNecroPaints } from "./monsters/necro";
+import { makePlatypusPaints } from "./monsters/platypus";
+import { makeEspressoPaints } from "./monsters/espresso";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -54,10 +59,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   zombie: () => makeZombiePaints(ZOMBIE_VARIANTS[0]),
   spider: makeSpiderPaints,
   brute: makeBrutePaints,
-  // The warden paints from the SAME painter as the brute and is deliberately
-  // NOT in IMPORTED_ART: it is the brute's tinted reskin, and it must keep the
-  // painted look when the brute's own art is swapped for a forged sheet.
-  warden: makeBrutePaints,
+  warden: makeWardenPaints,
   spitter: makeSpitterPaints,
   ghost: makeGhostPaints,
   bat: makeBatPaints,
@@ -76,7 +78,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   rotortail: makeRotortailPaints,
   stiltneck: makeStiltneckPaints,
   fish_feet: makeFishFeetPaints,
-  necromancer: makeSpitterPaints,
+  necromancer: makeNecroPaints,
   crystalback: makeGolemPaints,
   mimic: makeGolemPaints,
   // The Death Dealer, and the Reaper King who wears his coat.
@@ -86,4 +88,8 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   archivist: makeGhostPaints,
   dragon: makeBossPaints,
   trex: makeBossPaints,
+  bloater: makeBloaterPaints,
+  platypus: makePlatypusPaints,
+  espresso: makeEspressoPaints,
+  jade_buddha: makeBossPaints,
 };

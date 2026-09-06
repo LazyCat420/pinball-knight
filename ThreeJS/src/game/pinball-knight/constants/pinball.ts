@@ -1481,17 +1481,28 @@ export const NECRO_SPEED_FACTOR = 0.8;
 export const NECRO_FROM_LEVEL = 4;
 export const NECRO_SUMMON_CD = 4.5; // seconds between raising an add
 export const NECRO_SUMMON_MAX = 6; // don't summon past this live-horde count nearby
-// 🛡 Warden — shielder
+// 🐰 Zombie Mini Bunny Rabbits — Necromancer summoned swarm
+export const BUNNY_HP = 1;
+export const BUNNY_R = 0.22;
+export const BUNNY_SCALE = 0.5;
+export const BUNNY_SPEED_FACTOR = 1.35;
+export const BUNNY_PER_SUMMON = 2; // 2 mini bunnies per cast
+// 🛡 Warden — cop guard with bouncing bullets
 export const WARDEN_HP = 8;
 export const WARDEN_R = 0.4;
-export const WARDEN_CONTACT_RANGE = 0.8;
-export const WARDEN_ATTACK_WINDUP = 0.5;
-export const WARDEN_ATTACK_COOLDOWN = 1.6;
+export const WARDEN_CONTACT_RANGE = 7.5;
+export const WARDEN_FIRE_RANGE = 7.5;
+export const WARDEN_ATTACK_WINDUP = 0.45;
+export const WARDEN_ATTACK_COOLDOWN = 2.0;
 export const WARDEN_SPEED_FACTOR = 0.7;
 export const WARDEN_FROM_LEVEL = 4;
+export const WARDEN_BULLET_SPEED = 9.5;
+export const WARDEN_BULLET_DAMAGE = 2;
+export const WARDEN_BULLET_BOUNCES = 3;
+export const WARDEN_AIM_MISS_ANGLE = 0.40; // ~23 degrees intentional offset
 export const WARDEN_SHIELD_RADIUS = 3.5;
-export const WARDEN_SHIELD_HP = 3; // absorb granted to each nearby foe
-export const WARDEN_PULSE_CD = 3; // re-shield cadence
+export const WARDEN_SHIELD_HP = 3; // legacy absorb
+export const WARDEN_PULSE_CD = 3; // legacy cadence
 // 🔮 Wisp — evasive
 export const WISP_HP = 2;
 export const WISP_R = 0.28;

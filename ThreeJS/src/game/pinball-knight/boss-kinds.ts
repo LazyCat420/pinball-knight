@@ -37,7 +37,7 @@
 import type { SheetKey } from "./boot/sheets";
 import { passFor, themeFor } from "./maze/prefabs";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -127,6 +127,27 @@ export interface TeleportFireSpec {
   color: number;
 }
 
+export interface FanBoomerangSpec {
+  interval: number;
+  /** Seconds the tell gathers before throwing. */
+  telegraph: number;
+  /** Speed of outward and returning flight. */
+  speed: number;
+  /** Distance the fan travels outward before reaching apex. */
+  reachDist: number;
+  /** Brief pause/hover duration at apex while spinning. */
+  apexPause: number;
+  damage: number;
+  /** Knockback impulse into pinball physics channel. */
+  launch: number;
+  /** Lateral curve factor for arcing boomerang trajectory. */
+  curve: number;
+  /** Jade emerald glow / particle trail color. */
+  color: number;
+  /** Dual fan throw in phase 2. */
+  dual?: boolean;
+}
+
 export interface BossMoves {
   orbit?: OrbitSpec;
   barrage?: BarrageSpec;
@@ -135,6 +156,7 @@ export interface BossMoves {
   summon?: SummonSpec;
   nova?: NovaSpec;
   teleportFire?: TeleportFireSpec;
+  fanBoomerang?: FanBoomerangSpec;
 }
 
 export interface BossSpec {
@@ -417,6 +439,73 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           echo: { delay: 0.4, radius: 3.0, damage: 2 },
         },
         charge: { interval: 3.6, telegraph: 0.65, speed: 19, damage: 3, distance: 13, launch: 20, color: 0xff1100 },
+      },
+    },
+  },
+
+  // ══ THE ARCANE DEEP, SECOND PASS — sacred jade and whirling storm fan ═══
+  //
+  // The Laughing Jade Buddha (Budai): a rotund jolly green jade statue with an
+  // exposed round bare belly, long earlobes, and a laughing smiling face.
+  // Hits with a massive leaping BELLY SLAM AoE and throws an ornate Chinese
+  // war fan as a returning boomerang!
+  jade_buddha: {
+    kind: "jade_buddha",
+    name: "The Laughing Jade Buddha",
+    biome: "arcane",
+    title: "🪷 THE LAUGHING JADE BUDDHA 🪷",
+    tagline: "jovial stone, belly slam, whirling tempest fan",
+    label: "JADE BUDDHA",
+    art: { sheetKey: "jade_buddha", tint: null, scale: 2.15 },
+    hpMult: 1.25,
+    speedMult: 0.85,
+    moves: {
+      slam: {
+        interval: 4.5,
+        telegraph: 1.0,
+        radius: 2.6,
+        damage: 2,
+        launch: 22,
+        color: 0x2ee89a,
+      },
+      fanBoomerang: {
+        interval: 3.8,
+        telegraph: 0.75,
+        speed: 13,
+        reachDist: 9.5,
+        apexPause: 0.25,
+        damage: 2,
+        launch: 16,
+        curve: 2.8,
+        color: 0x2ee89a,
+      },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🪷 THE LAUGHING BUDDHA ENRAGES: BELLY QUAKE & DUAL FANS",
+      speedMult: 1.2,
+      moves: {
+        slam: {
+          interval: 3.2,
+          telegraph: 0.75,
+          radius: 2.6,
+          damage: 3,
+          launch: 26,
+          color: 0x11ff88,
+          echo: { delay: 0.4, radius: 2.6, damage: 2 },
+        },
+        fanBoomerang: {
+          interval: 2.6,
+          telegraph: 0.55,
+          speed: 16,
+          reachDist: 10.5,
+          apexPause: 0.2,
+          damage: 2,
+          launch: 18,
+          curve: 3.2,
+          color: 0x11ff88,
+          dual: true,
+        },
       },
     },
   },

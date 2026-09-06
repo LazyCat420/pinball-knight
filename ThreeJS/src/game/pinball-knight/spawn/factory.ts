@@ -13,7 +13,7 @@
  * slime split or a necromancer summon is queued and drained at a safe point.
  */
 import { peers } from "../../../net/presence";
-import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL, BLOATER_HP, BLOATER_SPEED_FACTOR, BRUTE_FROM_LEVEL, BRUTE_HP, BRUTE_RATIO, BRUTE_SPEED_FACTOR, CHOMPER_FROM_LEVEL, CHOMPER_HP, CHOMPER_RATIO, CRAWLER_PITCH, CRYSTAL_FROM_LEVEL, CRYSTAL_HP, GHOST_FROM_LEVEL, GHOST_HP, GHOST_RATIO, GHOST_SPEED_FACTOR, GOBLIN_FROM_LEVEL, GOBLIN_HP, GOBLIN_RATIO, GOBLIN_SPEED_FACTOR, JESTER_FROM_LEVEL, JESTER_HP, JESTER_RATIO, JESTER_SPEED_FACTOR, CROAKER_FROM_LEVEL, CROAKER_HP, CROAKER_RATIO, CROAKER_SPEED_FACTOR, FISH_FEET_FROM_LEVEL, FISH_FEET_HP, FISH_FEET_RATIO, FISH_FEET_SPEED_FACTOR, ROTORTAIL_FROM_LEVEL, ROTORTAIL_HP, ROTORTAIL_RATIO, ROTORTAIL_SPEED_FACTOR, STILTNECK_FROM_LEVEL, STILTNECK_HP, STILTNECK_RATIO, STILTNECK_SPEED_FACTOR, SPORELING_FROM_LEVEL, SPORELING_RATIO, SPORELING_SPEED_FACTOR, GOLEM_FROM_LEVEL, GOLEM_HP, GOLEM_RATIO, HOUND_FROM_LEVEL, HOUND_HP, HOUND_SPEED_FACTOR, HULK_MIN_OPEN_NEIGHBOURS, MAGNET_FROM_LEVEL, MAGNET_HP, MAGNET_RATIO, MAGNET_SPEED_FACTOR, MIMIC_FROM_LEVEL, MIMIC_HP, MIMIC_SPEED_FACTOR, NECRO_FROM_LEVEL, NECRO_HP, NECRO_SPEED_FACTOR, PIN_CREW_SIZE, PIN_HP, REAPER_HP, SAPPER_FROM_LEVEL, SAPPER_HP, SAPPER_SPEED_FACTOR, SLIME_FROM_LEVEL, SLIME_HP, SLIME_MINI_HP, SLIME_MINI_SCALE, SLIME_MINI_SPEED_MULT, SLIME_RATIO, SLIME_SPEED_FACTOR, SPIDER_FROM_LEVEL, SPIDER_HP, SPIDER_RATIO, SPIDER_SPEED_FACTOR, SPITTER_FROM_LEVEL, SPITTER_HP, SPITTER_RATIO, SPITTER_SPEED_FACTOR, THEME_HORDE_BIAS, WARDEN_FROM_LEVEL, WARDEN_HP, WARDEN_SPEED_FACTOR, WEBSPIN_FROM_LEVEL, WEBSPIN_HP, WEBSPIN_RATIO, WEBSPIN_SPEED_FACTOR, WISP_FROM_LEVEL, WISP_HP, WISP_SPEED_FACTOR, ZOMBIE_HP, ZOMBIE_R, levelConfig } from "../constants";
+import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL, BLOATER_HP, BLOATER_SPEED_FACTOR, BRUTE_FROM_LEVEL, BRUTE_HP, BRUTE_RATIO, BRUTE_SPEED_FACTOR, BUNNY_HP, BUNNY_PER_SUMMON, BUNNY_R, BUNNY_SCALE, BUNNY_SPEED_FACTOR, CHOMPER_FROM_LEVEL, CHOMPER_HP, CHOMPER_RATIO, CRAWLER_PITCH, CRYSTAL_FROM_LEVEL, CRYSTAL_HP, GHOST_FROM_LEVEL, GHOST_HP, GHOST_RATIO, GHOST_SPEED_FACTOR, GOBLIN_FROM_LEVEL, GOBLIN_HP, GOBLIN_RATIO, GOBLIN_SPEED_FACTOR, JESTER_FROM_LEVEL, JESTER_HP, JESTER_RATIO, JESTER_SPEED_FACTOR, CROAKER_FROM_LEVEL, CROAKER_HP, CROAKER_RATIO, CROAKER_SPEED_FACTOR, FISH_FEET_FROM_LEVEL, FISH_FEET_HP, FISH_FEET_RATIO, FISH_FEET_SPEED_FACTOR, ROTORTAIL_FROM_LEVEL, ROTORTAIL_HP, ROTORTAIL_RATIO, ROTORTAIL_SPEED_FACTOR, STILTNECK_FROM_LEVEL, STILTNECK_HP, STILTNECK_RATIO, STILTNECK_SPEED_FACTOR, SPORELING_FROM_LEVEL, SPORELING_RATIO, SPORELING_SPEED_FACTOR, GOLEM_FROM_LEVEL, GOLEM_HP, GOLEM_RATIO, HOUND_FROM_LEVEL, HOUND_HP, HOUND_SPEED_FACTOR, HULK_MIN_OPEN_NEIGHBOURS, MAGNET_FROM_LEVEL, MAGNET_HP, MAGNET_RATIO, MAGNET_SPEED_FACTOR, MIMIC_FROM_LEVEL, MIMIC_HP, MIMIC_SPEED_FACTOR, NECRO_FROM_LEVEL, NECRO_HP, NECRO_SPEED_FACTOR, PIN_CREW_SIZE, PIN_HP, PLATYPUS_FROM_LEVEL, PLATYPUS_HP, PLATYPUS_RATIO, PLATYPUS_SPEED_FACTOR, ESPRESSO_FROM_LEVEL, ESPRESSO_HP, ESPRESSO_RATIO, ESPRESSO_SPEED_FACTOR, REAPER_HP, SAPPER_FROM_LEVEL, SAPPER_HP, SAPPER_SPEED_FACTOR, SLIME_FROM_LEVEL, SLIME_HP, SLIME_MINI_HP, SLIME_MINI_SCALE, SLIME_MINI_SPEED_MULT, SLIME_RATIO, SLIME_SPEED_FACTOR, SPIDER_FROM_LEVEL, SPIDER_HP, SPIDER_RATIO, SPIDER_SPEED_FACTOR, SPITTER_FROM_LEVEL, SPITTER_HP, SPITTER_RATIO, SPITTER_SPEED_FACTOR, THEME_HORDE_BIAS, WARDEN_FROM_LEVEL, WARDEN_HP, WARDEN_SPEED_FACTOR, WEBSPIN_FROM_LEVEL, WEBSPIN_HP, WEBSPIN_RATIO, WEBSPIN_SPEED_FACTOR, WISP_FROM_LEVEL, WISP_HP, WISP_SPEED_FACTOR, ZOMBIE_HP, ZOMBIE_R, levelConfig } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -21,8 +21,9 @@ import { at, isWalkable, tileCenter, worldToTile, type Grid, type TilePos } from
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { themeFor } from "../maze/prefabs";
 import { MonsterAnimator } from "../engine/render/monster-animator";
-import { ZOMBIE_VARIANTS } from "../render/cel-painter";
-import { bakeTintedSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { ZOMBIE_VARIANTS, withRecoil } from "../render/cel-painter";
+import { bakeTintedSheet, buildSpriteSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { makeBunnyPaints } from "../render/monsters/bunny";
 import { sheetFor, skinSheet } from "../boot/sheets";
 import { KIND_SKIN } from "./kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
@@ -58,6 +59,9 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   sapper: SAPPER_HP,
   crystalback: CRYSTAL_HP,
   mimic: MIMIC_HP,
+  platypus: PLATYPUS_HP,
+  espresso: ESPRESSO_HP,
+  jade_buddha: 50,
 };
 
 export { skinSheet };
@@ -108,15 +112,42 @@ export function drainPendingMinis(): void {
  *  would corrupt the array being walked, same as slime split). */
 const pendingSummons: Array<{ x: number; z: number }> = [];
 
+let cachedBunnySheet: SpriteSheet | null = null;
+export function getBunnySheet(): SpriteSheet {
+  if (!cachedBunnySheet) {
+    cachedBunnySheet = buildSpriteSheet(withRecoil(makeBunnyPaints()));
+  }
+  return cachedBunnySheet;
+}
+
 export function drainPendingSummons(): void {
   if (!pendingSummons.length) return;
   const speed = levelConfig(state.level).zombieSpeed;
-  const sheet = state.zombieVariantSheets[0] ?? state.sheets.zombie;
+  let sheet: SpriteSheet | undefined;
+  try {
+    sheet = getBunnySheet();
+  } catch {
+    sheet = state.zombieVariantSheets[0] ?? state.sheets.zombie;
+  }
+  if (!sheet) sheet = state.zombieVariantSheets[0] ?? state.sheets.zombie;
+
   for (const spec of pendingSummons) {
     if (!sheet) break;
-    const add = makeZombie(sheet, spec.x + (Math.random() - 0.5) * 0.6, spec.z + (Math.random() - 0.5) * 0.6, speed, { kind: "zombie" });
-    add.aggro = true; // raised to serve — already hunting
-    state.zombies.push(add);
+    for (let i = 0; i < BUNNY_PER_SUMMON; i++) {
+      const angle = (i / BUNNY_PER_SUMMON) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const dist = 0.45 + (Math.random() - 0.5) * 0.2;
+      const bx = spec.x + Math.cos(angle) * dist;
+      const bz = spec.z + Math.sin(angle) * dist;
+      const bunny = makeZombie(sheet, bx, bz, speed * BUNNY_SPEED_FACTOR, {
+        kind: "zombie",
+        hp: BUNNY_HP,
+      });
+      bunny.mini = true;
+      bunny.bodyR = BUNNY_R;
+      bunny.aggro = true; // raised to serve — already hunting
+      bunny.sprite.mesh.scale.multiplyScalar(BUNNY_SCALE);
+      state.zombies.push(bunny);
+    }
   }
   pendingSummons.length = 0;
 }
@@ -296,6 +327,10 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       if (m) { m.dormant = true; m.aggro = false; }
       return m;
     }
+    case "platypus":
+      return level >= PLATYPUS_FROM_LEVEL ? makeSkinned("platypus", x, z, baseSpeed * PLATYPUS_SPEED_FACTOR) : null;
+    case "espresso":
+      return level >= ESPRESSO_FROM_LEVEL ? makeSkinned("espresso", x, z, baseSpeed * ESPRESSO_SPEED_FACTOR) : null;
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }
@@ -371,6 +406,14 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   }
   if (level >= CROAKER_FROM_LEVEL && hash % CROAKER_RATIO === 8) {
     const zb = makeSkinned("croaker", x, z, baseSpeed * CROAKER_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= PLATYPUS_FROM_LEVEL && hash % PLATYPUS_RATIO === 3) {
+    const zb = makeSkinned("platypus", x, z, baseSpeed * PLATYPUS_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= ESPRESSO_FROM_LEVEL && hash % ESPRESSO_RATIO === 5) {
+    const zb = makeSkinned("espresso", x, z, baseSpeed * ESPRESSO_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= FISH_FEET_FROM_LEVEL && hash % FISH_FEET_RATIO === 7) {

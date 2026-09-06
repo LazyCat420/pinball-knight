@@ -419,14 +419,20 @@ export const CROAKER_R = 0.32;
 export const CROAKER_SPEED_FACTOR = 0.75; // it hops; between hops it is slow
 export const CROAKER_RATIO = 17;
 export const CROAKER_FROM_LEVEL = 2;
-/** Beam reach. Shorter than the rotortail's timber — it wants to be mid-range,
- *  because the leap is how it closes and the beam is how it punishes stillness. */
+/** Beam reach fallback (for legacy raycasts). */
 export const CROAKER_FIRE_RANGE = 6.5;
-/** The eyes visibly charge across this. A fast projectile with no tell is
- *  indistinguishable from random damage. */
+/** Whirlwind cane strike range. Inside this reach, the showman frog twirls his cane like a propeller. */
+export const CROAKER_SPIN_RANGE = 2.8;
+/** The cane visibly flourishes across this windup. */
 export const CROAKER_WINDUP = 0.45;
 export const CROAKER_COOLDOWN = 2.0;
-/** FAST — this is a laser, and the tell is the charge, not the flight time. */
+/** Cane propeller contact damage. */
+export const CROAKER_SPIN_DAMAGE = 2;
+/** Duration of the spinning whirlwind strike, seconds. */
+export const CROAKER_SPIN_DURATION = 0.55;
+/** Deflection impulse applied to player if colliding while cane is spinning. */
+export const CROAKER_SPIN_DEFLECT = 12.0;
+/** FAST — legacy beam speed and damage fallback. */
 export const CROAKER_BEAM_SPEED = 13;
 export const CROAKER_BEAM_DAMAGE = 1;
 /** Half-angle between the twin beams, radians. Wide enough that a dead-on
@@ -462,6 +468,46 @@ export const CROAKER_HOP_BOUNCES = 2;
  * read as a trap rather than as a stumble.
  */
 export const JESTER_SPRING_KICK = 11;
+
+// ── Iron Platypus (Tail Slam & Ground Cracks) ──────────────────
+/**
+ * IRON PLATYPUS — a tanky armored beast with a heavy segmented steel tail.
+ * Slams the ground with crushing force, cracking the stone floor and radiating
+ * shockwaves that damage the player and stagger nearby monsters.
+ */
+export const PLATYPUS_HP = 8;
+export const PLATYPUS_R = 0.42;
+export const PLATYPUS_SPEED_FACTOR = 0.72;
+export const PLATYPUS_RATIO = 19;
+export const PLATYPUS_FROM_LEVEL = 2;
+export const PLATYPUS_CONTACT_RANGE = 2.6;
+export const PLATYPUS_ATTACK_WINDUP = 0.75;
+export const PLATYPUS_ATTACK_COOLDOWN = 2.8;
+export const PLATYPUS_DAMAGE = 2;
+export const PLATYPUS_SLAM_RADIUS = 2.4;
+export const PLATYPUS_SLAM_DEFLECT = 10.0;
+
+// ── Walking Espresso Cup (Spinning Teacup & Scalding Spill) ────
+/**
+ * WALKING ESPRESSO CUP — hyperactive caffeine skirmisher.
+ * Spins at blistering RPM like a Disneyland spinning teacup, slinging scalding
+ * coffee droplets in a spiral, and shatters on death to flood the floor with
+ * a boiling coffee puddle that burns anyone standing in it.
+ */
+export const ESPRESSO_HP = 4;
+export const ESPRESSO_R = 0.32;
+export const ESPRESSO_SPEED_FACTOR = 1.35;
+export const ESPRESSO_RATIO = 16;
+export const ESPRESSO_FROM_LEVEL = 2;
+export const ESPRESSO_CONTACT_RANGE = 1.2;
+export const ESPRESSO_ATTACK_WINDUP = 0.35;
+export const ESPRESSO_ATTACK_COOLDOWN = 2.2;
+export const ESPRESSO_DAMAGE = 1;
+export const ESPRESSO_SPIN_RANGE = 1.3;
+export const ESPRESSO_SPIN_DEFLECT = 12.0;
+export const ESPRESSO_SPILL_RADIUS = 1.8;
+export const ESPRESSO_SPILL_LIFE = 5.5;
+export const ESPRESSO_SPILL_DAMAGE = 1;
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;

@@ -353,7 +353,10 @@ export type EnemyKind =
   | "wisp" // EVASIVE — short-blinks away when hit, hard to pin
   | "sapper" // ANTI-MATERIAL — drains your active marble on hit
   | "crystalback" // REFLECTOR — ramming it at speed shatters shards into YOU
-  | "mimic"; // AMBUSHER — dormant + item-like until you're close, then lunges
+  | "mimic" // AMBUSHER — dormant + item-like until you're close, then lunges
+  | "platypus" // SLAMMER — heavy armored platypus with metal tail ground slam
+  | "espresso" // SKIRMISHER — walking espresso cup, spins like a teacup and spills scalding coffee on death
+  | "jade_buddha"; // BOSS — serene emerald buddha statue with boomerang fan
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -821,13 +824,17 @@ export interface Projectile {
   curveZ?: number;
   /** PIERCE card: extra foes this shot passes through before dying. */
   pierced?: number;
+  /** Wall ricochets remaining before expiring (e.g. Warden cop bullets). */
+  bounces?: number;
+  /** True once it has bounced off at least one wall. */
+  bounced?: boolean;
   mesh: THREE.Mesh;
   dispose(): void;
 }
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;

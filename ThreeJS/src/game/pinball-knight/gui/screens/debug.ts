@@ -146,6 +146,9 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   golem: "Golem",
   fish_feet: "FishFeet",
   mimic: "Mimic",
+  platypus: "Platypus",
+  espresso: "Espresso",
+  jade_buddha: "Buddha",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

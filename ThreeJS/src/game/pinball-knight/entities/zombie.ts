@@ -54,6 +54,9 @@ import {
   CROAKER_HOP_BOUNCES,
   CROAKER_R,
   CROAKER_FIRE_RANGE,
+  CROAKER_SPIN_RANGE,
+  CROAKER_SPIN_DAMAGE,
+  CROAKER_SPIN_DEFLECT,
   CROAKER_WINDUP,
   CROAKER_COOLDOWN,
   ROTORTAIL_R,
@@ -134,15 +137,20 @@ import {
   HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
   BLOATER_R, BLOATER_CONTACT_RANGE, BLOATER_ATTACK_WINDUP, BLOATER_ATTACK_COOLDOWN,
   NECRO_R, NECRO_CONTACT_RANGE, NECRO_ATTACK_WINDUP, NECRO_ATTACK_COOLDOWN, NECRO_SUMMON_CD, NECRO_SUMMON_MAX,
-  WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
+  WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_AIM_MISS_ANGLE, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
   WISP_R, WISP_CONTACT_RANGE, WISP_ATTACK_WINDUP, WISP_ATTACK_COOLDOWN, WISP_BLINK_DIST, WISP_BLINK_CD,
   SAPPER_R, SAPPER_CONTACT_RANGE, SAPPER_ATTACK_WINDUP, SAPPER_ATTACK_COOLDOWN,
   CRYSTAL_R, CRYSTAL_CONTACT_RANGE, CRYSTAL_ATTACK_WINDUP, CRYSTAL_ATTACK_COOLDOWN,
   MIMIC_R, MIMIC_CONTACT_RANGE, MIMIC_ATTACK_WINDUP, MIMIC_ATTACK_COOLDOWN, MIMIC_WAKE_RANGE,
-  BRUTE_HP, FISH_FEET_R } from "../constants";
+  BRUTE_HP, FISH_FEET_R,
+  PLATYPUS_R, PLATYPUS_CONTACT_RANGE, PLATYPUS_ATTACK_WINDUP, PLATYPUS_ATTACK_COOLDOWN,
+  PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE,
+  ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
+  ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
+import { PALETTE_HEX } from "../render/palette";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../engine/collision";
@@ -151,8 +159,8 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
-import { gate, sfxGroan, sfxGoblin } from "../sfx";
+import { fireCopBullet, fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 export interface EnemyStats {
@@ -183,8 +191,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sporeling: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP * 1.15, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   // Spring-loaded harlequin — ranged, and its contactRange IS its fire range.
   jester: { bodyR: JESTER_R, contactRange: JESTER_FIRE_RANGE, windup: JESTER_WINDUP, cooldown: JESTER_COOLDOWN, ranged: true },
-  // Laser frog — ranged, and its contactRange IS its beam reach.
-  croaker: { bodyR: CROAKER_R, contactRange: CROAKER_FIRE_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: true },
+  // Showman frog — spins his cane in a whirlwind strike within CROAKER_SPIN_RANGE
+  croaker: { bodyR: CROAKER_R, contactRange: CROAKER_SPIN_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: false },
   rotortail: { bodyR: ROTORTAIL_R, contactRange: ROTORTAIL_FIRE_RANGE, windup: ROTORTAIL_WINDUP, cooldown: ROTORTAIL_COOLDOWN, ranged: true },
   // Bomb-slinger — the roster's longest reach and its longest wind-up, and the
   // two are the same design decision. Its contactRange IS the sling's range.
@@ -197,11 +205,14 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
   necromancer: { bodyR: NECRO_R, contactRange: NECRO_CONTACT_RANGE, windup: NECRO_ATTACK_WINDUP, cooldown: NECRO_ATTACK_COOLDOWN, ranged: true },
-  warden: { bodyR: WARDEN_R, contactRange: WARDEN_CONTACT_RANGE, windup: WARDEN_ATTACK_WINDUP, cooldown: WARDEN_ATTACK_COOLDOWN, ranged: false },
+  warden: { bodyR: WARDEN_R, contactRange: WARDEN_CONTACT_RANGE, windup: WARDEN_ATTACK_WINDUP, cooldown: WARDEN_ATTACK_COOLDOWN, ranged: true },
   wisp: { bodyR: WISP_R, contactRange: WISP_CONTACT_RANGE, windup: WISP_ATTACK_WINDUP, cooldown: WISP_ATTACK_COOLDOWN, ranged: false },
   sapper: { bodyR: SAPPER_R, contactRange: SAPPER_CONTACT_RANGE, windup: SAPPER_ATTACK_WINDUP, cooldown: SAPPER_ATTACK_COOLDOWN, ranged: false },
   crystalback: { bodyR: CRYSTAL_R, contactRange: CRYSTAL_CONTACT_RANGE, windup: CRYSTAL_ATTACK_WINDUP, cooldown: CRYSTAL_ATTACK_COOLDOWN, ranged: false },
   mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
+  platypus: { bodyR: PLATYPUS_R, contactRange: PLATYPUS_CONTACT_RANGE, windup: PLATYPUS_ATTACK_WINDUP, cooldown: PLATYPUS_ATTACK_COOLDOWN, ranged: false },
+  espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
+  jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
 };
 
 /**
@@ -347,7 +358,167 @@ function bruteSlam(z: Zombie, pdist: number, contactRange: number): void {
   state.shakeT = Math.max(state.shakeT, 0.2);
 }
 
-/** NECROMANCER: raise one add (deferred), unless the local horde is already thick. */
+/** CROAKER: Showman dancing cane flourish — spins cane in a 360-degree propeller attack with paddle deflection. */
+function croakerCaneSpin(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+  sfxSpin();
+  sfxSwing();
+  z.anim.play("attack", { force: true });
+  state.vfx?.slashCircle?.(z.x, 0.45, z.z, CROAKER_SPIN_RANGE);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    state.vfx?.sparks?.(
+      z.x + Math.cos(a) * (CROAKER_SPIN_RANGE * 0.7),
+      0.45,
+      z.z + Math.sin(a) * (CROAKER_SPIN_RANGE * 0.7),
+      Math.cos(a),
+      Math.sin(a),
+      4,
+    );
+  }
+  if (pdist <= CROAKER_SPIN_RANGE * 1.15) {
+    hitPlayer(z);
+    // Rotating paddle deflection impulse: deflect ball away from croaker
+    if (pdist > 1e-4) {
+      const nx = (p.x - z.x) / pdist;
+      const nz = (p.z - z.z) / pdist;
+      if (p.momSpeed > 0) {
+        p.momX = nx;
+        p.momZ = nz;
+        p.momSpeed = Math.max(p.momSpeed, CROAKER_SPIN_DEFLECT);
+      } else {
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.5, nz * 0.5);
+        p.x = res.x;
+        p.z = res.z;
+      }
+      state.shakeT = Math.max(state.shakeT, 0.15);
+      state.vfx?.sparks?.(p.x, 0.5, p.z, nx, nz, 12);
+    }
+  }
+}
+
+/** PLATYPUS: Ground slam attack — smashes its heavy metal tail into the floor, creating radiating cracks, sparks, screen shake, dual shockwave rings, and knockback! */
+export function platypusTailSlam(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || p.hp <= 0) return;
+
+  sfxHeavy();
+  state.shakeT = Math.max(state.shakeT, 0.42);
+  state.hitstopT = Math.max(state.hitstopT, 0.05);
+  z.anim.play("attack", { force: true });
+
+  const impactX = z.x;
+  const impactZ = z.z;
+
+  // 1. Dual expanding shockwave rings
+  // Primary high-velocity wavefront ring (bright additive bloom)
+  state.vfx?.ring(impactX, impactZ, 0xffe4a0, PLATYPUS_SLAM_RADIUS * 1.15, 0.32, { thin: true });
+  // Secondary trailing dust/compression ring
+  state.vfx?.ring(impactX, impactZ, 0x8c98a8, PLATYPUS_SLAM_RADIUS * 1.35, 0.48, { delay: 0.04, opacity: 0.65 });
+
+  // 2. Dedicated branching ground fissure decals:
+  // Central deep shattered crater
+  spawnFloorFx("fissure", impactX, impactZ, PLATYPUS_SLAM_RADIUS * 0.95, GROOVE_LIFE * 2.0);
+  // Radiating crack spur fractures
+  const rayCount = 6;
+  for (let i = 0; i < rayCount; i++) {
+    const angle = (i / rayCount) * Math.PI * 2 + (i % 2) * 0.2;
+    const crackDist = 0.9 + (i % 2) * 0.5;
+    const cx = impactX + Math.cos(angle) * crackDist;
+    const cz = impactZ + Math.sin(angle) * crackDist;
+    spawnFloorFx("fissure", cx, cz, GROOVE_RADIUS * 1.1, GROOVE_LIFE * 1.6);
+  }
+
+  // 3. Heavy explosive impact sparks, flying stone shards, and radial dust billows
+  state.vfx?.sparks?.(impactX, 0.25, impactZ, 0, 1.0, 24);
+  state.vfx?.burst?.(impactX, 0.15, impactZ, PALETTE_HEX[2], 16, 4.0);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    state.vfx?.dust?.(impactX + Math.cos(a) * 0.8, 0.08, impactZ + Math.sin(a) * 0.8);
+  }
+
+  // 4. AoE Damage & Deflection against player if within slam radius
+  const slamDistSq = (p.x - impactX) * (p.x - impactX) + (p.z - impactZ) * (p.z - impactZ);
+  const slamRadius = PLATYPUS_SLAM_RADIUS;
+  if (slamDistSq <= slamRadius * slamRadius) {
+    hitPlayer(z);
+    state.shakeT = Math.max(state.shakeT, 0.42);
+    const dist = Math.sqrt(slamDistSq) || 1;
+    const nx = (p.x - impactX) / dist;
+    const nz = (p.z - impactZ) / dist;
+    if (p.momSpeed > 0) {
+      p.momX = nx;
+      p.momZ = nz;
+      p.momSpeed = Math.max(p.momSpeed, PLATYPUS_SLAM_DEFLECT);
+    } else if (g) {
+      const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.6, nz * 0.6);
+      p.x = res.x;
+      p.z = res.z;
+    }
+  }
+
+  // 5. Stagger nearby lower-tier monsters (friendly fire shockwave)
+  for (const other of state.zombies) {
+    if (other === z || other.hp <= 0 || (other.mode as string) === "dead") continue;
+    const dx = other.x - impactX;
+    const dz = other.z - impactZ;
+    const odistSq = dx * dx + dz * dz;
+    if (odistSq <= (slamRadius * 0.9) * (slamRadius * 0.9)) {
+      const odist = Math.sqrt(odistSq) || 1;
+      damageZombie(other, 1, dx / odist, dz / odist, 1.5);
+    }
+  }
+}
+
+/** ESPRESSO: Disneyland Spinning Teacup attack — spins wildly on its base, slinging scalding coffee droplets, dealing contact damage, and deflecting the player ball outward. */
+export function espressoTeacupSpin(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+
+  sfxSpin();
+  sfxSwing();
+  z.anim.play("attack", { force: true });
+  // Swirling scalding coffee slash circle in dark roast brown
+  state.vfx?.slashCircle?.(z.x, 0.35, z.z, ESPRESSO_SPIN_RANGE);
+  // Coffee droplet spray in a centrifugal spiral
+  state.vfx?.burst?.(z.x, 0.35, z.z, 0x3b1e08, 8, 2.0);
+  state.vfx?.burst?.(z.x, 0.4, z.z, 0xd4a359, 6, 1.5);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.random() * 0.2;
+    const r = ESPRESSO_SPIN_RANGE * (0.6 + Math.random() * 0.4);
+    // Dark roast coffee droplet sparks + golden crema foam
+    const color = i % 2 === 0 ? 0x3b1e08 : 0xd4a359;
+    state.vfx?.sparks?.(z.x + Math.cos(a) * r, 0.35, z.z + Math.sin(a) * r, Math.cos(a), Math.sin(a), 3);
+  }
+  // Rising steam puffs from the spinning boiling cup
+  state.vfx?.smoke?.(z.x, 0.45, z.z, 3, 0.5);
+
+  if (pdist <= ESPRESSO_SPIN_RANGE * 1.15) {
+    hitPlayer(z);
+    // Spinning teacup deflection impulse
+    if (pdist > 1e-4) {
+      const nx = (p.x - z.x) / pdist;
+      const nz = (p.z - z.z) / pdist;
+      if (p.momSpeed > 0) {
+        p.momX = nx;
+        p.momZ = nz;
+        p.momSpeed = Math.max(p.momSpeed, ESPRESSO_SPIN_DEFLECT);
+      } else {
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.5, nz * 0.5);
+        p.x = res.x;
+        p.z = res.z;
+      }
+      state.shakeT = Math.max(state.shakeT, 0.2);
+      state.vfx?.sparks?.(p.x, 0.4, p.z, nx, nz, 10);
+    }
+  }
+}
+
+/** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
 function necroSummon(z: Zombie): void {
   let near = 0;
   for (const o of state.zombies) {
@@ -356,8 +527,10 @@ function necroSummon(z: Zombie): void {
   }
   if (near >= NECRO_SUMMON_MAX) return;
   onSummon?.(z.x, z.z);
-  state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 14);
-  state.vfx?.blood(z.x, 0.4, z.z, "green", 6);
+  // Dark necrotic summoning runes and sparks
+  state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 18);
+  state.vfx?.blood(z.x, 0.3, z.z, "green", 8);
+  state.shakeT = Math.max(state.shakeT, 0.12);
 }
 
 /** WARDEN aura: top up a damage-absorb shield on every nearby living foe. */
@@ -518,16 +691,6 @@ export function updateZombies(dt: number): void {
         z.anim.play("idle");
       }
       continue; // dormant: no AI; woken: the charge runs next frame
-    }
-
-    // ── WARDEN ── a support aura: periodically grants a damage-absorb shield to
-    // nearby foes (a stickier horde; kill the Warden first). It otherwise chases.
-    if (z.kind === "warden") {
-      z.castT = (z.castT ?? 0) - dt;
-      if (z.castT <= 0) {
-        z.castT = WARDEN_PULSE_CD;
-        wardenPulse(z);
-      }
     }
 
     // ── BRUTE ENRAGE ── below 40% HP it flies into a faster, angrier rage.
@@ -863,6 +1026,12 @@ export function updateZombies(dt: number): void {
             continue;
           } else if (z.kind === "brute") {
             bruteSlam(z, pdist, contactRange); // a radial haymaker, not a point bite
+          } else if (z.kind === "croaker") {
+            croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
+          } else if (z.kind === "platypus") {
+            platypusTailSlam(z, pdist, contactRange); // heavy metal tail ground slam
+          } else if (z.kind === "espresso") {
+            espressoTeacupSpin(z, pdist, contactRange); // Disneyland spinning teacup attack
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {
@@ -887,17 +1056,23 @@ export function updateZombies(dt: number): void {
                 // overlapping explosions is not a harder problem, just a louder
                 // one.
                 slingBomb(z.x, z.z, ux, uz);
-              } else if (z.kind === "croaker") {
-                // TWO beams, straddling the aim line — see fireEyeBeams. The
-                // gap between them is on the exact line to the player, so this
-                // one is answered by closing head-on rather than by strafing.
-                fireEyeBeams(z.x, z.z, ux, uz);
               } else if (z.kind === "jester") {
                 // ONE plate, straight down the line — no spread. The spitter's
                 // volley is hard to sidestep on purpose; the jester's is easy to
                 // sidestep on purpose, because what makes it dangerous is where
                 // it goes AFTER it misses.
                 flingPlate(z.x, z.z, ux, uz);
+              } else if (z.kind === "warden") {
+                // The COP guard fires a ricocheting service bullet with a deliberate aim offset.
+                // He always misses the player directly (aiming ±WARDEN_AIM_MISS_ANGLE off line)
+                // so the bullet strikes a wall, bounces, and rebounds across the room to hit the player.
+                const side = Math.random() < 0.5 ? 1 : -1;
+                const offset = side * (WARDEN_AIM_MISS_ANGLE + (Math.random() - 0.5) * 0.08);
+                const cos = Math.cos(offset);
+                const sin = Math.sin(offset);
+                const aimX = ux * cos - uz * sin;
+                const aimZ = ux * sin + uz * cos;
+                fireCopBullet(z.x, z.z, aimX, aimZ);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);

@@ -59,7 +59,9 @@ import {
   ROTORTAIL_TIMBER_DAMAGE,
   STILTNECK_BLAST_DAMAGE,
   JESTER_SPRING_KICK,
-  CROAKER_BEAM_DAMAGE,
+  CROAKER_SPIN_DAMAGE,
+  PLATYPUS_DAMAGE,
+  ESPRESSO_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -845,6 +847,15 @@ export function setSporelingBurstHandler(fn: (x: number, z: number) => void): vo
   onSporelingBurst = fn;
 }
 
+/** ESPRESSO death → a scalding boiling coffee spill puddle. */
+let onEspressoSpill: ((x: number, z: number) => void) | null = null;
+export function setEspressoSpillHandler(fn: (x: number, z: number) => void): void {
+  onEspressoSpill = fn;
+}
+export function triggerEspressoSpill(x: number, z: number): void {
+  onEspressoSpill?.(x, z);
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -937,6 +948,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
   if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
+  // An ESPRESSO cup shatters and spills boiling coffee that burns anyone nearby.
+  if (z.kind === "espresso") onEspressoSpill?.(z.x, z.z);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1097,8 +1110,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sporeling: ZOMBIE_DAMAGE,
   // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
   jester: JESTER_DISC_DAMAGE,
-  // Melee fallback only — the beams carry CROAKER_BEAM_DAMAGE themselves.
-  croaker: CROAKER_BEAM_DAMAGE,
+  // Melee cane propeller spin carries CROAKER_SPIN_DAMAGE.
+  croaker: CROAKER_SPIN_DAMAGE,
   // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // Melee fallback only — the bomb's blast carries STILTNECK_BLAST_DAMAGE.
@@ -1114,6 +1127,9 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sapper: SPIDER_DAMAGE,
   crystalback: GOLEM_DAMAGE,
   mimic: BRUTE_DAMAGE,
+  platypus: PLATYPUS_DAMAGE,
+  espresso: ESPRESSO_DAMAGE,
+  jade_buddha: BRUTE_DAMAGE,
 };
 
 /**
@@ -1179,9 +1195,8 @@ export function hitPlayer(z: Zombie): void {
   const d = Math.hypot(dx, dz) || 1;
   const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * knockback, (dz / d) * knockback);
   p.x = res.x;
-  p.z = res.z;
   syncActorMesh(p);
-  if (z.kind === "brute") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
+  if (z.kind === "brute" || z.kind === "platypus") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
   // SAPPER: the bite DRAINS your active marble material — a hard counter that
   // makes a material a resource to protect, not just spend.
   // 💎 DIAMOND CANNOT BE BROKEN — including by the one enemy built to break

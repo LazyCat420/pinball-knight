@@ -340,6 +340,9 @@ function updateMerchant(n: Npc, dist: number, dt: number): void {
     n.vz = 0;
     n.shopped = true;
     n.cooldownT = 3; // don't re-open the instant you close it — step away first
+    sfxCackle();
+    poof(n.x, n.z, 8);
+    showToast("🎩 THE WIZARD MERCHANT", "he reaches into his top hat and pulls out his wares!");
     onMerchantCaught?.();
     return;
   }
