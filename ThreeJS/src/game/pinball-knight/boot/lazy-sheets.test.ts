@@ -48,6 +48,7 @@ const ALL_KEYS: SheetKey[] = [
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
   "necromancer", "crystalback", "mimic", "reaper", "bloater", "platypus",
+  "espresso", "jade_buddha",
 ];
 
 /**

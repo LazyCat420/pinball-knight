@@ -136,7 +136,7 @@ function espressoFrame(dir: Dir, phase: number, opts: PoseOpts = {}): FramePaint
       // Flung coffee droplets in spin
       figDetail(ctx, [[-14, -2], [-18, -4]], 1.5, 27);
       figDetail(ctx, [[14, 2], [18, 4]], 1.5, 27);
-      figGlow(ctx, 0, 0, 16, 17, 0.4);
+      figGlow(ctx, 0, 0, 6, 17, 18);
     }
 
     ctx.restore();
