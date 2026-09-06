@@ -152,7 +152,7 @@ export type SheetKey =
   | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
-  | "necromancer" | "crystalback" | "mimic"
+  | "necromancer" | "crystalback" | "mimic" | "bloater"
   | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
 
 /**
@@ -162,7 +162,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex",
+  "necromancer", "crystalback", "mimic", "bloater", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -387,6 +387,7 @@ export function buildMonsterSheets(): void {
 // but labels it with the game's kind — this map is that bridge, and a copy
 // of it in the forge would be the two-writers drift all over again.
 export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
+  bloater: "bloater",
   brute: "brute",
   jester: "jester",
   rotortail: "crawler",

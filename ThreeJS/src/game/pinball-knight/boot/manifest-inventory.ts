@@ -9,6 +9,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   archivist: ["S"],
   bat: ["S"],
   beaver: ["E", "S"],
+  bloater: ["S"],
   broodmother: ["S"],
   brute: ["S"],
   chomper: ["S"],

@@ -82,6 +82,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   necromancer: { scale: 1.0 },
   crystalback: { scale: 1.0 },
   mimic: { scale: 1.0 },
+  bloater: { scale: 1.1 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //
@@ -90,7 +91,6 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   // texel-exempt on those grounds, and all seven are provisional: the moment
   // one of these gets a bespoke painter (as hound did) its scale should go to
   // 1.0 and the exemption should be deleted, not carried over.
-  bloater: { sheetKey: "slime", tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag — texel-exempt: distorted borrowed slime
   wisp: { sheetKey: "ghost", tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp — texel-exempt: distorted borrowed ghost
   sapper: { sheetKey: "magnet", tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief — texel-exempt: distorted borrowed magnet
 };

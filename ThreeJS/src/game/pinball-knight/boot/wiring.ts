@@ -63,9 +63,11 @@ import { reaperSheet } from "../render/reaper-sheet";
 import { sheetFor, sheetKeyForKind, skinSheet } from "./sheets";
 import { ITEM_PAINTS } from "../render/cel-painter";
 import { cardBase } from "../cards";
+import { sfxFlame } from "../sfx/weapons";
 import {
   BLOATER_BURST_RADIUS,
   FIRE_PUDDLE_LIFE,
+  CARD_BURN_TICK,
   BOSS_GOLD,
   GOLD_PER_KILL,
   REAPER_TINT,
@@ -234,12 +236,66 @@ export function installGameplayWiring(deps: WiringDeps): void {
       spawnMaterialDrop(x, z, m);
     }
   });
-  // A BLOATER bursts into a burning puddle on death.
+  // A BLOATER bursts into flaming pieces of garbage, burns everything around it,
+  // and leaves a glowing molten magma crater on the floor like the lava effect.
   setBloaterBurstHandler((x, z) => {
+    // 1. Dual-layer floor hazard:
+    // "molten" provides the cracked, cooling incandescent lava decal from fx/elements/molten.ts
+    spawnFloorFx("molten", x, z, BLOATER_BURST_RADIUS * 1.15, FIRE_PUDDLE_LIFE * 1.6, true);
+    // "fire" provides the roaring surface flames that burn anyone stepping on it
     spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true);
-    // A bloater bursting is a wet, greasy explosion — the smoke is what makes it
-    // read as "something ruptured" rather than "a fire appeared here".
-    state.vfx?.smoke(x, 0.4, z, 10, BLOATER_BURST_RADIUS * 0.5);
+
+    // 2. Fiery explosive garbage VFX & debris:
+    // Radial fiery burst (flaming garbage shrapnel)
+    state.vfx?.burst(x, 0.45, z, 0xff3b00, 32, 3.2);
+    // Billowing thick oily smoke
+    state.vfx?.smoke(x, 0.4, z, 16, BLOATER_BURST_RADIUS * 0.7);
+    // High-speed incandescent sparks / burning trash fragments
+    state.vfx?.sparks(x, 0.5, z, 0, 0, 20);
+    // Rotting green sludge splatter
+    state.vfx?.blood(x, 0.35, z, "green", 12);
+    // Rising glowing embers
+    for (let i = 0; i < 6; i++) {
+      const ox = (Math.random() - 0.5) * BLOATER_BURST_RADIUS;
+      const oz = (Math.random() - 0.5) * BLOATER_BURST_RADIUS;
+      state.vfx?.ember(x + ox, 0.2 + Math.random() * 0.3, z + oz);
+    }
+
+    // Audio cues: flame ignition + explosion
+    sfxFlame();
+
+    // 3. Radial AoE Blast Damage & Ignition to Surroundings:
+    // Burn and blast all nearby zombies/monsters
+    for (const other of state.zombies) {
+      if (other.hp <= 0 || (other.mode as string) === "dead") continue;
+      const dx = other.x - x;
+      const dz = other.z - z;
+      const distSq = dx * dx + dz * dz;
+      const r = BLOATER_BURST_RADIUS + (other.bodyR || 0.4);
+      if (distSq <= r * r) {
+        const dist = Math.sqrt(distSq) || 1;
+        const pushDirX = dx / dist;
+        const pushDirZ = dz / dist;
+        // Direct explosive blast damage + knockback push
+        damageZombie(other, 3, pushDirX, pushDirZ, 3.5);
+        // Ignite with burning DoT
+        other.burnT = CARD_BURN_TICK * 2.5;
+        state.vfx?.sparks(other.x, 0.4, other.z, pushDirX, pushDirZ, 4);
+      }
+    }
+
+    // Check player proximity: chip damage (1 HP) + fire tell if caught in blast
+    if (state.player && state.player.hp > 0) {
+      const px = state.player.x;
+      const pz = state.player.z;
+      const dx = px - x;
+      const dz = pz - z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= BLOATER_BURST_RADIUS * BLOATER_BURST_RADIUS) {
+        hitPlayerRanged(1, x, z);
+        state.vfx?.sparks(px, 0.4, pz, 0, 1, 6);
+      }
+    }
   });
   // A SPORELING bursts into a toxic spore cloud on death (OPEN_WORK 2.1).
   setSporelingBurstHandler((x, z) => {

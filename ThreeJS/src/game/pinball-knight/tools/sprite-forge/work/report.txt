@@ -103,6 +103,33 @@ ROSTER entries 20.1  isolated 22.5%  runLen 1.82
 VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/beaver-S  (frames + preview.png)
 
+═══ bloater (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NOT PIXEL ART — no lattice (best ×2 at 5.4%, need 90%) and only 36% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 27.4% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (93% of the border) — keyed 49.4%, 423 pocket(s) LEFT OPAQUE
+⚠ 423 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         27       30.7    1.40        27
+idle1         28       32.2    1.40        28
+idle2         27       34.1    1.37        27
+idle3         27       31.9    1.39        27
+walk0         27       31.9    1.38        27
+walk1         28       34.0    1.39        28
+walk2         28       33.5    1.38        28
+walk3         28       33.0    1.39        28
+attack0       27       30.3    1.44        27
+attack1       27       28.3    1.53        27
+attack2       26       26.5    1.54        26
+attack3       28       32.2    1.39        28
+death0        28       31.3    1.47        28
+death1        28       33.3    1.44        28
+death2        27       30.7    1.50        27
+death3        18       19.8    1.77        18
+MEAN   entries 26.8  isolated 30.9%  runLen 1.45
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/bloater-S  (frames + preview.png)
+
 ═══ broodmother (S) — 4 rows [4/4/4/4], 16 frames
 GRID   NOT PIXEL ART — no lattice (best ×2 at 6.4%, need 90%) and only 20% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 25.9% — a real lattice is ~100%, so the blocks are mush.
 MATTE  bg #fd01fb (99% of the border) — keyed 68.8%, 31 pocket(s) LEFT OPAQUE
@@ -1149,6 +1176,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   beaver-S           walk     centred sweep 0.247 (span 0.247 × r +1.00)  grounded 0px spread  gait peak 0.55
   beaver-S           attack   centred sweep 0.357 (span 0.359 × r +0.99)  grounded 0px spread
   beaver-S           death    centred sweep 0.152 (span 0.226 × r +0.67)  grounded 0px spread
+  bloater-S          idle     centred sweep 0.002 (span 0.003 × r +0.57)  grounded 0px spread
+  bloater-S          walk     centred sweep 0.037 (span 0.069 × r -0.54)  grounded 0px spread  gait peak 0.12
+  bloater-S          attack   centred sweep 0.016 (span 0.030 × r +0.54)  grounded 1px spread
+  bloater-S          death    centred sweep 0.001 (span 0.018 × r +0.03)  grounded 1px spread
   broodmother-S      idle     centred sweep 0.003 (span 0.005 × r +0.65)  grounded 0px spread
   broodmother-S      walk     centred sweep 0.004 (span 0.005 × r -0.92)  grounded 0px spread  gait peak 0.17
   broodmother-S      attack   centred sweep 0.026 (span 0.030 × r -0.89)  grounded 0px spread

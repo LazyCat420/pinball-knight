@@ -57,6 +57,7 @@ import { makeRotortailPaints } from "./monsters/rotortail";
 import { makeStiltneckPaints } from "./monsters/stiltneck";
 import { makeHoundPaints } from "./monsters/hound";
 import { makeFishFeetPaints } from "./monsters/fish_feet";
+import { makeBloaterPaints } from "./monsters/bloater";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -102,7 +103,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   chomper: { paints: makeChomperPaints },
   magnet: { paints: makeMagnetPaints },
   webspinner: { paints: makeWebspinnerPaints },
-  bloater: { paints: makeSlimePaints },
+  bloater: { paints: makeBloaterPaints },
   necromancer: { paints: makeSpitterPaints },
   warden: { paints: makeBrutePaints },
   wisp: { paints: makeGhostPaints },
