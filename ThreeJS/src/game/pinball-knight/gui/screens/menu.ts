@@ -69,6 +69,7 @@ import {
 import { abilityIcon, drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
+import { cardInspectScreen } from "./card-inspect";
 import { settingsBody } from "./settings";
 
 /**
@@ -321,6 +322,13 @@ function cardsTab(f: UiFrame, body: Rect, m: MenuState): void {
   // grid would sit outside the measured height. That is the last row of cards
   // becoming unreachable, not a cosmetic short scroll.
   cutTop(body, Math.ceil(stash.length / perRow) * (CARD_SLOT_H + 6));
+
+  if (m.picked >= 0 && stash[m.picked]) {
+    const actRow = cutTop(body, 28);
+    if (button(f, rect(actRow.x, actRow.y, 140, 22), "INSPECT 3D")) {
+      push(cardInspectScreen(stash[m.picked]));
+    }
+  }
 }
 
 function socketPicked(m: MenuState, wIdx: number): void {

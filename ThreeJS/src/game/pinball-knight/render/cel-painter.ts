@@ -4834,54 +4834,63 @@ const FROG_NPC: FramePaint = (ctx) => {
 
 const MERCHANT_NPC: FramePaint = (ctx) => {
   groundShadow(ctx, 64, 116, 26);
-  // The cart is BACKDROP now rather than the subject: shrunk and pushed back
-  // and right, so the trader's own shoulders own the silhouette. (He staffs the
-  // forge in the tavern, where a wagon read as a parked vehicle, not a person.)
-  for (const wx of [80, 106]) {
-    ell(ctx, wx, 102, 7, 7, SH(28, 0.3));
-    ell(ctx, wx, 102, 3, 3, F(27));
-    for (const a of [0, 1.05, 2.1, 3.15, 4.2, 5.25]) line(ctx, [[wx, 102], [wx + Math.cos(a) * 6, 102 + Math.sin(a) * 6]], 1.2, F(26));
-  }
-  rrect(ctx, 74, 78, 40, 20, 3, F(28));
-  line(ctx, [[74, 88], [114, 88]], 2, SH(28, 0.4)); // plank seam
-  for (let s = 0; s < 5; s++) rrect(ctx, 72 + s * 8, 62, 8, 12, 1, F(s % 2 === 0 ? 12 : 17)); // awning
-  poly(ctx, [[72, 62], [114, 62], [110, 57], [76, 57]], F(27));
-  ell(ctx, 82, 82, 3, 4, F(31)); // wares catching the light
-  ell(ctx, 92, 82, 3, 4, F(13));
-  ell(ctx, 102, 82, 3.5, 4, F(17)); // gold — blooms
-  // ── THE TRADER — heavy legs, then a slab of shoulder, then the apron.
-  limb(ctx, 48, 92, 46, 108, 12, SH(27, 0.35));
-  limb(ctx, 64, 92, 66, 108, 12, F(27));
-  rrect(ctx, 36, 103, 22, 11, 3, F(26), INK); // boots
-  rrect(ctx, 56, 103, 22, 11, 3, F(26), INK);
-  rrect(ctx, 32, 44, 48, 30, 11, F(27)); // torso, deliberately too wide
-  ell(ctx, 34, 52, 11, 10, HI(27, 0.3)); // lit shoulder
-  ell(ctx, 78, 52, 11, 10, SH(27, 0.35)); // cool shoulder
-  poly(ctx, [[38, 62], [76, 62], [82, 106], [32, 106]], F(28)); // the apron
-  poly(ctx, [[42, 64], [70, 64], [73, 92], [39, 92]], HI(28, 0.28)); // bleached bib
-  line(ctx, [[46, 63], [56, 50]], 3, F(26)); // straps over the shoulders
-  line(ctx, [[68, 63], [60, 50]], 3, F(26));
-  rrect(ctx, 40, 88, 34, 8, 2, SH(28, 0.45)); // waist tie
-  limb(ctx, 38, 54, 26, 84, 13, F(27)); // forearms, thick
-  limb(ctx, 76, 54, 92, 74, 13, SH(27, 0.3));
-  ell(ctx, 24, 88, 7, 7, F(24));
-  ell(ctx, 94, 76, 7, 7, SH(24, 0.3));
-  // Head: iron-grey beard and a flat cap, so the head still reads at 72px
-  // when the face itself is barely three pixels wide.
-  ell(ctx, 56, 33, 14, 13, HI(24, 0.22)); // lit a step up: the face is the one
-  ell(ctx, 62, 36, 8, 9, F(24)); // place a dark hole would kill the character
-  ell(ctx, 50, 28, 5, 4, HI(24, 0.4));
-  line(ctx, [[48, 33], [54, 33]], 2.4, F(23)); // squint
-  line(ctx, [[60, 33], [66, 33]], 2.4, F(23));
-  poly(ctx, [[46, 39], [68, 39], [63, 58], [51, 58]], F(4)); // iron-grey beard
-  poly(ctx, [[46, 39], [54, 39], [53, 56], [51, 56]], HI(4, 0.3)); // lit edge of it
-  line(ctx, [[58, 42], [58, 56]], 2, SH(4, 0.4)); // strands
-  rrect(ctx, 41, 10, 30, 14, 5, F(26)); // flat cap, lifted clear of the eyes
-  rrect(ctx, 37, 21, 39, 5, 2, F(26), INK); // brim
-  // The hammer he keeps in the near hand — the forge read, in silhouette.
-  limb(ctx, 24, 90, 22, 66, 6, F(28));
-  rrect(ctx, 11, 55, 21, 12, 2, F(20));
-  rrect(ctx, 11, 55, 6, 12, 2, SH(20, 0.4));
+
+  // ── WIZARD BODY & ROBES (Purple & Gold) ──
+  // Striped wizard trousers & pointed curly boots
+  limb(ctx, 50, 92, 46, 110, 10, F(30)); // purple trousers
+  limb(ctx, 66, 92, 70, 110, 10, SH(30, 0.35));
+  rrect(ctx, 36, 105, 20, 10, 3, F(1), INK); // curled boots
+  rrect(ctx, 60, 105, 20, 10, 3, F(1), INK);
+
+  // Wizard frock coat with gold buttons and ornate tails
+  poly(ctx, [[40, 56], [78, 56], [86, 98], [32, 98]], F(29)); // rich purple velvet
+  poly(ctx, [[46, 58], [62, 60], [60, 94], [44, 94]], F(16)); // gold waistcoat
+  poly(ctx, [[62, 60], [72, 58], [74, 94], [60, 94]], SH(16, 0.3));
+  for (const by of [66, 74, 82]) ell(ctx, 59, by, 1.8, 1.8, F(18)); // gold buttons
+  rrect(ctx, 42, 90, 34, 6, 2, F(27)); // buckle belt
+
+  // ── HEAD, WILD HAIR & MANIC EXPRESSION ──
+  // Wild white/silver hair puffing out
+  ell(ctx, 44, 38, 12, 10, F(22)); // wild left hair puff
+  ell(ctx, 74, 38, 12, 10, F(22)); // wild right hair puff
+  ell(ctx, 59, 39, 13, 12, F(24)); // skin face
+  ell(ctx, 54, 36, 3, 3.5, F(22)); // wide manic eye whites
+  ell(ctx, 64, 36, 3, 3.5, F(22));
+  ell(ctx, 55, 36, 1.5, 1.8, F(1)); // dark pupils
+  ell(ctx, 65, 36, 1.5, 1.8, F(1));
+  line(ctx, [[51, 46], [67, 46]], 2, F(1)); // wide wicked grin
+  poly(ctx, [[48, 48], [70, 48], [63, 62], [55, 62]], F(22)); // eccentric wizard goatee
+
+  // ── CROOKED TALL TOP HAT (Mad Hatter Style) ──
+  // Hat brim resting angled on head
+  poly(ctx, [[30, 30], [88, 24], [86, 31], [28, 37]], F(1), INK);
+  poly(ctx, [[32, 29], [86, 23], [84, 28], [30, 34]], F(29)); // hat brim top
+  // Hat crown — tall and flaring outward at the top
+  poly(ctx, [[39, 28], [77, 24], [84, 5], [33, 9]], F(30), INK);
+  poly(ctx, [[41, 27], [75, 23], [82, 6], [35, 10]], F(29));
+  // Hatband with tarot/playing cards tucked in
+  poly(ctx, [[39, 28], [77, 24], [78, 20], [40, 24]], F(16)); // gold sash band
+  poly(ctx, [[46, 24], [54, 23], [52, 14], [44, 15]], F(22)); // white card (Ace of Spades)
+  poly(ctx, [[54, 23], [62, 22], [60, 13], [52, 14]], F(8)); // 10/6 ticket / tarot card
+  ell(ctx, 48, 19, 1.5, 1.5, F(1)); // spade pip
+
+  // ── ARMS & HAT REACH / REVEAL ──
+  // Left arm reaching deep into a second inverted top hat in hand
+  limb(ctx, 42, 60, 26, 76, 9, F(29));
+  limb(ctx, 76, 60, 92, 70, 9, F(29));
+  ell(ctx, 24, 78, 6, 6, F(24)); // hands
+  ell(ctx, 94, 72, 6, 6, F(24));
+
+  // The inverted trick hat held out in front
+  poly(ctx, [[78, 72], [108, 68], [112, 94], [82, 98]], F(1), INK);
+  poly(ctx, [[80, 71], [106, 67], [110, 92], [84, 96]], F(30));
+  poly(ctx, [[74, 71], [112, 66], [110, 74], [72, 79]], F(29)); // brim
+  // Magical wares floating out of the hat with sparkles!
+  ell(ctx, 92, 60, 4, 6, F(31)); // glowing blue potion bottle
+  ell(ctx, 102, 58, 4, 5, F(13)); // red elixir
+  ell(ctx, 98, 48, 3, 3, F(18)); // floating gold spark
+  ell(ctx, 88, 52, 2.5, 2.5, F(31)); // arcane mote
+
   celShade(ctx);
 };
 

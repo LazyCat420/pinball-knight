@@ -27,6 +27,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   jester: ["S"],
   magnet: ["S"],
   mario: ["N", "S"],
+  merchant: ["S"],
   mimic: ["S"],
   necro: ["S"],
   overlord: ["S"],

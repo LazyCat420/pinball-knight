@@ -18,7 +18,8 @@ import { isShinyCard } from "../../cards";
 import { UI, GRID, ROW_H } from "../theme";
 import { beginScroll, button, cutTop, endScroll, focusRing, focusable, followFocus, rect, scrim, sheet, strokeRect, text } from "../im";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
-import { pop, type UiScreen } from "../stack";
+import { pop, push, type UiScreen } from "../stack";
+import { cardInspectScreen } from "./card-inspect";
 
 // 140, not 88. This screen exists to be READ — the whole point of it is the
 // disposition note under each card and the card's own title and stat lines —
@@ -72,6 +73,9 @@ export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone:
         const row = Math.floor(i / perRow);
         const cell = rect(sc.inner.x + col * (FACE_W + GRID), sc.inner.y + row * (FACE_H + 34), FACE_W, FACE_H);
         const st = focusable(f, cell);
+        if (st.activated) {
+          push(cardInspectScreen(s.id));
+        }
         const face = cardFaceAt(s.id, cell.w);
         if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
         // A fresh card and a shiny both deserve a frame, and a shiny that is

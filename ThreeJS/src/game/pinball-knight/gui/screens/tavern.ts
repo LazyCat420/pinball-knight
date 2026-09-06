@@ -82,7 +82,8 @@ import {
 } from "../im";
 import { drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
-import { pop, type UiScreen } from "../stack";
+import { pop, push, type UiScreen } from "../stack";
+import { cardInspectScreen } from "./card-inspect";
 
 export type VendorId = "cards" | "weapons" | "armor" | "potions";
 
@@ -339,20 +340,26 @@ function cardsBody(f: UiFrame, body: Rect, u: TavernUi): void {
   const rows = Math.ceil(state.cardStash.length / perRow);
   cutTop(body, rows * (CARD_SLOT_H + 18) + GRID);
 
-  // Forge + reroll act on the picked card(s).
+  // Forge + reroll + inspect act on the picked card(s).
   const tools = cutTop(body, 28);
   const forgeBtn = { ...tools };
-  const rerollBtn = cutRight(forgeBtn, 210);
-  if (button(f, rect(forgeBtn.x, forgeBtn.y, 260, 24), `FORGE 2 COMMONS → RARE (1 ${REAGENTS[FORGE_CATALYST]?.label ?? "Grim Bone"})`, {
+  const inspectBtn = cutRight(forgeBtn, 140);
+  const rerollBtn = cutRight(forgeBtn, 200);
+  if (button(f, rect(forgeBtn.x, forgeBtn.y, 230, 24), `FORGE 2 (1 ${REAGENTS[FORGE_CATALYST]?.label ?? "Grim Bone"})`, {
     disabled: !canForge(u.forgePick),
   })) {
     say(u, forge(u.forgePick));
     u.forgePick = [];
   }
-  if (button(f, rect(rerollBtn.x, rerollBtn.y, 200, 24), `REROLL PICKED — ${PRICE_REROLL_CARD}g`, {
+  if (button(f, rect(rerollBtn.x, rerollBtn.y, 190, 24), `REROLL — ${PRICE_REROLL_CARD}g`, {
     disabled: u.picked < 0 || getBalance() < PRICE_REROLL_CARD,
   })) {
     say(u, rerollCard(u.picked));
+  }
+  if (button(f, rect(inspectBtn.x, inspectBtn.y, 130, 24), "INSPECT 3D", {
+    disabled: u.picked < 0 || !state.cardStash[u.picked],
+  })) {
+    push(cardInspectScreen(state.cardStash[u.picked]));
   }
   const hint = cutTop(body, 16);
   text(f, "hold a pick and press F to add it to the forge (max 2)", hint.x, hint.y + 2, {
