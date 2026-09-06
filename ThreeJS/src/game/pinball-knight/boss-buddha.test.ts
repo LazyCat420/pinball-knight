@@ -5,7 +5,10 @@ import {
   freshFanBoomerang,
   updateFanBoomerang,
   disposeFanBoomerang,
+  freshSlam,
+  updateSlam,
   type FanBoomerangRt,
+  type SlamRt,
   type MoveCtx,
 } from "./boss-moves";
 import { state } from "./state";
@@ -195,5 +198,85 @@ describe("The Jade Buddha Boss & Chinese Fan Boomerang Suite", () => {
     expect(rt.fans.length).toBe(0);
     expect(rt.tell).toBeNull();
     expect(mesh.parent).toBeNull();
+  });
+
+  describe("Belly Slam Attack Suite", () => {
+    const slamSpec = BOSSES.jade_buddha.moves.slam!;
+    const p2SlamSpec = BOSSES.jade_buddha.phase2.moves.slam!;
+    let slamRt: SlamRt;
+
+    beforeEach(() => {
+      slamRt = freshSlam(slamSpec);
+    });
+
+    it("verifies jade_buddha moveset configuration has Belly Slam and Fan Boomerang", () => {
+      expect(slamSpec).toBeDefined();
+      expect(slamSpec.radius).toBe(2.8);
+      expect(slamSpec.launch).toBe(22);
+      expect(slamSpec.damage).toBe(2);
+      expect(slamSpec.telegraph).toBe(1.0);
+
+      expect(p2SlamSpec).toBeDefined();
+      expect(p2SlamSpec.radius).toBe(3.2);
+      expect(p2SlamSpec.launch).toBe(26);
+      expect(p2SlamSpec.damage).toBe(3);
+      expect(p2SlamSpec.echo).toEqual({ delay: 0.4, radius: 3.8, damage: 2 });
+
+      // Check fan boomerang config
+      expect(spec).toBeDefined();
+      expect(p2Spec.dual).toBe(true);
+    });
+
+    it("transitions from idle to telegraph with target tracking and ground ring", () => {
+      expect(slamRt.phase).toBe("idle");
+      expect(slamRt.ring).toBeNull();
+
+      // Tick down to telegraph window
+      updateSlam(slamRt, slamSpec, makeCtx(slamSpec.interval - slamSpec.telegraph));
+      expect(slamRt.phase).toBe("telegraph");
+      expect(slamRt.ring).not.toBeNull();
+      expect(slamRt.x).toBe(targetPos.x);
+      expect(slamRt.z).toBe(targetPos.z);
+    });
+
+    it("slams down at end of telegraph, triggering AoE hit, launch force, and screen shake", () => {
+      // Advance to telegraph
+      updateSlam(slamRt, slamSpec, makeCtx(slamSpec.interval - slamSpec.telegraph));
+      // Trigger slam impact
+      updateSlam(slamRt, slamSpec, makeCtx(slamSpec.telegraph + 0.01));
+
+      expect(hits.length).toBe(1);
+      expect(hits[0].damage).toBe(slamSpec.damage);
+      expect(hits[0].launch).toBe(slamSpec.launch);
+      expect(slamRt.phase).toBe("idle");
+      expect(slamRt.ring).toBeNull();
+      expect(slamRt.t).toBe(slamSpec.interval);
+    });
+
+    it("triggers Phase 2 echo tremor after initial belly slam", () => {
+      const p2SlamRt = freshSlam(p2SlamSpec);
+      // Advance to telegraph
+      updateSlam(p2SlamRt, p2SlamSpec, makeCtx(p2SlamSpec.interval - p2SlamSpec.telegraph));
+      // Trigger slam impact
+      updateSlam(p2SlamRt, p2SlamSpec, makeCtx(p2SlamSpec.telegraph + 0.01));
+
+      expect(hits.length).toBe(1);
+      expect(hits[0].damage).toBe(p2SlamSpec.damage);
+      expect(hits[0].launch).toBe(p2SlamSpec.launch);
+
+      // Should transition to echo phase with second wider ring
+      expect(p2SlamRt.phase).toBe("echo");
+      expect(p2SlamRt.echoT).toBe(p2SlamSpec.echo!.delay);
+      expect(p2SlamRt.ring).not.toBeNull();
+
+      // Clear hits to verify echo hit
+      hits = [];
+      // Trigger echo quake
+      updateSlam(p2SlamRt, p2SlamSpec, makeCtx(p2SlamSpec.echo!.delay + 0.01));
+      expect(hits.length).toBe(1);
+      expect(hits[0].launch).toBe(p2SlamSpec.launch * 0.6);
+      expect(p2SlamRt.phase).toBe("idle");
+      expect(p2SlamRt.ring).toBeNull();
+    });
   });
 });

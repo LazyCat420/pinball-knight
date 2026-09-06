@@ -11,13 +11,13 @@ const BASE = join(__dirname, "..");
 const INBOX = join(BASE, "inbox");
 const SOURCES = join(BASE, "sources");
 
-const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/30396d1e-987f-44e2-8505-405d5820ae6b/jade_buddha_boss_sheet_1788686176280.jpg";
+const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/30396d1e-987f-44e2-8505-405d5820ae6b/fat_buddha_boss_sheet_1788712397763.jpg";
 const BUDDHA_DIR = join(SOURCES, "jade_buddha-2026-09-06");
 const ALT_DIR = join(BUDDHA_DIR, "alt-takes");
-const MASTER_SRC = join(ALT_DIR, "jade_buddha_boss_sheet_1788686176280.jpg");
+const MASTER_SRC = join(ALT_DIR, "fat_buddha_boss_sheet_1788712397763.jpg");
 
 async function run() {
-  console.log("🪷 Preparing The Jade Buddha Boss Sprite Sheet...");
+  console.log("🪷 Preparing The Laughing Fat Jade Buddha Boss (Belly Slam & Fan Boomerang) Sprite Sheet...");
 
   mkdirSync(ALT_DIR, { recursive: true });
   mkdirSync(INBOX, { recursive: true });
@@ -28,25 +28,24 @@ async function run() {
   }
 
   const readme = join(ALT_DIR, "README.md");
-  if (!existsSync(readme)) {
-    writeFileSync(
-      readme,
-      `# The Jade Buddha Boss Sprite Sheet Archive
+  writeFileSync(
+    readme,
+    `# The Laughing Fat Jade Buddha Boss Sprite Sheet Archive
 
 - **Date**: 2026-09-06
-- **Subject**: The Jade Buddha (\`jade_buddha\`) seated on golden lotus pedestal, holding Chinese war fan with boomerang mechanics.
+- **Subject**: The Laughing Fat Jade Buddha (\`jade_buddha\`) with exposed round potbelly, long drooping earlobes, smiling laughing face, holding golden Chinese war fans with Belly Slam AoE and Boomerang Fan attacks.
 - **Primary Source**: \`src/game/pinball-knight/tools/sprite-forge/sources/jade_buddha-2026-09-06/jade_buddha-S.png\`
 - **Layout**: 4 columns × 4 rows (16 frames)
-  - Row 0 (0..3): \`idle\` (serene hover on golden lotus pedestal, glowing jade halo aura, holding war fan)
-  - Row 1 (4..7): \`walk\` (graceful forward glide with celestial silk mist ribbons)
-  - Row 2 (8..11): \`attack\` (fan throw flourish: eyes flash emerald, sweeping arm throwing golden war fan forward with razor wind arc)
-  - Row 3 (12..15): \`death\` (cracks form across jade stone with divine light beams, shattering into sacred jade shards and petals)
+  - Row 0 (0..3): \`idle\` (jolly chuckling stance, round bare belly wobbling/jiggling with laughter, holding golden fan)
+  - Row 1 (4..7): \`walk\` (heavy joyous waddle forward, belly bouncing, bare stone feet)
+  - Row 2 (8..11): \`attack\` (THE BELLY SLAM: laughs heartily, leaps high into the air, thrusts giant belly forward, and crashes flat on belly onto stone floor with shockwave dust lines)
+  - Row 3 (12..15): \`death\` (cracks form across round belly and laughing face with divine light beams, toppling and crumbling into sacred jade shards)
 - **Chroma Background**: \`#FF00FF\` magenta
 - **Takes Archive**:
-  - \`alt-takes/jade_buddha_boss_sheet_1788686176280.jpg\` (Master Take: 4x4 clean grid, perfect animations)
+  - \`alt-takes/jade_buddha_boss_sheet_1788686176280.jpg\` (Take 1: Meditative Buddha on lotus pedestal)
+  - \`alt-takes/fat_buddha_boss_sheet_1788712397763.jpg\` (Take 2 - Master: Laughing Fat Buddha with exposed belly, long earlobes, and Belly Slam)
 `,
-    );
-  }
+  );
 
   const masterImg = await loadImage(existsSync(MASTER_SRC) ? MASTER_SRC : RAW_IMG);
 

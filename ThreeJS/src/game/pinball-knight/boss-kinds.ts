@@ -445,21 +445,29 @@ export const BOSSES: Record<BossKind, BossSpec> = {
 
   // ══ THE ARCANE DEEP, SECOND PASS — sacred jade and whirling storm fan ═══
   //
-  // The Jade Buddha: a serene emerald statue hovering on a golden lotus throne.
-  // Wields an ornate Chinese folding war fan thrown like a lethal boomerang
-  // that slices through targets outward, hovers at its apex with razor wind,
-  // and homes back to the Buddha's hand.
+  // The Laughing Jade Buddha (Budai): a rotund jolly green jade statue with an
+  // exposed round bare belly, long earlobes, and a laughing smiling face.
+  // Hits with a massive leaping BELLY SLAM AoE and throws an ornate Chinese
+  // war fan as a returning boomerang!
   jade_buddha: {
     kind: "jade_buddha",
-    name: "The Jade Buddha",
+    name: "The Laughing Jade Buddha",
     biome: "arcane",
-    title: "🪷 THE JADE BUDDHA 🪷",
-    tagline: "serene stone, whirling tempest fan",
+    title: "🪷 THE LAUGHING JADE BUDDHA 🪷",
+    tagline: "jovial stone, belly slam, whirling tempest fan",
     label: "JADE BUDDHA",
     art: { sheetKey: "jade_buddha", tint: null, scale: 2.15 },
     hpMult: 1.25,
     speedMult: 0.85,
     moves: {
+      slam: {
+        interval: 4.5,
+        telegraph: 1.0,
+        radius: 2.8,
+        damage: 2,
+        launch: 22,
+        color: 0x2ee89a,
+      },
       fanBoomerang: {
         interval: 3.8,
         telegraph: 0.75,
@@ -471,20 +479,21 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         curve: 2.8,
         color: 0x2ee89a,
       },
-      nova: {
-        interval: 6.5,
-        telegraph: 1.1,
-        radius: 4.5,
-        damage: 1,
-        sweep: 0.5,
-        color: 0x44ffaa,
-      },
     },
     phase2: {
       at: 0.5,
-      title: "🪷 THE BUDDHA AWAKENS: DUAL FANS OF THE TEMPEST",
+      title: "🪷 THE LAUGHING BUDDHA ENRAGES: BELLY QUAKE & DUAL FANS",
       speedMult: 1.2,
       moves: {
+        slam: {
+          interval: 3.2,
+          telegraph: 0.75,
+          radius: 3.2,
+          damage: 3,
+          launch: 26,
+          color: 0x11ff88,
+          echo: { delay: 0.4, radius: 3.8, damage: 2 },
+        },
         fanBoomerang: {
           interval: 2.6,
           telegraph: 0.55,
@@ -496,14 +505,6 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           curve: 3.2,
           color: 0x11ff88,
           dual: true,
-        },
-        nova: {
-          interval: 4.8,
-          telegraph: 0.85,
-          radius: 5.5,
-          damage: 2,
-          sweep: 0.4,
-          color: 0x22ff99,
         },
       },
     },
