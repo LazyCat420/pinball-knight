@@ -12,7 +12,9 @@ DEPLOY_METHOD="ssh"
 DEPLOY_SSH_HOST="nas"
 
 # Resolve deploy-kit library location
-if [ -f "${SCRIPT_DIR}/../../deploy-kit/lib.sh" ]; then
+if [ -f "${SCRIPT_DIR}/../../../../deploy-kit/lib.sh" ]; then
+  source "${SCRIPT_DIR}/../../../../deploy-kit/lib.sh"
+elif [ -f "${SCRIPT_DIR}/../../deploy-kit/lib.sh" ]; then
   source "${SCRIPT_DIR}/../../deploy-kit/lib.sh"
 elif [ -f "${SCRIPT_DIR}/../deploy-kit/lib.sh" ]; then
   source "${SCRIPT_DIR}/../deploy-kit/lib.sh"
