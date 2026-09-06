@@ -17,14 +17,23 @@ dead paths that no amount of new content would have fixed.
 Five seeds per depth, built through `dev/headless-floor.ts buildHeadlessPlan`,
 which mirrors `spawn/floor-authoring.ts authorFloor` draw for draw:
 
-| depth | walkable tiles | parts | **machines** | parts in a machine | ungrouped |
-|---|---|---|---|---|---|
-| L1  | 2,211  | 53.6  | **0.60** | 1.4 | 38% |
-| L8  | 4,812  | 138.2 | **2.00** | 5.4 | 53% |
-| L16 | 9,957  | 226.6 | **2.00** | 5.2 | 58% |
-| L24 | 16,126 | 289.0 | **2.00** | 5.4 | 58% |
+| depth | tiles | walkable | parts | **machines** | parts in a machine | ungrouped |
+|---|---|---|---|---|---|---|
+| L1  | 3,975  | 1,747  | 53.6  | **0.60** | 1.4 | 38% |
+| L8  | 9,315  | 4,472  | 138.2 | **2.00** | 5.4 | 53% |
+| L16 | 17,967 | 7,968  | 226.6 | **2.00** | 5.2 | 58% |
+| L24 | 27,985 | 11,818 | 289.0 | **2.00** | 5.4 | 58% |
 
-**The floor grows 7.3× in walkable area from L1 to L24. The machine count goes
+> ⚠️ **CORRECTION.** The first version of this table reported walkable as
+> 2,211 / 4,812 / 9,957 / 16,126. Those are the **WALL** counts. `T_WALL = 0` and
+> `T_FLOOR = 1` (`engine/grid.ts`), and my census counted `grid.t[k] === 0`, so
+> every "walkable" figure was its own complement. This is the **fourth**
+> instrument error this session. The qualitative claim survives — walkable still
+> grows 6.8× and the machine count is still flat — because machines-per-floor was
+> measured directly rather than predicted from the formula. But see §4b item 4:
+> one downstream claim did NOT survive.
+
+**The floor grows 6.8× in walkable area from L1 to L24. The machine count goes
 0.60 → 2.00 and then stops.** Parts do scale with area (53.6 → 289.0), and
 they scale as *loose furniture*: parts belonging to an authored machine are
 **5.4 of 289 = 1.9%** at L24, unchanged since L8. At L20 a single kind — the
@@ -360,11 +369,20 @@ Filed rather than guessed at. Each one is a decision, not an oversight.
 3. **`core.ts` is at exactly its 595-line ratchet cap** (`core-boundary.test.ts`).
    The next change there must extract something first.
 
-4. **The router places fewer machines than budgeted** — a floor budgeted 5
-   measured 3, rejected on fit/approach/exit. `gargoyle-scoop`'s
-   `wantsRunway: 6` costs it ~2.9x `orbit`'s approach rejections. Lowering it
-   would trade the maw's trigger condition (`MAW_SWALLOW_SPEED`) for placement
-   rate, which is a design call: a maw below that speed is scenery.
+4. **~~The router places fewer machines than budgeted~~ — RETRACTED, and this one
+   is a direct casualty of the wall-vs-floor error above.** The claim was "a floor
+   budgeted 5 measured 3 placed". The budget of 5 never existed: it was
+   `round(16,126 / 3,500)` computed from the WALL count. Against the real walkable
+   figures the budgets are 2 / 2 / 3 / 4 and the measured placements are
+   0.60 / 2.00 / 3.00 / 4.00 — **the router fills its budget exactly from L8 down.**
+
+   What IS real, and much narrower: **small floors underfill.** At L1 a
+   1,747-tile floor is budgeted 2 and lands 0.60, a ~70% miss. Footprints plus
+   `wantsRunway` plus the route-seeded site scan do not fit in that little
+   ground. `gargoyle-scoop`'s `wantsRunway: 6` is the most expensive, but
+   lowering it trades the maw's trigger condition (`MAW_SWALLOW_SPEED`) for
+   placement rate — a maw below that speed is scenery, so that is a design call,
+   not a tuning knob.
 
 5. **`dev/ride-census.ts` has no tests of its own.** The file that produced
    three false findings before a true one is the least-verified thing on the

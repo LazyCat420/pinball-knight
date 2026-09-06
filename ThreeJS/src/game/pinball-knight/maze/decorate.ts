@@ -565,13 +565,22 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * 2 was the whole reason a deeper floor answered "more space" with "more loose
  * furniture". Censused over 5 seeds x 4 depths through `dev/headless-floor.ts`:
  *
- *   depth   walkable   parts   MACHINES   parts inside a machine
- *   L1       2,211      53.6     0.60      1.4
- *   L8       4,812     138.2     2.00      5.4
- *   L16      9,957     226.6     2.00      5.2
- *   L24     16,126     289.0     2.00      5.4
+ *   depth   tiles   walkable   parts   MACHINES   parts inside a machine
+ *   L1      3,975     1,747     53.6     0.60      1.4
+ *   L8      9,315     4,472    138.2     2.00      5.4
+ *   L16    17,967     7,968    226.6     2.00      5.2
+ *   L24    27,985    11,818    289.0     2.00      5.4
  *
- * The floor grows **7.3x in walkable area** and the machine count is flat from
+ * ⚠️ THE WALKABLE COLUMN WAS WRONG IN THE FIRST VERSION OF THIS COMMENT, and the
+ * error is worth keeping visible. It read 2,211 / 4,812 / 9,957 / 16,126 —
+ * which are the WALL counts. `T_WALL = 0` and `T_FLOOR = 1` (`engine/grid.ts`),
+ * and the census counted `grid.t[k] === 0`. Every "walkable" figure was its own
+ * complement. The qualitative claim survived (walkable still grows 6.8x, not
+ * 7.3x, and the machine count is still flat) because the OUTCOME was measured
+ * directly rather than predicted from the formula — but a budget calibrated
+ * against wall counts would have been calibrated against noise.
+ *
+ * The floor grows **6.8x in walkable area** and the machine count is flat from
  * L8 on. Parts scale with area exactly as intended — and 98.1% of them at L24
  * are loose or dealt, because only 5.4 of 289 belong to an authored machine.
  * The brief this answers is "a dungeon made of playable machines, not a larger
@@ -584,11 +593,14 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * took their 3 slots out of `pop-nest` (8 -> 3) and `kicker-lane` (11 -> 9).
  * Every future machine would have paid the same tax.
  *
- * So: one machine per ~3,000 walkable tiles, **floor 2**, cap 6 — budgets of
- * 2 / 2 / 3 / 5 at L1 / L8 / L16 / L24.
+ * So: one machine per ~3,000 walkable tiles, **floor 2**, cap 6. Against the
+ * CORRECTED walkable counts that is a budget of 2 / 2 / 3 / 4 at
+ * L1 / L8 / L16 / L24, and the measured placements are 0.60 / 2.00 / 3.00 / 4.00
+ * — i.e. the router fills the budget exactly from L8 down. The only real
+ * shortfall is L1, where a 1,747-tile floor is budgeted 2 and lands 0.60.
  *
  * ⚠️ THE FLOOR OF 2 IS LOAD-BEARING, and it was 1 for one measured iteration.
- * At `Math.max(1, ...)` with a 3,500 divisor, L1 (2,211 walkable) and L8 (4,812)
+ * At `Math.max(1, ...)` with a 3,500 divisor, L1 (1,747 walkable) and L8 (4,472)
  * both round to a budget of **1** — so the change that exists to give deep
  * floors more machines took one away from every shallow floor, measured at
  * 0.60 -> 0.40 and 2.00 -> 1.00 machines per floor. A scaling rule must be
@@ -601,7 +613,9 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * so the rollback survives.
  *
  * Note the budget is a CEILING, not a promise: the router rejects sites that
- * fail fit/approach/exit, so a floor budgeted 5 measured 3 placed. That gap is
+ * fail fit/approach/exit. At depth it fills exactly; on a SMALL floor it does
+ * not (L1 budgets 2 and lands 0.60), because footprints plus `wantsRunway` plus
+ * the route-seeded site scan do not fit in 1,747 walkable tiles. That gap is
  * `placeAssemblies`' business, not this number's.
  */
 const ASSEMBLY_PER_WALKABLE = 3000;
