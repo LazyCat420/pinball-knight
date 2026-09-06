@@ -203,7 +203,7 @@ by that thread rather than by content family, because every set piece in the
 brief (Loop Reactor, gargoyle scoop, corkscrew rail) is content **on** this
 spine, and none of them can pay off without it.
 
-### Phase 1 — the machine spine *(in progress)*
+### Phase 1 — the machine spine *(done, in this branch — `a19f5306`)*
 
 1. **Carry `asm` through the runtime seam.** One field in
    `render/pinball-parts.ts`, one field on `PinballPart`. Unlocks everything
@@ -341,6 +341,45 @@ before a completed machine can change something.
   the library. Compose before you add.
 
 ---
+
+## 4b. Open items left by this branch
+
+Filed rather than guessed at. Each one is a decision, not an oversight.
+
+1. **One-shot parts are not wired into machine state.** `target` sets `done`
+   permanently and never re-arms, so a `target-bank` machine would qualify once
+   per floor and never tier. Wiring `target`/`slingshot` needs a ruling on what
+   a one-shot part means to a machine that is supposed to be repeatable —
+   re-arm on `cooling`, or exclude one-shot kinds from the sequence entirely.
+
+2. **The `collected` world-effect does not exist.** The event queue is live,
+   tested and drained; nothing listens. Until Phase 2 lands, completing a
+   machine still only pays gold, which is the very thing §3 says makes it a
+   score checklist. **Phase 1 is not player-visible on its own.**
+
+3. **`core.ts` is at exactly its 595-line ratchet cap** (`core-boundary.test.ts`).
+   The next change there must extract something first.
+
+4. **The router places fewer machines than budgeted** — a floor budgeted 5
+   measured 3, rejected on fit/approach/exit. `gargoyle-scoop`'s
+   `wantsRunway: 6` costs it ~2.9x `orbit`'s approach rejections. Lowering it
+   would trade the maw's trigger condition (`MAW_SWALLOW_SPEED`) for placement
+   rate, which is a design call: a maw below that speed is scenery.
+
+5. **`dev/ride-census.ts` has no tests of its own.** The file that produced
+   three false findings before a true one is the least-verified thing on the
+   branch. It should get a fixture-driven test — a hand-built grid with a known
+   feed, a known duel, a known blind jump — before anyone trusts it again.
+
+6. **`assembly-lib.ts` now imports `entities/maw`** for `MAW_SWALLOW_SPEED`
+   rather than transcribing it. Correct (a transcribed constant drifts), but it
+   is a new dependency edge out of the maze layer. `maw.ts` pulls only
+   `maze/generator` plus a type-only `state` import, so the layer stays
+   DOM/THREE-free — flagged because it is a directional change.
+
+7. **`LOOP_REACTOR`'s three lanes are distinguishable only by a seq-band
+   convention** (`LOOP_LANE_STRIDE = 10`). A proper `lane` field would need
+   `AssemblyRef` and `partsOf` to carry one. Nothing consumes the bands yet.
 
 ## 5. Verification
 
