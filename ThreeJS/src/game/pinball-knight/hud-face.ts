@@ -792,8 +792,7 @@ function paintBrow(mood: Mood, tier: Expr): void {
 
 function paintEyes(mood: Mood, tier: Expr): void {
   if (mood === "dead") {
-    drawX(11, 14);
-    drawX(20, 14);
+    // Sockets and exposed skull eyes are handled in paintDeath()
     return;
   }
   if (blinkFor > 0) {
@@ -817,15 +816,31 @@ function paintEyes(mood: Mood, tier: Expr): void {
   // reads as a bulging cartoon eye.
   sym(11, ey, 5, 1, C.skinDk);
 
-  // iris + pupil, riding the gaze
-  const ix = 12 + ox;
+  // CONJUGATED GAZE — DOOM STATUS BAR STYLE:
+  // Both irises and pupils shift together in the direction of the gaze (ox).
+  // Left eye spans x: 11..15. Centered iris is at x: 12..13.
+  // Right eye spans x: 20..24. Centered iris is at x: 22..23.
+  const lIrisX = 12 + ox;
+  const rIrisX = 22 + ox;
   const iy = squint ? 15 : 15 + dy;
-  sym(ix, iy, 2, 2, C.iris);
-  sym(ix, iy + 1, 2, 1, C.irisHi);
-  symPx(ix + (ox > 0 ? 1 : 0), iy, C.pupil);
-  // The catch-light, entry 18 — warm white, against the cold white of the
-  // sclera. On the old face both were entry 22 and this pixel did nothing.
-  if (!squint) symPx(ix + (ox > 0 ? 0 : 1), iy, C.glint);
+
+  // Irises
+  cell(lIrisX, iy, 2, 2, C.iris);
+  cell(lIrisX, iy + 1, 2, 1, C.irisHi);
+  cell(rIrisX, iy, 2, 2, C.iris);
+  cell(rIrisX, iy + 1, 2, 1, C.irisHi);
+
+  // Pupils (darkest point of gaze, shift with look direction)
+  const pOffset = ox > 0 ? 1 : 0;
+  px(lIrisX + pOffset, iy, C.pupil);
+  px(rIrisX + pOffset, iy, C.pupil);
+
+  // Catch-light / Glint (always top-left keylight, so upper-left of each iris)
+  if (!squint) {
+    const gOffset = ox > 0 ? 0 : 1;
+    px(lIrisX + gOffset, iy, C.glint);
+    px(rIrisX + gOffset, iy, C.glint);
+  }
 
   // lower lid
   sym(11, ey + eh, 5, 1, C.skinHi);
@@ -1125,123 +1140,105 @@ function paintDamage(tier: Expr): void {
  * torn blood rim, so the two never share an edge.
  */
 function paintDeath(): void {
-  // ── 1. SUNKEN. The cheapest and most universal cue there is, and it costs
-  // four spans: the cheeks hollow and the sockets deepen. Drawn first, so
-  // everything below sits on a face that has already stopped. ──
+  // ── 1. SUNKEN & DRAINED CORPSE FLESH ──
   cell(11, 20, 4, 2, C.skinLo); // near cheek, fallen in
-  cell(21, 20, 3, 2, C.skinLo); // far cheek
   cell(10, 24, 2, 2, C.skinLo); // and the jaw behind the beard
   cell(23, 24, 2, 2, C.skinLo);
 
-  // DRAINED. The catch-lights down the nose and across the brow are entry 17 —
-  // FLAME light, the torch ramp — which is the one thing on this face that
-  // reads as lit from inside. A corpse keeps its form and loses its warmth, so
-  // they come down one step to skin light. It is four spans and it does more
-  // for "dead" than any amount of extra blood, because it changes the whole
-  // face rather than adding another mark to it.
+  // DRAINED: replace warm flame keylights with pale mortis light
   cell(11, 10, 5, 1, C.skinHi);
   cell(16, 14, 1, 4, C.skinHi);
   cell(16, 18, 2, 1, C.skinHi);
   px(11, 18, C.skinHi);
 
-  // ── 2. THE SKULL — the far cheek torn back off the teeth ──
-  //
-  // Three placements were tried and the first two are worth recording, because
-  // they failed for the same reason and it is not the one that was expected.
-  //
-  //   · A torn PATCH over the far brow read as a plate of armour riveted to his
-  //     head. Shaping it into a lozenge did not help.
-  //   · A full bone ORBIT around the far eye — brow ridge, void, cheekbone —
-  //     read as a grey window cut into the face.
-  //
-  // Neither is a colour problem. Both are made of straight grey bars, and this
-  // head already contains a material that is made of straight grey bars: the
-  // helm. Bone has to arrive as something the eye can NAME, and the two shapes
-  // that carry "skull" on their own at this size are a socket and a row of
-  // TEETH. Teeth win because they can be small: the cheek is opened over the
-  // back of the jaw, the tooth row simply continues out past the corner of the
-  // mouth, and eleven cells do what thirty could not. It also puts the wound on
-  // the side of the face the light has already turned away from, so the bone
-  // reads as the brightest thing there without competing with the near cheek.
-  //
-  // The rim goes down FIRST, so the bone is painted inside it and the two
-  // cannot disagree about where the edge is. It is BRIGHT: the earlier rims
-  // were `blood` on the far temple's shadow, three luma apart, so the torn edge
-  // that was supposed to sell the whole thing could not be seen at all.
-  cell(21, 18, 5, 1, C.bloodMid); // the top of the tear
-  cell(21, 19, 1, 6, C.blood); // its inboard edge, down past the mouth
-  cell(21, 20, 1, 3, C.bloodMid);
-  px(21, 25, C.bloodSh);
-  cell(22, 25, 4, 1, C.blood); // and the bottom, along the jaw
-  px(23, 26, C.bloodSh);
-  px(25, 19, C.bloodSh);
+  // ── 2. LEFT EYE: DEAD COLLAPSED MORTIS SOCKET (NO CARTOON 'X') ──
+  cell(11, 13, 5, 1, C.skinDeep); // deep upper brow shadow
+  cell(11, 14, 5, 2, C.skinDk);   // collapsed dead eyelid
+  cell(12, 15, 3, 1, C.skinDeep); // sunken eye slit
+  px(13, 15, C.ink);              // dark center slit
+  cell(11, 17, 5, 1, C.skinLo);   // bruised orbital hollow below
 
-  // The cheekbone and the rising edge of the jaw behind it. The top outboard
-  // corner is stepped off rather than squared, which is the whole difference
-  // between a broken edge and a cut one.
-  //
-  // It is painted on `bone`/`boneSh` and NOT on `boneHi`, which is held back
-  // for the teeth alone. Entry 5 is the brightest thing on this whole head
-  // after the torchlit brow, so spending it on the cheekbone put the eye on a
-  // grey blob; spending it on the teeth puts the eye on the one shape that
-  // says what the blob IS.
-  cell(22, 19, 3, 1, C.bone);
-  cell(22, 20, 4, 2, C.bone);
-  cell(25, 20, 1, 2, C.boneSh);
-  cell(22, 22, 3, 1, C.boneSh); // turning under, into the hollow of the cheek
-  px(24, 21, C.boneDeep); // a chip out of it
+  // ── 3. EXPOSED CRANIUM DOME UNDER SHATTERED HELMET ──
+  // Fractured metal rim framing the cracked bone dome
+  cell(19, 2, 1, 6, C.steelDk);
+  px(20, 2, C.bloodMid);
+  px(20, 7, C.blood);
 
-  // The teeth, carrying on out of the mouth. A dark gum line first, so they
-  // have something to stand against — a light row laid straight on bare bone is
-  // one grey mass. SOLID ROWS with a single seam each, not alternating pixels:
-  // a checkerboard of light and dark at one-cell pitch is not teeth at this
-  // size, it is static, which is what the first pass of this drew.
-  cell(21, 23, 5, 2, C.ink);
-  cell(22, 23, 4, 1, C.boneHi);
-  px(24, 23, C.boneSh);
-  cell(22, 24, 3, 1, C.bone);
-  px(23, 24, C.boneSh);
+  // Exposed parietal cranium bone
+  cell(20, 2, 5, 6, C.bone);
+  cell(21, 2, 4, 1, C.boneHi);
+  cell(21, 3, 3, 2, C.boneHi);
+  cell(24, 4, 1, 4, C.boneSh);
+  // Cranial fissure / fracture suture lines
+  px(22, 4, C.boneDeep);
+  px(23, 5, C.ink);
+  px(23, 6, C.boneDeep);
 
-  // ── 3. The wounds worth keeping from the living tiers, as SHAPES ──
-  cell(10, 10, 2, 5, C.blood); // the near temple gash, now the only one
+  // ── 4. RIGHT EYE: FULL EXPOSED SKELETAL ORBITAL SOCKET ──
+  // Supraorbital bone brow ridge above
+  cell(20, 12, 5, 1, C.bone);
+  cell(21, 12, 3, 1, C.boneHi);
+
+  // The deep, hollow, pitch-black skull orbital void
+  cell(20, 13, 5, 5, C.ink);
+  cell(21, 14, 3, 3, C.bg); // deep void black interior
+
+  // Zygomatic cheekbone arch below the eye
+  cell(20, 18, 5, 1, C.bone);
+  cell(21, 18, 3, 1, C.boneHi);
+  px(24, 17, C.boneSh);
+
+  // Jagged blood-torn skin edge framing the eye socket
+  cell(19, 13, 1, 6, C.blood);
+  px(19, 15, C.bloodMid);
+  cell(25, 13, 1, 5, C.bloodSh);
+
+  // ── 5. SKELETAL NASAL APERTURE (PIRIFORM CAVITY) ──
+  // Cartilage sheared away, exposing the dark triangular skull nasal cavity
+  cell(17, 15, 2, 1, C.boneHi);
+  cell(17, 16, 2, 4, C.ink);
+  cell(17, 17, 2, 2, C.bg); // deep void core
+  px(16, 17, C.bone);
+  px(19, 17, C.blood);
+  px(16, 18, C.boneSh);
+  px(19, 18, C.bloodSh);
+  cell(17, 20, 2, 1, C.boneDeep);
+
+  // ── 6. EXPOSED MAXILLA, JAWBONE & GRINNING SKULL TEETH ──
+  // Torn cheek border
+  cell(20, 21, 6, 1, C.bloodMid);
+  cell(20, 22, 1, 5, C.blood);
+  cell(21, 26, 5, 1, C.blood);
+  px(26, 22, C.bloodSh);
+  px(26, 25, C.bloodSh);
+
+  // Maxilla and jaw bone surface
+  cell(21, 22, 5, 1, C.bone);
+  cell(22, 22, 3, 1, C.boneHi);
+  cell(25, 22, 1, 2, C.boneSh);
+
+  // Upper teeth arch (individual teeth in boneHi separated by dark ink notches)
+  cell(21, 23, 5, 1, C.boneHi);
+  px(22, 23, C.ink);
+  px(24, 23, C.ink);
+
+  // Dark dental interstitial void between upper and lower teeth
+  cell(20, 24, 6, 1, C.ink);
+  cell(21, 24, 4, 1, C.bg);
+
+  // Lower teeth arch
+  cell(21, 25, 4, 1, C.bone);
+  px(23, 25, C.ink);
+
+  // ── 7. CLEAN COMBAT WOUNDS (PURPOSEFUL, NO NOISE) ──
+  cell(10, 10, 2, 5, C.blood);
   cell(10, 10, 1, 5, C.bloodSh);
   px(11, 12, C.bloodMid);
-  cell(14, 26, 3, 1, C.bloodHi); // the split lip
+
+  cell(14, 26, 3, 1, C.bloodHi);
   cell(13, 27, 2, 1, C.blood);
-  // A run out of the near corner of the mouth. Bright, because it crosses the
-  // darkest mass on the face and the blood ramp's dark end is nine luma off the
-  // beard's — the same argument the beard's own comment makes about the helm.
   cell(14, 27, 1, 2, C.bloodMid);
   px(14, 29, C.blood);
-
-  // ── 4. THE EYES, LAST — and a HOLLOW for them to sit in ──
-  //
-  // The order was wrong before (eyes, then damage) but that was not the defect
-  // it looked like. Measured on the old art, the splatter overpainted exactly
-  // ONE of the twenty cells the two x's are made of: they were not buried, they
-  // were UNREADABLE, which is a different problem with a different fix. An x in
-  // ink on lit skin, ringed by five tiers of accumulated red, is a dark mark
-  // among dark marks — nothing tells the eye it is the one that matters.
-  //
-  // So the fix is the socket, not the order: a lid shadow, a mid floor and a
-  // rim, which puts a bounded dark shape under each x and nothing else near it.
-  // Painting them last is then just insurance, and it is free.
-  //
-  // The floor has to be a MID value. Ink on the sunken-cheek shadow this pass
-  // paints at step 1 is four luma of contrast — the x would vanish into its own
-  // socket.
-  // No rim above: the brow is already a dark row at y12, and a second dark row
-  // under it turned the pair into sunglasses — three stacked dark rows across
-  // the whole width of the face, which is a bar, not two eyes.
-  const socket = (x: number): void => {
-    cell(x, 14, 5, 5, C.skinDk);
-    cell(x, 14, 5, 1, C.skinDeep); // the dead lid, still half over it
-    cell(x + 1, 19, 3, 1, C.skinLo);
-  };
-  socket(11);
-  socket(20);
-  drawX(11, 14);
-  drawX(20, 14);
 }
 
 /**
