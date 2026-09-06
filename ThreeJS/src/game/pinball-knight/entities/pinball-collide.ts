@@ -20,6 +20,7 @@
  */
 import { PART_TOUCH_BROAD_SQ } from "../constants";
 import { state, type Player, type PinballPart, type PinballPartKind } from "../state";
+import { isWalkable, tileCenter } from "../maze/generator";
 import { canMawSwallow, MAW_COOLDOWN } from "./maw";
 import {
   PLAYER_R,
@@ -62,6 +63,14 @@ import {
   JUMP_PAD_SPEED,
   JUMP_PAD_COOLDOWN,
   JUMP_PAD_STEER_LOCK,
+  SEESAW_RADIUS,
+  SEESAW_SPEED,
+  SEESAW_COOLDOWN,
+  SEESAW_STEER_LOCK,
+  CATAPULT_RADIUS,
+  CATAPULT_COOLDOWN,
+  CANNON_RADIUS,
+  CANNON_COOLDOWN,
   DEFLECTOR_GRAB_TIME,
   DEFLECTOR_THROW_SPEED,
   DEFLECTOR_THROW_BOOST,
@@ -142,6 +151,12 @@ import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } 
 export interface PinballDeps {
   /** Launch the airborne ramp arc (bypasses wall collision mid-flight). */
   startRampHop(dirX: number, dirZ: number, speed: number): void;
+  /** Traverse across a seesaw shortcut plank directly to the opposite landing. */
+  startSeesawHop?(landX: number, landZ: number, dirX: number, dirZ: number, speed: number): void;
+  /** Launch the airborne catapult toss to (destX, destZ). */
+  startCatapultLaunch?(destX: number, destZ: number): void;
+  /** Sucks player into cannon barrel for aiming and firing. */
+  enterCannon?(part: PinballPart): void;
   /** Open the hatch and hand off to the rollercoaster ride. */
   startDrop(x: number, z: number): void;
   /** Set the post-dash no-steer window to exactly `t` (the ramp's dash panel). */
@@ -1110,6 +1125,134 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     recordShot("trapdoor");
     onPartTrigger();
     deps.startDrop(part.x, part.z);
+  },
+
+  seesaw: ({ part, p, deps }) => {
+    // ── THE SEESAW — a pivoting shortcut plank across wall bands.
+    //
+    // Two ends: Side A (part.x, part.z) and Side B (span ahead along dir).
+    // Tilt state:
+    //   -1: Side A is grounded (entry), Side B is elevated (exit).
+    //   +1: Side B is grounded (entry), Side A is elevated (exit).
+    // Walking onto the grounded end activates the plank, vaults the knight across
+    // to the far corridor, and flips the tilt so the previous entry is now elevated.
+    // Stepping on the elevated end is blocked / no-ops.
+    const span = part.span ?? 3;
+    const bx = part.x + part.dirX * span;
+    const bz = part.z + part.dirZ * span;
+    const r2 = SEESAW_RADIUS * SEESAW_RADIUS;
+    const currentTilt = part.tilt ?? -1;
+
+    if (currentTilt === -1) {
+      // Side A is down
+      const dxA = p.x - part.x;
+      const dzA = p.z - part.z;
+      if (dxA * dxA + dzA * dzA > r2) return;
+
+      part.tilt = 1;
+      part.cooldownT = SEESAW_COOLDOWN;
+      part.hitT = 0;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SEESAW_SPEED));
+      deps.setSteerLock(SEESAW_STEER_LOCK);
+      if (deps.startSeesawHop) {
+        deps.startSeesawHop(bx, bz, part.dirX, part.dirZ, p.momSpeed);
+      } else {
+        deps.startRampHop(part.dirX, part.dirZ, p.momSpeed);
+      }
+      onPartTrigger();
+      state.vfx?.dust(p.x, 0.06, p.z);
+      state.vfx?.sparks(part.x, 0.4, part.z, part.dirX, part.dirZ, 16);
+      requestShake(0.14);
+      sfxSpin();
+    } else {
+      // Side B is down
+      const dxB = p.x - bx;
+      const dzB = p.z - bz;
+      if (dxB * dxB + dzB * dzB > r2) return;
+
+      part.tilt = -1;
+      part.cooldownT = SEESAW_COOLDOWN;
+      part.hitT = 0;
+      const revX = -part.dirX;
+      const revZ = -part.dirZ;
+      p.momX = revX;
+      p.momZ = revZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SEESAW_SPEED));
+      deps.setSteerLock(SEESAW_STEER_LOCK);
+      if (deps.startSeesawHop) {
+        deps.startSeesawHop(part.x, part.z, revX, revZ, p.momSpeed);
+      } else {
+        deps.startRampHop(revX, revZ, p.momSpeed);
+      }
+      onPartTrigger();
+      state.vfx?.dust(p.x, 0.06, p.z);
+      state.vfx?.sparks(bx, 0.4, bz, revX, revZ, 16);
+      requestShake(0.14);
+      sfxSpin();
+    }
+  },
+
+  catapult: ({ part, p, d2, deps }) => {
+    if (d2 > CATAPULT_RADIUS * CATAPULT_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0) return;
+
+    const g = state.grid;
+    if (!g) return;
+
+    let bestX = p.x;
+    let bestZ = p.z;
+    let bestDist = 0;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+      const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+      if (!isWalkable(g, ti, tj)) continue;
+      const c = tileCenter(g, ti, tj);
+      const dist = Math.hypot(c.x - part.x, c.z - part.z);
+      if (dist < 10) continue;
+      if (state.pinballParts.some((q) => (q.kind === "pit" || q.kind === "gravepit" || q.kind === "trapdoor") && Math.hypot(q.x - c.x, q.z - c.z) < 1.5)) continue;
+      bestX = c.x;
+      bestZ = c.z;
+      bestDist = dist;
+      if (dist >= 14) break;
+    }
+
+    if (bestDist < 6) {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+        const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+        if (!isWalkable(g, ti, tj)) continue;
+        const c = tileCenter(g, ti, tj);
+        if (Math.hypot(c.x - part.x, c.z - part.z) >= 4) {
+          bestX = c.x;
+          bestZ = c.z;
+          break;
+        }
+      }
+    }
+
+    part.cooldownT = CATAPULT_COOLDOWN;
+    part.hitT = 0;
+
+    if (deps.startCatapultLaunch) {
+      deps.startCatapultLaunch(bestX, bestZ);
+    }
+    onPartTrigger();
+    state.vfx?.dust(p.x, 0.08, p.z);
+    state.vfx?.sparks(part.x, 0.4, part.z, 0, 1, 20);
+    requestShake(0.25);
+    sfxHeavy();
+    recordShot("catapult");
+  },
+
+  cannon: ({ part, p, d2, deps }) => {
+    if (d2 > CANNON_RADIUS * CANNON_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0 || p.cannonPart) return;
+
+    if (deps.enterCannon) {
+      deps.enterCannon(part);
+    }
   },
 };
 

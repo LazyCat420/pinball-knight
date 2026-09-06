@@ -131,12 +131,9 @@ describe("decorateMaze", () => {
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
       } else if (part.vault) {
-        // JUMP PAD — the deliberate exception: aimed square at a wall BAND
+        // JUMP PAD or SEESAW — the deliberate exception: aimed square at a wall BAND
         // with real corridor on the far side, so the hop clears the maze.
-        // Every other launcher aims ALONG its lane, which is why the ramp hop
-        // could never jump a wall before these existed. It was a `ramp` with a
-        // `vault` flag and no distinguishing mesh until it got its own kind.
-        expect(part.kind).toBe("jumppad");
+        expect(["jumppad", "seesaw"]).toContain(part.kind);
         expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
         // …and a landing exists within the hop's reach past the band.
@@ -184,6 +181,10 @@ describe("decorateMaze", () => {
       } else if (part.kind === "pit" || part.kind === "electric" || part.kind === "magstrip") {
         // floor hazards: sit on any open floor (junction OR straight)
         expect(open.length).toBeGreaterThanOrEqual(2);
+      } else if (part.kind === "catapult" || part.kind === "cannon") {
+        // interactive traversal machinery: can sit on any floor tile (open leg >= 1)
+        expect(at(g, part.i, part.j)).toBe(T_FLOOR);
+        expect(open.length).toBeGreaterThanOrEqual(1);
       } else if (part.kind === "booster") {
         // booster LANE: on floor, aimed along a cardinal axis with runway ahead
         // (its own layer — a row of adjacent pads, not a topology-classified part)
@@ -217,7 +218,7 @@ describe("decorateMaze", () => {
     }
     // Spacing: DEALT machine parts never bunch into one intersection. Targets,
     // trapdoors and floor hazards are separate layers with their own rules.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover", "catapult", "cannon"]);
     // Vault ramps are their own layer too (aimed across a band, off-budget).
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
     // Chain links AND station-spine parts are placed ON each other's shot lines

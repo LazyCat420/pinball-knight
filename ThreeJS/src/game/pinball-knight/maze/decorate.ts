@@ -30,7 +30,7 @@ import { breakFlowLoops, findFlowCycles, type FlowPart } from "./flow-loops";
 import type { AssemblyRef } from "./assembly";
 import { authorCircuits, type Circuit } from "./circuit";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
-import { analyzePatternGrammar, isLegalSlotForPart } from "./pattern-grammar";
+import { analyzePatternGrammar, isLegalSlotForPart, type PatternGrammarGrid } from "./pattern-grammar";
 import type { Doorway } from "./doorways";
 
 export interface Torch extends TilePos {
@@ -100,7 +100,13 @@ export type PartSpotKind =
   | "magstrip"
   | "rollover"
   | "lamp"
-  | "maw";
+  | "maw"
+  // SEESAW: pivoting plank shortcut spanning a wall band
+  | "seesaw"
+  // CATAPULT: high ballistic flinger across walls to a distant safe corridor
+  | "catapult"
+  // CANNON: aimable directional corridor blaster
+  | "cannon";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
@@ -108,6 +114,16 @@ export interface PinballPartSpot extends TilePos {
   dirJ: number;
   dir2I: number;
   dir2J: number;
+  /** SEESAW: tilt direction (-1 = Side A down, +1 = Side B down). */
+  tilt?: number;
+  /** SEESAW: tile span across the wall band (e.g. 2 or 3 tiles). */
+  span?: number;
+  /** SEESAW: target landing coordinates. */
+  destI?: number;
+  destJ?: number;
+  /** CANNON: aim angle & base angle in radians. */
+  angle?: number;
+  baseAngle?: number;
   /** TARGET BANK (Slice 6): a drop-target's bank id + its order in the bank. */
   bank?: number;
   seq?: number;
@@ -676,6 +692,7 @@ function runwayEnd(g: Grid, i: number, j: number, di: number, dj: number, max = 
 const VAULT_MAX_BAND = 2; // thickest wall band a vault aims across (thickened bands are 2)
 const VAULT_MAX_REACH = 4; // landing must sit inside this many tiles — under RAMP_HOP_MAX (4.75)
 const VAULT_RAMPS_DEFAULT = 3;
+const SEESAWS_DEFAULT = 2;
 /** D3 rollover lane arrays: how many banks per floor, and lanes per bank. */
 const ROLLOVER_ARRAYS_DEFAULT = 2;
 /** How many of each PLAZA part a floor gets, and the peg field's footprint.
@@ -2377,7 +2394,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -3834,6 +3851,134 @@ export function decorateMaze(
     fieldsPlaced++;
   }
 
+  // ── SEESAWS: two-way alternating shortcuts across wall bands.
+  // Placed at the very end with an isolated seed so earlier placement,
+  // item rarity, and wall triage remain bit-identical to existing floors.
+  const seesawsCount = extras.seesaws ?? SEESAWS_DEFAULT;
+  if (seesawsCount > 0) {
+    const sRng = mulberry32((assemblySeed ^ 0x5ee5a) >>> 0);
+    const seesawSpots = shuffled(floors, sRng);
+    let placedSeesaws = 0;
+    for (const c of seesawSpots) {
+      if (placedSeesaws >= seesawsCount) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 4) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 4)) continue;
+
+      const dirs = shuffled([...CARDINALS] as Array<readonly [number, number]>, sRng);
+      let aimed: { di: number; dj: number; span: number } | null = null;
+      for (const [di, dj] of dirs) {
+        if (crossableBand(g, c.i, c.j, di, dj)) {
+          let d = 1;
+          while (d <= VAULT_MAX_BAND && at(g, c.i + di * d, c.j + dj * d) === T_WALL) d++;
+          const span = d;
+          const landI = c.i + di * span;
+          const landJ = c.j + dj * span;
+          if (at(g, landI, landJ) === T_FLOOR) {
+            if (!parts.some((q) => Math.abs(q.i - landI) + Math.abs(q.j - landJ) < 3)) {
+              aimed = { di, dj, span };
+              break;
+            }
+          }
+        }
+      }
+      if (!aimed) continue;
+
+      parts.push({
+        kind: "seesaw",
+        i: c.i,
+        j: c.j,
+        dirI: aimed.di,
+        dirJ: aimed.dj,
+        dir2I: 0,
+        dir2J: 0,
+        vault: true,
+        span: aimed.span,
+        destI: c.i + aimed.di * aimed.span,
+        destJ: c.j + aimed.dj * aimed.span,
+        tilt: -1,
+      });
+      placedSeesaws++;
+    }
+  }
+
+  // ── CATAPULTS: high ballistic flinger to a distant safe corridor.
+  const catapultsCount = extras.catapults ?? 2;
+  if (catapultsCount > 0) {
+    const catRng = mulberry32((assemblySeed ^ 0xca7a) >>> 0);
+    const catSpots = shuffled(floors, catRng);
+    let placedCatapults = 0;
+    for (const c of catSpots) {
+      if (placedCatapults >= catapultsCount) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+
+      let openDir: { di: number; dj: number } | null = null;
+      for (const [di, dj] of CARDINALS) {
+        if (at(g, c.i + di, c.j + dj) === T_FLOOR) {
+          openDir = { di, dj };
+          break;
+        }
+      }
+      if (!openDir) continue;
+
+      parts.push({
+        kind: "catapult",
+        i: c.i,
+        j: c.j,
+        dirI: openDir.di,
+        dirJ: openDir.dj,
+        dir2I: 0,
+        dir2J: 0,
+      });
+      placedCatapults++;
+    }
+  }
+
+  // ── CANNONS: aimable directional corridor blaster.
+  const cannonsCount = extras.cannons ?? 2;
+  if (cannonsCount > 0) {
+    const canRng = mulberry32((assemblySeed ^ 0xca00) >>> 0);
+    const canSpots = shuffled(floors, canRng);
+    let placedCannons = 0;
+    for (const c of canSpots) {
+      if (placedCannons >= cannonsCount) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+
+      let bestDir: { di: number; dj: number } | null = null;
+      let maxRun = 0;
+      for (const [di, dj] of CARDINALS) {
+        let run = 0;
+        while (run < 6 && at(g, c.i + di * (run + 1), c.j + dj * (run + 1)) === T_FLOOR) {
+          run++;
+        }
+        if (run > maxRun) {
+          maxRun = run;
+          bestDir = { di, dj };
+        }
+      }
+      if (!bestDir || maxRun < 2) continue;
+
+      parts.push({
+        kind: "cannon",
+        i: c.i,
+        j: c.j,
+        dirI: bestDir.di,
+        dirJ: bestDir.dj,
+        dir2I: 0,
+        dir2J: 0,
+      });
+      placedCannons++;
+    }
+  }
+
+  // ── FINAL DENSITY CLAMP: strictly enforce PARTS_PER_1K_CAP across all layers ──
   let walkableTotal = 0;
   for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
   const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
@@ -3848,7 +3993,10 @@ export function decorateMaze(
         !p.spine &&
         (p as any).route === undefined &&
         p.field === undefined &&
-        p.asm === undefined
+        p.asm === undefined &&
+        p.kind !== "seesaw" &&
+        p.kind !== "catapult" &&
+        p.kind !== "cannon"
       ) {
         if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
           parts.splice(k, 1);
@@ -3865,7 +4013,10 @@ export function decorateMaze(
         !p.spine &&
         (p as any).route === undefined &&
         p.field === undefined &&
-        p.asm === undefined
+        p.asm === undefined &&
+        p.kind !== "seesaw" &&
+        p.kind !== "catapult" &&
+        p.kind !== "cannon"
       ) {
         parts.splice(k, 1);
         excess--;

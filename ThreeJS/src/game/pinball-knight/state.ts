@@ -193,6 +193,14 @@ export interface Player extends Actor {
   hopDirZ: number;
   /** Speed handed to the pinball system when the arc sets down. */
   hopSpeed: number;
+  /** Custom peak height for the hop arc (defaults to RAMP_HOP_HEIGHT if <= 0). */
+  hopHeight?: number;
+  /** True if the hop was a catapult toss (triggers landing radial shockwave). */
+  hopIsCatapult?: boolean;
+  /** Active cannon holding the player for aiming/firing, or null. */
+  cannonPart?: PinballPart | null;
+  /** Seconds spent inside the cannon waiting for launch. */
+  cannonTimer?: number;
 
   // ── Dodge-roll ──
   /** -1 when not rolling, else seconds into the current roll (incl. recovery). */
@@ -577,7 +585,16 @@ export type PinballPartKind =
   // replaced by `flywheel` above — the user's call on 2026-08-28, twin
   // counter-rotating wheels rather than a saucer that holds you — and Track-B's
   // `swingarm` was a PENDULUM, superseded by the full-circle one.
-  | "maw";
+  | "maw"
+  // SEESAW — a pivoting plank shortcut across a wall band. Whichever end is
+  // tilted down is enterable; stepping on it tilts the plank to the other side
+  // and vaults the knight across. Once tilted, the original entry side is up
+  // in the air and cannot be re-entered until tilted back from the other side.
+  | "seesaw"
+  // CATAPULT — high ballistic toss across walls to a distant safe corridor.
+  | "catapult"
+  // CANNON — aimable mortar barrel that blasts the knight down corridors at hyper speed.
+  | "cannon";
 
 // Compile-time assertion that PartSpotKind extends PinballPartKind (D4 fix)
 export type _AssertPartSpotKindExtendsPinballPartKind = import("./maze/decorate").PartSpotKind extends PinballPartKind ? true : never;
@@ -694,6 +711,19 @@ export interface PinballPart {
   swingT?: number;
   held?: boolean;
   cradled?: boolean;
+  /** SEESAW: tilt direction (-1 = Side A down, +1 = Side B down). */
+  tilt?: number;
+  /** SEESAW: tile span across the wall band (e.g. 2 or 3 tiles). */
+  span?: number;
+  /** SEESAW: destination tile coordinates. */
+  destI?: number;
+  destJ?: number;
+  /** CANNON: current aim angle in radians. */
+  angle?: number;
+  /** CANNON: base initial facing angle in radians. */
+  baseAngle?: number;
+  /** CANNON: oscillation direction (+1 or -1). */
+  sweepDir?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -1453,6 +1483,10 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     hopDirX: 0,
     hopDirZ: 0,
     hopSpeed: 0,
+    hopHeight: 0,
+    hopIsCatapult: false,
+    cannonPart: null,
+    cannonTimer: 0,
     rollT: -1,
     rollDirX: 0,
     rollDirZ: 0,

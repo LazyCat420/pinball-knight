@@ -67,6 +67,9 @@ pub enum PinballPartKind {
     Orbit,
     Saucer,
     Turret,
+    SeeSaw,
+    Catapult,
+    Cannon,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -532,6 +535,144 @@ pub fn build_bell() -> PartMeshGroup {
     gp
 }
 
+pub fn build_seesaw(dir_x: f32, dir_z: f32) -> PartMeshGroup {
+    let mut gp = PartMeshGroup::new(PinballPartKind::SeeSaw);
+    gp.yaw = yaw_for(dir_x, dir_z);
+
+    // Fulcrum base
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.14, r_bot: 0.22, h: 0.28, segs: 8 },
+        PartMaterialDesc::standard(C_STEEL_DK, 0, 0.0),
+        [1.5, 0.14, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("fulcrum"),
+    );
+
+    // Plank
+    gp.add(
+        PrimitiveShape::Box { w: 3.2, h: 0.08, d: 0.8 },
+        PartMaterialDesc::own(PALETTE_HEX[18], C_ARCANE, 0.4),
+        [1.5, 0.28, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("plank"),
+    );
+
+    gp
+}
+
+pub fn build_catapult(dir_x: f32, dir_z: f32) -> PartMeshGroup {
+    let mut gp = PartMeshGroup::new(PinballPartKind::Catapult);
+    gp.yaw = yaw_for(dir_x, dir_z);
+
+    // Timber A-frame base
+    gp.add(
+        PrimitiveShape::Box { w: 0.9, h: 0.12, d: 0.7 },
+        PartMaterialDesc::standard(PALETTE_HEX[18], 0, 0.0),
+        [0.0, 0.06, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("base"),
+    );
+
+    // Left upright
+    gp.add(
+        PrimitiveShape::Box { w: 0.1, h: 0.55, d: 0.1 },
+        PartMaterialDesc::standard(PALETTE_HEX[17], 0, 0.0),
+        [-0.24, 0.32, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("upright_l"),
+    );
+
+    // Right upright
+    gp.add(
+        PrimitiveShape::Box { w: 0.1, h: 0.55, d: 0.1 },
+        PartMaterialDesc::standard(PALETTE_HEX[17], 0, 0.0),
+        [0.24, 0.32, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("upright_r"),
+    );
+
+    // Throwing beam (arm)
+    gp.add(
+        PrimitiveShape::Box { w: 0.12, h: 0.1, d: 0.95 },
+        PartMaterialDesc::standard(PALETTE_HEX[18], 0, 0.0),
+        [0.0, 0.45, 0.1],
+        [-0.28, 0.0, 0.0],
+        Some("arm"),
+    );
+
+    // Counterweight
+    gp.add(
+        PrimitiveShape::Box { w: 0.28, h: 0.25, d: 0.22 },
+        PartMaterialDesc::standard(C_STEEL_DK, 0, 0.0),
+        [0.0, 0.25, 0.45],
+        [0.0, 0.0, 0.0],
+        Some("weight"),
+    );
+
+    // Rune basket
+    gp.add(
+        PrimitiveShape::Box { w: 0.3, h: 0.12, d: 0.3 },
+        PartMaterialDesc::own(PALETTE_HEX[16], C_GOLD, 0.6),
+        [0.0, 0.55, -0.38],
+        [0.0, 0.0, 0.0],
+        Some("basket"),
+    );
+
+    // Trigger ring
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.4, r_bot: 0.42, h: 0.04, segs: 12 },
+        PartMaterialDesc::own(PALETTE_HEX[31], C_ARCANE, 0.8),
+        [0.0, 0.02, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("trigger"),
+    );
+
+    gp
+}
+
+pub fn build_cannon(dir_x: f32, dir_z: f32) -> PartMeshGroup {
+    let mut gp = PartMeshGroup::new(PinballPartKind::Cannon);
+    gp.yaw = yaw_for(dir_x, dir_z);
+
+    // Turntable base
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.42, r_bot: 0.46, h: 0.1, segs: 14 },
+        PartMaterialDesc::standard(C_STEEL_DK, 0, 0.0),
+        [0.0, 0.05, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("turntable"),
+    );
+
+    // Swivel ring
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.32, r_bot: 0.35, h: 0.08, segs: 12 },
+        PartMaterialDesc::standard(PALETTE_HEX[17], C_GOLD, 0.3),
+        [0.0, 0.14, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("swivel"),
+    );
+
+    // Mortar barrel
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.22, r_bot: 0.28, h: 0.72, segs: 12 },
+        PartMaterialDesc::standard(C_STEEL, 0, 0.0),
+        [0.0, 0.38, -0.15],
+        [PI * 0.22, 0.0, 0.0],
+        Some("barrel"),
+    );
+
+    // Golden muzzle rim
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.25, r_bot: 0.25, h: 0.08, segs: 12 },
+        PartMaterialDesc::own(PALETTE_HEX[16], C_GOLD, 0.7),
+        [0.0, 0.62, -0.38],
+        [PI * 0.22, 0.0, 0.0],
+        Some("rim"),
+    );
+
+    gp
+}
+
 // ── Generic Builder Dispatcher ──
 
 pub fn build_part_visual(kind: PinballPartKind, dir: (f32, f32)) -> PartMeshGroup {
@@ -563,6 +704,9 @@ pub fn build_part_visual(kind: PinballPartKind, dir: (f32, f32)) -> PartMeshGrou
         PinballPartKind::Orbit => build_deflector((dir.0, dir.1), (-dir.1, dir.0)),
         PinballPartKind::Saucer => build_rollover(),
         PinballPartKind::Turret => build_bumper(),
+        PinballPartKind::SeeSaw => build_seesaw(dir.0, dir.1),
+        PinballPartKind::Catapult => build_catapult(dir.0, dir.1),
+        PinballPartKind::Cannon => build_cannon(dir.0, dir.1),
     }
 }
 
