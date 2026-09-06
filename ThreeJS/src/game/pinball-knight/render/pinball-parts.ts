@@ -1177,6 +1177,15 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       orbitSeq: s.orbitSeq,
       lane: s.lane,
       laneSeq: s.laneSeq,
+      // THE MACHINE THIS PART BELONGS TO. This assignment is the whole seam:
+      // `maze/assembly-place.partsOf` stamps an `AssemblyRef` onto every spot
+      // it lands, and for as long as this line was missing that ref got as far
+      // as the level plan and no further. `asm` was read by exactly two modules
+      // — `dev/pattern-census.ts` and `dev/floor-svg.ts` — both offline tools,
+      // so an authored, checked, placed machine arrived in the running game as
+      // an anonymous scatter of parts and nothing could reward completing one.
+      // See machines.ts, which is the consumer this was always for.
+      asm: s.asm,
       mesh,
     };
     state.pinballParts.push(part);

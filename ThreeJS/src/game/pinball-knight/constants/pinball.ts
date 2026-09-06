@@ -375,6 +375,53 @@ export const ORBIT_GOLD = 30; // a completed lap
 export const ORBIT_LAP_BONUS = 15; // each further lap this floor pays this much more
 /** ROLLOVER LANES: payout for lighting every lane in one bank. */
 export const LANE_CLEAR_GOLD = 25;
+
+/**
+ * MACHINES — per-assembly progression. See machines.ts for the model.
+ *
+ * The ORBIT numbers above tune ONE GLOBAL SLOT with a hardcoded `% 4`: two
+ * circuits on a floor fought over it, a three- or six-corner ring could not be
+ * expressed at all, and a lapsed window CONFISCATED the entire lap. These tune
+ * the replacement, which is per-machine and derives its length from the parts
+ * the floor actually placed.
+ *
+ * MACHINE_WINDOW is longer than ORBIT_WINDOW on purpose. A lapse here costs ONE
+ * STEP rather than the whole run, so the window can afford to be a real
+ * deadline instead of a forgiving one — and an authored machine spans a room,
+ * which takes longer to traverse than four rails around one.
+ */
+export const MACHINE_WINDOW = 3.2; // seconds between machine shots before progress decays a step
+/**
+ * Lit → armed: the lamp chase before the jackpot lights. Short, but a REAL
+ * state, so that "complete the sequence" and "collect the jackpot" are two
+ * different shots rather than one hit that happens to be the last one. A hit
+ * during it is ignored — the machine is spinning up.
+ */
+export const MACHINE_ARM_TIME = 0.45;
+/** Armed → collect, or the arm decays back into the sequence one step down. */
+export const MACHINE_ARM_WINDOW = 6;
+/** Collected → cooling → unlit. The machine is visibly spent for this long. */
+export const MACHINE_COOL_TIME = 2;
+/** Base payout for a one-step machine, plus this much per further step — a
+ *  six-corner orbit is a harder shot than a three-target bank and pays it. */
+export const MACHINE_GOLD = 40;
+export const MACHINE_STEP_GOLD = 12;
+/** Running the SAME machine again ladders its tier and the tier scales the
+ *  payout. CAPPED: an uncapped ladder makes one machine the whole floor. */
+export const MACHINE_TIER_MAX = 4;
+export const MACHINE_TIER_BONUS = 0.5; // each tier past the first adds this much of base
+/**
+ * CIRCUIT CONTINUITY — the floor-wide multiplier for working the TABLE rather
+ * than one machine. Advancing a DIFFERENT machine than the last one extends the
+ * chain; repeating the same one holds it but does not extend it and does not
+ * refresh its window, so a single machine cannot farm the multiplier.
+ */
+export const MACHINE_CIRCUIT_WINDOW = 8;
+export const MACHINE_CIRCUIT_MAX = 4;
+export const MACHINE_CIRCUIT_STEP = 0.25; // each alternation adds this much multiplier
+/** How many undrained events the queue holds before it drops the oldest. A
+ *  queue nothing drains must not grow without bound for a whole run. */
+export const MACHINE_EVENT_CAP = 64;
 /**
  * THE PLUNGER (D4): every floor OPENS parked in a launch chute the player pulls,
  * exactly like a real pinball machine. Hold the dodge key (Space / right-click)

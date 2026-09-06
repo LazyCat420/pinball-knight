@@ -125,7 +125,7 @@ import { moveCircle } from "../engine/collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { PALETTE_HEX } from "../render/palette";
-import { recordShot, hitOrbitRail, hitRollover, trySkillShot, payTimedFlip } from "../shots";
+import { recordShot, hitOrbitRail, hitRollover, trySkillShot, payTimedFlip, advanceMachineShot } from "../shots";
 import { swingIsLive, isHeldUp, releaseCradle, noteCradled } from "./flippers";
 import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../engine/camera";
@@ -401,6 +401,9 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     p.momZ = part.dirZ;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
     onPartTrigger();
+    // A spring is step 2 of RAMP_RETURN and step 0 of KICKER_LANE. Without this
+    // the machine holds a step it can never be given.
+    if (part.asm) advanceMachineShot(part);
     part.cooldownT = SPRING_COOLDOWN;
     part.hitT = 0;
     state.vfx?.dust(part.x, 0.1, part.z);
@@ -417,6 +420,9 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // so the panel actually carries you down its lane before you can bend it.
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, RAMP_SPEED));
     recordShot("ramp");
+    // A ramp is step 0 of RAMP_RETURN. `advanceMachineShot`, not the recording
+    // variant — the combo identity was banked on the line above.
+    if (part.asm) advanceMachineShot(part);
     trySkillShot(part);
     deps.setSteerLock(RAMP_STEER_LOCK);
     part.cooldownT = RAMP_COOLDOWN;
@@ -474,6 +480,10 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, BOOSTER_SPEED));
     deps.raiseSteerLock(BOOSTER_STEER_LOCK);
     onPartTrigger();
+    // A booster is steps 0 AND 3 of the ORBIT assembly — the two the deflector
+    // path below can never see. Without this the flagship machine tops out at
+    // two of its four steps and is uncompletable by construction.
+    if (part.asm) advanceMachineShot(part);
     part.cooldownT = BOOSTER_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.25, part.z, part.dirX, part.dirZ, 10);
@@ -623,9 +633,11 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     requestShake(0.12);
     state.vfx?.sparks(part.x, 0.35, part.z, 0, 0, 10);
     sfxHeavy();
-    // D2 — if this rail is a corner of an ORBIT, it might have just advanced
-    // (or completed) a lap. hitOrbitRail owns that bookkeeping.
-    if (part.orbit !== undefined) hitOrbitRail(part);
+    // D2 — if this rail is a corner of an ORBIT, or a turn inside an authored
+    // MACHINE, it might have just advanced (or completed) one. hitOrbitRail
+    // owns both bookkeepings and records the shot itself; a loose rail is still
+    // just a banked shot.
+    if (part.orbit !== undefined || part.asm !== undefined) hitOrbitRail(part);
     else recordShot("bank");
     trySkillShot(part);
   },
