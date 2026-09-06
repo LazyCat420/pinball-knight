@@ -49,7 +49,6 @@ import { makeBloaterPaints } from "./monsters/bloater";
 import { makeWardenPaints } from "./monsters/warden";
 import { makeNecroPaints } from "./monsters/necro";
 import { makePlatypusPaints } from "./monsters/platypus";
-import { makeBuddhaPaints } from "./monsters/buddha";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -90,5 +89,5 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   trex: makeBossPaints,
   bloater: makeBloaterPaints,
   platypus: makePlatypusPaints,
-  jade_buddha: makeBuddhaPaints,
+  jade_buddha: makeBossPaints,
 };
