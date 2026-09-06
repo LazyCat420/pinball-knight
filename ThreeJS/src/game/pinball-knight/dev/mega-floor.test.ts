@@ -7,13 +7,22 @@
  * shared rng. A harness that re-implements the pipeline drifts, and it drifts in
  * the direction that hides the bug.
  *
- * `buildMegaFloor` is a second such re-implementation, so it gets the same
- * guard, and it gets it in the strongest available form: at scale 1 with the
- * raw budget formula, the mega builder is not merely *similar* to
- * `buildHeadlessPlan` — every input it passes is identical, so the two must
- * produce THE SAME FLOOR, tile for tile and part for part. Anything less than
- * byte equality here means a draw moved, and a moved draw makes every number
- * the census reports a statement about a floor the game does not build.
+ * ── WHAT THIS GATE IS NOW, AND WHY IT CHANGED ──────────────────────────────
+ *
+ * `buildMegaFloor` WAS a second such re-implementation, and this gate caught it
+ * drifting for real on 2026-09-06: `buildHeadlessPlan` was fixed to pass
+ * `track.chambers` and `track.doorways` and to run `authorLampPuzzle`, the mega
+ * builder was not, and the parts lists came apart on three braziers. The fix
+ * was not to transcribe the three stages a second time — it was to delete the
+ * transcription. Both harnesses now call `authorHeadlessPlan`.
+ *
+ * So this no longer guards two copies of a draw order against each other; there
+ * is one copy, and drift of that kind is now impossible rather than merely
+ * detected. What it still genuinely checks is the OPTION MAPPING, which is the
+ * only thing left that can be wrong: `scale: 1` must resolve to the level's own
+ * shipped cell grid, and `density: "raw"` must resolve to the shipped budget
+ * formula with the flat counts unscaled. Get either wrong and the two calls
+ * diverge here exactly as they did before.
  *
  * That identity is also what makes the census's SCALE CHECK meaningful: the
  * "shipped" column is produced by this same function, so a difference between

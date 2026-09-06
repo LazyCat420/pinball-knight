@@ -12,6 +12,15 @@
  * a stage to `startLevel` that changes geometry, add it in both or the census
  * and the gate stop describing the same floor.
  *
+ * ⚠️ `dev/mega-floor.ts` USED TO BE A THIRD COPY, and it drifted the moment
+ * this file was fixed: the 2026-09-06 pass added `track.chambers`,
+ * `track.doorways` and `authorLampPuzzle` here, `buildMegaFloor` kept none of
+ * them, and its own anti-drift gate went red on three missing braziers. Two
+ * transcriptions of one draw order is one too many, so `buildMegaFloor` now
+ * calls `authorHeadlessPlan` below and contributes only the two things that are
+ * genuinely its own — an unclamped grid size and the density re-inflation. The
+ * next stage `authorFloor` grows gets added ONCE.
+ *
  * ⚠️ BOTH WERE WRONG UNTIL 2026-07-31, in the same way and for the same reason.
  * This function ran an entire LEGACY maze — `generateMaze`, `carveRooms`,
  * `stampLandmark`, `pickFocusCells`, `stampPrefabs`, `crackSecretWalls` —
@@ -154,16 +163,76 @@ export interface HeadlessPlan extends HeadlessFloor {
 }
 
 export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = false, wallGrammar = false): HeadlessPlan | null {
+  return authorHeadlessPlan({ level, runSeed, bonusRoom, wallGrammar });
+}
+
+/**
+ * The draw order itself, with the two knobs `dev/mega-floor.ts` needs.
+ *
+ * Defaulted so that `authorHeadlessPlan({ level, runSeed })` IS
+ * `buildHeadlessPlan(level, runSeed)`: the shipped cell grid, and the shipped
+ * budget formula unmodified. A caller that changes neither gets the floor the
+ * game builds — which is the only reason a census run through here means
+ * anything.
+ */
+export interface HeadlessAuthorOptions {
+  level: number;
+  runSeed: number;
+  /** Grid size in CELLS. Defaults to `levelConfig(level)`; the mega floor is the only caller that overrides it. */
+  cellsW?: number;
+  cellsH?: number;
+  /**
+   * `raw` (default) is the shipped budget formula. `shipped` re-inflates the
+   * FLAT terms by the area ratio so parts-per-walkable survives a grid the
+   * shipping table would never emit — see `dev/mega-floor.ts` on why a raw
+   * oversized floor is measurably sparser than the floor it stands for.
+   */
+  density?: "shipped" | "raw";
+  bonusRoom?: boolean;
+  wallGrammar?: boolean;
+}
+
+export interface AuthoredHeadlessPlan extends HeadlessPlan {
+  theme: string;
+  cellsW: number;
+  cellsH: number;
+  /** Walkable tiles on this floor / `levelConfig(level).floorTiles`, the generator's own prediction for the reference floor. */
+  areaRatio: number;
+  /** The part budget actually handed to `decorateMaze`, after density scaling. */
+  partBudget: number;
+  /** Wall-clock of the two heavy stages, in ms. The generator is superlinear. */
+  timing: { track: number; decorate: number };
+}
+
+/**
+ * Scale a FLAT per-floor count so it keeps its density rather than its number.
+ * One drop-target bank on a floor ten times the size is not "the same floor,
+ * bigger", it is a floor with one bank in a wilderness. At `ratio` 1 — every
+ * shipped floor — this is the identity on any count of 1 or more.
+ */
+function scaleCount(n: number, ratio: number): number {
+  return Math.max(1, Math.round(n * ratio));
+}
+
+export function authorHeadlessPlan(opts: HeadlessAuthorOptions): AuthoredHeadlessPlan | null {
+  const { level, runSeed } = opts;
+  const bonusRoom = opts.bonusRoom ?? false;
+  const wallGrammar = opts.wallGrammar ?? false;
+  const density = opts.density ?? "raw";
   const rng = floorRng(runSeed, level);
   const cfg = levelConfig(level);
+  const cellsW = opts.cellsW ?? cfg.cellsW;
+  const cellsH = opts.cellsH ?? cfg.cellsH;
   const arch = archetypeFor(level);
   const modifier = rollModifier(level, rng);
   const windiness = windinessFor(level, arch, rng);
   const theme = themeFor(level);
-  const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
+  const t0 = Date.now();
+  const track = buildTrackFloor(cellsW, cellsH, rng, {
     profile: arch.track,
     density: Math.max(0.35, Math.min(0.85, windiness)),
   });
+  const trackMs = Date.now() - t0;
   if (!track) return null;
   const grid = track.grid;
   stampSecretBands(grid, rng, cfg.secrets, {
@@ -171,13 +240,21 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
   });
   const walkable = walkableCount(grid);
   const budget = floorBudgets(level, walkable);
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + budget.partsArea;
+  // `floorTiles` is the generator's own prediction (`cellsW*cellsH*2.5`, ±5%
+  // typical). Predicting rather than building a second reference floor keeps
+  // the ratio a property of the CONFIG instead of one reference seed's luck.
+  const areaRatio = walkable / Math.max(1, cfg.floorTiles);
+  const levelTerm = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
+  const partBudgetBase = density === "raw" ? levelTerm + budget.partsArea : Math.round(levelTerm * areaRatio) + budget.partsArea;
+  const partBudget = Math.max(4, Math.round(partBudgetBase * modifier.partMult));
+  const ratio = density === "raw" ? 1 : areaRatio;
+  const t1 = Date.now();
   const plan = decorateMaze(
     grid,
     rng,
     Math.max(1, Math.round(budget.zombies * modifier.hordeMult)),
     Math.max(4, Math.round(budget.torches * modifier.torchMult)),
-    Math.max(4, Math.round(partBudget * modifier.partMult)),
+    partBudget,
     // ROOMS. `authorFloor` passes `track.chambers` here and this passed `[]`
     // from the day `buildTrackFloor` learned to report chambers
     // (648e7c7e, Plaza A-1a) until 2026-09-06 — that commit taught the
@@ -201,10 +278,13 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
     {
       anchors: [],
       deal: modifier.dealBias.length ? ([...modifier.dealBias, ...theme.deal] as typeof theme.deal) : theme.deal,
-      targets: TARGETS_PER_FLOOR,
-      trapdoors: Math.round(TRAPDOORS_PER_FLOOR * modifier.trapdoorMult),
-      vaultRamps: VAULT_RAMPS_PER_FLOOR,
-      hazards: Math.round(Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX) * modifier.hazardMult),
+      targets: scaleCount(TARGETS_PER_FLOOR, ratio),
+      trapdoors: scaleCount(Math.round(TRAPDOORS_PER_FLOOR * modifier.trapdoorMult), ratio),
+      vaultRamps: scaleCount(VAULT_RAMPS_PER_FLOOR, ratio),
+      hazards: scaleCount(
+        Math.round(Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX) * modifier.hazardMult),
+        ratio,
+      ),
       forceVault: bonusRoom,
       launchBreaks: cfg.launchBreaks,
       bonusItems: modifier.bonusItems,
@@ -228,6 +308,7 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
       doorways: track.doorways,
     },
   );
+  const decorateMs = Date.now() - t1;
   // ── THE LAMP PUZZLE — braziers and the sealed vault, mirroring authorFloor.
   // It draws from the shared rng and it PUSHES PARTS, so a harness that skips
   // it reports a floor with no braziers on it.
@@ -263,5 +344,11 @@ export function buildHeadlessPlan(level: number, runSeed: number, bonusRoom = fa
     plan,
     walkable,
     modifier: modifier.id,
+    theme: theme.name,
+    cellsW,
+    cellsH,
+    areaRatio,
+    partBudget,
+    timing: { track: trackMs, decorate: decorateMs },
   };
 }
