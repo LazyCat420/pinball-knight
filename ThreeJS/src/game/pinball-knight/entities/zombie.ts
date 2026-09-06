@@ -142,7 +142,9 @@ import {
   SAPPER_R, SAPPER_CONTACT_RANGE, SAPPER_ATTACK_WINDUP, SAPPER_ATTACK_COOLDOWN,
   CRYSTAL_R, CRYSTAL_CONTACT_RANGE, CRYSTAL_ATTACK_WINDUP, CRYSTAL_ATTACK_COOLDOWN,
   MIMIC_R, MIMIC_CONTACT_RANGE, MIMIC_ATTACK_WINDUP, MIMIC_ATTACK_COOLDOWN, MIMIC_WAKE_RANGE,
-  BRUTE_HP, FISH_FEET_R } from "../constants";
+  BRUTE_HP, FISH_FEET_R,
+  PLATYPUS_R, PLATYPUS_CONTACT_RANGE, PLATYPUS_ATTACK_WINDUP, PLATYPUS_ATTACK_COOLDOWN,
+  PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -155,7 +157,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
 import { fireCopBullet, fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
-import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing } from "../sfx";
+import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 export interface EnemyStats {
@@ -205,6 +207,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sapper: { bodyR: SAPPER_R, contactRange: SAPPER_CONTACT_RANGE, windup: SAPPER_ATTACK_WINDUP, cooldown: SAPPER_ATTACK_COOLDOWN, ranged: false },
   crystalback: { bodyR: CRYSTAL_R, contactRange: CRYSTAL_CONTACT_RANGE, windup: CRYSTAL_ATTACK_WINDUP, cooldown: CRYSTAL_ATTACK_COOLDOWN, ranged: false },
   mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
+  platypus: { bodyR: PLATYPUS_R, contactRange: PLATYPUS_CONTACT_RANGE, windup: PLATYPUS_ATTACK_WINDUP, cooldown: PLATYPUS_ATTACK_COOLDOWN, ranged: false },
 };
 
 /**
@@ -387,6 +390,64 @@ function croakerCaneSpin(z: Zombie, pdist: number, contactRange: number): void {
       }
       state.shakeT = Math.max(state.shakeT, 0.15);
       state.vfx?.sparks?.(p.x, 0.5, p.z, nx, nz, 12);
+    }
+  }
+}
+
+/** PLATYPUS: Ground slam attack — smashes its heavy metal tail into the floor, creating radiating cracks, sparks, screen shake, and knockback! */
+export function platypusTailSlam(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || p.hp <= 0) return;
+
+  sfxHeavy();
+  state.shakeT = Math.max(state.shakeT, 0.35);
+  z.anim.play("attack", { force: true });
+
+  const impactX = z.x;
+  const impactZ = z.z;
+
+  // 1. Radiating floor cracks: spawn groove decals radiating outward
+  const rayCount = 6;
+  for (let i = 0; i < rayCount; i++) {
+    const angle = (i / rayCount) * Math.PI * 2;
+    const crackDist = 0.8 + (i % 2) * 0.4;
+    const cx = impactX + Math.cos(angle) * crackDist;
+    const cz = impactZ + Math.sin(angle) * crackDist;
+    spawnFloorFx("groove", cx, cz, GROOVE_RADIUS * 1.3, GROOVE_LIFE * 1.5);
+  }
+
+  // 2. Heavy explosive impact sparks & shockwave particles
+  state.vfx?.sparks?.(impactX, 0.2, impactZ, 0, 0.8, 16);
+
+  // 3. AoE Damage & Deflection against player if within slam radius
+  const slamDistSq = (p.x - impactX) * (p.x - impactX) + (p.z - impactZ) * (p.z - impactZ);
+  const slamRadius = PLATYPUS_SLAM_RADIUS;
+  if (slamDistSq <= slamRadius * slamRadius) {
+    hitPlayer(z);
+    const dist = Math.sqrt(slamDistSq) || 1;
+    const nx = (p.x - impactX) / dist;
+    const nz = (p.z - impactZ) / dist;
+    if (p.momSpeed > 0) {
+      p.momX = nx;
+      p.momZ = nz;
+      p.momSpeed = Math.max(p.momSpeed, PLATYPUS_SLAM_DEFLECT);
+    } else if (g) {
+      const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.6, nz * 0.6);
+      p.x = res.x;
+      p.z = res.z;
+    }
+  }
+
+  // 4. Stagger nearby lower-tier monsters (friendly fire shockwave)
+  for (const other of state.zombies) {
+    if (other === z || other.hp <= 0 || (other.mode as string) === "dead") continue;
+    const dx = other.x - impactX;
+    const dz = other.z - impactZ;
+    const odistSq = dx * dx + dz * dz;
+    if (odistSq <= (slamRadius * 0.9) * (slamRadius * 0.9)) {
+      const odist = Math.sqrt(odistSq) || 1;
+      damageZombie(other, 1, dx / odist, dz / odist, 1.5);
     }
   }
 }
@@ -901,6 +962,8 @@ export function updateZombies(dt: number): void {
             bruteSlam(z, pdist, contactRange); // a radial haymaker, not a point bite
           } else if (z.kind === "croaker") {
             croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
+          } else if (z.kind === "platypus") {
+            platypusTailSlam(z, pdist, contactRange); // heavy metal tail ground slam
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

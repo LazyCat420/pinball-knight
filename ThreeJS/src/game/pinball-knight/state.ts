@@ -344,7 +344,8 @@ export type EnemyKind =
   | "wisp" // EVASIVE — short-blinks away when hit, hard to pin
   | "sapper" // ANTI-MATERIAL — drains your active marble on hit
   | "crystalback" // REFLECTOR — ramming it at speed shatters shards into YOU
-  | "mimic"; // AMBUSHER — dormant + item-like until you're close, then lunges
+  | "mimic" // AMBUSHER — dormant + item-like until you're close, then lunges
+  | "platypus"; // SLAMMER — heavy armored platypus with metal tail ground slam
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

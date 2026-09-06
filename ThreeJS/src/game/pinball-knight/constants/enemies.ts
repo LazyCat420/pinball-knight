@@ -468,6 +468,24 @@ export const CROAKER_HOP_BOUNCES = 2;
  * read as a trap rather than as a stumble.
  */
 export const JESTER_SPRING_KICK = 11;
+
+// ── Iron Platypus (Tail Slam & Ground Cracks) ──────────────────
+/**
+ * IRON PLATYPUS — a tanky armored beast with a heavy segmented steel tail.
+ * Slams the ground with crushing force, cracking the stone floor and radiating
+ * shockwaves that damage the player and stagger nearby monsters.
+ */
+export const PLATYPUS_HP = 8;
+export const PLATYPUS_R = 0.42;
+export const PLATYPUS_SPEED_FACTOR = 0.72;
+export const PLATYPUS_RATIO = 19;
+export const PLATYPUS_FROM_LEVEL = 2;
+export const PLATYPUS_CONTACT_RANGE = 2.6;
+export const PLATYPUS_ATTACK_WINDUP = 0.75;
+export const PLATYPUS_ATTACK_COOLDOWN = 2.8;
+export const PLATYPUS_DAMAGE = 2;
+export const PLATYPUS_SLAM_RADIUS = 2.4;
+export const PLATYPUS_SLAM_DEFLECT = 10.0;
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;

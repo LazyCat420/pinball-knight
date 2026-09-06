@@ -60,6 +60,7 @@ import {
   STILTNECK_BLAST_DAMAGE,
   JESTER_SPRING_KICK,
   CROAKER_SPIN_DAMAGE,
+  PLATYPUS_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -1114,6 +1115,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sapper: SPIDER_DAMAGE,
   crystalback: GOLEM_DAMAGE,
   mimic: BRUTE_DAMAGE,
+  platypus: PLATYPUS_DAMAGE,
 };
 
 /**
@@ -1179,9 +1181,8 @@ export function hitPlayer(z: Zombie): void {
   const d = Math.hypot(dx, dz) || 1;
   const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * knockback, (dz / d) * knockback);
   p.x = res.x;
-  p.z = res.z;
   syncActorMesh(p);
-  if (z.kind === "brute") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
+  if (z.kind === "brute" || z.kind === "platypus") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
   // SAPPER: the bite DRAINS your active marble material — a hard counter that
   // makes a material a resource to protect, not just spend.
   // 💎 DIAMOND CANNOT BE BROKEN — including by the one enemy built to break
