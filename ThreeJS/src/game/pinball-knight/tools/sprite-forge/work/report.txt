@@ -693,30 +693,30 @@ VERDICT: BETTER than the painted roster
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/mimic-S  (frames + preview.png)
 
 ═══ necro (S) — 4 rows [4/4/4/4], 16 frames
-GRID   NOT PIXEL ART — no lattice (best ×2 at 3.9%, need 90%) and only 17% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 35.1% — a real lattice is ~100%, so the blocks are mush.
-MATTE  bg #fd02fc (100% of the border) — keyed 77.6%, 306 pocket(s) LEFT OPAQUE
-⚠ 306 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+GRID   NO BLOCK GRID, but 57% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 34.6% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (100% of the border) — keyed 69.5%, 30 pocket(s) LEFT OPAQUE
+⚠ 30 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
 monster  entries  isolated%  runLen  invented
 ---------------------------------------------
-idle0         21       16.6    1.67        21
-idle1         21       14.9    1.64        21
-idle2         21       15.6    1.63        21
-idle3         21       15.2    1.66        21
-walk0         18       17.1    1.93        18
-walk1         18       16.1    1.92        18
-walk2         19       18.0    1.87        19
-walk3         19       16.1    1.94        19
-attack0       19       13.7    1.78        19
-attack1       19       14.3    1.78        19
-attack2       19       12.9    1.83        19
-attack3       18       14.5    1.84        18
-death0        17       12.0    1.74        17
-death1        17       10.2    2.12        17
-death2        14       12.4    2.27        14
-death3        16       14.2    2.70        16
-MEAN   entries 18.6  isolated 14.6%  runLen 1.90
+idle0         21       24.3    1.54        21
+idle1         23       26.3    1.52        23
+idle2         21       24.4    1.52        21
+idle3         22       24.4    1.53        22
+walk0         22       25.8    1.57        22
+walk1         21       28.8    1.63        21
+walk2         21       27.4    1.69        21
+walk3         21       26.3    1.69        21
+attack0       23       29.4    1.59        23
+attack1       28       28.5    1.51        28
+attack2       30       33.2    1.46        30
+attack3       28       35.5    1.43        28
+death0        21       23.6    1.81        21
+death1        12       21.5    1.67        12
+death2        11       23.0    1.77        11
+death3        11       20.0    2.10        11
+MEAN   entries 21.0  isolated 26.4%  runLen 1.63
 ROSTER entries 20.1  isolated 22.5%  runLen 1.82
-VERDICT: BETTER than the painted roster
+VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/necro-S  (frames + preview.png)
 
 ═══ overlord (S) — 4 rows [4/4/4/4], 16 frames
@@ -1262,10 +1262,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   mimic-S            walk     centred sweep 0.064 (span 0.070 × r +0.91)  grounded 0px spread  gait peak 0.35
   mimic-S            attack   centred sweep 0.001 (span 0.044 × r +0.03)  grounded 0px spread
   mimic-S            death    centred sweep 0.079 (span 0.081 × r +0.97)  grounded 0px spread
-  necro-S            idle     centred sweep 0.005 (span 0.006 × r -0.88)  grounded 0px spread
-  necro-S            walk     centred sweep 0.008 (span 0.021 × r -0.37)  grounded 0px spread  gait peak 0.45
-  necro-S            attack   centred sweep 0.002 (span 0.002 × r +0.84)  grounded 0px spread
-  necro-S            death    centred sweep 0.032 (span 0.051 × r +0.63)  grounded 0px spread
+  necro-S            idle     centred sweep 0.004 (span 0.010 × r -0.42)  grounded 0px spread
+  necro-S            walk     centred sweep 0.000 (span 0.011 × r +0.01)  grounded 2px spread  gait peak 0.41
+  necro-S            attack   centred sweep 0.030 (span 0.120 × r +0.25)  grounded 0px spread
+  necro-S            death    centred sweep 0.023 (span 0.126 × r +0.18)  grounded 1px spread
   overlord-S         idle     centred sweep 0.000 (span 0.001 × r -0.03)  grounded 0px spread
   overlord-S         walk     centred sweep 0.033 (span 0.042 × r +0.78)  grounded 0px spread  gait peak 0.07
   overlord-S         attack   centred sweep 0.017 (span 0.021 × r -0.79)  grounded 0px spread

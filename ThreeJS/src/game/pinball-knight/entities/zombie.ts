@@ -347,7 +347,7 @@ function bruteSlam(z: Zombie, pdist: number, contactRange: number): void {
   state.shakeT = Math.max(state.shakeT, 0.2);
 }
 
-/** NECROMANCER: raise one add (deferred), unless the local horde is already thick. */
+/** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
 function necroSummon(z: Zombie): void {
   let near = 0;
   for (const o of state.zombies) {
@@ -356,8 +356,10 @@ function necroSummon(z: Zombie): void {
   }
   if (near >= NECRO_SUMMON_MAX) return;
   onSummon?.(z.x, z.z);
-  state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 14);
-  state.vfx?.blood(z.x, 0.4, z.z, "green", 6);
+  // Dark necrotic summoning runes and sparks
+  state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 18);
+  state.vfx?.blood(z.x, 0.3, z.z, "green", 8);
+  state.shakeT = Math.max(state.shakeT, 0.12);
 }
 
 /** WARDEN aura: top up a damage-absorb shield on every nearby living foe. */

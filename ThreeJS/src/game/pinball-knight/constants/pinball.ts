@@ -1408,6 +1408,12 @@ export const NECRO_SPEED_FACTOR = 0.8;
 export const NECRO_FROM_LEVEL = 4;
 export const NECRO_SUMMON_CD = 4.5; // seconds between raising an add
 export const NECRO_SUMMON_MAX = 6; // don't summon past this live-horde count nearby
+// 🐰 Zombie Mini Bunny Rabbits — Necromancer summoned swarm
+export const BUNNY_HP = 1;
+export const BUNNY_R = 0.22;
+export const BUNNY_SCALE = 0.5;
+export const BUNNY_SPEED_FACTOR = 1.35;
+export const BUNNY_PER_SUMMON = 2; // 2 mini bunnies per cast
 // 🛡 Warden — cop guard with bouncing bullets
 export const WARDEN_HP = 8;
 export const WARDEN_R = 0.4;

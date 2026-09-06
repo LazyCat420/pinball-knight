@@ -47,6 +47,7 @@ import { makeFishFeetPaints } from "./monsters/fish_feet";
 import { makeHoundPaints } from "./monsters/hound";
 import { makeBloaterPaints } from "./monsters/bloater";
 import { makeWardenPaints } from "./monsters/warden";
+import { makeNecroPaints } from "./monsters/necro";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -75,7 +76,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   rotortail: makeRotortailPaints,
   stiltneck: makeStiltneckPaints,
   fish_feet: makeFishFeetPaints,
-  necromancer: makeSpitterPaints,
+  necromancer: makeNecroPaints,
   crystalback: makeGolemPaints,
   mimic: makeGolemPaints,
   // The Death Dealer, and the Reaper King who wears his coat.
