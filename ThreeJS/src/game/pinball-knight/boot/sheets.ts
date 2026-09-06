@@ -153,7 +153,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex";
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -162,7 +162,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -419,6 +419,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   trex: "trex",
   boss: "overlord",
   platypus: "platypus",
+  jade_buddha: "jade_buddha",
 };
 
 
@@ -534,7 +535,7 @@ export function keysForFloor(level: number): SheetKey[] {
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
-  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex");
+  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha");
   return keys;
 }
 

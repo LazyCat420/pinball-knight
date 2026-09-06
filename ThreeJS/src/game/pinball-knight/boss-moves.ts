@@ -28,7 +28,7 @@
  * with the boss about who it is aiming at.
  */
 import * as THREE from "three";
-import type { BarrageSpec, ChargeSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
+import type { BarrageSpec, ChargeSpec, FanBoomerangSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import { moveCircle } from "./engine/collision";
@@ -661,4 +661,313 @@ export function updateTeleportFire(
       rt.shotsFired = 0;
     }
   }
+}
+
+// ── FAN BOOMERANG ───────────────────────────────────────────────────────────
+//
+// The Jade Buddha's signature weapon: an ornate Chinese war fan thrown in an
+// arcing boomerang trajectory. Travels outward with a lateral curve, hovers
+// at apex while spinning furiously with razor wind particles, then accelerates
+// back to the LIVE coordinates of the Buddha. Can damage on both legs!
+
+export interface BoomerangFan {
+  mesh: THREE.Mesh;
+  state: "outward" | "apex" | "returning" | "done";
+  x: number;
+  z: number;
+  startX: number;
+  startZ: number;
+  headingX: number;
+  headingZ: number;
+  perpX: number;
+  perpZ: number;
+  dist: number;
+  maxDist: number;
+  speed: number;
+  curve: number;
+  apexT: number;
+  damage: number;
+  launch: number;
+  hasHitOutward: boolean;
+  hasHitReturn: boolean;
+  rotSpeed: number;
+}
+
+export interface FanBoomerangRt {
+  t: number;
+  phase: "idle" | "windup" | "active";
+  aimX: number;
+  aimZ: number;
+  tell: THREE.Mesh | null;
+  fans: BoomerangFan[];
+}
+
+export function freshFanBoomerang(spec: FanBoomerangSpec): FanBoomerangRt {
+  return { t: spec.interval, phase: "idle", aimX: 0, aimZ: 0, tell: null, fans: [] };
+}
+
+let _fanTex: THREE.CanvasTexture | null = null;
+function getFanTexture(): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+  if (_fanTex) return _fanTex;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    const cx = 64;
+    const cy = 70;
+    const r = 54;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, -Math.PI * 0.85, -Math.PI * 0.15);
+    ctx.closePath();
+    ctx.fillStyle = "#2ee89a"; // radiant emerald jade
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ffd700"; // gold rim
+    ctx.stroke();
+
+    for (let a = -Math.PI * 0.85; a <= -Math.PI * 0.15; a += Math.PI * 0.14) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      ctx.strokeStyle = "#e6b800";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Pivot and red tassel
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#b22222";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 4);
+    ctx.lineTo(cx - 5, cy + 30);
+    ctx.lineTo(cx + 5, cy + 30);
+    ctx.closePath();
+    ctx.fillStyle = "#ff2040";
+    ctx.fill();
+
+    _fanTex = new THREE.CanvasTexture(canvas);
+    _fanTex.magFilter = THREE.NearestFilter;
+    _fanTex.minFilter = THREE.NearestFilter;
+    return _fanTex;
+  } catch {
+    return null;
+  }
+}
+
+function makeFanMesh(color: number): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(1.5, 1.5);
+  const tex = getFanTexture();
+  const mat = tex
+    ? new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false })
+    : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 13;
+  return add(mesh);
+}
+
+function spawnFan(
+  bx: number,
+  bz: number,
+  aimX: number,
+  aimZ: number,
+  spec: FanBoomerangSpec,
+  curveSign: number,
+): BoomerangFan {
+  const dx = aimX - bx;
+  const dz = aimZ - bz;
+  const len = Math.hypot(dx, dz) || 1;
+  const hx = dx / len;
+  const hz = dz / len;
+  // Perpendicular vector for lateral boomerang curve
+  const px = -hz * curveSign;
+  const pz = hx * curveSign;
+
+  const mesh = makeFanMesh(spec.color);
+  mesh.position.set(bx, SHOT_Y, bz);
+
+  return {
+    mesh,
+    state: "outward",
+    x: bx,
+    z: bz,
+    startX: bx,
+    startZ: bz,
+    headingX: hx,
+    headingZ: hz,
+    perpX: px,
+    perpZ: pz,
+    dist: 0,
+    maxDist: spec.reachDist,
+    speed: spec.speed,
+    curve: spec.curve,
+    apexT: spec.apexPause,
+    damage: spec.damage,
+    launch: spec.launch,
+    hasHitOutward: false,
+    hasHitReturn: false,
+    rotSpeed: 24 * curveSign,
+  };
+}
+
+export function updateFanBoomerang(rt: FanBoomerangRt, spec: FanBoomerangSpec, ctx: MoveCtx): void {
+  // ── IDLE PHASE ──
+  if (rt.phase === "idle") {
+    rt.t -= ctx.dt;
+    if (rt.t <= spec.telegraph + 1e-4) {
+      rt.phase = "windup";
+      rt.aimX = ctx.target.x;
+      rt.aimZ = ctx.target.z;
+
+      // Tell: glowing emerald energy gathering at Buddha
+      const ring = groundRing(1.6, spec.color, 0.12);
+      ring.position.set(ctx.x, 0.04, ctx.z);
+      rt.tell = add(ring);
+      ctx.playAnim?.("attack", { force: true });
+    }
+    return;
+  }
+
+  // ── WINDUP PHASE ──
+  if (rt.phase === "windup") {
+    rt.t -= ctx.dt;
+    if (rt.tell) {
+      rt.tell.position.set(ctx.x, 0.04, ctx.z);
+      pulse(rt.tell, rt.t);
+      if (Math.random() < ctx.dt * 15) {
+        state.vfx?.mote(ctx.x, SHOT_Y, ctx.z, spec.color);
+      }
+    }
+    if (rt.t <= 0) {
+      disposeMesh(rt.tell);
+      rt.tell = null;
+      rt.phase = "active";
+      rt.t = spec.interval;
+
+      // Launch fans! Dual mode throws two fans along mirrored crossing arcs
+      if (spec.dual) {
+        rt.fans.push(spawnFan(ctx.x, ctx.z, rt.aimX, rt.aimZ, spec, 1));
+        rt.fans.push(spawnFan(ctx.x, ctx.z, rt.aimX, rt.aimZ, spec, -1));
+      } else {
+        rt.fans.push(spawnFan(ctx.x, ctx.z, rt.aimX, rt.aimZ, spec, 1));
+      }
+      state.vfx?.burst(ctx.x, SHOT_Y, ctx.z, spec.color, 16, 4);
+    }
+    return;
+  }
+
+  // ── ACTIVE FLIGHT PHASE ──
+  if (rt.phase === "active") {
+    const FAN_HIT_R = 1.35;
+
+    for (const fan of rt.fans) {
+      if (fan.state === "done") continue;
+
+      // Spin fan around Y-axis in ground plane (mesh.rotation.z because rotation.x = -PI/2)
+      fan.mesh.rotation.z += ctx.dt * fan.rotSpeed;
+
+      // ── OUTWARD FLIGHT ──
+      if (fan.state === "outward") {
+        fan.dist += fan.speed * ctx.dt;
+        const frac = Math.min(1, fan.dist / fan.maxDist);
+        const lateral = Math.sin(frac * Math.PI) * fan.curve;
+
+        fan.x = fan.startX + fan.headingX * fan.dist + fan.perpX * lateral;
+        fan.z = fan.startZ + fan.headingZ * fan.dist + fan.perpZ * lateral;
+
+        // Particle trail
+        if (Math.random() < ctx.dt * 20) {
+          state.vfx?.mote(fan.x, SHOT_Y, fan.z, spec.color);
+        }
+
+        // Damage check on outward trip
+        if (!fan.hasHitOutward) {
+          const hit = ctx.hitAt(fan.x, fan.z, FAN_HIT_R, fan.damage, fan.launch);
+          if (hit) {
+            fan.hasHitOutward = true;
+            state.vfx?.burst(fan.x, SHOT_Y, fan.z, 0xffffff, 10, 5);
+          }
+        }
+
+        if (fan.dist >= fan.maxDist) {
+          fan.state = "apex";
+          fan.apexT = spec.apexPause;
+          state.vfx?.burst(fan.x, SHOT_Y, fan.z, spec.color, 12, 4);
+        }
+      }
+
+      // ── APEX HOVER ──
+      else if (fan.state === "apex") {
+        fan.apexT -= ctx.dt;
+        // High-speed hover spin + razor wind sparks
+        fan.mesh.rotation.z += ctx.dt * fan.rotSpeed * 1.5;
+        if (Math.random() < ctx.dt * 25) {
+          state.vfx?.mote(fan.x, SHOT_Y, fan.z, 0xffffff);
+        }
+        if (fan.apexT <= 0) {
+          fan.state = "returning";
+        }
+      }
+
+      // ── HOMING RETURN FLIGHT ──
+      else if (fan.state === "returning") {
+        const toBossX = ctx.x - fan.x;
+        const toBossZ = ctx.z - fan.z;
+        const distToBoss = Math.hypot(toBossX, toBossZ);
+
+        if (distToBoss > 0.1) {
+          fan.x += (toBossX / distToBoss) * fan.speed * ctx.dt;
+          fan.z += (toBossZ / distToBoss) * fan.speed * ctx.dt;
+        }
+
+        // Particle trail
+        if (Math.random() < ctx.dt * 20) {
+          state.vfx?.mote(fan.x, SHOT_Y, fan.z, spec.color);
+        }
+
+        // Damage check on return trip (enables double-hit!)
+        if (!fan.hasHitReturn) {
+          const hit = ctx.hitAt(fan.x, fan.z, FAN_HIT_R, fan.damage, fan.launch);
+          if (hit) {
+            fan.hasHitReturn = true;
+            state.vfx?.burst(fan.x, SHOT_Y, fan.z, 0xffffff, 10, 5);
+          }
+        }
+
+        // Caught by boss!
+        if (distToBoss < 0.85) {
+          disposeMesh(fan.mesh);
+          fan.state = "done";
+          state.vfx?.burst(ctx.x, SHOT_Y, ctx.z, spec.color, 8, 3);
+        }
+      }
+
+      fan.mesh.position.set(fan.x, SHOT_Y, fan.z);
+    }
+
+    // Clean up finished fans
+    rt.fans = rt.fans.filter((f) => f.state !== "done");
+    if (rt.fans.length === 0) {
+      rt.phase = "idle";
+      ctx.playAnim?.("idle");
+    }
+  }
+}
+
+export function disposeFanBoomerang(rt: FanBoomerangRt | null): void {
+  if (!rt) return;
+  if (rt.tell) {
+    disposeMesh(rt.tell);
+    rt.tell = null;
+  }
+  for (const fan of rt.fans) {
+    disposeMesh(fan.mesh);
+  }
+  rt.fans = [];
 }

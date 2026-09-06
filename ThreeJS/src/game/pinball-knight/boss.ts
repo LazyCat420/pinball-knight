@@ -44,8 +44,10 @@ import { peers } from "../../net/presence";
 import { BOSSES, BOSS_KINDS, movesAt, type BossKind, type BossSpec } from "./boss-kinds";
 import {
   chargeHoldsMovement,
+  disposeFanBoomerang,
   freshBarrage,
   freshCharge,
+  freshFanBoomerang,
   freshNova,
   freshSlam,
   freshSummon,
@@ -55,6 +57,7 @@ import {
   teleportFireHoldsMovement,
   updateBarrage,
   updateCharge,
+  updateFanBoomerang,
   updateNova,
   updateShots,
   updateSlam,
@@ -63,6 +66,7 @@ import {
   type BarrageRt,
   type BossShot,
   type ChargeRt,
+  type FanBoomerangRt,
   type MoveCtx,
   type NovaRt,
   type Orbiter,
@@ -235,6 +239,7 @@ interface BossState {
   summon: SummonRt | null;
   nova: NovaRt | null;
   teleportFire: TeleportFireRt | null;
+  fanBoomerang: FanBoomerangRt | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -338,6 +343,7 @@ export function spawnBoss(
     summon: null,
     nova: null,
     teleportFire: null,
+    fanBoomerang: null,
     adds: [],
     spawnAdd,
     portal: null,
@@ -505,6 +511,7 @@ export function updateBoss(dt: number): void {
     }
     if (p2.moves.nova) boss.nova = freshNova(p2.moves.nova);
     if (p2.moves.teleportFire) boss.teleportFire = freshTeleportFire(p2.moves.teleportFire);
+    if (p2.moves.fanBoomerang) boss.fanBoomerang = freshFanBoomerang(p2.moves.fanBoomerang);
     if (p2.speedMult) boss.z.speed *= p2.speedMult;
     syncOrbiters();
     showToast(p2.title, boss.spec.tagline);
@@ -553,6 +560,11 @@ export function updateBoss(dt: number): void {
   if (moves.teleportFire) {
     boss.teleportFire ??= freshTeleportFire(moves.teleportFire);
     updateTeleportFire(boss.teleportFire, moves.teleportFire, ctx, boss.shots);
+  }
+
+  if (moves.fanBoomerang) {
+    boss.fanBoomerang ??= freshFanBoomerang(moves.fanBoomerang);
+    updateFanBoomerang(boss.fanBoomerang, moves.fanBoomerang, ctx);
   }
 
   // ── The ring wheels (after moves so teleports track orbiters instantly) ──
@@ -636,6 +648,10 @@ function clearTelegraphs(): void {
     disposeMesh(boss.teleportFire.ring);
     boss.teleportFire.ring = null;
   }
+  if (boss.fanBoomerang) {
+    disposeFanBoomerang(boss.fanBoomerang);
+    boss.fanBoomerang = null;
+  }
 }
 
 // ── Death → portal ────────────────────────────────────────────────────────────
@@ -643,6 +659,10 @@ function openPortal(): void {
   if (!boss || boss.opened) return;
   boss.opened = true;
   state.exitLocked = false;
+  if (boss.fanBoomerang) {
+    disposeFanBoomerang(boss.fanBoomerang);
+    boss.fanBoomerang = null;
+  }
 
   // The ring shatters, and every telegraph in flight is dropped — a boss dying
   // mid-wind-up must not leave a ring on the floor that never resolves.
@@ -726,9 +746,17 @@ export function bossNetState(): BossAux | null {
     rings.push({ x: boss.z.x, z: boss.z.z, r: 1.8, t: boss.summon.t, kind: "summon" });
   }
   const charging = boss.charge && boss.charge.phase === "telegraph" && moves.charge;
+  const netShots = boss.shots.map((b) => ({ x: Math.round(b.x * 50) / 50, z: Math.round(b.z * 50) / 50 }));
+  if (boss.fanBoomerang) {
+    for (const f of boss.fanBoomerang.fans) {
+      if (f.state !== "done") {
+        netShots.push({ x: Math.round(f.x * 50) / 50, z: Math.round(f.z * 50) / 50 });
+      }
+    }
+  }
   return {
     kind: boss.spec.kind,
-    shots: boss.shots.map((b) => ({ x: Math.round(b.x * 50) / 50, z: Math.round(b.z * 50) / 50 })),
+    shots: netShots,
     rings,
     lane: charging ? { x: boss.z.x, z: boss.z.z, dx: boss.charge!.dx, dz: boss.charge!.dz, len: moves.charge!.distance } : null,
     portal: boss.portal ? { x: boss.portal.position.x, z: boss.portal.position.z } : null,
@@ -947,6 +975,7 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     summon: null,
     nova: null,
     teleportFire: null,
+    fanBoomerang: null,
     adds: [],
     // Adds cannot be adopted: the previous authority's brood is in
     // `state.zombies` as ordinary monsters and stays that way.

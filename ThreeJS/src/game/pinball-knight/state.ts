@@ -345,7 +345,8 @@ export type EnemyKind =
   | "sapper" // ANTI-MATERIAL — drains your active marble on hit
   | "crystalback" // REFLECTOR — ramming it at speed shatters shards into YOU
   | "mimic" // AMBUSHER — dormant + item-like until you're close, then lunges
-  | "platypus"; // SLAMMER — heavy armored platypus with metal tail ground slam
+  | "platypus" // SLAMMER — heavy armored platypus with metal tail ground slam
+  | "jade_buddha"; // BOSS — serene emerald buddha statue with boomerang fan
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
