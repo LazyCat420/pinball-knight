@@ -43,6 +43,7 @@ import {
   setGolemShatterHandler,
   setBloaterBurstHandler,
   setSporelingBurstHandler,
+  setEspressoSpillHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -67,6 +68,9 @@ import { sfxFlame } from "../sfx/weapons";
 import {
   BLOATER_BURST_RADIUS,
   FIRE_PUDDLE_LIFE,
+  ESPRESSO_SPILL_RADIUS,
+  ESPRESSO_SPILL_LIFE,
+  ESPRESSO_SPILL_DAMAGE,
   CARD_BURN_TICK,
   BOSS_GOLD,
   GOLD_PER_KILL,
@@ -294,6 +298,52 @@ export function installGameplayWiring(deps: WiringDeps): void {
       if (distSq <= BLOATER_BURST_RADIUS * BLOATER_BURST_RADIUS) {
         hitPlayerRanged(1, x, z);
         state.vfx?.sparks(px, 0.4, pz, 0, 1, 6);
+      }
+    }
+  });
+  // An ESPRESSO cup shatters into hot porcelain shards and spills scalding boiling
+  // coffee across the floor, burning anything in the area and leaving a steaming coffee hazard.
+  setEspressoSpillHandler((x, z) => {
+    // 1. Persistent scalding coffee floor hazard decal
+    spawnFloorFx("coffee", x, z, ESPRESSO_SPILL_RADIUS, ESPRESSO_SPILL_LIFE, true);
+
+    // 2. Boiling coffee splatter & porcelain shard VFX:
+    // Dark roast coffee burst
+    state.vfx?.burst(x, 0.35, z, 0x3b1e08, 24, 3.0);
+    // Golden crema foam droplets
+    state.vfx?.burst(x, 0.4, z, 0xd4a359, 14, 2.2);
+    // Billowing hot steam smoke
+    state.vfx?.smoke(x, 0.4, z, 12, ESPRESSO_SPILL_RADIUS * 0.8);
+    // White/gold porcelain ceramic shard sparks
+    state.vfx?.sparks(x, 0.35, z, 0, 1, 16);
+
+    // Audio cue
+    sfxFlame();
+
+    // 3. Scald & burn all nearby zombies/monsters in the immediate splash zone
+    for (const other of state.zombies) {
+      if (other.hp <= 0 || (other.mode as string) === "dead") continue;
+      const dx = other.x - x;
+      const dz = other.z - z;
+      const distSq = dx * dx + dz * dz;
+      const r = ESPRESSO_SPILL_RADIUS + (other.bodyR || 0.35);
+      if (distSq <= r * r) {
+        damageZombie(other, ESPRESSO_SPILL_DAMAGE, 0, 0, 1.0);
+        other.burnT = CARD_BURN_TICK * 2.0;
+        state.vfx?.steam?.(other.x, 0.3, other.z, 2, 1.0);
+      }
+    }
+
+    // Check player proximity: chip scald damage if in splash zone
+    if (state.player && state.player.hp > 0) {
+      const px = state.player.x;
+      const pz = state.player.z;
+      const dx = px - x;
+      const dz = pz - z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= ESPRESSO_SPILL_RADIUS * ESPRESSO_SPILL_RADIUS) {
+        hitPlayerRanged(ESPRESSO_SPILL_DAMAGE, x, z);
+        state.vfx?.steam?.(px, 0.35, pz, 3, 1.2);
       }
     }
   });

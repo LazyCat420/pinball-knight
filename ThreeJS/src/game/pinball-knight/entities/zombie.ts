@@ -144,7 +144,9 @@ import {
   MIMIC_R, MIMIC_CONTACT_RANGE, MIMIC_ATTACK_WINDUP, MIMIC_ATTACK_COOLDOWN, MIMIC_WAKE_RANGE,
   BRUTE_HP, FISH_FEET_R,
   PLATYPUS_R, PLATYPUS_CONTACT_RANGE, PLATYPUS_ATTACK_WINDUP, PLATYPUS_ATTACK_COOLDOWN,
-  PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE } from "../constants";
+  PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE,
+  ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
+  ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -209,6 +211,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   crystalback: { bodyR: CRYSTAL_R, contactRange: CRYSTAL_CONTACT_RANGE, windup: CRYSTAL_ATTACK_WINDUP, cooldown: CRYSTAL_ATTACK_COOLDOWN, ranged: false },
   mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
   platypus: { bodyR: PLATYPUS_R, contactRange: PLATYPUS_CONTACT_RANGE, windup: PLATYPUS_ATTACK_WINDUP, cooldown: PLATYPUS_ATTACK_COOLDOWN, ranged: false },
+  espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
+  jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
 };
 
 /**
@@ -465,6 +469,51 @@ export function platypusTailSlam(z: Zombie, pdist: number, contactRange: number)
     if (odistSq <= (slamRadius * 0.9) * (slamRadius * 0.9)) {
       const odist = Math.sqrt(odistSq) || 1;
       damageZombie(other, 1, dx / odist, dz / odist, 1.5);
+    }
+  }
+}
+
+/** ESPRESSO: Disneyland Spinning Teacup attack — spins wildly on its base, slinging scalding coffee droplets, dealing contact damage, and deflecting the player ball outward. */
+export function espressoTeacupSpin(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+
+  sfxSpin();
+  sfxSwing();
+  z.anim.play("attack", { force: true });
+  // Swirling scalding coffee slash circle in dark roast brown
+  state.vfx?.slashCircle?.(z.x, 0.35, z.z, ESPRESSO_SPIN_RANGE);
+  // Coffee droplet spray in a centrifugal spiral
+  state.vfx?.burst?.(z.x, 0.35, z.z, 0x3b1e08, 8, 2.0);
+  state.vfx?.burst?.(z.x, 0.4, z.z, 0xd4a359, 6, 1.5);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.random() * 0.2;
+    const r = ESPRESSO_SPIN_RANGE * (0.6 + Math.random() * 0.4);
+    // Dark roast coffee droplet sparks + golden crema foam
+    const color = i % 2 === 0 ? 0x3b1e08 : 0xd4a359;
+    state.vfx?.sparks?.(z.x + Math.cos(a) * r, 0.35, z.z + Math.sin(a) * r, Math.cos(a), Math.sin(a), 3);
+  }
+  // Rising steam puffs from the spinning boiling cup
+  state.vfx?.smoke?.(z.x, 0.45, z.z, 3, 0.5);
+
+  if (pdist <= ESPRESSO_SPIN_RANGE * 1.15) {
+    hitPlayer(z);
+    // Spinning teacup deflection impulse
+    if (pdist > 1e-4) {
+      const nx = (p.x - z.x) / pdist;
+      const nz = (p.z - z.z) / pdist;
+      if (p.momSpeed > 0) {
+        p.momX = nx;
+        p.momZ = nz;
+        p.momSpeed = Math.max(p.momSpeed, ESPRESSO_SPIN_DEFLECT);
+      } else {
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.5, nz * 0.5);
+        p.x = res.x;
+        p.z = res.z;
+      }
+      state.shakeT = Math.max(state.shakeT, 0.2);
+      state.vfx?.sparks?.(p.x, 0.4, p.z, nx, nz, 10);
     }
   }
 }
@@ -981,6 +1030,8 @@ export function updateZombies(dt: number): void {
             croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
           } else if (z.kind === "platypus") {
             platypusTailSlam(z, pdist, contactRange); // heavy metal tail ground slam
+          } else if (z.kind === "espresso") {
+            espressoTeacupSpin(z, pdist, contactRange); // Disneyland spinning teacup attack
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

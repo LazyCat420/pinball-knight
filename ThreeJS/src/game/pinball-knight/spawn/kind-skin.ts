@@ -84,6 +84,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   mimic: { scale: 1.0 },
   bloater: { scale: 1.1 },
   platypus: { scale: 0.95 },
+  espresso: { scale: 0.92 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

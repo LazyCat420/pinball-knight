@@ -388,6 +388,33 @@ ROSTER entries 20.1  isolated 22.5%  runLen 1.82
 VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/dragon-S  (frames + preview.png)
 
+═══ espresso (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NOT PIXEL ART — no lattice (best ×2 at 0.7%, need 90%) and only 48% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 38.6% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (99% of the border) — keyed 62.4%, 606 pocket(s) LEFT OPAQUE
+⚠ 606 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         24       19.1    2.35        24
+idle1         24       19.9    2.18        24
+idle2         23       19.7    2.20        23
+idle3         24       20.3    2.25        24
+walk0         24       22.3    2.18        24
+walk1         25       23.9    2.06        25
+walk2         24       23.9    1.99        24
+walk3         24       26.2    1.94        24
+attack0       24       18.0    2.77        24
+attack1       24       16.6    2.61        24
+attack2       23       22.7    2.19        23
+attack3       24       18.4    2.46        24
+death0        25       23.8    2.14        25
+death1        24       27.5    1.86        24
+death2        24       25.7    1.72        24
+death3        24       20.7    2.01        24
+MEAN   entries 24.0  isolated 21.8%  runLen 2.18
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/espresso-S  (frames + preview.png)
+
 ═══ fish_feet (E) — 4 rows [4/4/4/4], 16 frames
 GRID   NO BLOCK GRID, but 68% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 28.0% — a real lattice is ~100%, so the blocks are mush.
 monster  entries  isolated%  runLen  invented
@@ -1272,6 +1299,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   dragon-S           walk     centred sweep 0.008 (span 0.017 × r +0.50)  grounded 0px spread  gait peak 0.30
   dragon-S           attack   centred sweep 0.025 (span 0.027 × r -0.92)  grounded 0px spread
   dragon-S           death    centred sweep 0.092 (span 0.096 × r +0.96)  grounded 0px spread
+  espresso-S         idle     centred sweep 0.004 (span 0.013 × r -0.32)  grounded 0px spread
+  espresso-S         walk     centred sweep 0.038 (span 0.051 × r -0.74)  grounded 1px spread  gait peak 0.23
+  espresso-S         attack   centred sweep 0.004 (span 0.076 × r -0.06)  grounded 0px spread
+  espresso-S         death    centred sweep 0.081 (span 0.094 × r -0.86)  grounded 1px spread
   fish_feet-E        idle     centred sweep 0.082 (span 0.082 × r +1.00)  grounded 0px spread
   fish_feet-E        walk     centred sweep 0.082 (span 0.082 × r +1.00)  grounded 0px spread  gait peak 0.26
   fish_feet-E        attack   centred sweep 0.087 (span 0.091 × r +0.96)  grounded 0px spread

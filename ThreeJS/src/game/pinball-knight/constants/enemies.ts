@@ -486,6 +486,28 @@ export const PLATYPUS_ATTACK_COOLDOWN = 2.8;
 export const PLATYPUS_DAMAGE = 2;
 export const PLATYPUS_SLAM_RADIUS = 2.4;
 export const PLATYPUS_SLAM_DEFLECT = 10.0;
+
+// ── Walking Espresso Cup (Spinning Teacup & Scalding Spill) ────
+/**
+ * WALKING ESPRESSO CUP — hyperactive caffeine skirmisher.
+ * Spins at blistering RPM like a Disneyland spinning teacup, slinging scalding
+ * coffee droplets in a spiral, and shatters on death to flood the floor with
+ * a boiling coffee puddle that burns anyone standing in it.
+ */
+export const ESPRESSO_HP = 4;
+export const ESPRESSO_R = 0.32;
+export const ESPRESSO_SPEED_FACTOR = 1.35;
+export const ESPRESSO_RATIO = 16;
+export const ESPRESSO_FROM_LEVEL = 2;
+export const ESPRESSO_CONTACT_RANGE = 1.2;
+export const ESPRESSO_ATTACK_WINDUP = 0.35;
+export const ESPRESSO_ATTACK_COOLDOWN = 2.2;
+export const ESPRESSO_DAMAGE = 1;
+export const ESPRESSO_SPIN_RANGE = 1.3;
+export const ESPRESSO_SPIN_DEFLECT = 12.0;
+export const ESPRESSO_SPILL_RADIUS = 1.8;
+export const ESPRESSO_SPILL_LIFE = 5.5;
+export const ESPRESSO_SPILL_DAMAGE = 1;
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;

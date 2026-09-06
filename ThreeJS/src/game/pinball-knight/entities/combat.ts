@@ -61,6 +61,7 @@ import {
   JESTER_SPRING_KICK,
   CROAKER_SPIN_DAMAGE,
   PLATYPUS_DAMAGE,
+  ESPRESSO_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -846,6 +847,15 @@ export function setSporelingBurstHandler(fn: (x: number, z: number) => void): vo
   onSporelingBurst = fn;
 }
 
+/** ESPRESSO death → a scalding boiling coffee spill puddle. */
+let onEspressoSpill: ((x: number, z: number) => void) | null = null;
+export function setEspressoSpillHandler(fn: (x: number, z: number) => void): void {
+  onEspressoSpill = fn;
+}
+export function triggerEspressoSpill(x: number, z: number): void {
+  onEspressoSpill?.(x, z);
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -938,6 +948,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
   if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
+  // An ESPRESSO cup shatters and spills boiling coffee that burns anyone nearby.
+  if (z.kind === "espresso") onEspressoSpill?.(z.x, z.z);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1116,6 +1128,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   crystalback: GOLEM_DAMAGE,
   mimic: BRUTE_DAMAGE,
   platypus: PLATYPUS_DAMAGE,
+  espresso: ESPRESSO_DAMAGE,
+  jade_buddha: BRUTE_DAMAGE,
 };
 
 /**

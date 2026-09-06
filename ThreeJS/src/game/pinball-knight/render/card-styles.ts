@@ -570,6 +570,8 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   sapper: "iron",
   magnet: "iron",
   platypus: "iron",
+  espresso: "stone",
+  jade_buddha: "stone",
 };
 
 /**
