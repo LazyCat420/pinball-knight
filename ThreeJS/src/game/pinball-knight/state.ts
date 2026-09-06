@@ -604,8 +604,27 @@ export interface PinballPart {
   fireT?: number;
   /** GLOVE / FIRE VENT: true once this fire's lane damage has been dealt. */
   punchSpent?: boolean;
-  /** TARGET only: true once broken — a dead target never re-arms. */
+  /**
+   * TARGET only: true once broken.
+   *
+   * A LOOSE target is dead for the floor — nothing ever clears this. A target
+   * belonging to an authored MACHINE is stood back up by `machines.rearmOneShots`
+   * so its bank can be run again, which is why `done` is no longer the same
+   * question as "has this target ever fallen" — see `counted`.
+   */
   done?: boolean;
+  /**
+   * TARGET only: this target has been counted toward the floor's
+   * `targetsHit` / `targetsTotal` objective, and must never be counted again.
+   *
+   * Separate from `done` because a machine's targets re-arm: without this, one
+   * `target-bank` run in a loop would drive `targetsHit` past `targetsTotal`
+   * and pay the "ALL TARGETS DOWN" bonus over and over. The floor objective
+   * asks "how much of the floor have you broken", which each target answers
+   * exactly once in its life; the machine asks "is the bank down right now",
+   * which is `done`. One flag could not mean both.
+   */
+  counted?: boolean;
   /** BUMPER only: pops so far; at BUMPER_LIT_HITS it lights (Slice 5). */
   hits?: number;
   /** TARGET BANK (Slice 6): which drop-target bank this belongs to + its order

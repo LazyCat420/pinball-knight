@@ -771,7 +771,19 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     if (d2 > TARGET_RADIUS * TARGET_RADIUS) return;
     part.done = true;
     part.hitT = 0;
-    state.targetsHit += 1;
+    // A MACHINE's target advances its machine. Without this the target handler
+    // never called the machine at all, so `target-bank` — and the bank guarding
+    // `gargoyle-scoop`'s maw, ~3.2 placements per floor at depth — could qualify
+    // once per floor at most and never tier.
+    if (part.asm) advanceMachineShot(part);
+    // The floor objective counts each target ONCE IN ITS LIFE. A machine's bank
+    // stands back up when the machine arms, so counting on every break would
+    // drive `targetsHit` past `targetsTotal` and re-pay the clear bonus on a
+    // loop. A loose target can only fall once, so this is a no-op for it.
+    if (!part.counted) {
+      part.counted = true;
+      state.targetsHit += 1;
+    }
     onPartTrigger();
     recordShot("target");
     trySkillShot(part);
@@ -1089,6 +1101,12 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // Swallow!
     part.cooldownT = MAW_COOLDOWN;
     part.hitT = 0;
+    // A MAW is a machine step. `gargoyle-scoop`'s fourth and final step IS this
+    // mouth — break the three-target bank, then take the throat — so without
+    // this the library's own capture machine could reach `total - 1` and never
+    // complete. It is the case no hand-made test fixture would have thought to
+    // route, because a maw does not look like a shot; it looks like a hazard.
+    if (part.asm) advanceMachineShot(part);
     recordShot("trapdoor");
     onPartTrigger();
     deps.startDrop(part.x, part.z);

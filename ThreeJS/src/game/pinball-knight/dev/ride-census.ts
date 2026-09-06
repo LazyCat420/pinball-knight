@@ -49,6 +49,18 @@
  * `feeds`, `duel`, `blindjump` and `runwayViolations` do NOT have this problem —
  * they are properties of what is found, not of how far you looked.
  *
+ * That last sentence was FALSE until `ride-census.test.ts` was written, and the
+ * fourth false finding this file nearly produced. The near-miss slop read the
+ * neighbours of the tile where the trace STOPPED, and on a ray the budget cut
+ * short that tile moves as `maxTrace` moves — so a receiver could sit inside the
+ * slop at one trace length and outside it at a longer one. Seed 4 did exactly
+ * that: `feeds` [6, 8, 7, 7, 7, 7, 7] and `nowhere` [7, 5, 6, 6, 6, 6, 6] over
+ * lengths [4, 8, 12, 20, 30, 60, 200] — looking further found FEWER hand-offs.
+ * A truncated ray is now called `nowhere` outright (see `truncated` below), so
+ * the sentence holds and the sweep is monotone: `nowhere` non-increasing in
+ * `maxTrace`, every other bucket non-decreasing. `dev/ride-census.test.ts`
+ * pins it.
+ *
  * ── Two kinds this instrument must NOT accuse ──────────────────────────────
  *
  * The first version of this file reported `boostcurve` and `jumppad` as 100%
@@ -259,6 +271,37 @@ export function rideCensus(g: Grid, plan: LevelPlan, maxTrace: number = DEFAULT_
       }
     }
 
+    // ── The BUDGET ran out, so there is no landing to reason about ─────────
+    //
+    // A ray that walked `maxTrace` open tiles and was still in open floor did
+    // not ARRIVE anywhere — it is where we stopped looking. Every verdict below
+    // except this one reads the LANDING tile (the near-miss slop reads its
+    // neighbours; `wall` reads how short the runway is; the vault band search
+    // starts one past it), and on a truncated ray that tile is an artefact of
+    // the constant rather than a place the player ends up.
+    //
+    // Measured, L24-shaped floor, seed 4: a booster at (12,18) traced with
+    // maxTrace 8 stopped at (20,18) with open floor still ahead, found a
+    // `boostcorner` inside the ±1 slop and scored FEEDS; at maxTrace 12 the same
+    // booster ran to its real end at (21,18) — one tile further, rock beyond —
+    // where the corner was out of slop, and scored NOWHERE. So looking FURTHER
+    // reported one more dead end and one fewer hand-off: `nowhere` went
+    // [7, 5, 6, 6, 6, 6, 6] over trace lengths [4, 8, 12, 20, 30, 60, 200],
+    // and `feeds` went [6, 8, 7, 7, 7, 7, 7]. Both non-monotone, which is
+    // exactly the artefact the header promises `feeds` cannot have and which
+    // makes `sweepTrace` unreadable as evidence.
+    //
+    // Naming it is the whole fix: a truncated ray means "no receiver within
+    // maxTrace", which IS `nowhere` as the header defines it. Each launcher's
+    // verdict is then `nowhere` up to the trace length that reaches its real
+    // terminus and fixed forever after, so `nowhere` is monotonically
+    // non-increasing in `maxTrace` and every other bucket non-decreasing —
+    // and `wall`/`runwayViolations` can no longer fire on a ray that was merely
+    // cut short (at maxTrace < MIN_RUNWAY they otherwise fire on EVERY
+    // launcher, which would make the positive control accuse the floor).
+    const truncated =
+      !into && runway === maxTrace && open(g, p.i + di * (runway + 1), p.j + dj * (runway + 1));
+
     // The exemptions `openLaunchTargets` itself honours: a vault ramp is aimed
     // at rock on purpose, a spine booster is supposed to have a wall ahead
     // because the turn is the point, a chute is the sealed plunger lane, and a
@@ -271,7 +314,12 @@ export function rideCensus(g: Grid, plan: LevelPlan, maxTrace: number = DEFAULT_
     const vaulting = p.kind === "jumppad" || p.vault;
 
     let verdict: RideResult;
-    if (vaulting && !into) {
+    if (truncated) {
+      // Nothing within `maxTrace`, and the corridor carries on past it. That is
+      // the literal definition of `nowhere` in the header: a receiver further
+      // away than the cutoff.
+      verdict = "nowhere";
+    } else if (vaulting && !into) {
       let landed: TilePos | null = null;
       // Skip the band, then look for floor. `startRampHop` needs somewhere to
       // set down; without it the handler degrades to a flat dash and the one

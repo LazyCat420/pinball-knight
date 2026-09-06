@@ -10,10 +10,23 @@
  * reachable" pipeline invariant is never touched: before the puzzle is solved
  * the reward simply doesn't exist as ground items yet; opening spawns it.
  *
- * TWO ways in, and the second one is the guaranteed one:
+ * THREE ways in, and the second one is the guaranteed one:
  *   · light every brazier          → `lightLamp` → opens it EARLY, mid-floor
  *   · kill the floor's overlord    → `openVaultOnBossDefeat` (run/descend.ts
  *                                    dropBossReward, + the co-op replica path)
+ *   · clear authored MACHINES      → `machine-effects.ts` counts distinct
+ *                                    machines cleared and converts them to
+ *                                    SEALS; `vaultLit()` folds seals in beside
+ *                                    braziers and `updateLampPuzzle` opens the
+ *                                    chest when the two together reach `total`.
+ *
+ * The third route is why the chest's progress is a FUNCTION (`vaultLit()`) and
+ * not the `state.lampPuzzle.lit` field. Two systems advance the vault and they
+ * are owned by different modules, so each keeps its own counter and the sum is
+ * computed on read: braziers write `lit`, machines write their own charged-set
+ * in `machine-effects.ts`. Incrementing `lit` from the machine effect would have
+ * been shorter and would have left the chest reporting braziers it never lit
+ * once machine progress resets.
  */
 import * as THREE from "three";
 import { state } from "./state";
@@ -25,6 +38,7 @@ import { PALETTE_HEX } from "./render/palette";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast, showPickupNote } from "./ui";
 import { sfxTarget, sfxBossReveal, sfxCoin } from "./sfx";
+import { machineVaultSeals, resetMachineEffects } from "./machine-effects";
 
 const CHEST_UNLIT = 0x6b1f2a; // dim blood-iron while sealed
 const CHEST_LIT = 0xf0c040; // gold as braziers light
@@ -183,6 +197,13 @@ function buildVaultChest(x: number, z: number): THREE.Group {
 
 /** Install the floor's light puzzle: build the chest, seed state.lampPuzzle. */
 export function installLampPuzzle(plan: LampPuzzlePlan, g: Grid, scene: THREE.Scene): void {
+  // ARRIVAL clears the machine effects too, and it is not redundant with the
+  // teardown below. A floor can be torn down by a path that never reaches
+  // `disposeLampPuzzle` (a death, a quit-to-lobby, a co-op replica rebuild), and
+  // machine seals are FLOOR-SCOPED — carrying two seals down the stairs would
+  // hand the next floor a vault two-thirds open before the player touched it.
+  // Clearing at both ends is the same belt-and-braces `resetMachines()` uses.
+  resetMachineEffects();
   const c = tileCenter(g, plan.vault.i, plan.vault.j);
   const chest = buildVaultChest(c.x, c.z);
   scene.add(chest);
@@ -241,8 +262,44 @@ export function openVaultOnBossDefeat(): void {
   openVault("boss");
 }
 
+/**
+ * THE VAULT'S EFFECTIVE PROGRESS — braziers lit PLUS seals broken by clearing
+ * authored machines. This is the third route in, and the reason it is a
+ * function rather than a field.
+ *
+ * `state.lampPuzzle.lit` counts braziers and nothing else. Machine progress
+ * lives in `machine-effects.ts` (`machineVaultSeals()`, one seal per
+ * MACHINES_PER_SEAL distinct machines cleared this floor), because the machine
+ * layer owns its own anti-farm rule — a machine re-arms every couple of
+ * seconds, so progress is per DISTINCT machine, not per completion.
+ *
+ * Adding the two here rather than incrementing `pz.lit` from the effect keeps
+ * one writer per counter: braziers write `lit`, machines write `charged`, and
+ * nobody has to reason about a shared mutable total that two systems both
+ * advance. It also means a floor that loses its machine progress (a reset)
+ * cannot leave the chest reporting braziers it never lit.
+ *
+ * Capped at `total` so the HUD can never read 5/3.
+ */
+export function vaultLit(): number {
+  const pz = state.lampPuzzle;
+  if (!pz) return 0;
+  return Math.min(pz.total, pz.lit + machineVaultSeals());
+}
+
+/**
+ * Has the vault earned its opening? True when braziers + machine seals reach
+ * the floor's brazier count. Checked every frame by `updateLampPuzzle` rather
+ * than pushed by the effect, because the effect has no business knowing the
+ * chest's unlock rule — it only reports that a seal broke.
+ */
+function vaultEarned(): boolean {
+  const pz = state.lampPuzzle;
+  return !!pz && pz.total > 0 && vaultLit() >= pz.total;
+}
+
 /** Open the sealed vault: spawn the loot, blow the FX, flag it done. */
-function openVault(by: "braziers" | "boss"): void {
+function openVault(by: "braziers" | "boss" | "machines"): void {
   const pz = state.lampPuzzle;
   if (!pz || pz.unlocked || !state.scene) return;
   pz.unlocked = true;
@@ -272,6 +329,7 @@ function openVault(by: "braziers" | "boss"): void {
   // and on the boss path "OVERLORD SLAIN" is already in it — so that route gets
   // the queued corner note instead of eating the kill banner.
   if (by === "boss") showPickupNote("🗝️ THE OVERLORD'S KEY — the vault opens");
+  else if (by === "machines") showToast("🗝️ VAULT UNSEALED", "the machines broke its seals — the reliquary opens");
   else showToast("🗝️ VAULT UNSEALED", "every brazier lit — the reliquary opens");
   state.hudDirty = true;
 }
@@ -284,13 +342,17 @@ export function updateLampPuzzle(dt: number): void {
   animT += dt;
   const pz = state.lampPuzzle;
   if (!pz || !pz.chest) return;
+  // THE THIRD ROUTE, checked here rather than pushed from the effect: a seal
+  // can be the last thing the vault needed, and the machine that broke it has
+  // no way to know that. `vaultEarned` folds braziers and seals together.
+  if (!pz.unlocked && vaultEarned()) openVault("machines");
   const glow = pz.chest.userData.glow as THREE.MeshStandardMaterial | undefined;
   const sigilMat = pz.chest.userData.sigilMat as THREE.MeshStandardMaterial | undefined;
   const sigil = pz.chest.userData.sigil as THREE.Object3D | undefined;
   const lid = pz.chest.userData.lid as THREE.Object3D | undefined; // the hinge group
   const inner = pz.chest.userData.inner as THREE.MeshStandardMaterial | undefined;
   sigil?.rotateZ(dt * (pz.unlocked ? 3.5 : 1.2));
-  const frac = pz.total > 0 ? pz.lit / pz.total : 0;
+  const frac = pz.total > 0 ? vaultLit() / pz.total : 0;
   if (pz.unlocked) {
     pz.openT += dt;
     const t = Math.min(1, pz.openT / 0.6);
@@ -320,6 +382,9 @@ export function updateLampPuzzle(dt: number): void {
 
 /** Tear down the floor's puzzle chest (per-floor + full teardown). */
 export function disposeLampPuzzle(scene: THREE.Scene | null): void {
+  // Teardown drops the machine-derived vault progress and any live overcharge
+  // window with the chest that owned them.
+  resetMachineEffects();
   const pz = state.lampPuzzle;
   if (pz?.chest) {
     scene?.remove(pz.chest);

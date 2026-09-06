@@ -145,13 +145,49 @@ a bumper 11 tiles later is a hand-off on paper and dead air in the hand — and
 that is a question for a played floor, not for a grid tracer. It is filed as an
 open question, not as a defect with a fix attached.
 
-**(b) `plan.rooms` is empty on every floor measured.** `rooms = 0.0` at L1, L8,
+**(b) ~~`plan.rooms` is empty on every floor measured.~~ — RETRACTED. THIS WAS
+THE HARNESS, NOT THE GAME, AND IT WAS THE BIGGEST ERROR IN THIS DOCUMENT.**
+
+`dev/headless-floor.ts`, the harness every measurement in this file came from,
+was building a floor the game does not ship. It omitted **three** inputs that
+`spawn/floor-authoring.ts authorFloor` passes:
+
+| omitted | what it is | consequence |
+|---|---|---|
+| `track.chambers` | the greathall plaza, passed as `rooms` | `plan.rooms` always `[]` |
+| `track.doorways` | fed to `analyzePatternGrammar`; its clearway mask vetoes part candidates and drives `enforceDoorwayOutflow` | drifts on EVERY floor |
+| `authorLampPuzzle` | braziers + the sealed vault — it **pushes parts** | every floor missing its braziers |
+
+The harness's own header claimed `authorLampPuzzle` "does not place parts".
+`authorFloor` does `plan.parts.push(...lampPuzzlePlan.lamps)` on the very next
+line. All three are fixed, and `dev/headless-floor.test.ts` now pins the harness
+to `authorFloor` part-for-part — it was **71 parts against 75** before the fix,
+and is green on 8 cases now.
+
+**Measured on the parity-verified harness, 33 floors across the archetype cycle:**
+
+| depth | archetype | rooms | ORBIT rails |
+|---|---|---|---|
+| L1 | warrens | 0 | 0 |
+| L3 / L8 / L13 / L18 / L23 | **greathall** | **1.00 on 3/3 floors each** | 0 / 2.7 / 4.0 / 4.0 / 2.7 |
+| L2, L4, L5, L16, L24 | spine / cavern / ringkeep / warrens | 0 | 0 |
+
+**Rooms exist on 45% of floors. Orbit rings form on 30%, 40 rails in total.**
+
+**(b′) The real finding, which is a design observation rather than a defect:**
+the room layer — and therefore the ORBIT lap shot — is **confined to one
+archetype**. Every greathall floor gets exactly one room; no other archetype
+gets any. So 55% of floors have no room at all and **70% never produce the
+game's flagship loop shot**. That is the honest version of what to fix for
+"finer loops", and it is a much better problem than the one I reported. `rooms = 0.0` at L1, L8,
 L16 and L24. The whole room-archetype layer — `bumper` / `speedway` / `arena` /
 `vault` furnishing, the bumper diamond, the mid-wall bumpers — does not run on a
 track-first floor.
 
-**(c) Therefore the ORBIT LAP — the game's flagship loop shot — can never
-fire.** The only producer of `orbit` / `orbitSeq` is the four-corner rail ring at
+**(c) ~~The ORBIT LAP can never fire.~~ — RETRACTED, same cause as (b).**
+It fires on 30% of floors (10 of 33 measured), from 40 rails. `hitOrbitRail` is
+NOT dead code. What follows described the broken-harness world and is kept only
+so the reasoning is auditable: The only producer of `orbit` / `orbitSeq` is the four-corner rail ring at
 `decorate.ts:1381`, gated on a `bumper`/`speedway` room of ≥6×6. With no rooms,
 there is no producer: **parts tagged `orbit` = 0.0 per floor, at every depth.**
 `shots.ts hitOrbitRail()` reads `part.orbit` and returns on its first line for

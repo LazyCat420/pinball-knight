@@ -42,8 +42,9 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import * as THREE from "three";
-import { state, type PinballPart, type PinballPartKind } from "./state";
+import { state, freshPlayerFields, type PinballPart, type PinballPartKind } from "./state";
 import { createPinballParts } from "./render/pinball-parts";
+import { PART_HANDLERS, type PinballDeps } from "./entities/pinball-collide";
 import type { Grid } from "./engine/grid";
 import type { PinballPartSpot } from "./maze/decorate";
 import type { AssemblyRef } from "./maze/assembly";
@@ -63,6 +64,7 @@ import {
   tickMachines,
   drainMachineEvents,
   machineFor,
+  machineRegistry,
   type MachineState,
   type MachineEvent,
 } from "./machines";
@@ -73,6 +75,7 @@ import {
   MACHINE_COOL_TIME,
   MACHINE_TIER_MAX,
   MACHINE_CIRCUIT_MAX,
+  TARGET_HIT_SPEED,
 } from "./constants";
 
 /** A grid with no walls — `tileCenter` is all `createPinballParts` reads. */
@@ -477,6 +480,264 @@ describe("the event queue is a reliable one-shot feed for a later slice", () => 
     expect(drainMachineEvents()).toEqual([]);
     state.pinballParts = parts;
     expect(machineFor(parts[0])?.step ?? 0).toBe(0);
+  });
+});
+
+/**
+ * ONE-SHOT PARTS — the drop targets a machine is built out of, and the loose
+ * target that must not learn anything from them.
+ *
+ * A `target` sets `done: true` when it breaks and, on its own, never re-arms:
+ * that is the floor's "break them all" objective, and it is correct for a loose
+ * target. It is fatal for a MACHINE. `target-bank` is three targets and nothing
+ * else, and `gargoyle-scoop` is three targets guarding a maw — so a machine
+ * whose sequence runs through a target could qualify once per floor and never
+ * tier, which is the whole tier/cooldown design not happening.
+ *
+ * Every assertion below goes through the REAL collide handler
+ * (`PART_HANDLERS.target`, `PART_HANDLERS.maw`), not through `hitMachine`
+ * directly, because the defect had two halves — the target handler never called
+ * the machine at all, AND a broken target could not be hit twice. Driving the
+ * state machine on its own would have shown the second half and missed the
+ * first, which is the same shape of miss as testing ORBIT through
+ * `hitOrbitRail`: two of its four steps are boosters that route nowhere near it.
+ */
+describe("a machine's drop targets re-arm with the machine; a loose target never does", () => {
+  let drops = 0;
+
+  const deps: PinballDeps = {
+    startRampHop: () => {},
+    startDrop: () => {
+      drops += 1;
+    },
+    setSteerLock: () => {},
+    raiseSteerLock: () => {},
+    aimHint: () => null,
+  };
+
+  beforeEach(() => {
+    drops = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    state.player = { x: 0, z: 0, ...freshPlayerFields() } as any;
+    state.vfx = null; // every VFX call in the handlers is optional-chained
+    state.targetsTotal = 0;
+    state.targetsHit = 0;
+    state.goldRun = 0;
+    state.shotChain = [];
+    state.namedPaid = {};
+  });
+
+  /**
+   * Hit `part` for real: the player on top of it, travelling INTO its face fast
+   * enough to break a target (`TARGET_HIT_SPEED`) and to be swallowed by a maw
+   * (`MAW_SWALLOW_SPEED` = 10, and `canMawSwallow` builds the throat as `-dir`,
+   * so one vector serves both kinds).
+   */
+  function strike(part: PinballPart, speed = 15): void {
+    const p = state.player!;
+    expect(speed).toBeGreaterThan(TARGET_HIT_SPEED);
+    p.x = part.x;
+    p.z = part.z;
+    p.momX = -part.dirX;
+    p.momZ = -part.dirZ;
+    p.momSpeed = speed;
+    part.cooldownT = 0;
+    PART_HANDLERS[part.kind]({ part, p, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: speed, deps });
+  }
+
+  /** A machine every step of which is a one-shot part — the `target-bank` shape. */
+  function bank(id: number, n = 2): PinballPart[] {
+    const parts = Array.from({ length: n }, (_, k) => asmPart(id, "target-bank", k, "target"));
+    for (const p of parts) p.done = false; // what `createPinballParts` stamps
+    return parts;
+  }
+
+  /** A target with no `asm`: the floor's own bullseye, owned by the objective. */
+  function looseTarget(): PinballPart {
+    const p = asmPart(-1, "none", undefined, "target");
+    delete p.asm;
+    p.done = false;
+    return p;
+  }
+
+  /** One whole pass of a bank machine: break it in order, wait out the arm,
+   *  take the collect shot, sit out the cooldown. Returns the `collected`s. */
+  function runBank(parts: PinballPart[]): MachineEvent[] {
+    drainMachineEvents();
+    for (const p of parts) strike(p);
+    tickMachines(MACHINE_ARM_TIME + 0.01);
+    // The bank has to be STANDING here or there is nothing left to collect
+    // with — see the ruling in machines.ts.
+    const standing = parts.find((p) => !p.done);
+    expect(standing, "a completed bank left no part standing to take the collect shot").toBeDefined();
+    strike(standing!);
+    const out = drainMachineEvents().filter((e) => e.kind === "collected");
+    tickMachines(MACHINE_COOL_TIME + 0.01);
+    return out;
+  }
+
+  it("completes a machine whose whole sequence is drop targets, TWICE", () => {
+    // THE DEFECT. Before the fix the target handler never called the machine at
+    // all, and a broken target could never be hit again — so this machine could
+    // qualify once per floor, at most, and never tier.
+    const parts = bank(1, 2);
+    state.pinballParts = parts;
+
+    expect(runBank(parts)).toHaveLength(1);
+    expect(machineFor(parts[0])?.phase).toBe("unlit");
+    expect(parts.every((p) => p.done === false)).toBe(true); // the bank came back up
+
+    expect(runBank(parts)).toHaveLength(1);
+  });
+
+  it("ladders the tier across repeat completions of a target machine", () => {
+    const parts = bank(2, 2);
+    state.pinballParts = parts;
+    const tiers = [runBank(parts), runBank(parts), runBank(parts)].map((out) => {
+      expect(out).toHaveLength(1);
+      return out[0].tier;
+    });
+    expect(tiers).toEqual([1, 2, 3]);
+  });
+
+  it("leaves a LOOSE target down forever, even while a machine beside it re-arms", () => {
+    // THE NON-REGRESSION THAT MATTERS. A loose target staying dead IS the
+    // floor's break-them-all objective; a re-arm that reached it would make
+    // that objective unachievable-then-repeatable and the counter meaningless.
+    const loose = looseTarget();
+    const parts = bank(3, 2);
+    state.pinballParts = [loose, ...parts];
+    state.targetsTotal = 3;
+
+    strike(loose);
+    expect(loose.done).toBe(true);
+    expect(state.targetsHit).toBe(1);
+    expect(machineFor(loose)).toBeNull(); // it belongs to no machine, so nothing owns its state
+
+    runBank(parts);
+    runBank(parts);
+
+    expect(loose.done).toBe(true);
+    strike(loose); // and a dead bullseye is still not hittable
+    expect(loose.done).toBe(true);
+    // 1 loose + this machine's own targets, each counted ONCE IN ITS LIFE no
+    // matter how many times the bank re-ran. Derived, not transcribed: an
+    // earlier version asserted 1 here, which quietly claimed a machine's
+    // targets never touch the floor objective at all — contradicting the test
+    // below, which shows they do (and must, since `targetsTotal` counts them).
+    expect(state.targetsHit).toBe(1 + parts.length);
+  });
+
+  it("counts a machine's target toward the floor objective exactly once, however often it re-arms", () => {
+    // `assembly-place.partsOf` stamps `asm` and `seq` but never `bank`, so
+    // `core.ts` counts a machine's targets in `state.targetsTotal` alongside the
+    // loose ones. If a re-armed target re-counted, `targetsHit` would run past
+    // `targetsTotal` and the ALL TARGETS DOWN bonus would pay on every repeat.
+    const parts = bank(4, 2);
+    state.pinballParts = parts;
+    state.targetsTotal = parts.length;
+
+    runBank(parts);
+    expect(state.targetsHit).toBe(2);
+    runBank(parts);
+    runBank(parts);
+    expect(state.targetsHit).toBe(2);
+  });
+
+  it("runs the REAL gargoyle-scoop: break the bank, take the mouth, collect, bank back up", () => {
+    // The library's definition, through the real `createPinballParts` seam and
+    // the real collide handlers. A hand-made stand-in would have agreed with
+    // whatever I built it from; this one has to agree with the shipped machine
+    // — including that its fourth step is a `maw`, which no test I invented
+    // would have thought to route through.
+    const scoop = MACHINES.find((m) => m.name === "gargoyle-scoop");
+    expect(scoop).toBeDefined();
+
+    const g = flatGrid(16, 16);
+    state.pinballParts = [];
+    createPinballParts(
+      scoop!.parts.map(
+        (p) =>
+          ({
+            i: 2 + p.ci,
+            j: 2 + p.cj,
+            kind: p.kind,
+            dirI: p.dir.di,
+            dirJ: p.dir.dj,
+            dir2I: p.dir2?.di ?? 0,
+            dir2J: p.dir2?.dj ?? 0,
+            seq: p.seq,
+            asm: { id: 9, name: scoop!.name, role: p.role, seq: p.seq },
+          }) as PinballPartSpot,
+      ),
+      g,
+      new THREE.Scene(),
+    );
+
+    const steps = state.pinballParts
+      .filter((p) => p.asm?.id === 9)
+      .sort((a, b) => a.asm!.seq! - b.asm!.seq!);
+    // Derived from the library, not transcribed: if the machine is re-authored
+    // this reads the new shape rather than agreeing with the old one.
+    expect(steps.map((p) => p.kind)).toEqual(scoop!.parts.map((p) => p.kind));
+    expect(steps.filter((p) => p.kind === "target")).toHaveLength(3);
+    expect(steps.at(-1)!.kind).toBe("maw");
+    expect(machineFor(steps[0])!.total).toBe(scoop!.parts.length);
+
+    const targets = steps.filter((p) => p.kind === "target");
+    const maw = steps.at(-1)!;
+
+    const drive = (): MachineEvent[] => {
+      drainMachineEvents();
+      for (const t of targets) {
+        strike(t);
+        expect(t.done).toBe(true); // the bank falls, one target at a time
+      }
+      expect(machineFor(steps[0])!.step).toBe(targets.length);
+
+      const swallowed = drops;
+      strike(maw); // …and the mouth is open
+      expect(drops).toBe(swallowed + 1); // the maw really swallowed: the machine's 4th step is a ride
+      expect(drainMachineEvents().some((e) => e.kind === "lit")).toBe(true);
+      // The bank RESETS the moment the machine lights — a real drop-target bank
+      // does, and here it must: the collect shot needs something to hit.
+      expect(targets.every((t) => t.done === false)).toBe(true);
+
+      tickMachines(MACHINE_ARM_TIME + 0.01);
+      expect(machineFor(steps[0])!.phase).toBe("armed");
+      strike(targets[0]);
+      const out = drainMachineEvents().filter((e) => e.kind === "collected");
+      tickMachines(MACHINE_COOL_TIME + 0.01);
+      expect(machineFor(steps[0])!.phase).toBe("unlit");
+      expect(targets.every((t) => t.done === false)).toBe(true); // …and re-armed
+      return out;
+    };
+
+    const first = drive();
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ name: "gargoyle-scoop", total: 4, tier: 1 });
+    expect(first[0].gold!).toBeGreaterThan(0);
+
+    const second = drive();
+    expect(second).toHaveLength(1);
+    expect(second[0]).toMatchObject({ tier: 2 });
+  });
+
+  it("does not wire a SLINGSHOT into its machine — the impact ruling, kept", () => {
+    // `assembly.ts`: impact parts are "where flow is meant to become chaos", and
+    // `portsChain` refuses to build a combo through one. A sling pair's two arms
+    // ping the ball back and forth on their own, so an ordered 2-step sequence
+    // across them would complete itself, repeatedly, for free. `SLING_PAIR` is
+    // left as scenery on purpose; this pins that it stayed that way.
+    const slings = MACHINES.find((m) => m.name === "sling-pair")!.parts;
+    expect(slings.every((p) => p.kind === "slingshot")).toBe(true);
+
+    const parts = slings.map((p, k) => asmPart(5, "sling-pair", k, "slingshot"));
+    state.pinballParts = parts;
+    for (let k = 0; k < 6; k++) for (const p of parts) strike(p);
+
+    expect(drainMachineEvents()).toEqual([]);
+    expect(machineRegistry().get(5)).toBeUndefined();
   });
 });
 

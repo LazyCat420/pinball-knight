@@ -227,6 +227,19 @@ export function advanceMachine(m: MachineState, seq: number | undefined): Machin
     m.phase = "lit";
     m.armT = MACHINE_ARM_TIME;
     m.windowT = 0;
+    // ⚠️ THE BANK RESETS THE MOMENT THE MACHINE LIGHTS, not when it arms.
+    //
+    // A real drop-target bank does exactly this, and here it is load-bearing
+    // rather than cosmetic: the collect shot needs something standing to hit,
+    // and a machine whose sequence is nothing but targets (`target-bank`, and
+    // the three-target bank guarding `gargoyle-scoop`'s maw) has no other part.
+    // Hold the bank down through `lit` and such a machine lights, arms, and can
+    // never be collected — a jackpot that cannot be claimed.
+    //
+    // `runHolds` is false outside `qualifying`, so this releases the whole bank
+    // rather than picking parts, which is what makes it the same rule as the
+    // lapse and the cooldown rather than a special case.
+    rearmOneShots(m);
     out.push(ev(m, "lit"));
   }
   return out;
@@ -256,6 +269,8 @@ export function tickMachine(m: MachineState, dt: number): MachineEvent[] {
       m.step = 0;
       m.last = -1;
       m.windowT = 0;
+      // The run is over and holds nothing, so the whole bank stands back up.
+      rearmOneShots(m);
     }
     return [];
   }
@@ -265,6 +280,14 @@ export function tickMachine(m: MachineState, dt: number): MachineEvent[] {
     m.armT = 0;
     m.phase = "armed";
     m.windowT = MACHINE_ARM_WINDOW;
+    // ⚠️ THE LOAD-BEARING CALL. `runHolds` is false outside `qualifying`, so
+    // arming releases the machine's whole bank — and it must, because a machine
+    // whose sequence is nothing but targets (`target-bank`, and the bank
+    // guarding `gargoyle-scoop`'s maw) would otherwise light, arm, and have no
+    // part left standing to take the collect shot. It would be a jackpot that
+    // can never be claimed. A real drop-target bank resets when it completes;
+    // here it MUST.
+    rearmOneShots(m);
     return [ev(m, "armed")];
   }
   if (m.phase !== "qualifying" && m.phase !== "armed") return [];
@@ -281,11 +304,17 @@ export function tickMachine(m: MachineState, dt: number): MachineEvent[] {
     m.phase = "unlit";
     m.last = -1;
     m.windowT = 0;
+    rearmOneShots(m); // decayed to nothing — the bank is released with the run
     return [];
   }
   m.phase = "qualifying";
   m.last = m.total > 0 ? (m.last - 1 + m.total) % m.total : -1;
   m.windowT = MACHINE_WINDOW;
+  // A lapse gives back exactly the ONE target it just cost you: the run now
+  // holds one step fewer, so `runHolds` releases that step's target and no
+  // other. Handing back the whole bank would make a lapse free; handing back
+  // nothing would leave the step the machine now wants again unhittable.
+  rearmOneShots(m);
   return [];
 }
 
@@ -342,6 +371,89 @@ export function machineTotal(id: number): number {
     if (p.asm.seq !== undefined) seqs.add(p.asm.seq);
   }
   return Math.max(1, seqs.size);
+}
+
+/**
+ * ── ONE-SHOT PARTS: a machine's drop targets, and the ruling that lets a bank
+ *    be run twice ────────────────────────────────────────────────────────────
+ *
+ * `PinballPart.done` is the problem. A `target` sets it the moment it breaks and
+ * nothing ever clears it. That is exactly right for a LOOSE target — the floor's
+ * "break them all" objective IS "every bullseye down, permanently", and
+ * `state.targetsTotal` / `targetsHit` count on it — and it is fatal for a
+ * machine. `target-bank` is three targets and nothing else; `gargoyle-scoop` is
+ * three targets guarding a maw, and the placer lands it ~3.2 times per floor at
+ * depth 24. A machine whose steps are targets could qualify ONCE per floor and
+ * never tier: the whole tier/cooldown ladder above simply not happening.
+ *
+ * The fix NOT taken was to drop `target` out of the derived sequence, so a bank
+ * decorates and never gates. It guts the two machines it is meant to rescue:
+ * `target-bank`'s sequence would be EMPTY (clamped to one step, satisfied by one
+ * hit anywhere), and `gargoyle-scoop` would collapse to "hit the maw" with its
+ * bank as scenery. `assembly-lib`'s own header says THE BANK GUARDS THE MOUTH.
+ * A fix that makes the guard decorative has fixed the test, not the machine.
+ *
+ * So a machine stands its OWN one-shot parts back up. Three rules make that safe:
+ *
+ *  1. CLEAR-ONLY. Nothing here ever sets `done`. Breaking a target is the
+ *     player's business and the collide handler's; a machine may only stand one
+ *     back up, so it can neither deny a shot nor award one it was not given.
+ *  2. ITS OWN PARTS, BY `asm.id`. A loose target carries no `asm`, so no machine
+ *     can reach it, and the floor objective is untouched. `machines.test.ts`
+ *     spends a whole test on that one non-regression.
+ *  3. NOT WHILE THE RUN HOLDS IT. Through `qualifying` the steps already banked
+ *     stay down — the bank you broke stays broken — and a lapsed window stands
+ *     back up exactly the ONE target it just cost you. That is what makes the
+ *     decay in `tickMachine` walkable rather than a wipe: the step the machine
+ *     now wants again is a target the player can actually hit again.
+ *
+ * And the rule that reads as wrong until you try to collect without it: THE BANK
+ * RESETS AT `lit`. Every phase after qualifying — lit, armed, collected, cooling
+ * — holds nothing, so the whole bank comes back up the instant the sequence
+ * completes. A real drop-target bank resets when it completes; here it MUST,
+ * because the collect shot is a hit on a part of the machine and a machine made
+ * of nothing but targets has no other part to hit. Hold the bank down through
+ * `armed` and `target-bank` lights, arms, and can never be collected — a jackpot
+ * with no button on it.
+ *
+ * ⚠️ The re-arm is state-only. `render/pinball-parts.ts` tips a broken target's
+ * rings over with a one-way `Math.min(π/2.2, rot + dt*6)` and has no path back,
+ * so a re-armed target re-lights but stays lying down until that renderer grows
+ * a stand-up. That file is not this slice's to change; the flag it reads is
+ * correct from here down.
+ */
+const ONE_SHOT_KINDS: readonly PinballPart["kind"][] = ["target"];
+
+/**
+ * Is `seq` one of the steps this machine's CURRENT run has banked?
+ *
+ * The held steps are the last `step` of them walking BACK from `last`, not
+ * `0..step-1`: an out-of-order hit restarts the run at the step it landed on, so
+ * a run of three can be seqs 2-3-0 as easily as 0-1-2. Deriving it from `last`
+ * is the same arithmetic `advanceMachine` and `tickMachine` use to decide what
+ * comes next, which is what keeps the bank and the sequence telling one story.
+ */
+function runHolds(m: MachineState, seq: number | undefined): boolean {
+  if (m.phase !== "qualifying" || m.step <= 0 || m.last < 0) return false;
+  // A one-step machine's single part IS its run, authored with a seq or not.
+  if (m.total <= 1) return (seq ?? 0) === 0;
+  // Scenery on a sequenced machine has no place in the order, so it can never
+  // have been the thing that advanced it — see `advanceMachine`.
+  if (seq === undefined) return false;
+  for (let k = 0; k < m.step; k++) {
+    if ((((m.last - k) % m.total) + m.total) % m.total === seq) return true;
+  }
+  return false;
+}
+
+/** Stand back up every one of THIS machine's one-shot parts that its current
+ *  run is no longer holding down. Clear-only, and `asm.id`-scoped: see above. */
+function rearmOneShots(m: MachineState): void {
+  for (const p of state.pinballParts) {
+    if (p.asm?.id !== m.id) continue;
+    if (!ONE_SHOT_KINDS.includes(p.kind)) continue;
+    if (p.done && !runHolds(m, p.asm.seq)) p.done = false;
+  }
 }
 
 /** The record for this part's machine, created on first contact. Null for a
