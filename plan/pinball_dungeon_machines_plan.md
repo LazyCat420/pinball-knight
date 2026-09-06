@@ -450,3 +450,66 @@ without anything asserting on it.
 
 Open question this plan does not answer: **why `plan.rooms` is empty.** It is
 filed in Phase 3 rather than guessed at.
+
+---
+
+## 6. After the merge with `main` — what actually shipped
+
+Added 2026-09-06, after merging `main` (`475f564d`: seesaw shortcuts, siege
+catapults, aimable cannons, and the final density clamp moved to run after
+them). The merge was CLEAN, and a clean merge is not a correct one: their clamp
+and this branch's `assemblyBudgetFor` / `corridorBudget` / `chainsFor` all move
+part counts, and nothing had measured them together.
+
+**Three-way census, identical seeds (5 a depth), through the parity-pinned
+harness:**
+
+| depth | machines (main / branch / merged) | chain (main / branch / merged) | parts (main / branch / merged) |
+|---|---|---|---|
+| L1  | 1.2 / 1.2 / 1.2 | 0.0 / 3.0 / 2.8  | 53.8 / 56.8 / 56.8 |
+| L8  | 2.0 / 1.8 / 1.8 | 0.0 / 4.0 / 3.8  | 139.8 / 144.8 / 144.8 |
+| L16 | 2.0 / 3.0 / 3.0 | 0.0 / 10.4 / 10.4 | 236.2 / 240.6 / 245.4 |
+| L24 | 2.0 / 4.0 / 4.0 | 0.0 / 4.8 / 4.8  | 288.4 / 299.6 / 305.6 |
+
+**The machine layer composes cleanly.** Machines and parts-in-a-machine are
+identical branch vs merged at every depth, because `asm` was already on the
+clamp's exemption list.
+
+**`chain` was not, and that was a real defect.** On the floors where the clamp
+binds — L1 and L8, where `partBudget` is the operative bound — the traversal
+mechanics are additive while the clamp is zero-sum, so their room came out of
+bumpers first and then out of chain links (3.0 -> 2.8, 4.0 -> 3.8). A hole in a
+chain is a launcher aimed at a part that is no longer there, i.e. literally the
+complaint this branch answers. `chain` was missing from the exemption list
+because the chain pass was DEAD CODE when that list was written — §1.1a — so
+there was nothing to cull and nothing could have noticed.
+
+Fixed, with the exemption set extracted to one tested predicate
+(`isStructuralPart`) instead of eleven clauses written out twice. After the fix
+the chain column reads 3.0 / 4.0 / 10.4 / 4.8, matching the branch alone.
+
+### What else the merge surfaced
+
+Both were latent, and both are the same shape — a verification asset pinned to
+a FLOOR rather than to the code it checks:
+
+- **`wall-runs.test.ts` G0** compared `legacyTriage` against a JSON fixture of
+  digests. Changing the generator on purpose took 2 of its 31 rows red for
+  reasons unrelated to the triage. The oracle is now CODE
+  (`dev/legacy-wall-scan.ts`, the original loop transcribed byte-for-byte out of
+  `build.ts@c9a05458`) and cannot go stale. Sabotage: moss hash 13 -> 11 fails
+  31 of 31 floors, where the fixture form could only ever have failed the 2 that
+  moved.
+- **`dev/mega-floor.ts`** was a second transcription of `authorFloor`'s draw
+  order and drifted the moment `buildHeadlessPlan` was fixed. Both harnesses now
+  call one `authorHeadlessPlan`.
+
+### Phase 2 is player-visible now
+
+`hud-machines.ts` + a transient column in `gui/screens/hud.ts` show the machine
+being worked, its pips, its phase clock, the circuit multiplier, vault progress
+and the overcharge window. Open item 2 below ("Phase 1 is not player-visible on
+its own") is closed; open items 1, 3, 5, 6 and 7 stand.
+
+**The ranked list of what to do next is `pinball_improvement_checklist.md`,**
+rebuilt on a 7-depth x 10-seed census rather than on the retracted numbers.
