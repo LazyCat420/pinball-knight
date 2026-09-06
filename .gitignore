@@ -33,7 +33,7 @@ dist/
 ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/
 ThreeJS/.death-lab/
 ThreeJS/.pipeline-forensics/
-ThreeJS/.death-audit/
+ThreeJS/.death-audit*/
 
 # death-swarm and boss-death-lab capture artefacts (screenshots, contact sheets, report.json)
 ThreeJS/.death-swarm*/
