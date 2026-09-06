@@ -29,7 +29,7 @@ import {
   CAP_ALL,
   type WallRunPlan,
 } from "./wall-runs";
-import fixture from "../dev/fixtures/wall-legacy-triage.json";
+import { legacyWallScan } from "../dev/legacy-wall-scan";
 
 // ── corpus ───────────────────────────────────────────────────────────────────
 
@@ -68,49 +68,45 @@ const boxCount = (g: Grid): number => {
 };
 
 // ── G0: the legacy triage still is the legacy triage ─────────────────────────
-// `legacyTriage` replaces an inline loop in maze/build.ts. The fixture holds
-// digests of the ORIGINAL loop, byte-sliced out of build.ts at c9a05458 and run
-// over these same floors, so this compares the replacement against the code it
-// replaces — not against itself.
-// SABOTAGE SEEN RED: moss hash 13 → 11.
+// `legacyTriage` replaces an inline loop in maze/build.ts. The oracle is that
+// loop, transcribed byte-for-byte out of build.ts at c9a05458 and kept in
+// `dev/legacy-wall-scan.ts` — so this compares the replacement against the code
+// it replaces, not against itself.
+//
+// ⚠️ IT USED TO BE A JSON FIXTURE OF DIGESTS, AND THAT WAS A LATENT TRAP.
+// A recorded digest pins the triage AND the floor generator that produced the
+// grid. The machine-budget work changed the generator on purpose, and 2 of the
+// 31 recorded floors went red for a reason that had nothing to do with the
+// triage. The cheap way out of that red — re-record from `legacyTriage` — would
+// have left the function checked against its own output forever. A live oracle
+// cannot go stale when the generator moves, so the fixture is gone and the code
+// it stood in for is back. Nothing is lost with it: the digests only ever
+// summarised what this gate now compares cell for cell, and the generator's own
+// output is watched by floor-density / floor-rules / circuit / floor-pipeline.
+// SABOTAGE SEEN RED: moss hash 13 → 11 in dev/legacy-wall-scan.ts.
 describe("G0 legacy triage parity", () => {
-  const fnv = (s: string): string => {
-    let h = 0x811c9dc5;
-    for (let k = 0; k < s.length; k++) {
-      h ^= s.charCodeAt(k);
-      h = Math.imul(h, 0x01000193) >>> 0;
-    }
-    return h.toString(16).padStart(8, "0");
-  };
-  const setDigest = (cells: Array<{ i: number; j: number }>): string => fnv(cells.map((c) => `${c.i},${c.j}`).sort().join(";"));
+  const cells = (list: ReadonlyArray<{ i: number; j: number }>): string =>
+    list.map((c) => `${c.i},${c.j}`).join(";");
 
-  it("the fixture covers every corpus floor", () => {
-    expect(fixture.floors.length).toBeGreaterThanOrEqual(FLOORS.length);
-    for (const f of FLOORS) {
-      expect(fixture.floors.some((r) => r.level === f.level && r.seed === f.seed), label(f)).toBe(true);
-    }
+  it("the corpus is not empty — a parity gate over zero floors passes vacuously", () => {
+    expect(FLOORS.length).toBeGreaterThanOrEqual(PINS.length);
   });
 
   for (const f of FLOORS) {
     it(`reproduces build.ts's original scan on ${label(f)}`, () => {
-      const row = fixture.floors.find((r) => r.level === f.level && r.seed === f.seed)!;
       const t = legacyTriage(f.grid);
-      expect({ w: f.grid.w, h: f.grid.h }).toEqual({ w: row.w, h: row.h });
-      expect({
-        full: t.full.length,
-        moss: t.moss.length,
-        low: t.low.length,
-        south: t.southFaces.length,
-        slant: t.slant.length,
-        arcRim: t.arcRim.size,
-      }).toEqual(row.counts);
-      expect({
-        full: setDigest(t.full),
-        moss: setDigest(t.moss),
-        low: setDigest(t.low),
-        south: setDigest(t.southFaces),
-        slant: setDigest(t.slant),
-      }).toEqual(row.digest);
+      const o = legacyWallScan(f.grid);
+      // Cell-for-cell and IN ORDER, not counts: emission order fixes instance
+      // indices (`MazeHandle.wallAt`), so a reordering is a live bug that a
+      // count comparison would wave through.
+      expect(cells(t.full), `full ${label(f)}`).toBe(cells(o.fullCells));
+      expect(cells(t.moss), `moss ${label(f)}`).toBe(cells(o.mossCells));
+      expect(cells(t.low), `low ${label(f)}`).toBe(cells(o.lowCells));
+      expect(cells(t.southFaces), `south ${label(f)}`).toBe(cells(o.southFaces));
+      expect(t.slant.map((s) => `${s.i},${s.j},${s.shape},${s.low}`).join(";"), `slant ${label(f)}`).toBe(
+        o.slantCells.map((s) => `${s.i},${s.j},${s.shape},${s.low}`).join(";"),
+      );
+      expect([...t.arcRim.entries()].sort(), `arcRim ${label(f)}`).toEqual([...o.arcRim.entries()].sort());
     });
   }
 

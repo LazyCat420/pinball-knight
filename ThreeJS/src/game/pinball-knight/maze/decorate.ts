@@ -574,8 +574,72 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * footprint from every later placer, so each one is spent against the corridor
  * deal; this number decides how much of a floor is AUTHORED rather than dealt,
  * not how busy the floor gets.
+ *
+ * ── WHY IT IS NO LONGER A CONSTANT (2026-09-06) ────────────────────────────
+ *
+ * "Start small" was right; staying small while the floor grew was not. The flat
+ * 2 was the whole reason a deeper floor answered "more space" with "more loose
+ * furniture". Censused over 5 seeds x 4 depths through `dev/headless-floor.ts`:
+ *
+ *   depth   tiles   walkable   parts   MACHINES   parts inside a machine
+ *   L1      3,975     1,747     53.6     0.60      1.4
+ *   L8      9,315     4,472    138.2     2.00      5.4
+ *   L16    17,967     7,968    226.6     2.00      5.2
+ *   L24    27,985    11,818    289.0     2.00      5.4
+ *
+ * ⚠️ THE WALKABLE COLUMN WAS WRONG IN THE FIRST VERSION OF THIS COMMENT, and the
+ * error is worth keeping visible. It read 2,211 / 4,812 / 9,957 / 16,126 —
+ * which are the WALL counts. `T_WALL = 0` and `T_FLOOR = 1` (`engine/grid.ts`),
+ * and the census counted `grid.t[k] === 0`. Every "walkable" figure was its own
+ * complement. The qualitative claim survived (walkable still grows 6.8x, not
+ * 7.3x, and the machine count is still flat) because the OUTCOME was measured
+ * directly rather than predicted from the formula — but a budget calibrated
+ * against wall counts would have been calibrated against noise.
+ *
+ * The floor grows **6.8x in walkable area** and the machine count is flat from
+ * L8 on. Parts scale with area exactly as intended — and 98.1% of them at L24
+ * are loose or dealt, because only 5.4 of 289 belong to an authored machine.
+ * The brief this answers is "a dungeon made of playable machines, not a larger
+ * field with more scattered boosters", and a constant cannot deliver it.
+ *
+ * Worse, it made the library ANTI-additive: a machine added to
+ * `assembly-lib.ts` does not appear on more floors, it takes a slot from an
+ * existing one. Measured over the 36 floors `assembly-place.test.ts` uses, the
+ * two machines added alongside this change left the total at 48 placements and
+ * took their 3 slots out of `pop-nest` (8 -> 3) and `kicker-lane` (11 -> 9).
+ * Every future machine would have paid the same tax.
+ *
+ * So: one machine per ~3,000 walkable tiles, **floor 2**, cap 6. Against the
+ * CORRECTED walkable counts that is a budget of 2 / 2 / 3 / 4 at
+ * L1 / L8 / L16 / L24, and the measured placements are 0.60 / 2.00 / 3.00 / 4.00
+ * — i.e. the router fills the budget exactly from L8 down. The only real
+ * shortfall is L1, where a 1,747-tile floor is budgeted 2 and lands 0.60.
+ *
+ * ⚠️ THE FLOOR OF 2 IS LOAD-BEARING, and it was 1 for one measured iteration.
+ * At `Math.max(1, ...)` with a 3,500 divisor, L1 (1,747 walkable) and L8 (4,472)
+ * both round to a budget of **1** — so the change that exists to give deep
+ * floors more machines took one away from every shallow floor, measured at
+ * 0.60 -> 0.40 and 2.00 -> 1.00 machines per floor. A scaling rule must be
+ * monotone against the constant it replaces at EVERY point it is defined, not
+ * just at the end that motivated it. The floor of 2 is what makes that true.
+ *
+ * The cap is not arithmetic — it is the point at which machines would start
+ * crowding the corridor deal they are spent against, and it is the number to
+ * move first if floors read as too busy. `0` still disables the layer outright,
+ * so the rollback survives.
+ *
+ * Note the budget is a CEILING, not a promise: the router rejects sites that
+ * fail fit/approach/exit. At depth it fills exactly; on a SMALL floor it does
+ * not (L1 budgets 2 and lands 0.60), because footprints plus `wantsRunway` plus
+ * the route-seeded site scan do not fit in 1,747 walkable tiles. That gap is
+ * `placeAssemblies`' business, not this number's.
  */
-const ASSEMBLY_BUDGET = 2;
+const ASSEMBLY_PER_WALKABLE = 3000;
+const ASSEMBLY_MIN = 2;
+const ASSEMBLY_MAX = 6;
+function assemblyBudgetFor(walkable: number): number {
+  return Math.max(ASSEMBLY_MIN, Math.min(ASSEMBLY_MAX, Math.round(walkable / ASSEMBLY_PER_WALKABLE)));
+}
 /** Tiles between candidate origins when scanning a route for machine sites.
  *  Matches the circuit layer's stride — both walk the same roads. */
 const ASSEMBLY_STRIDE = 8;
@@ -586,7 +650,31 @@ const CIRCUIT_BUDGET_SHARE = 0.6;
 const CIRCUIT_PARTS_MAX = 96;
 const CHAIN_LINKS = 4; // parts per chain, including the seed launcher
 const CHAIN_TRIES = 40; // seed candidates to try before giving up on a chain
-const CHAINS_DEFAULT = 1; // secondary shot chain off the spine (the station spine is now the primary route)
+/**
+ * SHOT CHAINS PER FLOOR, scaled by walkable area.
+ *
+ * It was a flat `1` — one chain of at most `CHAIN_LINKS` parts, whatever the
+ * floor's size. That was a defensible default while the pass was believed to be
+ * running; it was not, so the number had never been tested against a real floor
+ * (see the note on `corridorBudget`, which starved this loop on 20 of 20 floors
+ * measured). With the budget restored, one chain of 4 lands ~3 parts on a floor
+ * carrying 59 launchers, which is not a rhythm — it is a rounding error.
+ *
+ * A chain is the ONLY pass that places a part BECAUSE a launch arrives there,
+ * so it is the pass that answers "the boosters lead to nowhere". It should
+ * therefore ride the floor's size like every other content layer here, rather
+ * than being the one constant that does not.
+ *
+ * One chain per ~2,500 walkable tiles, floor 1, cap 8: L1 (2.2k walkable) keeps
+ * its single chain and stays bit-comparable in feel, L24 (16.1k) gets 6. The cap
+ * exists because chains draw from the same corridor budget as the deal, and a
+ * floor that is all chain is as one-note as a floor with none.
+ */
+const CHAIN_PER_WALKABLE = 2500;
+const CHAINS_MAX = 8;
+function chainsFor(walkable: number): number {
+  return Math.max(1, Math.min(CHAINS_MAX, Math.round(walkable / CHAIN_PER_WALKABLE)));
+}
 
 /** The last floor tile travelling (di,dj) from (i,j) before a wall stops you. */
 function runwayEnd(g: Grid, i: number, j: number, di: number, dj: number, max = 12): TilePos | null {
@@ -2298,6 +2386,38 @@ function breakBumperBounceTraps(g: Grid, parts: PinballPartSpot[]): void {
   }
 }
 
+/**
+ * Does this part BELONG TO SOMETHING — a circuit, a chain, a machine, the
+ * spine, a route, a field, a chute — rather than standing alone?
+ *
+ * The final density clamp in `decorateMaze` deletes parts one at a time to
+ * bring a floor under its cap, and deleting one part out of a structure does
+ * not make the floor 1/Nth less dense: it breaks the structure and leaves a
+ * launcher aimed at a part that is no longer there. So the clamp spends its
+ * excess on loose furniture and this says what "loose" means.
+ *
+ * Exported, and separate from the clamp, so the exemption set can be asserted
+ * directly. `chain` was missing from it for as long as the chain pass was dead
+ * code and nothing could have noticed — see the clamp's own note.
+ *
+ * `inRoom` is NOT here: it is a property of where a part sits on one particular
+ * floor, not of the part, so it stays a closure at the call site.
+ */
+export function isStructuralPart(p: PinballPartSpot): boolean {
+  return (
+    p.circuit !== undefined ||
+    !!p.chute ||
+    !!p.spine ||
+    !!p.chain ||
+    (p as { route?: unknown }).route !== undefined ||
+    p.field !== undefined ||
+    p.asm !== undefined ||
+    p.kind === "seesaw" ||
+    p.kind === "catapult" ||
+    p.kind === "cannon"
+  );
+}
+
 export function decorateMaze(
   g: Grid,
   rng: () => number,
@@ -2686,7 +2806,7 @@ export function decorateMaze(
       inCircuit(i, j) ||
       items.some((it) => it.i === i && it.j === j) ||
       parts.some((q) => q.i === i && q.j === j),
-    budget: extras.assemblies ?? ASSEMBLY_BUDGET,
+    budget: extras.assemblies ?? assemblyBudgetFor(floors.length),
     stride: ASSEMBLY_STRIDE,
   });
   const assemblyTiles = new Set<number>();
@@ -2761,7 +2881,41 @@ export function decorateMaze(
   // Subtracting them here means the deal gets a smaller allowance and the same
   // floor comes out the same size, with its furniture organised into loops
   // instead of scattered. That is the goal stated exactly: the floor does not
-  const corridorBudget = partBudget;
+  // ⚠️ THE `+ parts.length` TERM IS NOT REDUNDANT — it is what makes this an
+  // ALLOWANCE rather than a floor-wide ceiling, and it was lost once.
+  //
+  // `corridorBudget` is compared against `parts.length`, which by this point
+  // already holds every part the spine, the chute, the rooms, the circuits and
+  // the authored machines have pushed. Written as a bare `partBudget` the
+  // comparison reads "stop once the WHOLE FLOOR has partBudget parts", and
+  // since the spine alone outspends it the two loops it guards — the chain
+  // seeder at `for (let chain = ...)` and the corridor deal at
+  // `while (parts.length < corridorBudget ...)` — are false on entry and never
+  // execute at all.
+  //
+  // Measured on the regressed expression, 5 seeds x 4 depths through
+  // `dev/headless-floor.ts`:
+  //
+  //   depth   corridorBudget   parts.length here   chains seeded
+  //   L1       8.0             20.0                0
+  //   L8      27.8             52.8                0
+  //   L16     39.0             72.0                0
+  //   L24     46.6             97.4                0
+  //
+  // Over budget by 2.1x at every depth, on all 20 floors. The cost is not
+  // abstract: the chain seeder is the only pass that asks "where does the
+  // knight actually ARRIVE? Put the next part THERE", so without it 28% of
+  // every launcher on the floor fires down a clear runway onto empty ground
+  // (`dev/ride-census.ts`). "The boosters lead to nowhere" is this line.
+  //
+  // The formula below is not invented here. It is the one the comment on the
+  // plaza bumper spacing (~:1256) states as the contract — "the corridor still
+  // gets its full `partBudget` and room parts are pure addition on top;
+  // circuits are debited" — and `git log -L` finds it removed by `83bc0a01`, a
+  // commit about 3-wide corridors and doorway funnels that had no business
+  // touching it. `circuitPartCount` sitting computed-but-unused at :2607 was
+  // the tell.
+  const corridorBudget = partBudget + parts.length - circuitPartCount;
   const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
@@ -2778,7 +2932,7 @@ export function decorateMaze(
   // busy floor. The spacing check keeps hazards off the dealt parts anyway.
   const hazPoolStraight = byTopo.straight.slice();
   const hazPoolOpen = [...byTopo.junction, ...byTopo.straight];
-  const chainCount = extras.chains ?? CHAINS_DEFAULT;
+  const chainCount = extras.chains ?? chainsFor(floors.length);
   // ── CHAIN SEEDING (see the header above): lay down shot CHAINS first, so
   // the floor has real "this feeds that" structure before the spacing-driven
   // deal fills in around them. Chains draw on the same corridor budget, so a
@@ -3857,45 +4011,55 @@ export function decorateMaze(
   }
 
   // ── FINAL DENSITY CLAMP: strictly enforce PARTS_PER_1K_CAP across all layers ──
+  //
+  // WHAT IS PROTECTED, AND WHY IT IS ONE LIST.
+  //
+  // The clamp deletes parts one at a time, walking BACKWARDS from the end, to
+  // bring the floor under its density cap. Deleting one part out of a STRUCTURE
+  // does not make the floor 1/Nth less dense — it breaks the structure. A
+  // circuit missing a node, a chain missing its third link, a machine missing a
+  // leg: each leaves a launcher aimed at a part that is no longer there, which
+  // is the exact complaint ("the boosters lead nowhere") this layer exists to
+  // answer. So everything that belongs to an authored structure is exempt and
+  // the clamp spends its excess on LOOSE FURNITURE, bumpers and targets first.
+  //
+  // ⚠️ `chain` was missing from this list until 2026-09-06, and the reason is
+  // worth keeping: chains were DEAD CODE when the list was written. The corridor
+  // budget was overrun before the chain pass ran (`corridorBudget`, above), so
+  // `chain`-tagged parts were 0.0 per floor on every floor measured and nothing
+  // could have noticed the omission. Reviving the pass and merging the traversal
+  // mechanics in the same week made it visible: on floors where the clamp binds
+  // (L1 and L8, where `partBudget` is the operative bound) seesaws, catapults
+  // and cannons are additive but the clamp is zero-sum, so their room came out
+  // of bumpers first and then out of chain links — 3.0 -> 2.8 at L1 and
+  // 4.0 -> 3.8 at L8, measured over 5 seeds a depth. Small, and a broken chain
+  // every fifth floor.
+  //
+  // The predicate is ONE function called twice rather than two copies of the
+  // same eleven clauses, because the two copies had already been edited in
+  // lockstep twice and the next exemption added to one and not the other would
+  // have culled from a list nobody thought was reachable. It is
+  // `isStructuralPart` at module scope so `decorate.test.ts` can hold it to the
+  // set above without going through a built floor — a clause dropped from it is
+  // then a red test rather than a rarer broken chain.
+  const clampMayRemove = (p: PinballPartSpot): boolean => !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p);
   let walkableTotal = 0;
   for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
   const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
   if (parts.length > maxPartsAllowed) {
     let excess = parts.length - maxPartsAllowed;
+    // Pass 1: the three loose SCORING kinds, which a floor has many of and
+    // which carry no structure at all.
     for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
       const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined &&
-        p.kind !== "seesaw" &&
-        p.kind !== "catapult" &&
-        p.kind !== "cannon"
-      ) {
-        if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
-          parts.splice(k, 1);
-          excess--;
-        }
+      if (clampMayRemove(p) && (p.kind === "bumper" || p.kind === "target" || p.kind === "booster")) {
+        parts.splice(k, 1);
+        excess--;
       }
     }
+    // Pass 2: any other unstructured part, if pass 1 did not find enough.
     for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
-      const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined &&
-        p.kind !== "seesaw" &&
-        p.kind !== "catapult" &&
-        p.kind !== "cannon"
-      ) {
+      if (clampMayRemove(parts[k])) {
         parts.splice(k, 1);
         excess--;
       }

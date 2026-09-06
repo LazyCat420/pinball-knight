@@ -38,6 +38,7 @@ import { resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
 import { installTouchControls, isTouchDevice, type TouchControls } from "./gui/touch";
 import { updateShots } from "./shots";
+import { resetMachines } from "./machines";
 import { resetTilt } from "./entities/nudge";
 import { createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
@@ -480,8 +481,7 @@ function buildLevel(level: number): void {
   state.magicianT = rollMagicianClock();
   state.witchSpawned = false;
   state.frogTrail = [];
-  // D2-D5 per-floor table state: laps, lane banks, the skill shot and the
-  // named-combo ledger all belong to ONE floor.
+  // Laps, lane banks, the skill shot, the named-combo ledger and every placed MACHINE belong to ONE floor.
   state.orbitActive = -1;
   state.orbitLast = -1;
   state.orbitCount = 0;
@@ -494,6 +494,7 @@ function buildLevel(level: number): void {
   state.skillTarget = null;
   state.shotChain = [];
   state.namedPaid = {};
+  resetMachines(); // registry lives in machines.ts, not on `state` — see there
   state.crackHintShown = false;
   state.stairsHintShown = false;
 

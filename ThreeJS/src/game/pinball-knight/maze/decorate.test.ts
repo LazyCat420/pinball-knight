@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
-import { decorateMaze, ROUTE_CHAIN_REACH, PAD_STRIDE, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels } from "./decorate";
+import { decorateMaze, isStructuralPart, ROUTE_CHAIN_REACH, PAD_STRIDE, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels, type PinballPartSpot } from "./decorate";
 import { isShaped, isArc, shapeBacking } from "../engine/tile-shape";
 import { bfsDistances } from "../engine/flow-field";
 import { PICKUP_WEAPONS } from "../items";
 import { buildFlowField, phiAt } from "./flow-orient";
 import { findFlowCycles } from "./flow-loops";
+import { FAMILY as PART_KIND_FAMILY } from "../dev/floor-svg";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
   const g = generateMaze(10, 8, mulberry32(seed));
@@ -999,3 +1000,101 @@ describe("breakLaunchDuels", () => {
 
 /** Mirror of decorate.ts LAUNCH_KINDS (not exported — kept in step by the test above). */
 const LAUNCH_KINDS_TEST = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
+
+// ── THE DENSITY CLAMP'S EXEMPTION SET ────────────────────────────────────────
+//
+// `decorateMaze` ends by deleting parts one at a time, from the end backwards,
+// until the floor is under its density cap. `isStructuralPart` is the whole of
+// what it will not touch, and a part missing from that set is not a slightly
+// sparser floor — it is a launcher aimed at a part that is no longer there.
+//
+// This is asserted directly rather than through a built floor because the
+// failure it guards is RARE BY CONSTRUCTION: the clamp only bites on the floors
+// where it binds, so a missing exemption shows up as a broken chain on maybe one
+// floor in five, at two of the twenty-four depths. That is exactly the kind of
+// defect a floor-level test finds by luck or not at all — `chain` was in fact
+// missing from the set from the day the clause list was written until
+// 2026-09-06, and the reason nothing caught it is that the chain pass was DEAD
+// (the corridor budget was overrun before it ran), so there was nothing to cull.
+//
+// SABOTAGE SEEN RED: drop `!!p.chain` from `isStructuralPart` — the marker
+// round-trip below names `chain` and the kind sweep is unaffected, which is the
+// right shape of failure.
+describe("isStructuralPart — what the density clamp may not delete", () => {
+  const loose = (kind: string): PinballPartSpot =>
+    ({ kind, i: 4, j: 4, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }) as unknown as PinballPartSpot;
+
+  /**
+   * Every `PartSpotKind`, from the one EXHAUSTIVE table over that union in the
+   * tree. `Record<PartSpotKind, …>` on an object literal is checked in both
+   * directions, so tsc refuses a table that misses a kind AND one that invents
+   * one — which is exactly the property a sweep needs and exactly the property
+   * a hand-kept list in a test file does not have.
+   */
+  const ALL_KINDS = Object.keys(PART_KIND_FAMILY);
+
+  /** The kinds that are structural BY KIND ALONE, with no marker set. */
+  const STRUCTURAL_KINDS = new Set(["seesaw", "catapult", "cannon"]);
+
+  /** Every marker that makes an otherwise loose part untouchable. */
+  const MARKERS: Record<string, unknown> = {
+    circuit: 0,
+    chute: true,
+    spine: true,
+    chain: true,
+    route: 0,
+    field: 0,
+    asm: { id: 1, name: "orbit" },
+  };
+
+  it("reads a real PartSpotKind union — an empty sweep proves nothing", () => {
+    expect(ALL_KINDS.length).toBeGreaterThan(20);
+    for (const k of STRUCTURAL_KINDS) expect(ALL_KINDS, `${k} missing from the parsed union`).toContain(k);
+    expect(ALL_KINDS).toContain("bumper");
+  });
+
+  it("is exactly STRUCTURAL_KINDS when no marker is set — both directions", () => {
+    const found = new Set(ALL_KINDS.filter((k) => isStructuralPart(loose(k))));
+    // Set equality, not counts: an allowlist can drift both ways and keep its
+    // length. A kind that gained protection it was not meant to have makes the
+    // clamp unable to reach its cap, which is the same bug facing the other way.
+    expect([...found].sort()).toEqual([...STRUCTURAL_KINDS].sort());
+  });
+
+  it("every declared marker protects a part, and dropping one is visible", () => {
+    // `0` and `false` are deliberate: `circuit`, `route` and `field` are indices
+    // and index 0 is a real circuit. A `p.circuit ?` test rather than
+    // `!== undefined` would wave the first circuit on every floor through.
+    for (const [key, value] of Object.entries(MARKERS)) {
+      const p = loose("bumper") as unknown as Record<string, unknown>;
+      p[key] = value;
+      expect(isStructuralPart(p as unknown as PinballPartSpot), `marker ${key} does not protect`).toBe(true);
+    }
+    expect(isStructuralPart(loose("bumper")), "a bare bumper is not structural").toBe(false);
+  });
+
+  it("index 0 counts — the first circuit, route and field are structural", () => {
+    for (const key of ["circuit", "route", "field"]) {
+      const p = loose("bumper") as unknown as Record<string, unknown>;
+      p[key] = 0;
+      expect(isStructuralPart(p as unknown as PinballPartSpot), `${key} = 0 is not protected`).toBe(true);
+    }
+  });
+
+  it("a decorated floor's chain links survive the clamp", () => {
+    // The behavioural half. `chain` is the marker the clamp used to be able to
+    // eat, so this drives the real pipeline at the depth where it bit and asks
+    // that every chain part on the finished floor is one the clamp let through.
+    let chainParts = 0;
+    for (let seed = 0; seed < 12; seed++) {
+      const g = thickenWalls(generateMaze(14, 11, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 24);
+      for (const p of plan.parts) {
+        if (!p.chain) continue;
+        chainParts++;
+        expect(isStructuralPart(p), `chain part ${p.kind}@${p.i},${p.j} is not protected`).toBe(true);
+      }
+    }
+    expect(chainParts, "no chain parts were placed — this test proved nothing").toBeGreaterThan(0);
+  });
+});

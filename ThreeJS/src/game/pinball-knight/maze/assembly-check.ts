@@ -12,7 +12,7 @@
  * library test fails the build rather than shipping a machine that plays badly
  * on every floor it lands on.
  */
-import { TWO_LEG_KINDS, type Assembly, type AssemblyPart, type AssemblyPort } from "./assembly";
+import { TWO_LEG_KINDS, isRecoveryPort, type Assembly, type AssemblyPart, type AssemblyPort } from "./assembly";
 
 export interface AssemblyProblem {
   machine: string;
@@ -25,7 +25,10 @@ export interface AssemblyProblem {
     | "no-entry"
     | "dead-end-drive"
     | "impact-chain"
-    | "corner-missing-leg";
+    | "corner-missing-leg"
+    | "capture-no-release"
+    | "capture-release-into-rebound"
+    | "no-recovery";
   detail: string;
 }
 
@@ -201,6 +204,178 @@ function checkCornerLegs(a: Assembly, out: AssemblyProblem[]): void {
   }
 }
 
+/**
+ * A CAPTURE MUST DECLARE ITS RELEASE.
+ *
+ * A `capture` part stops the ball and holds it. Flow does not continue through
+ * one, it RESTARTS on the far side — and the machine is the only thing that
+ * knows where. Author a capture with no release and the definition has stated
+ * a softlock: the ball goes in and the data does not say what happens next.
+ *
+ * The release must be an EJECT specifically, not merely an exit. A ballistic
+ * exit preserves whatever momentum the ball has, and a captured ball's momentum
+ * is zero by definition — it was stopped. So a capture whose only exit is
+ * ballistic releases the player at no speed onto the tile he is standing on,
+ * which is the same softlock with an extra port on it. `eject` is the one flow
+ * that replaces momentum with an authored vector, which is exactly what a
+ * scoop's kickout coil does and why a chain through one is reliable.
+ *
+ * The RECOVERY landing does not count. It is an eject exit and it would
+ * satisfy a naive version of this rule, but it is the FAILURE path: letting it
+ * stand in for the release would mean a machine could author what happens when
+ * the ride goes wrong and never say what happens when it goes right.
+ */
+function checkCaptureRelease(a: Assembly, out: AssemblyProblem[]): void {
+  if (!a.parts.some((p) => p.role === "capture")) return;
+  const released = a.ports.some((p) => p.way !== "in" && p.flow === "eject" && !isRecoveryPort(p));
+  if (!released) {
+    out.push({
+      machine: a.name,
+      code: "capture-no-release",
+      detail: "a capture part with no authored eject exit — the ball goes in and the definition never says where it comes out",
+    });
+  }
+}
+
+/**
+ * THE SLINGSHOT RULE, ON THE INSIDE OF THE MACHINE.
+ *
+ * `checkExitLines` walks FORWARD from a port and stops at the footprint edge,
+ * which for a port on the boundary — where ports live — is usually zero cells.
+ * It is the right rule for a ballistic exit, whose ball arrives at the port
+ * already travelling: what happens beyond the machine is the placer's problem.
+ *
+ * An EJECT from a capture is a different shot. The ball starts at rest INSIDE
+ * the machine and is thrown from there to the port, so the cells between them
+ * are part of the release, and they are exactly the cells the forward walk
+ * never looks at. That segment is where a guarding rebounder sits — the drop
+ * targets and slingshots that make a scoop worth shooting at are in front of
+ * it, not behind it. A scoop that kicks the ball into its own guard punishes
+ * the player for the shot he just made, which is the same feel bug as the
+ * shipped rule, on the half of the line the shipped rule cannot see.
+ *
+ * So: walk BACKWARD from every eject exit, through the footprint, and flag a
+ * rebounder standing on the release path. The recovery landing is walked too —
+ * a failed ride kicked into a slingshot is not a recovery.
+ */
+function checkCaptureReleasePath(a: Assembly, out: AssemblyProblem[]): void {
+  if (!a.parts.some((p) => p.role === "capture")) return;
+  const rebounders = new Map<string, AssemblyPart>();
+  for (const p of a.parts) if (p.role === "rebound") rebounders.set(key(p.ci, p.cj), p);
+  if (!rebounders.size) return;
+
+  for (const port of a.ports) {
+    if (port.way === "in") continue;
+    if (port.flow !== "eject") continue;
+    // Backwards along the travel vector: from the port INTO the machine, which
+    // is the direction the ejected ball came from.
+    let ci = port.ci - port.dir.di;
+    let cj = port.cj - port.dir.dj;
+    while (ci >= 0 && cj >= 0 && ci < a.w && cj < a.h) {
+      const hit = rebounders.get(key(ci, cj));
+      if (hit) {
+        out.push({
+          machine: a.name,
+          code: "capture-release-into-rebound",
+          detail: `release ${port.tag ?? "?"} is thrown through ${hit.kind} at ${ci},${cj} on its way out`,
+        });
+        break;
+      }
+      ci -= port.dir.di;
+      cj -= port.dir.dj;
+    }
+  }
+}
+
+/**
+ * Does this machine carry a RIDE — something that can fail with the player
+ * still inside it?
+ *
+ * `drive` and `capture`, and nothing else. A drive part throws the player
+ * somewhere and can throw him short; a capture holds him and can decline to
+ * let go. A bank of targets, a nest of bumpers or a lane of rollovers cannot
+ * strand anyone: the ball arrives under its own power and leaves the same way,
+ * so demanding a landing from them would turn the rule into a tax on every
+ * machine in the library rather than a contract on the ones that need it.
+ */
+export function needsRecovery(a: Assembly): boolean {
+  return a.parts.some((p) => p.role === "drive" || p.role === "capture");
+}
+
+/** Does it declare where a failed ride lands? */
+export function hasRecoveryPort(a: Assembly): boolean {
+  return a.ports.some(isRecoveryPort);
+}
+
+/**
+ * THE FOUR MACHINES THAT PREDATE THE RECOVERY CONTRACT.
+ *
+ * `no-recovery` is an ERROR, not a warning, and that is a deliberate choice
+ * with a cost attached. The alternative was a severity channel — emit the
+ * problem, mark it `warn`, let the library gate filter it out. This repo has a
+ * recorded scar for exactly that shape: a rule nothing enforces is a rule that
+ * does nothing, and it stays green for months while the thing it was written
+ * to catch ships repeatedly. An error that every NEW machine must satisfy is
+ * worth more than a warning every machine may ignore.
+ *
+ * The cost is these four, which shipped before the contract existed and fail
+ * it. Retrofitting a landing onto each is not a comment change: a recovery
+ * port is a real exit, so the router runway-gates it (`scoreAt` demands
+ * MIN_RUNWAY of open floor beyond every non-`in` port), and adding one lowers
+ * the machine's placement rate on every floor in the game. That is a change to
+ * shipped behaviour, measured by `assembly-place.test.ts`, and it does not
+ * belong in the same change as the vocabulary that makes it expressible.
+ *
+ * So they are named — each with the reason it is here rather than fixed:
+ *
+ *  · `orbit`        — two boosters drive its lanes and a ball that stalls on
+ *    the bend has nowhere authored to go. It already asks for `wantsRunway: 4`
+ *    and gates two exits; a third would change where orbits land on every
+ *    floor.
+ *  · `ramp-return`  — the same, and it carries the library's highest runway
+ *    demand (5). It is the machine most sensitive to another gated exit, so it
+ *    is the one whose placement rate a retrofit would move furthest.
+ *  · `kicker-lane`  — 2×2, the smallest machine in the library. Its four cells
+ *    are a spring, a rollover, a mouth and a kickout; there is no boundary cell
+ *    left to land on that is not already carrying a port whose tag something
+ *    else chains to.
+ *  · `spinner-gate` — a 3×1 straight-through. Both ends are already ports and
+ *    the machine has no third face; a landing would have to share a cell with
+ *    the mouth or the exit, which changes what chains to it.
+ *
+ * The list is pinned by a test that DERIVES the failing set from `MACHINES` and
+ * asserts set equality in both directions. An allowlist drifts both ways and
+ * keeps its count — a name that gets fixed must leave, and a new machine that
+ * fails must never quietly join.
+ */
+export const RECOVERY_GRANDFATHERED: ReadonlySet<string> = new Set([
+  "orbit",
+  "ramp-return",
+  "kicker-lane",
+  "spinner-gate",
+]);
+
+/**
+ * EVERY RIDE DECLARES ITS LANDING.
+ *
+ * The structural half of a promise the pipeline currently keeps only at
+ * runtime. `breakLaunchDuels`, `breakFlowLoops` and the booster-jam guard all
+ * exist to rescue a player who is already stuck; each of them has to guess
+ * where to put him, because nothing in the data ever said. A machine that
+ * declares a recovery port has answered the question in advance, at the one
+ * place that knows the answer — the definition.
+ */
+function checkHasRecovery(a: Assembly, out: AssemblyProblem[]): void {
+  if (!needsRecovery(a)) return;
+  if (hasRecoveryPort(a)) return;
+  if (RECOVERY_GRANDFATHERED.has(a.name)) return;
+  out.push({
+    machine: a.name,
+    code: "no-recovery",
+    detail: `carries a drive/capture but declares no port tagged "recovery" — a failed ride has nowhere authored to land`,
+  });
+}
+
 /** Run every rule over one machine. Empty array = the definition is sound. */
 export function checkAssembly(a: Assembly): AssemblyProblem[] {
   const out: AssemblyProblem[] = [];
@@ -210,6 +385,9 @@ export function checkAssembly(a: Assembly): AssemblyProblem[] {
   checkExitLines(a, out);
   checkDrivesGoSomewhere(a, out);
   checkCornerLegs(a, out);
+  checkCaptureRelease(a, out);
+  checkCaptureReleasePath(a, out);
+  checkHasRecovery(a, out);
   return out;
 }
 

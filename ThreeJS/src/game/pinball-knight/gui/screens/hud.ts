@@ -33,6 +33,7 @@ import { WEAPONS } from "../../items";
 import { playerMaxHp } from "../../skill-runtime";
 import { FACE_PX, createFace, renderFace, setFaceHealth } from "../../hud-face";
 import { createMinimap, renderMinimap } from "../../hud-minimap";
+import { machineHud, machineHudLive, type MachineHud } from "../../hud-machines";
 import { UI, GRID } from "../theme";
 import { bar, fillRect, rect, strokeRect, text, type Rect, type UiFrame } from "../im";
 import { abilityIcon, drawIcon, itemIcon } from "../icons";
@@ -158,6 +159,81 @@ function globe(f: UiFrame, r: Rect, t: number, colour: string, value: number, ti
   g.arc(cx, cy, rad, 0, Math.PI * 2);
   g.stroke();
   text(f, String(Math.round(value)), cx, cy - 4, { size: 8, colour: UI.text, align: "center" });
+}
+
+/**
+ * THE MACHINE READOUT — a transient column above the panel.
+ *
+ * Sits with the combo counter and the plunger meter rather than in the belt
+ * row, and for the same reason: it is on screen only while it has something to
+ * say. `hud-machines.ts machineHud()` decides WHAT to say (which of a floor's
+ * machines, and when nothing); this only draws it.
+ *
+ * Built bottom-up from just above the combo line, so a row appearing or lapsing
+ * never moves the rows already on screen. Growing DOWNWARD from a fixed top
+ * would have shifted the whole column every time overcharge armed, which reads
+ * as a glitch at the exact moment the player is being asked to look.
+ *
+ * Left-aligned against the same margin as the combo, so the centre stays clear
+ * for the plunger meter and the boss bar.
+ */
+function paintMachines(f: UiFrame, h: MachineHud, panelY: number): void {
+  const x = GRID * 2;
+  const ROW = 13;
+  // Bottom of the column: one row above the combo line, which owns panelY - 20.
+  let y = panelY - 34;
+  const line = (label: string, value: string, colour: string): void => {
+    text(f, label, x, y, { size: 8, colour: UI.textDim });
+    text(f, value, x + 58, y, { size: 8, colour });
+    y -= ROW;
+  };
+  // A thin progress rule under a row, drawn INSIDE the row's own band so it
+  // does not need its own slot in the stack.
+  const rule = (frac: number, colour: string, width = 100): void => {
+    const ry = y + ROW - 3;
+    fillRect(f, rect(x, ry, width, 2), UI.wellEdge);
+    if (frac > 0) fillRect(f, rect(x, ry, Math.max(1, Math.round(width * frac)), 2), colour);
+  };
+
+  const m = h.machine;
+  if (m) {
+    // PIPS, not "2/4". The sequence is a shape — three lit and one dark is read
+    // in peripheral vision; a fraction has to be parsed. The number is kept
+    // beside them for machines long enough that the pips stop being countable.
+    const PIP = 5;
+    const GAPP = 2;
+    const phaseColour =
+      m.phase === "armed" ? UI.gold : m.phase === "lit" ? UI.arcane : m.phase === "cooling" ? UI.textFaint : UI.good;
+    const py = y + 1;
+    let px = x;
+    for (let k = 0; k < m.total && k < 12; k++) {
+      const r = rect(px, py, PIP, PIP);
+      fillRect(f, r, k < m.step ? phaseColour : UI.well);
+      strokeRect(f, r, UI.wellEdge);
+      px += PIP + GAPP;
+    }
+    const label = m.name.toUpperCase().replace(/-/g, " ");
+    text(f, label, px + 4, y, { size: 8, colour: phaseColour });
+    if (m.tier > 1) text(f, `T${m.tier}`, px + 4 + label.length * 8 + 4, y, { size: 8, colour: UI.gold });
+    // The clock. `armed` is the one that costs the player something to ignore,
+    // so it is the one drawn in the alarm colour.
+    if (m.full > 0) rule(m.frac, m.phase === "armed" ? UI.danger : phaseColour, 100);
+    y -= ROW;
+  }
+
+  if (h.circuit) line("CHAIN", `x${h.circuit.mult.toFixed(2).replace(/0$/, "")}`, UI.arcane);
+  if (h.vault) {
+    // What is left to do, not what has been done: "1 MORE" is an instruction,
+    // "3 CHARGES" is a statistic.
+    const done = h.vault.seals > 0 ? `${h.vault.seals} SEAL${h.vault.seals > 1 ? "S" : ""} · ` : "";
+    line("VAULT", `${done}${h.vault.toNext} MORE`, UI.gold);
+  }
+  if (h.overcharge) {
+    line("OVERCHARGE", `${h.overcharge.remaining.toFixed(1)}s +${Math.round(h.overcharge.share * 100)}%`, UI.danger);
+    y += ROW; // the rule belongs to the row just drawn
+    rule(h.overcharge.frac, UI.danger, 140);
+    y -= ROW;
+  }
 }
 
 export function hudScreen(): UiScreen {
@@ -350,6 +426,11 @@ export function hudScreen(): UiScreen {
         // told you which one you had walked into.
         text(f, bossLabel() ?? "BOSS", bb.x + bb.w / 2, bb.y + 3, { size: 8, colour: UI.text, align: "center" });
       }
+
+      // ── MACHINES — transient, above the combo line ──
+      // Drawn before the combo so the combo's fixed slot is never pushed.
+      const mh = machineHud();
+      if (machineHudLive(mh)) paintMachines(f, mh, panel.y);
 
       // ── COMBO — transient, above the panel ──
       if (p.bounceCombo > 1) {

@@ -16,6 +16,7 @@ import type { BossKind } from "./boss-kinds";
 import type { Animator, Facing } from "./engine/render/animator";
 import type { MonsterAnimator } from "./engine/render/monster-animator";
 import type { Grid, TilePos } from "./maze/generator";
+import type { AssemblyRef } from "./maze/assembly";
 import type { Fog } from "./fog";
 import type { ArcCorner } from "./engine/collision";
 import type { MazeHandle } from "./maze/build";
@@ -620,8 +621,27 @@ export interface PinballPart {
   fireT?: number;
   /** GLOVE / FIRE VENT: true once this fire's lane damage has been dealt. */
   punchSpent?: boolean;
-  /** TARGET only: true once broken — a dead target never re-arms. */
+  /**
+   * TARGET only: true once broken.
+   *
+   * A LOOSE target is dead for the floor — nothing ever clears this. A target
+   * belonging to an authored MACHINE is stood back up by `machines.rearmOneShots`
+   * so its bank can be run again, which is why `done` is no longer the same
+   * question as "has this target ever fallen" — see `counted`.
+   */
   done?: boolean;
+  /**
+   * TARGET only: this target has been counted toward the floor's
+   * `targetsHit` / `targetsTotal` objective, and must never be counted again.
+   *
+   * Separate from `done` because a machine's targets re-arm: without this, one
+   * `target-bank` run in a loop would drive `targetsHit` past `targetsTotal`
+   * and pay the "ALL TARGETS DOWN" bonus over and over. The floor objective
+   * asks "how much of the floor have you broken", which each target answers
+   * exactly once in its life; the machine asks "is the bank down right now",
+   * which is `done`. One flag could not mean both.
+   */
+  counted?: boolean;
   /** BUMPER only: pops so far; at BUMPER_LIT_HITS it lights (Slice 5). */
   hits?: number;
   /** TARGET BANK (Slice 6): which drop-target bank this belongs to + its order
@@ -656,6 +676,23 @@ export interface PinballPart {
   /** ROLLOVER LANE (D3): lane-array id + which lane across the array. */
   lane?: number;
   laneSeq?: number;
+  /**
+   * ASSEMBLY MEMBER: the authored MACHINE this part belongs to, carried through
+   * from the level plan's `PinballPartSpot`.
+   *
+   * It is the one encoding that replaces `orbit`/`orbitSeq`, `bank`/`seq` and
+   * `lane`/`laneSeq` — three incompatible spellings of "these parts are one
+   * group", each understood by exactly one consumer. `machines.ts` reads this
+   * and nothing else to decide what machine a hit belongs to.
+   *
+   * ⚠️ THE PLAN BUILDER USED TO DROP THIS. `render/pinball-parts.ts` copied ten
+   * sibling fields off the spot and not `asm`, so a machine the generator had
+   * authored, checked and placed arrived in the running game as an anonymous
+   * scatter of parts — `asm` was read by two offline dev tools and by nothing
+   * that plays. Anything new that adds a field to a part spot has to be added
+   * to `createPinballParts` too; there is no type error for forgetting.
+   */
+  asm?: AssemblyRef;
   /**
    * BOOSTER JAM guard: consecutive re-fires that caught the ball in the same
    * spot, and where/when that streak was last seen. A pad aimed into a sharp
