@@ -211,16 +211,16 @@ describe("The Jade Buddha Boss & Chinese Fan Boomerang Suite", () => {
 
     it("verifies jade_buddha moveset configuration has Belly Slam and Fan Boomerang", () => {
       expect(slamSpec).toBeDefined();
-      expect(slamSpec.radius).toBe(2.8);
+      expect(slamSpec.radius).toBe(2.6);
       expect(slamSpec.launch).toBe(22);
       expect(slamSpec.damage).toBe(2);
       expect(slamSpec.telegraph).toBe(1.0);
 
       expect(p2SlamSpec).toBeDefined();
-      expect(p2SlamSpec.radius).toBe(3.2);
+      expect(p2SlamSpec.radius).toBe(2.6);
       expect(p2SlamSpec.launch).toBe(26);
       expect(p2SlamSpec.damage).toBe(3);
-      expect(p2SlamSpec.echo).toEqual({ delay: 0.4, radius: 3.8, damage: 2 });
+      expect(p2SlamSpec.echo).toEqual({ delay: 0.4, radius: 2.6, damage: 2 });
 
       // Check fan boomerang config
       expect(spec).toBeDefined();

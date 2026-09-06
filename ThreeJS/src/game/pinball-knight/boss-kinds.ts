@@ -463,7 +463,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
       slam: {
         interval: 4.5,
         telegraph: 1.0,
-        radius: 2.8,
+        radius: 2.6,
         damage: 2,
         launch: 22,
         color: 0x2ee89a,
@@ -488,11 +488,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         slam: {
           interval: 3.2,
           telegraph: 0.75,
-          radius: 3.2,
+          radius: 2.6,
           damage: 3,
           launch: 26,
           color: 0x11ff88,
-          echo: { delay: 0.4, radius: 3.8, damage: 2 },
+          echo: { delay: 0.4, radius: 2.6, damage: 2 },
         },
         fanBoomerang: {
           interval: 2.6,
