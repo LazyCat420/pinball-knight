@@ -24,6 +24,23 @@ export default defineConfig({
    */
   define: {
     __BUILD_ID__: JSON.stringify(new Date().toISOString().replace(/\.\d+Z$/, "Z")),
+    /**
+     * `process` DOES NOT EXIST IN A BROWSER, and one module still reads it.
+     *
+     * `src/services/api-config.ts` is a leftover from when this game lived in a
+     * Next app: it reads `process.env.NEXT_PUBLIC_BACKEND_URL` at MODULE SCOPE,
+     * and `run/ledger.ts` pulls it into the game's import graph. `vite build`
+     * already substitutes `process.env` with `{}` for a browser target, so the
+     * SHIPPED bundle is fine — the deployed one reads
+     * `var e={}; e.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5175"`.
+     *
+     * `vite dev` does not do that substitution, so the dev server served a page
+     * that threw `ReferenceError: process is not defined` before it created a
+     * canvas: a black screen, no error visible in the game, `npm run dev`
+     * exiting 0 and looking healthy. Defining it here makes dev agree with the
+     * build instead of being the only environment where the game cannot start.
+     */
+    "process.env": "{}",
   },
   resolve: {
     alias: {
