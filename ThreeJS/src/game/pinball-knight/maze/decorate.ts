@@ -3729,45 +3729,6 @@ export function decorateMaze(
     fieldsPlaced++;
   }
 
-  let walkableTotal = 0;
-  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
-  const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
-  if (parts.length > maxPartsAllowed) {
-    let excess = parts.length - maxPartsAllowed;
-    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
-      const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined
-      ) {
-        if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
-          parts.splice(k, 1);
-          excess--;
-        }
-      }
-    }
-    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
-      const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined
-      ) {
-        parts.splice(k, 1);
-        excess--;
-      }
-    }
-  }
-
   // ── SEESAWS: two-way alternating shortcuts across wall bands.
   // Placed at the very end with an isolated seed so earlier placement,
   // item rarity, and wall triage remain bit-identical to existing floors.
@@ -3892,6 +3853,52 @@ export function decorateMaze(
         dir2J: 0,
       });
       placedCannons++;
+    }
+  }
+
+  // ── FINAL DENSITY CLAMP: strictly enforce PARTS_PER_1K_CAP across all layers ──
+  let walkableTotal = 0;
+  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
+  const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
+  if (parts.length > maxPartsAllowed) {
+    let excess = parts.length - maxPartsAllowed;
+    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
+      const p = parts[k];
+      if (
+        !inRoom({ i: p.i, j: p.j }) &&
+        p.circuit === undefined &&
+        !p.chute &&
+        !p.spine &&
+        (p as any).route === undefined &&
+        p.field === undefined &&
+        p.asm === undefined &&
+        p.kind !== "seesaw" &&
+        p.kind !== "catapult" &&
+        p.kind !== "cannon"
+      ) {
+        if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
+          parts.splice(k, 1);
+          excess--;
+        }
+      }
+    }
+    for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
+      const p = parts[k];
+      if (
+        !inRoom({ i: p.i, j: p.j }) &&
+        p.circuit === undefined &&
+        !p.chute &&
+        !p.spine &&
+        (p as any).route === undefined &&
+        p.field === undefined &&
+        p.asm === undefined &&
+        p.kind !== "seesaw" &&
+        p.kind !== "catapult" &&
+        p.kind !== "cannon"
+      ) {
+        parts.splice(k, 1);
+        excess--;
+      }
     }
   }
 
