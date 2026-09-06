@@ -132,7 +132,12 @@ export interface SvgOptions {
 
 /** Part families, by what the player does with them. Colour follows FUNCTION,
  *  never kind, so a floor with six launcher kinds still reads as "one job". */
-const FAMILY: Record<PartSpotKind, "launch" | "bounce" | "bank" | "hazard" | "score"> = {
+// Exported because it is the one EXHAUSTIVE table over `PartSpotKind` in the
+// tree — `Record<PartSpotKind, …>` on an object literal is checked both ways,
+// so it can neither miss a kind nor invent one, and `decorate.test.ts` sweeps
+// the density clamp's exemption set over its keys rather than over a list that
+// would quietly stop covering new kinds.
+export const FAMILY: Record<PartSpotKind, "launch" | "bounce" | "bank" | "hazard" | "score"> = {
   booster: "launch",
   boostcorner: "launch",
   boostcurve: "launch",
@@ -157,6 +162,16 @@ const FAMILY: Record<PartSpotKind, "launch" | "bounce" | "bank" | "hazard" | "sc
   rollover: "score",
   lamp: "score",
   magstrip: "score",
+  // TRAVERSAL, added by the seesaw/catapult/cannon work. All three exist to put
+  // the knight somewhere else at speed, which is the "launch" job however
+  // differently they read in the hand. They were missing from this table for
+  // its whole life after that landing: `Record<PartSpotKind, …>` DID flag it,
+  // and the error sat unread inside a 199-deep tsc baseline that the build does
+  // not run (next.config.js sets ignoreBuildErrors). Every seesaw, catapult and
+  // cannon on a debug floor plan was drawn with `FAMILY[kind]` = undefined.
+  seesaw: "launch",
+  catapult: "launch",
+  cannon: "launch",
   // A maw eats you; it belongs with the pit it hands you to.
   maw: "hazard",
   oil: "hazard",

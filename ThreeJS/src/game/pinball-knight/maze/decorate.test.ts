@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
-import { readFileSync } from "node:fs";
 import { decorateMaze, isStructuralPart, ROUTE_CHAIN_REACH, PAD_STRIDE, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels, type PinballPartSpot } from "./decorate";
 import { isShaped, isArc, shapeBacking } from "../engine/tile-shape";
 import { bfsDistances } from "../engine/flow-field";
 import { PICKUP_WEAPONS } from "../items";
 import { buildFlowField, phiAt } from "./flow-orient";
 import { findFlowCycles } from "./flow-loops";
+import { FAMILY as PART_KIND_FAMILY } from "../dev/floor-svg";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
   const g = generateMaze(10, 8, mulberry32(seed));
@@ -1025,16 +1025,13 @@ describe("isStructuralPart — what the density clamp may not delete", () => {
     ({ kind, i: 4, j: 4, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }) as unknown as PinballPartSpot;
 
   /**
-   * `PartSpotKind` read out of the source, so this sweep is COMPLETE rather
-   * than a list that quietly stops covering new kinds. The union is written one
-   * `| "kind"` per line with comments between them.
+   * Every `PartSpotKind`, from the one EXHAUSTIVE table over that union in the
+   * tree. `Record<PartSpotKind, …>` on an object literal is checked in both
+   * directions, so tsc refuses a table that misses a kind AND one that invents
+   * one — which is exactly the property a sweep needs and exactly the property
+   * a hand-kept list in a test file does not have.
    */
-  const ALL_KINDS = (() => {
-    const src = readFileSync(new URL("./decorate.ts", import.meta.url), "utf8");
-    const start = src.indexOf("export type PartSpotKind =");
-    const body = src.slice(start, src.indexOf(";", start));
-    return [...body.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
-  })();
+  const ALL_KINDS = Object.keys(PART_KIND_FAMILY);
 
   /** The kinds that are structural BY KIND ALONE, with no marker set. */
   const STRUCTURAL_KINDS = new Set(["seesaw", "catapult", "cannon"]);
