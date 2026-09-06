@@ -2386,6 +2386,38 @@ function breakBumperBounceTraps(g: Grid, parts: PinballPartSpot[]): void {
   }
 }
 
+/**
+ * Does this part BELONG TO SOMETHING — a circuit, a chain, a machine, the
+ * spine, a route, a field, a chute — rather than standing alone?
+ *
+ * The final density clamp in `decorateMaze` deletes parts one at a time to
+ * bring a floor under its cap, and deleting one part out of a structure does
+ * not make the floor 1/Nth less dense: it breaks the structure and leaves a
+ * launcher aimed at a part that is no longer there. So the clamp spends its
+ * excess on loose furniture and this says what "loose" means.
+ *
+ * Exported, and separate from the clamp, so the exemption set can be asserted
+ * directly. `chain` was missing from it for as long as the chain pass was dead
+ * code and nothing could have noticed — see the clamp's own note.
+ *
+ * `inRoom` is NOT here: it is a property of where a part sits on one particular
+ * floor, not of the part, so it stays a closure at the call site.
+ */
+export function isStructuralPart(p: PinballPartSpot): boolean {
+  return (
+    p.circuit !== undefined ||
+    !!p.chute ||
+    !!p.spine ||
+    !!p.chain ||
+    (p as { route?: unknown }).route !== undefined ||
+    p.field !== undefined ||
+    p.asm !== undefined ||
+    p.kind === "seesaw" ||
+    p.kind === "catapult" ||
+    p.kind === "cannon"
+  );
+}
+
 export function decorateMaze(
   g: Grid,
   rng: () => number,
@@ -3979,45 +4011,55 @@ export function decorateMaze(
   }
 
   // ── FINAL DENSITY CLAMP: strictly enforce PARTS_PER_1K_CAP across all layers ──
+  //
+  // WHAT IS PROTECTED, AND WHY IT IS ONE LIST.
+  //
+  // The clamp deletes parts one at a time, walking BACKWARDS from the end, to
+  // bring the floor under its density cap. Deleting one part out of a STRUCTURE
+  // does not make the floor 1/Nth less dense — it breaks the structure. A
+  // circuit missing a node, a chain missing its third link, a machine missing a
+  // leg: each leaves a launcher aimed at a part that is no longer there, which
+  // is the exact complaint ("the boosters lead nowhere") this layer exists to
+  // answer. So everything that belongs to an authored structure is exempt and
+  // the clamp spends its excess on LOOSE FURNITURE, bumpers and targets first.
+  //
+  // ⚠️ `chain` was missing from this list until 2026-09-06, and the reason is
+  // worth keeping: chains were DEAD CODE when the list was written. The corridor
+  // budget was overrun before the chain pass ran (`corridorBudget`, above), so
+  // `chain`-tagged parts were 0.0 per floor on every floor measured and nothing
+  // could have noticed the omission. Reviving the pass and merging the traversal
+  // mechanics in the same week made it visible: on floors where the clamp binds
+  // (L1 and L8, where `partBudget` is the operative bound) seesaws, catapults
+  // and cannons are additive but the clamp is zero-sum, so their room came out
+  // of bumpers first and then out of chain links — 3.0 -> 2.8 at L1 and
+  // 4.0 -> 3.8 at L8, measured over 5 seeds a depth. Small, and a broken chain
+  // every fifth floor.
+  //
+  // The predicate is ONE function called twice rather than two copies of the
+  // same eleven clauses, because the two copies had already been edited in
+  // lockstep twice and the next exemption added to one and not the other would
+  // have culled from a list nobody thought was reachable. It is
+  // `isStructuralPart` at module scope so `decorate.test.ts` can hold it to the
+  // set above without going through a built floor — a clause dropped from it is
+  // then a red test rather than a rarer broken chain.
+  const clampMayRemove = (p: PinballPartSpot): boolean => !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p);
   let walkableTotal = 0;
   for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
   const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));
   if (parts.length > maxPartsAllowed) {
     let excess = parts.length - maxPartsAllowed;
+    // Pass 1: the three loose SCORING kinds, which a floor has many of and
+    // which carry no structure at all.
     for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
       const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined &&
-        p.kind !== "seesaw" &&
-        p.kind !== "catapult" &&
-        p.kind !== "cannon"
-      ) {
-        if (p.kind === "bumper" || p.kind === "target" || p.kind === "booster") {
-          parts.splice(k, 1);
-          excess--;
-        }
+      if (clampMayRemove(p) && (p.kind === "bumper" || p.kind === "target" || p.kind === "booster")) {
+        parts.splice(k, 1);
+        excess--;
       }
     }
+    // Pass 2: any other unstructured part, if pass 1 did not find enough.
     for (let k = parts.length - 1; k >= 0 && excess > 0; k--) {
-      const p = parts[k];
-      if (
-        !inRoom({ i: p.i, j: p.j }) &&
-        p.circuit === undefined &&
-        !p.chute &&
-        !p.spine &&
-        (p as any).route === undefined &&
-        p.field === undefined &&
-        p.asm === undefined &&
-        p.kind !== "seesaw" &&
-        p.kind !== "catapult" &&
-        p.kind !== "cannon"
-      ) {
+      if (clampMayRemove(parts[k])) {
         parts.splice(k, 1);
         excess--;
       }
