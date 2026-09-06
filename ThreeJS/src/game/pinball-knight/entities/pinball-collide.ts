@@ -20,6 +20,7 @@
  */
 import { PART_TOUCH_BROAD_SQ } from "../constants";
 import { state, type Player, type PinballPart, type PinballPartKind } from "../state";
+import { isWalkable, tileCenter } from "../maze/generator";
 import { canMawSwallow, MAW_COOLDOWN } from "./maw";
 import {
   PLAYER_R,
@@ -66,6 +67,10 @@ import {
   SEESAW_SPEED,
   SEESAW_COOLDOWN,
   SEESAW_STEER_LOCK,
+  CATAPULT_RADIUS,
+  CATAPULT_COOLDOWN,
+  CANNON_RADIUS,
+  CANNON_COOLDOWN,
   DEFLECTOR_GRAB_TIME,
   DEFLECTOR_THROW_SPEED,
   DEFLECTOR_THROW_BOOST,
@@ -148,6 +153,10 @@ export interface PinballDeps {
   startRampHop(dirX: number, dirZ: number, speed: number): void;
   /** Traverse across a seesaw shortcut plank directly to the opposite landing. */
   startSeesawHop?(landX: number, landZ: number, dirX: number, dirZ: number, speed: number): void;
+  /** Launch the airborne catapult toss to (destX, destZ). */
+  startCatapultLaunch?(destX: number, destZ: number): void;
+  /** Sucks player into cannon barrel for aiming and firing. */
+  enterCannon?(part: PinballPart): void;
   /** Open the hatch and hand off to the rollercoaster ride. */
   startDrop(x: number, z: number): void;
   /** Set the post-dash no-steer window to exactly `t` (the ramp's dash panel). */
@@ -1152,6 +1161,67 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
       state.vfx?.sparks(bx, 0.4, bz, revX, revZ, 16);
       requestShake(0.14);
       sfxSpin();
+    }
+  },
+
+  catapult: ({ part, p, d2, deps }) => {
+    if (d2 > CATAPULT_RADIUS * CATAPULT_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0) return;
+
+    const g = state.grid;
+    if (!g) return;
+
+    let bestX = p.x;
+    let bestZ = p.z;
+    let bestDist = 0;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+      const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+      if (!isWalkable(g, ti, tj)) continue;
+      const c = tileCenter(g, ti, tj);
+      const dist = Math.hypot(c.x - part.x, c.z - part.z);
+      if (dist < 10) continue;
+      if (state.pinballParts.some((q) => (q.kind === "pit" || q.kind === "gravepit" || q.kind === "trapdoor") && Math.hypot(q.x - c.x, q.z - c.z) < 1.5)) continue;
+      bestX = c.x;
+      bestZ = c.z;
+      bestDist = dist;
+      if (dist >= 14) break;
+    }
+
+    if (bestDist < 6) {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+        const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+        if (!isWalkable(g, ti, tj)) continue;
+        const c = tileCenter(g, ti, tj);
+        if (Math.hypot(c.x - part.x, c.z - part.z) >= 4) {
+          bestX = c.x;
+          bestZ = c.z;
+          break;
+        }
+      }
+    }
+
+    part.cooldownT = CATAPULT_COOLDOWN;
+    part.hitT = 0;
+
+    if (deps.startCatapultLaunch) {
+      deps.startCatapultLaunch(bestX, bestZ);
+    }
+    onPartTrigger();
+    state.vfx?.dust(p.x, 0.08, p.z);
+    state.vfx?.sparks(part.x, 0.4, part.z, 0, 1, 20);
+    requestShake(0.25);
+    sfxHeavy();
+    recordShot("catapult");
+  },
+
+  cannon: ({ part, p, d2, deps }) => {
+    if (d2 > CANNON_RADIUS * CANNON_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0 || p.cannonPart) return;
+
+    if (deps.enterCannon) {
+      deps.enterCannon(part);
     }
   },
 };

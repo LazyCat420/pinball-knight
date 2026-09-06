@@ -24,7 +24,7 @@ import { PALETTE_HEX } from "./palette";
 import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
 import type { ElementMaterial } from "../fx/elements/element";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase, TELL_TINT_FREEZE, FREEZE_TELL_INTERVAL, FREEZE_TELL_PARTS, SEESAW_TILT_ANGLE } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase, TELL_TINT_FREEZE, FREEZE_TELL_INTERVAL, FREEZE_TELL_PARTS, SEESAW_TILT_ANGLE, CANNON_SWEEP_RATE } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -500,8 +500,135 @@ function buildSeeSaw(dirX: number, dirZ: number, span = 2): THREE.Group {
 
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.plankPivot = plankPivot;
+  gp.userData.pivot = plankPivot;
   gp.userData.runeMats = runeMats;
+  gp.userData.chevs = runeMats;
   gp.userData.phase = Math.random() * Math.PI * 2;
+  return gp;
+}
+
+function buildCatapult(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+
+  // 1. Timber chassis
+  const chassisMat = std(0x4a321f); // dark timber
+  const steelMat = std(C_STEEL_DK);
+  const baseFrame = new THREE.Mesh(boxGeo(0.85, 0.08, 0.72), chassisMat);
+  baseFrame.position.y = 0.04;
+  gp.add(baseFrame);
+
+  // Corner brackets
+  for (const cx of [-0.38, 0.38]) {
+    for (const cz of [-0.32, 0.32]) {
+      const b = new THREE.Mesh(boxGeo(0.08, 0.1, 0.08), steelMat);
+      b.position.set(cx, 0.05, cz);
+      gp.add(b);
+    }
+  }
+
+  // 2. Vertical A-frame uprights
+  const uprightH = 0.52;
+  const axleY = 0.42;
+  for (const cz of [-0.3, 0.3]) {
+    const post = new THREE.Mesh(boxGeo(0.12, uprightH, 0.08), chassisMat);
+    post.position.set(0, uprightH / 2, cz);
+    gp.add(post);
+  }
+
+  // Steel axle pin
+  const axle = new THREE.Mesh(cylGeo(0.04, 0.04, 0.72, 8), std(C_STEEL, C_GOLD, 0.3));
+  axle.rotation.x = Math.PI / 2;
+  axle.position.set(0, axleY, 0);
+  gp.add(axle);
+
+  // 3. Pivoting Throwing Arm Group
+  const armGroup = new THREE.Group();
+  armGroup.position.set(0, axleY, 0);
+
+  // Arm beam (pivoting around axle)
+  const armLen = 0.85;
+  const armBeam = new THREE.Mesh(boxGeo(armLen, 0.07, 0.07), std(0x6b4423));
+  armBeam.position.set(-armLen * 0.25, 0, 0);
+  armGroup.add(armBeam);
+
+  // Counterweight stone block at short end (+x)
+  const weight = new THREE.Mesh(boxGeo(0.22, 0.22, 0.28), std(0x282830));
+  weight.position.set(armLen * 0.22, -0.06, 0);
+  armGroup.add(weight);
+
+  // Launch Cradle / Bucket at long end (-x)
+  const basketGlow = stdOwn(C_ARCANE, C_ARCANE, 0.8);
+  const bucket = new THREE.Mesh(cylGeo(0.22, 0.14, 0.14, 8), std(C_GOLD, C_GOLD, 0.4));
+  bucket.position.set(-armLen * 0.65, 0.08, 0);
+  const runeDisc = new THREE.Mesh(cylGeo(0.18, 0.18, 0.02, 8), basketGlow);
+  runeDisc.position.set(-armLen * 0.65, 0.14, 0);
+  armGroup.add(bucket, runeDisc);
+
+  gp.add(armGroup);
+  gp.rotation.y = yawFor(dirX, dirZ);
+
+  gp.userData.arm = armGroup;
+  gp.userData.basketGlow = basketGlow;
+  return gp;
+}
+
+function buildCannon(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+
+  // 1. Azimuth Turntable / Base
+  const baseMat = std(0x3e352b); // aged bronze stone
+  const basePlate = new THREE.Mesh(cylGeo(0.48, 0.52, 0.1, 12), baseMat);
+  basePlate.position.y = 0.05;
+  gp.add(basePlate);
+
+  // Brass rune gear ring
+  const gearRing = new THREE.Mesh(torusGeo(0.44, 0.03, 6, 16), std(C_GOLD, C_GOLD, 0.4));
+  gearRing.rotation.x = Math.PI / 2;
+  gearRing.position.y = 0.11;
+  gp.add(gearRing);
+
+  // 2. Swiveling Barrel Group
+  const barrelGroup = new THREE.Group();
+  barrelGroup.name = "barrel";
+  barrelGroup.position.set(0, 0.18, 0);
+
+  // Trunnion carriage sides
+  for (const cz of [-0.22, 0.22]) {
+    const cheek = new THREE.Mesh(boxGeo(0.3, 0.22, 0.08), std(C_STEEL_DK));
+    cheek.position.set(0, 0.08, cz);
+    barrelGroup.add(cheek);
+  }
+
+  // Heavy Mortar Barrel
+  const barrelMat = std(0x1a1c22); // dark gunmetal
+  const barrel = new THREE.Mesh(cylGeo(0.18, 0.24, 0.62, 10), barrelMat);
+  barrel.rotation.z = Math.PI / 2;
+  barrel.position.set(0.12, 0.14, 0);
+
+  // Flared Muzzle Ring
+  const muzzle = new THREE.Mesh(cylGeo(0.22, 0.19, 0.1, 10), std(C_STEEL));
+  muzzle.rotation.z = Math.PI / 2;
+  muzzle.position.set(0.44, 0.14, 0);
+
+  // Reinforcement bands
+  for (const bx of [0.0, 0.24]) {
+    const band = new THREE.Mesh(torusGeo(0.21, 0.025, 6, 12), std(C_GOLD, C_GOLD, 0.5));
+    band.rotation.y = Math.PI / 2;
+    band.position.set(bx, 0.14, 0);
+    barrelGroup.add(band);
+  }
+
+  // Ethereal aiming tracer beam
+  const tracerMat = stdOwn(0xff8822, 0xffaa33, 0.9);
+  const tracer = new THREE.Mesh(boxGeo(0.8, 0.02, 0.04), tracerMat);
+  tracer.position.set(0.95, 0.14, 0);
+  barrelGroup.add(barrel, muzzle, tracer);
+
+  gp.add(barrelGroup);
+  gp.rotation.y = yawFor(dirX, dirZ);
+
+  gp.userData.barrel = barrelGroup;
+  gp.userData.tracer = tracerMat;
   return gp;
 }
 
@@ -1158,6 +1285,8 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   lamp: () => buildLamp(),
   maw: ({ dirX, dirZ }) => buildMaw(dirX, dirZ),
   seesaw: ({ dirX, dirZ, span }) => buildSeeSaw(dirX, dirZ, span),
+  catapult: ({ dirX, dirZ }) => buildCatapult(dirX, dirZ),
+  cannon: ({ dirX, dirZ }) => buildCannon(dirX, dirZ),
 };
 
 /**
@@ -1249,6 +1378,9 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       tilt: s.tilt ?? (s.kind === "seesaw" ? -1 : undefined),
       destI: s.destI,
       destJ: s.destJ,
+      angle: s.kind === "cannon" ? Math.atan2(s.dirJ, s.dirI) : undefined,
+      baseAngle: s.kind === "cannon" ? Math.atan2(s.dirJ, s.dirI) : undefined,
+      sweepDir: s.kind === "cannon" ? 1 : undefined,
       // Gloves + fire vents fire on their own clock — desynced per part so a
       // gauntlet corridor punches in a wave, not a single broadside.
       fireT: s.kind === "glove" ? 0.6 + Math.random() * 2.2 : s.kind === "firevent" ? 0.6 + Math.random() * 2.4 : undefined,
@@ -1381,6 +1513,8 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   lamp: 0.6,
   maw: 0.8,
   seesaw: 0.6,
+  catapult: 0.8,
+  cannon: 0.5,
 };
 
 /**
@@ -1827,6 +1961,44 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
         const wave = Math.max(0, Math.sin(animT * 6 - k * (Math.PI / 2)));
         m.emissiveIntensity = 0.4 + 0.8 * wave + flash * 2.5;
       });
+    }
+  },
+
+  catapult: (part) => {
+    const arm = part.mesh.userData.arm as THREE.Group | undefined;
+    const basketGlow = part.mesh.userData.basketGlow as THREE.MeshStandardMaterial | undefined;
+    if (arm) {
+      if (part.hitT >= 0 && part.hitT < 0.6) {
+        const t = part.hitT / 0.6;
+        arm.rotation.z = -Math.sin(t * Math.PI) * 0.95;
+      } else {
+        arm.rotation.z = 0;
+      }
+    }
+    if (basketGlow) {
+      const pulse = 0.5 + 0.5 * Math.sin(animT * 4 + part.i);
+      const flash = part.hitT >= 0 && part.hitT < 0.4 ? 2.5 * (1 - part.hitT / 0.4) : 0;
+      basketGlow.emissiveIntensity = pulse + flash;
+    }
+  },
+
+  cannon: (part) => {
+    const barrel = part.mesh.userData.barrel as THREE.Group | undefined;
+    const tracer = part.mesh.userData.tracer as THREE.MeshStandardMaterial | undefined;
+    const sweepRange = 0.95;
+    if (part.angle === undefined) part.angle = part.baseAngle ?? 0;
+    part.angle = (part.baseAngle ?? 0) + Math.sin(animT * CANNON_SWEEP_RATE + (part.i % 5)) * sweepRange;
+    if (barrel) {
+      barrel.rotation.y = -part.angle;
+      if (part.hitT >= 0 && part.hitT < 0.4) {
+        const t = part.hitT / 0.4;
+        barrel.position.x = -Math.sin(t * Math.PI) * 0.2;
+      } else {
+        barrel.position.x = 0;
+      }
+    }
+    if (tracer) {
+      tracer.emissiveIntensity = 0.8 + 0.6 * Math.sin(animT * 8);
     }
   },
 };

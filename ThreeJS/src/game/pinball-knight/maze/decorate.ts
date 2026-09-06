@@ -102,7 +102,11 @@ export type PartSpotKind =
   | "lamp"
   | "maw"
   // SEESAW: pivoting plank shortcut spanning a wall band
-  | "seesaw";
+  | "seesaw"
+  // CATAPULT: high ballistic flinger across walls to a distant safe corridor
+  | "catapult"
+  // CANNON: aimable directional corridor blaster
+  | "cannon";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
@@ -117,6 +121,9 @@ export interface PinballPartSpot extends TilePos {
   /** SEESAW: target landing coordinates. */
   destI?: number;
   destJ?: number;
+  /** CANNON: aim angle & base angle in radians. */
+  angle?: number;
+  baseAngle?: number;
   /** TARGET BANK (Slice 6): a drop-target's bank id + its order in the bank. */
   bank?: number;
   seq?: number;
@@ -2299,7 +2306,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -3810,6 +3817,81 @@ export function decorateMaze(
         tilt: -1,
       });
       placedSeesaws++;
+    }
+  }
+
+  // ── CATAPULTS: high ballistic flinger to a distant safe corridor.
+  const catapultsCount = extras.catapults ?? 2;
+  if (catapultsCount > 0) {
+    const catRng = mulberry32((assemblySeed ^ 0xca7a) >>> 0);
+    const catSpots = shuffled(floors, catRng);
+    let placedCatapults = 0;
+    for (const c of catSpots) {
+      if (placedCatapults >= catapultsCount) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+
+      let openDir: { di: number; dj: number } | null = null;
+      for (const [di, dj] of CARDINALS) {
+        if (at(g, c.i + di, c.j + dj) === T_FLOOR) {
+          openDir = { di, dj };
+          break;
+        }
+      }
+      if (!openDir) continue;
+
+      parts.push({
+        kind: "catapult",
+        i: c.i,
+        j: c.j,
+        dirI: openDir.di,
+        dirJ: openDir.dj,
+        dir2I: 0,
+        dir2J: 0,
+      });
+      placedCatapults++;
+    }
+  }
+
+  // ── CANNONS: aimable directional corridor blaster.
+  const cannonsCount = extras.cannons ?? 2;
+  if (cannonsCount > 0) {
+    const canRng = mulberry32((assemblySeed ^ 0xca00) >>> 0);
+    const canSpots = shuffled(floors, canRng);
+    let placedCannons = 0;
+    for (const c of canSpots) {
+      if (placedCannons >= cannonsCount) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+
+      let bestDir: { di: number; dj: number } | null = null;
+      let maxRun = 0;
+      for (const [di, dj] of CARDINALS) {
+        let run = 0;
+        while (run < 6 && at(g, c.i + di * (run + 1), c.j + dj * (run + 1)) === T_FLOOR) {
+          run++;
+        }
+        if (run > maxRun) {
+          maxRun = run;
+          bestDir = { di, dj };
+        }
+      }
+      if (!bestDir || maxRun < 2) continue;
+
+      parts.push({
+        kind: "cannon",
+        i: c.i,
+        j: c.j,
+        dirI: bestDir.di,
+        dirJ: bestDir.dj,
+        dir2I: 0,
+        dir2J: 0,
+      });
+      placedCannons++;
     }
   }
 

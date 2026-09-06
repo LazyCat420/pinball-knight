@@ -48,6 +48,8 @@ const ALL_KINDS: PinballPartKind[] = [
   "lamp",
   "maw",
   "seesaw",
+  "catapult",
+  "cannon",
 ];
 
 function makePart(kind: PinballPartKind, mesh: THREE.Group): PinballPart {

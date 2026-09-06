@@ -49,6 +49,8 @@ const ALL_KINDS: PinballPartKind[] = [
   "lamp",
   "maw",
   "seesaw",
+  "catapult",
+  "cannon",
 ];
 
 function stubPlayer(): void {
@@ -728,6 +730,75 @@ describe("seesaw (Pivoting Shortcut Plank)", () => {
     expect(ss.tilt).toBe(-1); // tilted back
     expect(ss.cooldownT).toBeGreaterThan(0);
     expect(p.momX).toBe(-1); // heading back along -x
+  });
+});
+
+describe("catapult — high ballistic launch to distant corridor", () => {
+  beforeEach(() => {
+    stubPlayer();
+    state.pinballParts = [];
+    state.grid = {
+      w: 30,
+      h: 30,
+      t: new Uint8Array(900).fill(1), // all floors
+      surfaces: new Uint8Array(900).fill(0),
+      shapes: new Uint8Array(900).fill(0),
+    };
+  });
+
+  it("triggers catapult launch to a distant destination when contacted", () => {
+    let launched = false;
+    let targetX = -999;
+    let targetZ = -999;
+    const testDeps: PinballDeps = {
+      ...deps,
+      startCatapultLaunch: (tx, tz) => {
+        launched = true;
+        targetX = tx;
+        targetZ = tz;
+      },
+    };
+    const p = state.player!;
+    p.x = 2;
+    p.z = 2;
+    const cat = part("catapult", { x: 2, z: 2, dirX: 1, dirZ: 0 });
+    state.pinballParts = [cat];
+
+    touchPinballParts(false, 3, testDeps);
+
+    expect(launched).toBe(true);
+    expect(cat.cooldownT).toBeGreaterThan(0);
+    expect(cat.hitT).toBe(0);
+    expect(Math.hypot(targetX - 2, targetZ - 2)).toBeGreaterThan(0);
+  });
+});
+
+describe("cannon — aimable corridor blaster", () => {
+  beforeEach(() => {
+    stubPlayer();
+    state.pinballParts = [];
+  });
+
+  it("captures the player into the cannon on contact", () => {
+    let entered = false;
+    let targetPart: PinballPart | null = null;
+    const testDeps: PinballDeps = {
+      ...deps,
+      enterCannon: (cp) => {
+        entered = true;
+        targetPart = cp;
+      },
+    };
+    const p = state.player!;
+    p.x = 5;
+    p.z = 5;
+    const can = part("cannon", { x: 5, z: 5, dirX: 1, dirZ: 0 });
+    state.pinballParts = [can];
+
+    touchPinballParts(false, 3, testDeps);
+
+    expect(entered).toBe(true);
+    expect(targetPart).toBe(can);
   });
 });
 

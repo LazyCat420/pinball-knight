@@ -11,7 +11,7 @@
  * Attack numbers come from whatever weapon is currently in the active slot;
  * boots come from the gear slots.
  */
-import { state, activeWeapon, type Player } from "../state";
+import { state, activeWeapon, type Player, type PinballPart } from "../state";
 import { requestShake, requestHitstop } from "../engine/juice";
 import { holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./rail";
 import { skillAgg } from "../skill-runtime";
@@ -73,6 +73,13 @@ import {
   RAMP_HOP_SPEED,
   SEESAW_SPEED,
   SEESAW_TRAVERSE_DUR,
+  CATAPULT_FLIGHT_DUR,
+  CATAPULT_HOP_HEIGHT,
+  CATAPULT_SHOCKWAVE_RADIUS,
+  CATAPULT_SHOCKWAVE_DMG,
+  CANNON_COOLDOWN,
+  CANNON_BLAST_SPEED,
+  CANNON_STEER_LOCK,
   ARC_BANK_RADIUS,
   ARC_BOOST,
   ARC_COOLDOWN,
@@ -217,6 +224,8 @@ import { updateTilt, nudgeTable } from "./nudge";
 const PINBALL_DEPS: PinballDeps = {
   startRampHop: (dirX, dirZ, speed) => startRampHop(dirX, dirZ, speed),
   startSeesawHop: (landX, landZ, dirX, dirZ, speed) => startSeesawHop(landX, landZ, dirX, dirZ, speed),
+  startCatapultLaunch: (destX, destZ) => startCatapultLaunch(destX, destZ),
+  enterCannon: (part) => enterCannon(part),
   startDrop: (x, z) => startDrop(x, z),
   setSteerLock: (t) => {
     steerLockT = t;
@@ -1196,6 +1205,112 @@ function startSeesawHop(landX: number, landZ: number, dirX: number, dirZ: number
 }
 
 /**
+ * Begin a catapult toss to (destX, destZ) in a soaring parabolic arc.
+ */
+function startCatapultLaunch(destX: number, destZ: number): void {
+  const p = state.player;
+  if (!p || p.hopT >= 0 || p.rideT >= 0) return;
+  p.hopStartX = p.x;
+  p.hopStartZ = p.z;
+  p.hopLandX = destX;
+  p.hopLandZ = destZ;
+  const dx = destX - p.x;
+  const dz = destZ - p.z;
+  const dl = Math.hypot(dx, dz) || 1;
+  p.hopDirX = dx / dl;
+  p.hopDirZ = dz / dl;
+  p.hopSpeed = 16;
+  p.hopDur = CATAPULT_FLIGHT_DUR;
+  p.hopHeight = CATAPULT_HOP_HEIGHT;
+  p.hopIsCatapult = true;
+  p.hopT = 0;
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.anim.setRate(1.2);
+  p.anim.play("roll", { force: true });
+  sfxHeavy();
+  requestShake(0.25);
+  state.vfx?.sparks(p.x, 0.4, p.z, p.hopDirX, p.hopDirZ, 20);
+}
+
+/**
+ * Capture player inside an aimable cannon.
+ */
+function enterCannon(part: PinballPart): void {
+  const p = state.player;
+  if (!p || p.hopT >= 0 || p.rideT >= 0 || p.cannonPart) return;
+  p.cannonPart = part;
+  p.cannonTimer = 0;
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.momSpeed = 0;
+  p.x = part.x;
+  p.z = part.z;
+  p.iframes = Math.max(p.iframes, 0.2);
+  sfxRoll();
+  requestShake(0.15);
+}
+
+/**
+ * Update aimable cannon state and firing trigger.
+ */
+function updateCannon(dt: number, input: InputHandle): boolean {
+  const p = state.player;
+  if (!p || !p.cannonPart) return false;
+  const part = p.cannonPart;
+  p.cannonTimer = (p.cannonTimer ?? 0) + dt;
+  p.x = part.x;
+  p.z = part.z;
+  p.iframes = Math.max(p.iframes, 0.1);
+  syncActorMesh(p);
+  p.sprite.mesh.position.y = -10;
+  p.sprite.setElevation(0);
+
+  const heading = steerHeading(input, p.x, p.z);
+  if (heading) {
+    part.angle = Math.atan2(heading.z, heading.x);
+  }
+
+  const fired = input.consumeAttack() || input.consumeDodge() || (p.cannonTimer ?? 0) >= 3.0;
+  if (fired) {
+    const blastAngle = part.angle ?? (part.baseAngle ?? 0);
+    const bx = Math.cos(blastAngle);
+    const bz = Math.sin(blastAngle);
+
+    p.cannonPart = null;
+    p.cannonTimer = 0;
+    p.sprite.mesh.position.y = 0;
+
+    part.cooldownT = CANNON_COOLDOWN;
+    part.hitT = 0;
+
+    p.momX = bx;
+    p.momZ = bz;
+    p.momSpeed = CANNON_BLAST_SPEED;
+    steerLockT = CANNON_STEER_LOCK;
+
+    p.anim.play("roll", { force: true });
+    sfxHeavy();
+    requestShake(0.4);
+    state.vfx?.sparks(part.x, 0.35, part.z, bx, bz, 30);
+    state.vfx?.dust(part.x, 0.08, part.z);
+
+    // Blast any enemy right in front of the muzzle
+    for (const z of state.zombies) {
+      if (z.mode !== "dead" && Math.hypot(z.x - part.x, z.z - part.z) < 2.2) {
+        damageZombie(z, 50, bx, bz, 8);
+      }
+    }
+    onPartTrigger();
+  }
+  return true;
+}
+
+/**
  * Advance an active ramp hop. Owns the player: position lerps straight from
  * launch to landing (walls bypassed), height arcs on a sine, i-frames span the
  * flight. Landing feeds the speed into the pinball system along the hop heading,
@@ -1215,7 +1330,8 @@ function updateHop(dt: number): boolean {
     p.anim.setFacing(p.facing);
   }
   syncActorMesh(p); // pins y=0; lift after, like the ride
-  const hgt = Math.sin(Math.PI * u) * RAMP_HOP_HEIGHT;
+  const peakHgt = p.hopHeight && p.hopHeight > 0 ? p.hopHeight : RAMP_HOP_HEIGHT;
+  const hgt = Math.sin(Math.PI * u) * peakHgt;
   p.sprite.mesh.position.y = hgt;
   // Pin the contact shadow to the floor. Without this the blob — a child of the
   // sprite mesh — rides up with the knight, killing the only cue that reads as
@@ -1233,9 +1349,26 @@ function updateHop(dt: number): boolean {
     p.momZ = p.hopDirZ;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.hopSpeed);
     onPartTrigger();
-    for (let k = 0; k < 4; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
-    requestShake(0.16);
+    for (let k = 0; k < (p.hopIsCatapult ? 8 : 4); k++) {
+      state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.8, 0.04, p.z + (Math.random() - 0.5) * 0.8);
+    }
+    requestShake(p.hopIsCatapult ? 0.35 : 0.16);
     sfxHeavy();
+
+    if (p.hopIsCatapult) {
+      p.hopIsCatapult = false;
+      state.vfx?.sparks(p.x, 0.2, p.z, 0, 1, 24);
+      for (const z of state.zombies) {
+        if (z.mode !== "dead") {
+          const d = Math.hypot(z.x - p.x, z.z - p.z);
+          if (d < CATAPULT_SHOCKWAVE_RADIUS) {
+            const kx = d > 0.01 ? (z.x - p.x) / d : 1;
+            const kz = d > 0.01 ? (z.z - p.z) / d : 0;
+            damageZombie(z, CATAPULT_SHOCKWAVE_DMG, kx, kz, 6);
+          }
+        }
+      }
+    }
   }
   return true;
 }
@@ -2102,14 +2235,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.chomperGrabHost = null;
     } else {
       p.chomperGrabT = Math.max(0, (p.chomperGrabT ?? 0) - dt);
+      const ax = input.axis();
       const spammed =
         input.consumeAttack() ||
         input.consumeDodge() ||
-        input.consumeRoll() ||
-        input.consumeAbility(0) ||
-        input.consumeAbility(1) ||
-        input.moveX !== 0 ||
-        input.moveZ !== 0;
+        ax.x !== 0 ||
+        ax.z !== 0;
       if (spammed) {
         p.chomperGrabEscape = Math.max(0, (p.chomperGrabEscape ?? 5) - 1);
         state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 4);
@@ -2155,6 +2286,9 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // ── Plunger ── the floor opens parked in the launch chute; the pull/release
   // owns the player until the ball is fired into play.
   if (updatePlunger(dt, input)) return;
+
+  // ── Cannon ── mortar barrel holds the player for aiming and firing.
+  if (updateCannon(dt, input)) return;
 
   // ── Trapdoor ── the hatch owns the player while the door swings and you
   // fall through, then the rail owns them for the whole ride.

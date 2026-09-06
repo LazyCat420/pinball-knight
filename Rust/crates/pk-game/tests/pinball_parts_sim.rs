@@ -34,6 +34,8 @@ fn all_23_pinball_part_visual_kinds_build_valid_meshes() {
         PinballPartKind::Saucer,
         PinballPartKind::Turret,
         PinballPartKind::SeeSaw,
+        PinballPartKind::Catapult,
+        PinballPartKind::Cannon,
     ];
 
     for kind in all_kinds {
@@ -51,6 +53,27 @@ fn seesaw_mesh_construction_and_tags() {
     assert_eq!(seesaw.kind, PinballPartKind::SeeSaw);
     assert!(seesaw.user_tags.contains_key("fulcrum"));
     assert!(seesaw.user_tags.contains_key("plank"));
+}
+
+#[test]
+fn catapult_mesh_construction_and_tags() {
+    let catapult = build_catapult(1.0, 0.0);
+    assert_eq!(catapult.kind, PinballPartKind::Catapult);
+    assert!(catapult.user_tags.contains_key("base"));
+    assert!(catapult.user_tags.contains_key("arm"));
+    assert!(catapult.user_tags.contains_key("basket"));
+    assert!(catapult.user_tags.contains_key("weight"));
+    assert!(catapult.user_tags.contains_key("trigger"));
+}
+
+#[test]
+fn cannon_mesh_construction_and_tags() {
+    let cannon = build_cannon(1.0, 0.0);
+    assert_eq!(cannon.kind, PinballPartKind::Cannon);
+    assert!(cannon.user_tags.contains_key("turntable"));
+    assert!(cannon.user_tags.contains_key("swivel"));
+    assert!(cannon.user_tags.contains_key("barrel"));
+    assert!(cannon.user_tags.contains_key("rim"));
 }
 
 #[test]

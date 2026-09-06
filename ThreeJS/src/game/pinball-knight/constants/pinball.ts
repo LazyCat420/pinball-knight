@@ -594,6 +594,23 @@ export const SEESAW_TILT_ANGLE = 0.22; // ~12.6 deg tilt for clear isometric rea
 export const SEESAW_TRAVERSE_DUR = 0.45;
 export const SEESAWS_PER_FLOOR = 2;
 
+// ── Catapult (high ballistic launch to distant corridor) ──
+export const CATAPULT_RADIUS = 0.75;
+export const CATAPULT_COOLDOWN = 1.2;
+export const CATAPULT_FLIGHT_DUR = 1.35; // seconds in air
+export const CATAPULT_HOP_HEIGHT = 6.0; // high parabolic arc over maze walls
+export const CATAPULTS_PER_FLOOR = 2;
+export const CATAPULT_SHOCKWAVE_RADIUS = 3.2;
+export const CATAPULT_SHOCKWAVE_DMG = 25;
+
+// ── Aimable Barrel Cannon (high-velocity directional blast) ──
+export const CANNON_RADIUS = 0.75;
+export const CANNON_COOLDOWN = 0.8;
+export const CANNON_BLAST_SPEED = 28;
+export const CANNON_STEER_LOCK = 0.45;
+export const CANNON_SWEEP_RATE = 1.6; // rad/s for back-and-forth aim sweep
+export const CANNONS_PER_FLOOR = 2;
+
 // ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
 /** How close to a corner's centre a fast entry banks (world units). */
 export const ARC_BANK_RADIUS = 0.62;

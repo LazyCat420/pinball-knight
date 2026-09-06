@@ -181,6 +181,10 @@ describe("decorateMaze", () => {
       } else if (part.kind === "pit" || part.kind === "electric" || part.kind === "magstrip") {
         // floor hazards: sit on any open floor (junction OR straight)
         expect(open.length).toBeGreaterThanOrEqual(2);
+      } else if (part.kind === "catapult" || part.kind === "cannon") {
+        // interactive traversal machinery: can sit on any floor tile (open leg >= 1)
+        expect(at(g, part.i, part.j)).toBe(T_FLOOR);
+        expect(open.length).toBeGreaterThanOrEqual(1);
       } else if (part.kind === "booster") {
         // booster LANE: on floor, aimed along a cardinal axis with runway ahead
         // (its own layer — a row of adjacent pads, not a topology-classified part)
@@ -214,7 +218,7 @@ describe("decorateMaze", () => {
     }
     // Spacing: DEALT machine parts never bunch into one intersection. Targets,
     // trapdoors and floor hazards are separate layers with their own rules.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover", "catapult", "cannon"]);
     // Vault ramps are their own layer too (aimed across a band, off-budget).
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
     // Chain links AND station-spine parts are placed ON each other's shot lines
