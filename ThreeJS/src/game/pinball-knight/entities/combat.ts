@@ -59,7 +59,7 @@ import {
   ROTORTAIL_TIMBER_DAMAGE,
   STILTNECK_BLAST_DAMAGE,
   JESTER_SPRING_KICK,
-  CROAKER_BEAM_DAMAGE,
+  CROAKER_SPIN_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -1097,8 +1097,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sporeling: ZOMBIE_DAMAGE,
   // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
   jester: JESTER_DISC_DAMAGE,
-  // Melee fallback only — the beams carry CROAKER_BEAM_DAMAGE themselves.
-  croaker: CROAKER_BEAM_DAMAGE,
+  // Melee cane propeller spin carries CROAKER_SPIN_DAMAGE.
+  croaker: CROAKER_SPIN_DAMAGE,
   // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // Melee fallback only — the bomb's blast carries STILTNECK_BLAST_DAMAGE.

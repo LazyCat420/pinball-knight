@@ -279,30 +279,31 @@ VERDICT: WORSE than the painted roster — too busy for this crush
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/crawler-S  (frames + preview.png)
 
 ═══ croaker (S) — 4 rows [4/4/4/4], 16 frames
-GRID   NOT PIXEL ART — no lattice (best ×2 at 4.8%, need 90%) and only 15% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 33.6% — a real lattice is ~100%, so the blocks are mush.
-MATTE  bg #fc03fc (100% of the border) — keyed 65.2%, 23 pocket(s) LEFT OPAQUE
-⚠ 23 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+GRID   NO BLOCK GRID, but 61% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 29.6% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (100% of the border) — keyed 75.4%, 4 sealed pocket(s) opened, 102 pocket(s) LEFT OPAQUE
+⚠ 102 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+⚠ 4 pocket(s) keyed on size alone (>= 0.20% of the sheet) — a ruled sheet seals every cell, and those interiors are background. Pass keepEnclosed with a seed to hold one open.
 monster  entries  isolated%  runLen  invented
 ---------------------------------------------
-idle0         24       18.5    2.05        24
-idle1         26       17.4    2.05        26
-idle2         23       15.2    2.05        23
-idle3         23       18.0    2.09        23
-walk0         23       16.2    2.06        23
-walk1         22       14.3    2.01        22
-walk2         22       16.0    2.02        22
-walk3         22       16.9    2.02        22
-attack0       26       16.1    2.13        26
-attack1       24       14.6    2.26        24
-attack2       25       16.1    2.08        25
-attack3       23       16.4    2.11        23
-death0        22       14.6    2.14        22
-death1        23       14.5    2.18        23
-death2        13       12.9    2.59        13
-death3        15       15.8    2.45        15
-MEAN   entries 22.3  isolated 15.9%  runLen 2.14
+idle0         30       37.8    1.40        30
+idle1         26       36.6    1.44        26
+idle2         30       35.7    1.42        30
+idle3         26       36.1    1.44        26
+walk0         26       35.0    1.50        26
+walk1         31       41.3    1.41        31
+walk2         25       39.7    1.45        25
+walk3         31       39.8    1.43        31
+attack0       31       34.1    1.60        31
+attack1       31       30.3    1.55        31
+attack2       30       31.2    1.67        30
+attack3       28       34.8    1.58        28
+death0        31       32.3    1.49        31
+death1        30       35.4    1.49        30
+death2        30       34.6    1.54        30
+death3        30       32.4    1.70        30
+MEAN   entries 29.1  isolated 35.4%  runLen 1.51
 ROSTER entries 20.1  isolated 22.5%  runLen 1.82
-VERDICT: BETTER than the painted roster
+VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/croaker-S  (frames + preview.png)
 
 ═══ crystalback (S) — 4 rows [4/4/4/4], 16 frames
@@ -1201,10 +1202,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   crawler-S          walk     centred sweep 0.022 (span 0.035 × r +0.63)  grounded 0px spread  gait peak 0.06
   crawler-S          attack   centred sweep 0.001 (span 0.002 × r -0.35)  grounded 0px spread
   crawler-S          death    centred sweep 0.005 (span 0.062 × r -0.08)  grounded 1px spread
-  croaker-S          idle     centred sweep 0.001 (span 0.008 × r -0.09)  grounded 0px spread
-  croaker-S          walk     centred sweep 0.005 (span 0.059 × r +0.08)  grounded 0px spread  gait peak 0.74
-  croaker-S          attack   centred sweep 0.040 (span 0.109 × r +0.36)  grounded 0px spread
-  croaker-S          death    centred sweep 0.012 (span 0.020 × r -0.59)  grounded 0px spread
+  croaker-S          idle     centred sweep 0.003 (span 0.005 × r +0.63)  grounded 0px spread
+  croaker-S          walk     centred sweep 0.010 (span 0.014 × r -0.71)  grounded 1px spread  gait peak 0.36
+  croaker-S          attack   centred sweep 0.042 (span 0.069 × r -0.61)  grounded 0px spread
+  croaker-S          death    centred sweep 0.071 (span 0.110 × r -0.64)  grounded 0px spread
   crystalback-S      idle     centred sweep 0.000 (span 0.002 × r -0.25)  grounded 0px spread
   crystalback-S      walk     centred sweep 0.002 (span 0.010 × r -0.24)  grounded 0px spread  gait peak 0.27
   crystalback-S      attack   centred sweep 0.044 (span 0.102 × r +0.44)  grounded 0px spread

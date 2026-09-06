@@ -54,6 +54,9 @@ import {
   CROAKER_HOP_BOUNCES,
   CROAKER_R,
   CROAKER_FIRE_RANGE,
+  CROAKER_SPIN_RANGE,
+  CROAKER_SPIN_DAMAGE,
+  CROAKER_SPIN_DEFLECT,
   CROAKER_WINDUP,
   CROAKER_COOLDOWN,
   ROTORTAIL_R,
@@ -152,7 +155,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
 import { fireCopBullet, fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
-import { gate, sfxGroan, sfxGoblin } from "../sfx";
+import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 export interface EnemyStats {
@@ -183,8 +186,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sporeling: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP * 1.15, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   // Spring-loaded harlequin — ranged, and its contactRange IS its fire range.
   jester: { bodyR: JESTER_R, contactRange: JESTER_FIRE_RANGE, windup: JESTER_WINDUP, cooldown: JESTER_COOLDOWN, ranged: true },
-  // Laser frog — ranged, and its contactRange IS its beam reach.
-  croaker: { bodyR: CROAKER_R, contactRange: CROAKER_FIRE_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: true },
+  // Showman frog — spins his cane in a whirlwind strike within CROAKER_SPIN_RANGE
+  croaker: { bodyR: CROAKER_R, contactRange: CROAKER_SPIN_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: false },
   rotortail: { bodyR: ROTORTAIL_R, contactRange: ROTORTAIL_FIRE_RANGE, windup: ROTORTAIL_WINDUP, cooldown: ROTORTAIL_COOLDOWN, ranged: true },
   // Bomb-slinger — the roster's longest reach and its longest wind-up, and the
   // two are the same design decision. Its contactRange IS the sling's range.
@@ -345,6 +348,47 @@ function bruteSlam(z: Zombie, pdist: number, contactRange: number): void {
     state.vfx?.dust(z.x + Math.cos(a) * 0.6, 0.05, z.z + Math.sin(a) * 0.6);
   }
   state.shakeT = Math.max(state.shakeT, 0.2);
+}
+
+/** CROAKER: Showman dancing cane flourish — spins cane in a 360-degree propeller attack with paddle deflection. */
+function croakerCaneSpin(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+  sfxSpin();
+  sfxSwing();
+  z.anim.play("attack", { force: true });
+  state.vfx?.slashCircle?.(z.x, 0.45, z.z, CROAKER_SPIN_RANGE);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    state.vfx?.sparks?.(
+      z.x + Math.cos(a) * (CROAKER_SPIN_RANGE * 0.7),
+      0.45,
+      z.z + Math.sin(a) * (CROAKER_SPIN_RANGE * 0.7),
+      Math.cos(a),
+      Math.sin(a),
+      4,
+    );
+  }
+  if (pdist <= CROAKER_SPIN_RANGE * 1.15) {
+    hitPlayer(z);
+    // Rotating paddle deflection impulse: deflect ball away from croaker
+    if (pdist > 1e-4) {
+      const nx = (p.x - z.x) / pdist;
+      const nz = (p.z - z.z) / pdist;
+      if (p.momSpeed > 0) {
+        p.momX = nx;
+        p.momZ = nz;
+        p.momSpeed = Math.max(p.momSpeed, CROAKER_SPIN_DEFLECT);
+      } else {
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.5, nz * 0.5);
+        p.x = res.x;
+        p.z = res.z;
+      }
+      state.shakeT = Math.max(state.shakeT, 0.15);
+      state.vfx?.sparks?.(p.x, 0.5, p.z, nx, nz, 12);
+    }
+  }
 }
 
 /** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
@@ -855,6 +899,8 @@ export function updateZombies(dt: number): void {
             continue;
           } else if (z.kind === "brute") {
             bruteSlam(z, pdist, contactRange); // a radial haymaker, not a point bite
+          } else if (z.kind === "croaker") {
+            croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {
@@ -879,11 +925,6 @@ export function updateZombies(dt: number): void {
                 // overlapping explosions is not a harder problem, just a louder
                 // one.
                 slingBomb(z.x, z.z, ux, uz);
-              } else if (z.kind === "croaker") {
-                // TWO beams, straddling the aim line — see fireEyeBeams. The
-                // gap between them is on the exact line to the player, so this
-                // one is answered by closing head-on rather than by strafing.
-                fireEyeBeams(z.x, z.z, ux, uz);
               } else if (z.kind === "jester") {
                 // ONE plate, straight down the line — no spread. The spitter's
                 // volley is hard to sidestep on purpose; the jester's is easy to

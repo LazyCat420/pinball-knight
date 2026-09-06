@@ -419,14 +419,20 @@ export const CROAKER_R = 0.32;
 export const CROAKER_SPEED_FACTOR = 0.75; // it hops; between hops it is slow
 export const CROAKER_RATIO = 17;
 export const CROAKER_FROM_LEVEL = 2;
-/** Beam reach. Shorter than the rotortail's timber — it wants to be mid-range,
- *  because the leap is how it closes and the beam is how it punishes stillness. */
+/** Beam reach fallback (for legacy raycasts). */
 export const CROAKER_FIRE_RANGE = 6.5;
-/** The eyes visibly charge across this. A fast projectile with no tell is
- *  indistinguishable from random damage. */
+/** Whirlwind cane strike range. Inside this reach, the showman frog twirls his cane like a propeller. */
+export const CROAKER_SPIN_RANGE = 2.8;
+/** The cane visibly flourishes across this windup. */
 export const CROAKER_WINDUP = 0.45;
 export const CROAKER_COOLDOWN = 2.0;
-/** FAST — this is a laser, and the tell is the charge, not the flight time. */
+/** Cane propeller contact damage. */
+export const CROAKER_SPIN_DAMAGE = 2;
+/** Duration of the spinning whirlwind strike, seconds. */
+export const CROAKER_SPIN_DURATION = 0.55;
+/** Deflection impulse applied to player if colliding while cane is spinning. */
+export const CROAKER_SPIN_DEFLECT = 12.0;
+/** FAST — legacy beam speed and damage fallback. */
 export const CROAKER_BEAM_SPEED = 13;
 export const CROAKER_BEAM_DAMAGE = 1;
 /** Half-angle between the twin beams, radians. Wide enough that a dead-on

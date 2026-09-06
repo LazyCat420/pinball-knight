@@ -72,6 +72,15 @@ const R_BELLY: Ramp = [19, 20, 21];
 /** Toes. Gold, so the feet pick up the spots rather than inventing a colour. */
 const R_TOE: Ramp = [14, 15, 16];
 
+/** Showman Top Hat: sleek black silk. */
+const R_HAT: Ramp = [0, 1, 2];
+/** Ribbon band on top hat: scarlet crimson silk. */
+const R_BAND: Ramp = [10, 11, 12];
+/** Cane shaft: polished dark mahogany. */
+const R_CANE: Ramp = [3, 4, 5];
+/** Cane pommel knob: ornate brass/gold. */
+const R_KNOB: Ramp = [15, 16, 17];
+
 /** Eye iris — blood, the only saturated red on the body. */
 const EYE = 12;
 /** Eye core when charging / firing, and the beam itself. */
@@ -81,7 +90,7 @@ const BEAM_CORE = 17;
 
 // ── GEOMETRY (cel units; GROUND = 118, CX = 64) ─────────────────────────────
 /** Half-width of the body dome at rest. WIDE — this is the read. */
-const BODY_W = 30;
+const BODY_W = 31;
 /** Dome half-height at rest. Roughly half the width: a frog is a squashed ball. */
 const BODY_H = 20;
 /** Dome centre height above GROUND at rest. */
@@ -146,6 +155,13 @@ function croakerFrame(dir: Dir, pose: Pose): FramePaint {
       for (const s of [-1, 1]) {
         figDetail(ctx, [[CX + s * 26, GROUND - 2], [CX + s * 34, GROUND]], 2.2, 8);
       }
+      // Fallen top hat tumbled beside the puddle
+      ellShaded(ctx, CX + 28, GROUND - 3, 9, 3.5, R_HAT, 0, { bounce: false });
+      ellShaded(ctx, CX + 28, GROUND - 8, 6, 6, R_HAT, 0, { bounce: false });
+      ellShaded(ctx, CX + 28, GROUND - 5, 6.5, 2.2, R_BAND, 0, { bounce: false });
+      // Clattered cane on floor
+      limbShaded(ctx, [CX - 30, GROUND], [CX - 10, GROUND - 2], 2.6, R_CANE);
+      ellShaded(ctx, CX - 30, GROUND, 3.4, 3.4, R_KNOB, 0, { rim: false });
       return;
     }
 
@@ -219,6 +235,15 @@ function croakerFrame(dir: Dir, pose: Pose): FramePaint {
       }
     }
 
+    // ── walking cane (showman baton) ──
+    const caneSide = dir === "E" ? 1 : (pose.phase >= 0 ? 1 : -1);
+    const caneHandX = CX + (dir === "E" ? bw * 0.45 : caneSide * bw * 0.4);
+    const caneHandY = cy + bh * 0.4;
+    const caneTipX = CX + (dir === "E" ? bw * 0.65 : caneSide * (bw * 0.75));
+    const caneTipY = GROUND + 1;
+    limbShaded(ctx, [caneHandX, caneHandY], [caneTipX, caneTipY], 2.8, R_CANE);
+    ellShaded(ctx, caneHandX, caneHandY - 2, 4.2, 4.2, R_KNOB, 0, { rim: false });
+
     // ── the eyes: oversized, on TOP of the dome, and the weapon ──
     const ch = pose.charge ?? 0;
     const eyes: Array<[number, number]> =
@@ -247,58 +272,59 @@ function croakerFrame(dir: Dir, pose: Pose): FramePaint {
       ellShaded(ctx, ex - er * 0.28, ey - er * 0.3, er * 0.2, er * 0.2, [22, 22, 22] as Ramp, 0, { rim: false });
     }
 
-    // ── the beams ──
-    // Drawn last and unshaded (layer 3 of the cel convention). Twin, from the
-    // eyes, CONVERGING slightly — the reference's beams cross down and forward,
-    // which is what puts the impact in front of the creature where the player
-    // can read it, rather than off the edge of the cel.
+    // ── top hat: jaunty silk cylinder with red ribbon band ──
+    if (!pose.dead && !pose.belly) {
+      const hatTilt = (dir === "E" ? 0.08 : pose.phase * 0.1);
+      const hatX = (dir === "E" ? CX + bw * 0.15 : CX) + Math.sin(hatTilt) * 4;
+      const hatBaseY = cy - bh + 2;
+      const hatW = bw * 0.44;
+      const hatH = 9;
+      // Brim
+      ellShaded(ctx, hatX, hatBaseY, hatW * 1.35, 3.0, R_HAT, 0, { bounce: false });
+      // Crown
+      ellShaded(ctx, hatX, hatBaseY - hatH * 0.5, hatW * 0.75, hatH * 0.55, R_HAT, 0, { bounce: false });
+      // Crimson ribbon band
+      ellShaded(ctx, hatX, hatBaseY - 2, hatW * 0.78, 2.0, R_BAND, 0, { bounce: false });
+    }
+
+    // ── spinning cane whirlwind attack ──
     const beam = pose.beam ?? 0;
     if (beam > 0) {
-      // ONE convergence point, on the floor IN FRONT of the creature — not a
-      // direction per eye. The first cut aimed each beam inward-and-down by a
-      // fraction of the eye offset and both beams terminated ON the frog's own
-      // belly: it read as shooting itself. Naming the target explicitly also
-      // puts the impact where the player is already looking, which is the whole
-      // reason the beams converge in the reference.
       ctx.lineCap = "round";
-      for (const [ex, ey] of eyes) {
-        // Target per eye, not one shared point.
-        //
-        // Converging on a single spot is right in PROFILE and wrong head-on:
-        // from the front, the place two eye-beams would meet is behind the
-        // creature's own chin, so both strokes crossed the belly in an X and
-        // the frog read as shooting itself. Head-on they SPLAY instead — down
-        // and outward, landing either side of the feet — which is the same
-        // pair of beams seen from the other axis, and it keeps the body clear.
-        const tgt: Pt = dir === "E"
-          ? [CX + bw * 0.6 + beam, GROUND - 2]
-          : [ex + (ex - CX) * 0.55, GROUND + 2];
-        // Reach scales with `beam` so the shot GROWS out of the eye across the
-        // clip instead of appearing at full length.
-        const k = Math.min(1, beam / 44);
-        const ax = ex + (tgt[0] - ex) * k;
-        const ay = ey + (tgt[1] - ey) * k;
-        ctx.beginPath();
-        ctx.moveTo(ex, ey);
-        ctx.lineTo(ax, ay);
-        ctx.lineWidth = 5;
-        ctx.strokeStyle = paletteCss(BEAM);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(ex, ey);
-        ctx.lineTo(ax, ay);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = paletteCss(BEAM_CORE);
-        ctx.stroke();
-        for (let i = 0; i < 3; i++) {
-          const a = -0.7 + i * 0.7;
-          figDetail(
-            ctx,
-            [[ax, ay], [ax + Math.cos(a) * 9, ay + Math.sin(a) * 7]],
-            1.8,
-            i === 1 ? BEAM_CORE : BEAM,
-          );
-        }
+      const spinAng = (beam / 46) * Math.PI * 4;
+      const spinCx = dir === "E" ? CX + bw * 0.55 : CX;
+      const spinCy = cy + bh * 0.2;
+      const caneR = 21;
+      const p1x = spinCx + Math.cos(spinAng) * caneR;
+      const p1y = spinCy + Math.sin(spinAng) * caneR;
+      const p2x = spinCx - Math.cos(spinAng) * caneR;
+      const p2y = spinCy - Math.sin(spinAng) * caneR;
+      limbShaded(ctx, [p1x, p1y], [p2x, p2y], 3.4, R_CANE);
+      ellShaded(ctx, p1x, p1y, 4.4, 4.4, R_KNOB, 0, { rim: false });
+      ellShaded(ctx, p2x, p2y, 4.4, 4.4, R_KNOB, 0, { rim: false });
+
+      // Motion blur arcs in torch gold / beam colors
+      ctx.beginPath();
+      ctx.arc(spinCx, spinCy, caneR, spinAng - 1.2, spinAng + 0.3);
+      ctx.lineWidth = 4.5;
+      ctx.strokeStyle = paletteCss(BEAM);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(spinCx, spinCy, caneR, spinAng - 0.7, spinAng + 0.1);
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = paletteCss(BEAM_CORE);
+      ctx.stroke();
+
+      for (let i = 0; i < 4; i++) {
+        const a = spinAng - 1.0 + i * 0.5;
+        figDetail(
+          ctx,
+          [[spinCx + Math.cos(a) * caneR, spinCy + Math.sin(a) * caneR],
+           [spinCx + Math.cos(a) * (caneR + 6), spinCy + Math.sin(a) * (caneR + 5)]],
+          2.0,
+          i % 2 === 0 ? BEAM_CORE : BEAM,
+        );
       }
     }
 
