@@ -67,6 +67,7 @@ pub enum PinballPartKind {
     Orbit,
     Saucer,
     Turret,
+    SeeSaw,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -532,6 +533,31 @@ pub fn build_bell() -> PartMeshGroup {
     gp
 }
 
+pub fn build_seesaw(dir_x: f32, dir_z: f32) -> PartMeshGroup {
+    let mut gp = PartMeshGroup::new(PinballPartKind::SeeSaw);
+    gp.yaw = yaw_for(dir_x, dir_z);
+
+    // Fulcrum base
+    gp.add(
+        PrimitiveShape::Cylinder { r_top: 0.14, r_bot: 0.22, h: 0.28, segs: 8 },
+        PartMaterialDesc::standard(C_STEEL_DK, 0, 0.0),
+        [1.5, 0.14, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("fulcrum"),
+    );
+
+    // Plank
+    gp.add(
+        PrimitiveShape::Box { w: 3.2, h: 0.08, d: 0.8 },
+        PartMaterialDesc::own(PALETTE_HEX[18], C_ARCANE, 0.4),
+        [1.5, 0.28, 0.0],
+        [0.0, 0.0, 0.0],
+        Some("plank"),
+    );
+
+    gp
+}
+
 // ── Generic Builder Dispatcher ──
 
 pub fn build_part_visual(kind: PinballPartKind, dir: (f32, f32)) -> PartMeshGroup {
@@ -563,6 +589,7 @@ pub fn build_part_visual(kind: PinballPartKind, dir: (f32, f32)) -> PartMeshGrou
         PinballPartKind::Orbit => build_deflector((dir.0, dir.1), (-dir.1, dir.0)),
         PinballPartKind::Saucer => build_rollover(),
         PinballPartKind::Turret => build_bumper(),
+        PinballPartKind::SeeSaw => build_seesaw(dir.0, dir.1),
     }
 }
 

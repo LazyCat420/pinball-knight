@@ -24,7 +24,7 @@ import { PALETTE_HEX } from "./palette";
 import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
 import type { ElementMaterial } from "../fx/elements/element";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase, TELL_TINT_FREEZE, FREEZE_TELL_INTERVAL, FREEZE_TELL_PARTS } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, FLIPPER_REST, FLIPPER_ARC, SWINGARM_LEN, swingArmPhase, FLYWHEEL_SPIN_RATE, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase, TELL_TINT_FREEZE, FREEZE_TELL_INTERVAL, FREEZE_TELL_PARTS, SEESAW_TILT_ANGLE } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -416,6 +416,91 @@ function buildJumpPad(dirX: number, dirZ: number): THREE.Group {
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.chevMats = chevMats;
   gp.userData.lipMat = lipMat;
+  gp.userData.phase = Math.random() * Math.PI * 2;
+  return gp;
+}
+
+/**
+ * SEESAW — a pivoting timber plank mounted on an iron fulcrum that spans
+ * a wall band. One side rests on the floor while the other is hoisted in
+ * the air. Stepping onto the low side tilts the plank, vaulting the knight
+ * across to the far corridor.
+ */
+function buildSeeSaw(dirX: number, dirZ: number, span = 2): THREE.Group {
+  const gp = new THREE.Group();
+  const fulcrumX = span / 2;
+  const fulcrumY = 0.32;
+  const plankLen = span + 0.6;
+  const plankW = 0.54;
+  const plankH = 0.08;
+
+  // 1. Fulcrum Stand (Stationary at local X = fulcrumX, Y = 0)
+  const standGroup = new THREE.Group();
+  standGroup.position.set(fulcrumX, 0, 0);
+
+  // Triangular iron brackets on either side
+  const bracketMat = std(C_STEEL_DK);
+  for (const zside of [-1, 1]) {
+    const post = new THREE.Mesh(boxGeo(0.18, fulcrumY * 2, 0.08), bracketMat);
+    post.position.set(0, fulcrumY / 2, zside * (plankW / 2 + 0.06));
+    standGroup.add(post);
+  }
+
+  // Cross axle pin through pivot
+  const axle = new THREE.Mesh(cylGeo(0.045, 0.045, plankW + 0.22, 8), std(C_STEEL, C_GOLD, 0.4));
+  axle.rotation.x = Math.PI / 2;
+  axle.position.set(0, fulcrumY, 0);
+  standGroup.add(axle);
+
+  // Ground anchor plate
+  const basePlate = new THREE.Mesh(boxGeo(0.44, 0.04, plankW + 0.22), std(C_STEEL_DK));
+  basePlate.position.set(0, 0.02, 0);
+  standGroup.add(basePlate);
+  gp.add(standGroup);
+
+  // 2. Pivoting Plank Group (centered at fulcrum)
+  const plankPivot = new THREE.Group();
+  plankPivot.position.set(fulcrumX, fulcrumY, 0);
+
+  // Sturdy weathered oak timber deck
+  const timberMat = std(0x543d2b); // aged oak
+  const deck = new THREE.Mesh(boxGeo(plankLen, plankH, plankW), timberMat);
+  plankPivot.add(deck);
+
+  // Iron side trims / reinforced guide rails
+  for (const zside of [-1, 1]) {
+    const rail = new THREE.Mesh(boxGeo(plankLen, plankH + 0.04, 0.04), std(C_STEEL));
+    rail.position.set(0, 0.02, zside * (plankW / 2 - 0.02));
+    plankPivot.add(rail);
+  }
+
+  // Steel cleats / traction ridges along the deck
+  const cleatCount = Math.max(3, Math.floor(plankLen / 0.35));
+  for (let k = 0; k <= cleatCount; k++) {
+    const cx = -plankLen / 2 + 0.2 + k * ((plankLen - 0.4) / cleatCount);
+    const cleat = new THREE.Mesh(boxGeo(0.04, 0.02, plankW - 0.08), std(C_STEEL_DK));
+    cleat.position.set(cx, plankH / 2 + 0.01, 0);
+    plankPivot.add(cleat);
+  }
+
+  // Glowing Arcane Runes / Chevrons along center line
+  const runeMats: THREE.MeshStandardMaterial[] = [];
+  for (let k = -1; k <= 1; k++) {
+    const rMat = stdOwn(C_ARCANE, C_ARCANE, 0.6);
+    const chev = new THREE.Mesh(coneGeo(0.1, 0.18, 3), rMat);
+    chev.rotation.z = -Math.PI / 2;
+    chev.position.set(k * (plankLen * 0.24), plankH / 2 + 0.02, 0);
+    runeMats.push(rMat);
+    plankPivot.add(chev);
+  }
+
+  // Default tilt: Side A down (-SEESAW_TILT_ANGLE)
+  plankPivot.rotation.z = -SEESAW_TILT_ANGLE;
+  gp.add(plankPivot);
+
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.plankPivot = plankPivot;
+  gp.userData.runeMats = runeMats;
   gp.userData.phase = Math.random() * Math.PI * 2;
   return gp;
 }
@@ -1025,6 +1110,8 @@ export interface PartBuildCtx {
    * built without it still gets a look, just always the same one.
    */
   variant?: number;
+  /** Tile span across the wall band (seesaw only). */
+  span?: number;
 }
 
 type PartBuilder = (c: PartBuildCtx) => THREE.Group;
@@ -1070,6 +1157,7 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   rollover: ({ dirX, dirZ }) => buildRollover(dirX, dirZ),
   lamp: () => buildLamp(),
   maw: ({ dirX, dirZ }) => buildMaw(dirX, dirZ),
+  seesaw: ({ dirX, dirZ, span }) => buildSeeSaw(dirX, dirZ, span),
 };
 
 /**
@@ -1133,7 +1221,7 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       inst.place(index, x, z, yawFor(dirX, dirZ));
       mesh = instancedHandle(x, z, inst.userDataFor(index, Math.random() * Math.PI * 2));
     } else {
-      mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z, variant: s.variant });
+      mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z, variant: s.variant, span: s.span });
       mesh.position.set(x, 0, z);
       // NAMED, and not for debugging alone. A part is a Group of 3-13 meshes and
       // nothing else in the scene says so, which means a draw-call census can
@@ -1156,6 +1244,11 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       dir2Z,
       cooldownT: 0,
       hitT: -1,
+      // Seesaw attributes
+      span: s.span,
+      tilt: s.tilt ?? (s.kind === "seesaw" ? -1 : undefined),
+      destI: s.destI,
+      destJ: s.destJ,
       // Gloves + fire vents fire on their own clock — desynced per part so a
       // gauntlet corridor punches in a wave, not a single broadside.
       fireT: s.kind === "glove" ? 0.6 + Math.random() * 2.2 : s.kind === "firevent" ? 0.6 + Math.random() * 2.4 : undefined,
@@ -1287,6 +1380,7 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   rollover: 0.6,
   lamp: 0.6,
   maw: 0.8,
+  seesaw: 0.6,
 };
 
 /**
@@ -1716,6 +1810,23 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     }
     if (throatMat) {
       throatMat.emissiveIntensity = 0.6 + 0.3 * Math.sin(animT * 3 + part.j);
+    }
+  },
+
+  seesaw: (part, { dt }) => {
+    const pivot = part.mesh.userData.pivot as THREE.Group | undefined;
+    const chevs = part.mesh.userData.chevs as EmissiveSink[] | undefined;
+    const targetTilt = (part.tilt ?? -1) * SEESAW_TILT_ANGLE;
+    if (pivot) {
+      // Smoothly tilt toward the target resting angle
+      pivot.rotation.z += (targetTilt - pivot.rotation.z) * Math.min(1, dt * 10);
+    }
+    const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
+    if (chevs) {
+      chevs.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 6 - k * (Math.PI / 2)));
+        m.emissiveIntensity = 0.4 + 0.8 * wave + flash * 2.5;
+      });
     }
   },
 };

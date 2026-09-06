@@ -71,6 +71,8 @@ import {
   RAMP_HOP_MIN,
   RAMP_HOP_MAX,
   RAMP_HOP_SPEED,
+  SEESAW_SPEED,
+  SEESAW_TRAVERSE_DUR,
   ARC_BANK_RADIUS,
   ARC_BOOST,
   ARC_COOLDOWN,
@@ -214,6 +216,7 @@ import { updateTilt, nudgeTable } from "./nudge";
  */
 const PINBALL_DEPS: PinballDeps = {
   startRampHop: (dirX, dirZ, speed) => startRampHop(dirX, dirZ, speed),
+  startSeesawHop: (landX, landZ, dirX, dirZ, speed) => startSeesawHop(landX, landZ, dirX, dirZ, speed),
   startDrop: (x, z) => startDrop(x, z),
   setSteerLock: (t) => {
     steerLockT = t;
@@ -1162,6 +1165,34 @@ function startRampHop(dirX: number, dirZ: number, speed: number): void {
   p.anim.play("roll", { force: true }); // reuse the tumble clip for the airborne hop
   sfxRoll();
   requestShake(0.14);
+}
+
+/**
+ * Begin a seesaw hop directly to (landX, landZ) along (dirX, dirZ).
+ * Unlike a ramp which probes ahead for clear landing, the seesaw has fixed
+ * opposing terminals across a wall band.
+ */
+function startSeesawHop(landX: number, landZ: number, dirX: number, dirZ: number, speed: number): void {
+  const p = state.player;
+  if (!p || p.hopT >= 0 || p.rideT >= 0) return;
+  p.hopStartX = p.x;
+  p.hopStartZ = p.z;
+  p.hopLandX = landX;
+  p.hopLandZ = landZ;
+  const dl = Math.hypot(dirX, dirZ) || 1;
+  p.hopDirX = dirX / dl;
+  p.hopDirZ = dirZ / dl;
+  p.hopSpeed = Math.max(speed, SEESAW_SPEED);
+  p.hopDur = SEESAW_TRAVERSE_DUR;
+  p.hopT = 0;
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.anim.setRate(1.3);
+  p.anim.play("roll", { force: true });
+  sfxRoll();
+  requestShake(0.12);
 }
 
 /**

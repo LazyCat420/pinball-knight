@@ -131,12 +131,9 @@ describe("decorateMaze", () => {
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
       } else if (part.vault) {
-        // JUMP PAD — the deliberate exception: aimed square at a wall BAND
+        // JUMP PAD or SEESAW — the deliberate exception: aimed square at a wall BAND
         // with real corridor on the far side, so the hop clears the maze.
-        // Every other launcher aims ALONG its lane, which is why the ramp hop
-        // could never jump a wall before these existed. It was a `ramp` with a
-        // `vault` flag and no distinguishing mesh until it got its own kind.
-        expect(part.kind).toBe("jumppad");
+        expect(["jumppad", "seesaw"]).toContain(part.kind);
         expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
         // …and a landing exists within the hop's reach past the band.

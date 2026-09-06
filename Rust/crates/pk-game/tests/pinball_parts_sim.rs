@@ -33,6 +33,7 @@ fn all_23_pinball_part_visual_kinds_build_valid_meshes() {
         PinballPartKind::Orbit,
         PinballPartKind::Saucer,
         PinballPartKind::Turret,
+        PinballPartKind::SeeSaw,
     ];
 
     for kind in all_kinds {
@@ -42,6 +43,14 @@ fn all_23_pinball_part_visual_kinds_build_valid_meshes() {
             assert!(sub.scale[0] > 0.0 && sub.scale[1] > 0.0 && sub.scale[2] > 0.0);
         }
     }
+}
+
+#[test]
+fn seesaw_mesh_construction_and_tags() {
+    let seesaw = build_seesaw(1.0, 0.0);
+    assert_eq!(seesaw.kind, PinballPartKind::SeeSaw);
+    assert!(seesaw.user_tags.contains_key("fulcrum"));
+    assert!(seesaw.user_tags.contains_key("plank"));
 }
 
 #[test]

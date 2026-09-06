@@ -48,6 +48,7 @@ const ALL_KINDS: PinballPartKind[] = [
   "rollover",
   "lamp",
   "maw",
+  "seesaw",
 ];
 
 function stubPlayer(): void {
@@ -648,6 +649,85 @@ describe("maw (Monster Mouth)", () => {
     touchPinballParts(true, 0, testDeps);
 
     expect(dropped).toBe(true);
+  });
+});
+
+describe("seesaw (Pivoting Shortcut Plank)", () => {
+  it("triggers from Side A when tilt is -1, flips tilt to 1, and vaults across", () => {
+    let hopped = false;
+    let targetX = 0;
+    let targetZ = 0;
+    const testDeps: PinballDeps = {
+      ...deps,
+      startSeesawHop: (lx, lz) => {
+        hopped = true;
+        targetX = lx;
+        targetZ = lz;
+      },
+    };
+    const p = state.player!;
+    p.x = 0;
+    p.z = 0;
+    const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: -1 });
+    state.pinballParts = [ss];
+
+    touchPinballParts(false, 3, testDeps);
+
+    expect(hopped).toBe(true);
+    expect(targetX).toBe(3); // span 3 along +x
+    expect(targetZ).toBe(0);
+    expect(ss.tilt).toBe(1); // tilted up at Side A, down at Side B
+    expect(ss.cooldownT).toBeGreaterThan(0);
+    expect(p.momX).toBe(1);
+  });
+
+  it("blocks entry from Side A when tilt is 1 (Side A elevated)", () => {
+    let hopped = false;
+    const testDeps: PinballDeps = {
+      ...deps,
+      startSeesawHop: () => {
+        hopped = true;
+      },
+    };
+    const p = state.player!;
+    p.x = 0;
+    p.z = 0;
+    const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: 1 });
+    state.pinballParts = [ss];
+
+    touchPinballParts(false, 3, testDeps);
+
+    expect(hopped).toBe(false);
+    expect(ss.tilt).toBe(1); // remains unchanged
+    expect(ss.cooldownT).toBe(0);
+  });
+
+  it("triggers from Side B when tilt is 1, flips tilt back to -1, and vaults back to Side A", () => {
+    let hopped = false;
+    let targetX = -999;
+    let targetZ = -999;
+    const testDeps: PinballDeps = {
+      ...deps,
+      startSeesawHop: (lx, lz) => {
+        hopped = true;
+        targetX = lx;
+        targetZ = lz;
+      },
+    };
+    const p = state.player!;
+    p.x = 3; // at Side B
+    p.z = 0;
+    const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: 1 });
+    state.pinballParts = [ss];
+
+    touchPinballParts(false, 3, testDeps);
+
+    expect(hopped).toBe(true);
+    expect(targetX).toBe(0); // target is Side A (0,0)
+    expect(targetZ).toBe(0);
+    expect(ss.tilt).toBe(-1); // tilted back
+    expect(ss.cooldownT).toBeGreaterThan(0);
+    expect(p.momX).toBe(-1); // heading back along -x
   });
 });
 

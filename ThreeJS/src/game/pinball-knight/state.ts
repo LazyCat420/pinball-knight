@@ -576,7 +576,12 @@ export type PinballPartKind =
   // replaced by `flywheel` above — the user's call on 2026-08-28, twin
   // counter-rotating wheels rather than a saucer that holds you — and Track-B's
   // `swingarm` was a PENDULUM, superseded by the full-circle one.
-  | "maw";
+  | "maw"
+  // SEESAW — a pivoting plank shortcut across a wall band. Whichever end is
+  // tilted down is enterable; stepping on it tilts the plank to the other side
+  // and vaults the knight across. Once tilted, the original entry side is up
+  // in the air and cannot be re-entered until tilted back from the other side.
+  | "seesaw";
 
 // Compile-time assertion that PartSpotKind extends PinballPartKind (D4 fix)
 export type _AssertPartSpotKindExtendsPinballPartKind = import("./maze/decorate").PartSpotKind extends PinballPartKind ? true : never;
@@ -657,6 +662,13 @@ export interface PinballPart {
   swingT?: number;
   held?: boolean;
   cradled?: boolean;
+  /** SEESAW: tilt direction (-1 = Side A down, +1 = Side B down). */
+  tilt?: number;
+  /** SEESAW: tile span across the wall band (e.g. 2 or 3 tiles). */
+  span?: number;
+  /** SEESAW: destination tile coordinates. */
+  destI?: number;
+  destJ?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }

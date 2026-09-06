@@ -585,6 +585,15 @@ export const JUMP_PAD_SPEED = 17; // faster than a ramp — it has a band to cle
 export const JUMP_PAD_COOLDOWN = 0.45; // longer: an airborne knight shouldn't re-trigger on landing
 export const JUMP_PAD_STEER_LOCK = 0.28; // the whole airtime, so the arc lands where it aimed
 
+// ── Seesaw (pivoting plank shortcut across wall bands) ──
+export const SEESAW_RADIUS = 0.65;
+export const SEESAW_SPEED = 14;
+export const SEESAW_COOLDOWN = 0.6;
+export const SEESAW_STEER_LOCK = 0.35;
+export const SEESAW_TILT_ANGLE = 0.22; // ~12.6 deg tilt for clear isometric readability
+export const SEESAW_TRAVERSE_DUR = 0.45;
+export const SEESAWS_PER_FLOOR = 2;
+
 // ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
 /** How close to a corner's centre a fast entry banks (world units). */
 export const ARC_BANK_RADIUS = 0.62;
