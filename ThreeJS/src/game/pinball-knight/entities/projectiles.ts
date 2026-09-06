@@ -43,11 +43,16 @@ import {
   STILTNECK_BLAST_ENEMY_DAMAGE,
   STILTNECK_BLAST_PUSH,
   CURVE_ACCEL,
+  WARDEN_BULLET_SPEED,
+  WARDEN_BULLET_DAMAGE,
+  WARDEN_BULLET_BOUNCES,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
 import { damageZombie, playerDamage, hitPlayerRanged, webPlayer, applyCardOnHit } from "./combat";
 import { aggregateCards } from "../cards";
+import { sfxGun } from "../sfx/weapons";
+import { sfxTarget } from "../sfx/pinball";
 import type { WeaponDef } from "../items";
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
@@ -165,9 +170,19 @@ function crystalAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial
   return { geo: _shardGeo, mat: _crystalMat };
 }
 
+let _copBulletGeo: THREE.BoxGeometry | null = null;
+let _copBulletMat: THREE.MeshBasicMaterial | null = null;
+function copBulletAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _copBulletGeo ??= new THREE.BoxGeometry(0.09, 0.09, 0.22);
+  _copBulletMat ??= new THREE.MeshBasicMaterial({ color: 0xffdd44 }); // bright brass with tracer glow
+  return { geo: _copBulletGeo, mat: _copBulletMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
+  _copBulletGeo?.dispose();
+  _copBulletMat?.dispose();
   _arrowGeo?.dispose();
   _arrowMat?.dispose();
   _flameGeo?.dispose();
@@ -185,7 +200,7 @@ export function disposeProjectileAssets(): void {
   _timberMat?.dispose();
   _bombGeo?.dispose();
   _bombMat?.dispose();
-  _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
+  _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
   _beamGeo = _beamMat = null;
@@ -513,6 +528,46 @@ export function fireEyeBeams(x: number, z: number, dx: number, dz: number): void
 }
 
 /**
+ * The WARDEN cop's service pistol shot.
+ *
+ * Fires a high-velocity brass bullet with an intentional aim offset so the direct
+ * trajectory bypasses the player and slams into dungeon walls. Upon hitting a wall,
+ * it RICOCHETS (up to WARDEN_BULLET_BOUNCES times), throwing sparks, playing a metallic
+ * ping, and becoming lethal to the player (and dealing collateral damage to other monsters).
+ */
+export function fireCopBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = copBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  state.scene.add(mesh);
+
+  // Muzzle flash + sparks + smoke puff at gunpoint
+  state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, PALETTE_HEX[18], 5, 2.5);
+  state.vfx?.sparks(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, dx, dz, 4);
+  state.vfx?.smoke(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 1, 0.2);
+  sfxGun();
+
+  const life = 3.5;
+  state.projectiles.push({
+    kind: "bullet",
+    x,
+    z,
+    vx: dx * WARDEN_BULLET_SPEED,
+    vz: dz * WARDEN_BULLET_SPEED,
+    life,
+    maxLife: life,
+    damage: WARDEN_BULLET_DAMAGE,
+    hostile: true,
+    bounces: WARDEN_BULLET_BOUNCES,
+    bounced: false,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
  * is a room-clearing event if you detonate it in a crowd.
@@ -666,26 +721,50 @@ export function updateProjectiles(dt: number): void {
     }
 
 
-    // ── Shards RICOCHET: resolve each axis against the grid and reflect the
-    // blocked component (they die by fuse, not by wall). Everything else
+    // ── Shards & Bouncing Bullets RICOCHET: resolve each axis against the grid and reflect the
+    // blocked component (they die by fuse/bounces, not by wall). Everything else
     // integrates straight and dies where it lands. ──
-    if (pr.kind === "shard" || pr.kind === "disc") {
+    if (pr.kind === "shard" || pr.kind === "disc" || (pr.bounces !== undefined && pr.bounces > 0)) {
       const nx = pr.x + pr.vx * dt;
       const nz = pr.z + pr.vz * dt;
       const tx = worldToTile(g, nx, pr.z);
       const hitX = !isWalkable(g, tx.i, tx.j);
-      if (hitX) pr.vx = -pr.vx;
-      else pr.x = nx;
+      if (hitX) {
+        pr.vx = -pr.vx;
+        if (pr.bounces !== undefined) {
+          pr.bounces--;
+          pr.bounced = true;
+          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 6);
+          sfxTarget();
+        }
+      } else {
+        pr.x = nx;
+      }
       const tz = worldToTile(g, pr.x, nz);
       const hitZ = !isWalkable(g, tz.i, tz.j);
-      if (hitZ) pr.vz = -pr.vz;
-      else pr.z = nz;
-      // The plate spins fast and SPARKS off the masonry. The spark is not
-      // decoration: a hostile ricochet that bounces silently is a hit the
-      // player never saw coming, so every reflection announces itself.
-      pr.mesh.rotation.y += dt * (pr.kind === "disc" ? 26 : 12);
-      if (pr.kind === "disc" && (hitX || hitZ)) {
-        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 4);
+      if (hitZ) {
+        pr.vz = -pr.vz;
+        if (pr.bounces !== undefined) {
+          pr.bounces--;
+          pr.bounced = true;
+          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 6);
+          sfxTarget();
+        }
+      } else {
+        pr.z = nz;
+      }
+      if (pr.bounces !== undefined && pr.bounces <= 0) {
+        despawn(i);
+        continue;
+      }
+      pr.mesh.rotation.y = Math.atan2(pr.vx, pr.vz);
+      if (pr.kind === "disc") {
+        pr.mesh.rotation.y += dt * 26;
+        if (hitX || hitZ) {
+          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 4);
+        }
+      } else if (pr.kind === "shard") {
+        pr.mesh.rotation.y += dt * 12;
       }
     } else {
       // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
@@ -739,8 +818,11 @@ export function updateProjectiles(dt: number): void {
 
     // ── Hostile shots hit the PLAYER, not zombies (acid hurts, silk webs) ──
     if (pr.hostile) {
+      // Bouncing bullets (Warden cop shot): initial direct shot always misses
+      // and only damages the player AFTER bouncing off a wall.
+      const canHitPlayer = pr.bounces === undefined || pr.bounced;
       const p = state.player;
-      if (p && p.hp > 0) {
+      if (canHitPlayer && p && p.hp > 0) {
         const dx = p.x - pr.x;
         const dz = p.z - pr.z;
         if (dx * dx + dz * dz <= (PLAYER_R + HIT_R) * (PLAYER_R + HIT_R)) {
@@ -748,16 +830,13 @@ export function updateProjectiles(dt: number): void {
             if (p.iframes <= 0) webPlayer();
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
           } else if (pr.kind === "bomb") {
-            // Contact does NOT deal `pr.damage` — it sets the fuse to zero. The
-            // hit and the near-miss are the same event for this projectile, and
-            // routing both through `detonate` is what guarantees the player can
-            // never learn a rule about one that is false about the other.
             detonate(pr.x, pr.z);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
-            // Acid splashes green; a steel plate strikes sparks; a log throws
-            // splinters, which are sparks in everything but name; a beam scorches.
-            if (pr.kind === "disc" || pr.kind === "timber" || pr.kind === "beam") {
+            if (pr.bounced) {
+              state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 8);
+              state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "red", 5);
+            } else if (pr.kind === "disc" || pr.kind === "timber" || pr.kind === "beam") {
               state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 8);
             } else state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
           }
@@ -765,6 +844,25 @@ export function updateProjectiles(dt: number): void {
           continue;
         }
       }
+
+      // Friendly fire: a bounced ricochet bullet can also clip other monsters
+      if (pr.bounced) {
+        let hitMob = false;
+        for (const z of state.zombies) {
+          if (z.mode === "dead") continue;
+          const dx = z.x - pr.x;
+          const dz = z.z - pr.z;
+          if (dx * dx + dz * dz <= (ZOMBIE_R + HIT_R) * (ZOMBIE_R + HIT_R)) {
+            damageZombie(z, pr.damage, pr.vx, pr.vz, 0.3, false, "ranged");
+            state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 6);
+            despawn(i);
+            hitMob = true;
+            break;
+          }
+        }
+        if (hitMob) continue;
+      }
+
       pr.mesh.position.set(pr.x, PROJECTILE_Y, pr.z);
       continue; // hostile shots skip the zombie loop below
     }

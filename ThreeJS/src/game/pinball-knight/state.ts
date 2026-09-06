@@ -754,6 +754,10 @@ export interface Projectile {
   curveZ?: number;
   /** PIERCE card: extra foes this shot passes through before dying. */
   pierced?: number;
+  /** Wall ricochets remaining before expiring (e.g. Warden cop bullets). */
+  bounces?: number;
+  /** True once it has bounced off at least one wall. */
+  bounced?: boolean;
   mesh: THREE.Mesh;
   dispose(): void;
 }

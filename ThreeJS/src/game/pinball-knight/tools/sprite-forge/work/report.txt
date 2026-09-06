@@ -1069,28 +1069,28 @@ VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/trex-S  (frames + preview.png)
 
 ═══ warden (S) — 4 rows [4/4/4/4], 16 frames
-GRID   NOT PIXEL ART — no lattice (best ×2 at 7.0%, need 90%) and only 12% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 26.9% — a real lattice is ~100%, so the blocks are mush.
-MATTE  bg #fc00fc (91% of the border) — keyed 44.7%, 1535 pocket(s) LEFT OPAQUE
-⚠ 1535 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+GRID   NOT PIXEL ART — no lattice (best ×2 at 3.7%, need 90%) and only 49% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 31.5% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (96% of the border) — keyed 69.3%, 14 pocket(s) LEFT OPAQUE
+⚠ 14 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
 monster  entries  isolated%  runLen  invented
 ---------------------------------------------
-idle0         24       30.7    1.47        24
-idle1         25       32.3    1.46        25
-idle2         25       31.3    1.47        25
-idle3         23       31.1    1.47        23
-walk0         23       32.2    1.47        23
-walk1         22       32.2    1.46        22
-walk2         23       31.7    1.46        23
-walk3         22       31.7    1.47        22
-attack0       23       32.5    1.49        23
-attack1       24       29.5    1.52        24
-attack2       24       31.3    1.45        24
-attack3       28       32.8    1.41        28
-death0        24       33.0    1.43        24
-death1        23       35.7    1.41        23
-death2        25       31.8    1.45        25
-death3        21       37.9    1.37        21
-MEAN   entries 23.7  isolated 32.4%  runLen 1.45
+idle0         23       24.4    1.53        23
+idle1         26       26.0    1.50        26
+idle2         25       28.5    1.49        25
+idle3         25       27.3    1.48        25
+walk0         25       27.9    1.53        25
+walk1         25       32.0    1.52        25
+walk2         23       27.7    1.56        23
+walk3         21       28.8    1.56        21
+attack0       21       28.3    1.57        21
+attack1       21       26.8    1.60        21
+attack2       27       29.0    1.59        27
+attack3       23       27.6    1.61        23
+death0        24       28.4    1.58        24
+death1        23       29.5    1.50        23
+death2        23       33.8    1.50        23
+death3        25       37.7    1.47        25
+MEAN   entries 23.8  isolated 29.0%  runLen 1.54
 ROSTER entries 20.1  isolated 22.5%  runLen 1.82
 VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/warden-S  (frames + preview.png)
@@ -1323,10 +1323,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   trex-S             walk     centred sweep 0.015 (span 0.026 × r +0.60)  grounded 0px spread  gait peak 0.12
   trex-S             attack   centred sweep 0.004 (span 0.044 × r -0.08)  grounded 0px spread
   trex-S             death    centred sweep 0.005 (span 0.022 × r +0.22)  grounded 1px spread
-  warden-S           idle     centred sweep 0.000 (span 0.004 × r -0.02)  grounded 0px spread
-  warden-S           walk     centred sweep 0.003 (span 0.006 × r -0.49)  grounded 0px spread  gait peak 0.02
-  warden-S           attack   centred sweep 0.071 (span 0.086 × r -0.82)  grounded 0px spread
-  warden-S           death    centred sweep 0.012 (span 0.014 × r -0.87)  grounded 0px spread
+  warden-S           idle     centred sweep 0.004 (span 0.005 × r -0.94)  grounded 0px spread
+  warden-S           walk     centred sweep 0.005 (span 0.010 × r -0.51)  grounded 2px spread  gait peak 0.02
+  warden-S           attack   centred sweep 0.134 (span 0.224 × r +0.60)  grounded 0px spread
+  warden-S           death    centred sweep 0.072 (span 0.077 × r -0.94)  grounded 1px spread
   webspinner-S       idle     centred sweep 0.015 (span 0.019 × r +0.81)  grounded 0px spread
   webspinner-S       walk     centred sweep 0.004 (span 0.012 × r +0.34)  grounded 0px spread  gait peak 0.09
   webspinner-S       attack   centred sweep 0.025 (span 0.025 × r -1.00)  grounded 0px spread

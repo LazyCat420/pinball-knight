@@ -134,7 +134,7 @@ import {
   HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
   BLOATER_R, BLOATER_CONTACT_RANGE, BLOATER_ATTACK_WINDUP, BLOATER_ATTACK_COOLDOWN,
   NECRO_R, NECRO_CONTACT_RANGE, NECRO_ATTACK_WINDUP, NECRO_ATTACK_COOLDOWN, NECRO_SUMMON_CD, NECRO_SUMMON_MAX,
-  WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
+  WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_AIM_MISS_ANGLE, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
   WISP_R, WISP_CONTACT_RANGE, WISP_ATTACK_WINDUP, WISP_ATTACK_COOLDOWN, WISP_BLINK_DIST, WISP_BLINK_CD,
   SAPPER_R, SAPPER_CONTACT_RANGE, SAPPER_ATTACK_WINDUP, SAPPER_ATTACK_COOLDOWN,
   CRYSTAL_R, CRYSTAL_CONTACT_RANGE, CRYSTAL_ATTACK_WINDUP, CRYSTAL_ATTACK_COOLDOWN,
@@ -151,7 +151,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -197,7 +197,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
   necromancer: { bodyR: NECRO_R, contactRange: NECRO_CONTACT_RANGE, windup: NECRO_ATTACK_WINDUP, cooldown: NECRO_ATTACK_COOLDOWN, ranged: true },
-  warden: { bodyR: WARDEN_R, contactRange: WARDEN_CONTACT_RANGE, windup: WARDEN_ATTACK_WINDUP, cooldown: WARDEN_ATTACK_COOLDOWN, ranged: false },
+  warden: { bodyR: WARDEN_R, contactRange: WARDEN_CONTACT_RANGE, windup: WARDEN_ATTACK_WINDUP, cooldown: WARDEN_ATTACK_COOLDOWN, ranged: true },
   wisp: { bodyR: WISP_R, contactRange: WISP_CONTACT_RANGE, windup: WISP_ATTACK_WINDUP, cooldown: WISP_ATTACK_COOLDOWN, ranged: false },
   sapper: { bodyR: SAPPER_R, contactRange: SAPPER_CONTACT_RANGE, windup: SAPPER_ATTACK_WINDUP, cooldown: SAPPER_ATTACK_COOLDOWN, ranged: false },
   crystalback: { bodyR: CRYSTAL_R, contactRange: CRYSTAL_CONTACT_RANGE, windup: CRYSTAL_ATTACK_WINDUP, cooldown: CRYSTAL_ATTACK_COOLDOWN, ranged: false },
@@ -518,16 +518,6 @@ export function updateZombies(dt: number): void {
         z.anim.play("idle");
       }
       continue; // dormant: no AI; woken: the charge runs next frame
-    }
-
-    // ── WARDEN ── a support aura: periodically grants a damage-absorb shield to
-    // nearby foes (a stickier horde; kill the Warden first). It otherwise chases.
-    if (z.kind === "warden") {
-      z.castT = (z.castT ?? 0) - dt;
-      if (z.castT <= 0) {
-        z.castT = WARDEN_PULSE_CD;
-        wardenPulse(z);
-      }
     }
 
     // ── BRUTE ENRAGE ── below 40% HP it flies into a faster, angrier rage.
@@ -898,6 +888,17 @@ export function updateZombies(dt: number): void {
                 // sidestep on purpose, because what makes it dangerous is where
                 // it goes AFTER it misses.
                 flingPlate(z.x, z.z, ux, uz);
+              } else if (z.kind === "warden") {
+                // The COP guard fires a ricocheting service bullet with a deliberate aim offset.
+                // He always misses the player directly (aiming ±WARDEN_AIM_MISS_ANGLE off line)
+                // so the bullet strikes a wall, bounces, and rebounds across the room to hit the player.
+                const side = Math.random() < 0.5 ? 1 : -1;
+                const offset = side * (WARDEN_AIM_MISS_ANGLE + (Math.random() - 0.5) * 0.08);
+                const cos = Math.cos(offset);
+                const sin = Math.sin(offset);
+                const aimX = ux * cos - uz * sin;
+                const aimZ = ux * sin + uz * cos;
+                fireCopBullet(z.x, z.z, aimX, aimZ);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);

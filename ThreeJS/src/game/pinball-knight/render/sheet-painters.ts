@@ -46,6 +46,7 @@ import { makeStiltneckPaints } from "./monsters/stiltneck";
 import { makeFishFeetPaints } from "./monsters/fish_feet";
 import { makeHoundPaints } from "./monsters/hound";
 import { makeBloaterPaints } from "./monsters/bloater";
+import { makeWardenPaints } from "./monsters/warden";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -55,10 +56,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   zombie: () => makeZombiePaints(ZOMBIE_VARIANTS[0]),
   spider: makeSpiderPaints,
   brute: makeBrutePaints,
-  // The warden paints from the SAME painter as the brute and is deliberately
-  // NOT in IMPORTED_ART: it is the brute's tinted reskin, and it must keep the
-  // painted look when the brute's own art is swapped for a forged sheet.
-  warden: makeBrutePaints,
+  warden: makeWardenPaints,
   spitter: makeSpitterPaints,
   ghost: makeGhostPaints,
   bat: makeBatPaints,
