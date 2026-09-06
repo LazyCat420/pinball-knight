@@ -47,14 +47,13 @@ function decal(kind: "fire" | "slick"): THREE.Mesh {
 beforeEach(() => clearElements());
 
 describe("the shader registry", () => {
-  it("covers fire and water, and deliberately not the groove", () => {
+  it("covers fire and water, and deliberately not the groove or fissure", () => {
     expect(hasElementShader("fire")).toBe(true);
     expect(hasElementShader("slick")).toBe(true);
-    // `groove` is a CUT in stone, not a fluid, and a groove trail stamps ~50
-    // decals a second — the one place per-instance graph building would cost
-    // something. Its absence is a decision; if someone adds it, this should be
-    // a conscious edit rather than a silent perf regression.
+    // `groove` and `fissure` are cuts and fractures in stone, not fluids.
+    // Their absence from element shaders is a deliberate performance decision.
     expect(hasElementShader("groove")).toBe(false);
+    expect(hasElementShader("fissure")).toBe(false);
     expect(hasElementShader("shard-field")).toBe(false);
   });
 
@@ -62,13 +61,13 @@ describe("the shader registry", () => {
     expect(elementShaderKinds().sort()).toEqual(["fire", "frost", "molten", "oil", "rod", "slick", "tar"]);
   });
 
-  it("covers every FLUID kind — only the two non-substances are left on canvas", () => {
+  it("covers every FLUID kind — only the non-substances are left on canvas", () => {
     // Stated as a complement rather than a list, so adding a new FloorFxKind
     // forces a decision here instead of silently defaulting to the canvas path.
-    // `groove` is a CUT in stone and `shard-field` is glitter; neither is a
-    // substance with a surface, so neither wants a fluid shader.
+    // `groove` and `fissure` are stone scars and `shard-field` is glitter;
+    // none of them are fluids with surfaces, so none want a fluid shader.
     const canvas = FLOOR_FX_KINDS().filter((k: FloorFxKind) => !hasElementShader(k));
-    expect(canvas.sort()).toEqual(["groove", "shard-field"]);
+    expect(canvas.sort()).toEqual(["fissure", "groove", "shard-field"]);
   });
 
   it("builds a working material for every registered kind", () => {

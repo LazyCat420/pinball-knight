@@ -148,6 +148,7 @@ import {
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
+import { PALETTE_HEX } from "../render/palette";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../engine/collision";
@@ -394,37 +395,53 @@ function croakerCaneSpin(z: Zombie, pdist: number, contactRange: number): void {
   }
 }
 
-/** PLATYPUS: Ground slam attack — smashes its heavy metal tail into the floor, creating radiating cracks, sparks, screen shake, and knockback! */
+/** PLATYPUS: Ground slam attack — smashes its heavy metal tail into the floor, creating radiating cracks, sparks, screen shake, dual shockwave rings, and knockback! */
 export function platypusTailSlam(z: Zombie, pdist: number, contactRange: number): void {
   const p = state.player;
   const g = state.grid;
   if (!p || p.hp <= 0) return;
 
   sfxHeavy();
-  state.shakeT = Math.max(state.shakeT, 0.35);
+  state.shakeT = Math.max(state.shakeT, 0.42);
+  state.hitstopT = Math.max(state.hitstopT, 0.05);
   z.anim.play("attack", { force: true });
 
   const impactX = z.x;
   const impactZ = z.z;
 
-  // 1. Radiating floor cracks: spawn groove decals radiating outward
+  // 1. Dual expanding shockwave rings
+  // Primary high-velocity wavefront ring (bright additive bloom)
+  state.vfx?.ring(impactX, impactZ, 0xffe4a0, PLATYPUS_SLAM_RADIUS * 1.15, 0.32, { thin: true });
+  // Secondary trailing dust/compression ring
+  state.vfx?.ring(impactX, impactZ, 0x8c98a8, PLATYPUS_SLAM_RADIUS * 1.35, 0.48, { delay: 0.04, opacity: 0.65 });
+
+  // 2. Dedicated branching ground fissure decals:
+  // Central deep shattered crater
+  spawnFloorFx("fissure", impactX, impactZ, PLATYPUS_SLAM_RADIUS * 0.95, GROOVE_LIFE * 2.0);
+  // Radiating crack spur fractures
   const rayCount = 6;
   for (let i = 0; i < rayCount; i++) {
-    const angle = (i / rayCount) * Math.PI * 2;
-    const crackDist = 0.8 + (i % 2) * 0.4;
+    const angle = (i / rayCount) * Math.PI * 2 + (i % 2) * 0.2;
+    const crackDist = 0.9 + (i % 2) * 0.5;
     const cx = impactX + Math.cos(angle) * crackDist;
     const cz = impactZ + Math.sin(angle) * crackDist;
-    spawnFloorFx("groove", cx, cz, GROOVE_RADIUS * 1.3, GROOVE_LIFE * 1.5);
+    spawnFloorFx("fissure", cx, cz, GROOVE_RADIUS * 1.1, GROOVE_LIFE * 1.6);
   }
 
-  // 2. Heavy explosive impact sparks & shockwave particles
-  state.vfx?.sparks?.(impactX, 0.2, impactZ, 0, 0.8, 16);
+  // 3. Heavy explosive impact sparks, flying stone shards, and radial dust billows
+  state.vfx?.sparks?.(impactX, 0.25, impactZ, 0, 1.0, 24);
+  state.vfx?.burst?.(impactX, 0.15, impactZ, PALETTE_HEX[2], 16, 4.0);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    state.vfx?.dust?.(impactX + Math.cos(a) * 0.8, 0.08, impactZ + Math.sin(a) * 0.8);
+  }
 
-  // 3. AoE Damage & Deflection against player if within slam radius
+  // 4. AoE Damage & Deflection against player if within slam radius
   const slamDistSq = (p.x - impactX) * (p.x - impactX) + (p.z - impactZ) * (p.z - impactZ);
   const slamRadius = PLATYPUS_SLAM_RADIUS;
   if (slamDistSq <= slamRadius * slamRadius) {
     hitPlayer(z);
+    state.shakeT = Math.max(state.shakeT, 0.42);
     const dist = Math.sqrt(slamDistSq) || 1;
     const nx = (p.x - impactX) / dist;
     const nz = (p.z - impactZ) / dist;
@@ -439,7 +456,7 @@ export function platypusTailSlam(z: Zombie, pdist: number, contactRange: number)
     }
   }
 
-  // 4. Stagger nearby lower-tier monsters (friendly fire shockwave)
+  // 5. Stagger nearby lower-tier monsters (friendly fire shockwave)
   for (const other of state.zombies) {
     if (other === z || other.hp <= 0 || (other.mode as string) === "dead") continue;
     const dx = other.x - impactX;

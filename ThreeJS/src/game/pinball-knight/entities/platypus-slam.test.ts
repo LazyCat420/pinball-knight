@@ -59,7 +59,7 @@ describe("iron platypus tail slam & ground cracks mechanics", () => {
     expect(PLATYPUS_SLAM_DEFLECT).toBe(10.0);
   });
 
-  it("executes platypusTailSlam creating screen shake, 6 radiating groove cracks, and player deflection", () => {
+  it("executes platypusTailSlam creating heavy screen shake, fissure cracks, dual shockwaves, and debris VFX", () => {
     const p = {
       x: 5,
       z: 6,
@@ -101,23 +101,50 @@ describe("iron platypus tail slam & ground cracks mechanics", () => {
     } as unknown as Zombie;
     state.zombies = [platypus];
 
+    const rings: any[] = [];
+    const bursts: any[] = [];
+    const dusts: any[] = [];
+    let sparksCalled = false;
+
+    state.vfx = {
+      ring: (...args: any[]) => rings.push(args),
+      sparks: () => {
+        sparksCalled = true;
+      },
+      burst: (...args: any[]) => bursts.push(args),
+      dust: (...args: any[]) => dusts.push(args),
+      blood: () => {},
+      damage: () => {},
+    } as unknown as typeof state.vfx;
+
     // Execute the tail slam!
     platypusTailSlam(platypus, 1.0, PLATYPUS_CONTACT_RANGE);
 
     // 1. Attack animation played
     expect(playedAnim).toBe("attack");
 
-    // 2. Heavy screen shake triggered
-    expect(state.shakeT).toBeGreaterThanOrEqual(0.35);
+    // 2. Heavy screen shake and micro-hitstop triggered
+    expect(state.shakeT).toBeGreaterThanOrEqual(0.42);
+    expect(state.hitstopT).toBeGreaterThanOrEqual(0.05);
 
-    // 3. Radiating floor cracks spawned in state.floorFx
-    expect(state.floorFx.length).toBe(6);
+    // 3. Central crater + 6 radiating crack spurs spawned as fissure decals
+    expect(state.floorFx.length).toBe(7);
     for (const fx of state.floorFx) {
-      expect(fx.kind).toBe("groove");
+      expect(fx.kind).toBe("fissure");
       expect(fx.life).toBeGreaterThan(0);
     }
 
-    // 4. Player hit and deflected along +z (from z=5 to z=6 => nz = 1)
+    // 4. Dual shockwave rings fired (primary wavefront + secondary dust ring)
+    expect(rings.length).toBe(2);
+    expect(rings[0][5]).toEqual({ thin: true }); // primary sharp wavefront
+    expect(rings[1][5]).toMatchObject({ delay: 0.04 }); // secondary compression ring
+
+    // 5. Sparks, flying stone debris, and 6 radial dust puffs emitted
+    expect(sparksCalled).toBe(true);
+    expect(bursts.length).toBe(1);
+    expect(dusts.length).toBe(6);
+
+    // 6. Player hit and deflected along +z (from z=5 to z=6 => nz = 1)
     expect(p.hp).toBe(10 - PLATYPUS_DAMAGE);
     expect(p.momZ).toBe(1);
     expect(p.momSpeed).toBe(PLATYPUS_SLAM_DEFLECT);

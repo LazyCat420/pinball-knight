@@ -98,6 +98,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   tar: PALETTE_HEX[26], // leather shadow — a matte brown-black, NOT oil's petrol sheen
   rod: PALETTE_HEX[31], // prismatic cool — the arc's own colour
   molten: PALETTE_HEX[26], // leather shadow — the CHAR, not the glow. See below.
+  fissure: PALETTE_HEX[2], // stone dark — ground smash fracture cracks
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -109,7 +110,7 @@ function discGeo(): THREE.CircleGeometry {
  *  worked for water but made fire look like an orange coaster and oil vanish
  *  into dark stone; every kind that has to be identified at a glance from
  *  across a room gets its own canvas. */
-const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod"];
+const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod", "fissure"];
 /** Kinds that ADD light (they feed the bloom) rather than sitting on the scene. */
 const ADDITIVE: FloorFxKind[] = ["fire", "frost", "rod"];
 
@@ -249,6 +250,81 @@ function paintKindTexture(kind: FloorFxKind): THREE.CanvasTexture | null {
     g.addColorStop(1, "rgba(122,59,18,0)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, s, s);
+  } else if (kind === "fissure") {
+    // GROUND SMASH CRACKS: a deep stone fracture radiating outward from an
+    // explosive impact epicenter.
+    // 1. Central shattered crater pit
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.28);
+    g.addColorStop(0, "rgba(6, 8, 12, 0.96)");
+    g.addColorStop(0.5, "rgba(14, 18, 24, 0.85)");
+    g.addColorStop(0.85, "rgba(25, 30, 40, 0.4)");
+    g.addColorStop(1, "rgba(35, 42, 54, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Jagged branching cracks radiating in 7 primary directions
+    const branches = 7;
+    for (let b = 0; b < branches; b++) {
+      const baseAngle = (b / branches) * Math.PI * 2 + ((b * 13) % 7) * 0.08;
+      let currX = cx + Math.cos(baseAngle) * (s * 0.06);
+      let currY = cx + Math.sin(baseAngle) * (s * 0.06);
+      const segs = 4;
+      const stepLen = (s * 0.38) / segs;
+
+      ctx.beginPath();
+      ctx.moveTo(currX, currY);
+      const pathPts: [number, number][] = [[currX, currY]];
+
+      for (let j = 1; j <= segs; j++) {
+        const segDist = j * stepLen;
+        const jitter = (((b * 7 + j * 17) % 11) / 11 - 0.5) * 0.45;
+        const ang = baseAngle + jitter;
+        currX = cx + Math.cos(ang) * segDist;
+        currY = cx + Math.sin(ang) * segDist;
+        ctx.lineTo(currX, currY);
+        pathPts.push([currX, currY]);
+
+        // Fork sub-branch on mid-segments
+        if (j === 2) {
+          const forkAng = ang + (b % 2 === 0 ? 0.55 : -0.55);
+          const forkX = currX + Math.cos(forkAng) * (s * 0.14);
+          const forkY = currY + Math.sin(forkAng) * (s * 0.14);
+          ctx.moveTo(currX, currY);
+          ctx.lineTo(forkX, forkY);
+          ctx.moveTo(currX, currY);
+        }
+      }
+
+      // Stroke deep dark chasm
+      ctx.strokeStyle = "rgba(6, 8, 12, 0.95)";
+      ctx.lineWidth = b % 2 === 0 ? 3 : 2;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "bevel";
+      ctx.stroke();
+
+      // Stroke chipped sunlit bevel highlight slightly offset (upwards / -y)
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = "rgba(180, 195, 215, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let k = 0; k < pathPts.length; k++) {
+        const [px, py] = pathPts[k];
+        if (k === 0) ctx.moveTo(px, py - 1.2);
+        else ctx.lineTo(px, py - 1.2);
+      }
+      ctx.stroke();
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    // 3. Scattered stone rubble speckles around the fracture zone
+    ctx.fillStyle = "rgba(40, 48, 62, 0.8)";
+    for (let i = 0; i < 12; i++) {
+      const a = (i * 2.39) % (Math.PI * 2);
+      const r = s * (0.12 + ((i * 19) % 25) * 0.012);
+      ctx.fillRect(cx + Math.cos(a) * r, cx + Math.sin(a) * r, 2, 2);
+    }
   } else {
     // Oil: a dark pool whose RIM catches the light, plus thin sheen arcs.
     const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
@@ -674,6 +750,14 @@ export function updateFloorFx(dt: number): void {
       fx.mesh.scale.setScalar(fx.radius);
       (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.72 * Math.min(1, frac * 4);
       grooveInteract(fx, dt, ticked);
+      continue;
+    }
+
+    // ── FISSURE: a fracture shattered into the stone floor by a heavy ground smash.
+    // Stamped at impact, holds rigid in stone, and fades slowly as dust settles.
+    if (fx.kind === "fissure") {
+      fx.mesh.scale.setScalar(fx.radius);
+      (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.92 * Math.min(1, frac * 3.5);
       continue;
     }
 
