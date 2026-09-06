@@ -142,6 +142,11 @@ export function monsterIcon(kind: EnemyKind): HTMLCanvasElement | null {
   return c;
 }
 
+/** Test seam & sheet-load invalidator: drop cached monster chip canvases. */
+export function _clearMonsterIconCache(): void {
+  monsterCache.clear();
+}
+
 /** The abstract marks. Kept small and nameable — one per concept, not per item. */
 export type GlyphId =
   | "sword" // equipment tab, melee

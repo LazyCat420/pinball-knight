@@ -8,7 +8,7 @@
  * lives next to the rest of the run lifecycle.
  */
 import { enterTavern } from "../../../scenes/tavern";
-import { loadMonsterSheetsForFloor } from "../boot/sheets";
+import { loadMonsterSheetsForFloor, applyImportedMonsterArt } from "../boot/sheets";
 import { push } from "../gui/stack";
 import { characterSelectScreen } from "../gui/screens/character-select";
 import { state } from "../state";
@@ -77,11 +77,12 @@ export function openLobby(container: HTMLElement, opts: LobbyOptions): void {
   // Nothing is dropped by moving it, only reordered, and the load was already
   // asynchronous-and-late by design: the painters draw first and imported art
   // replaces them when it lands.
-  // Pre-fetch Floor 1 monster art quietly in the background without choking the tavern scene.
+  // Pre-fetch Floor 1 monster art quietly in the background without choking the tavern scene,
+  // then quietly backfill all remaining registered monster sprite sheets.
   if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(() => void loadMonsterSheetsForFloor(1), { timeout: 3000 });
+    requestIdleCallback(() => void loadMonsterSheetsForFloor(1).then(() => applyImportedMonsterArt()), { timeout: 3000 });
   } else {
-    setTimeout(() => void loadMonsterSheetsForFloor(1), 1000);
+    setTimeout(() => void loadMonsterSheetsForFloor(1).then(() => applyImportedMonsterArt()), 1000);
   }
 
   void enterTavern(container, {

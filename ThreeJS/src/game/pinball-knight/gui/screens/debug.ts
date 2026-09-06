@@ -82,6 +82,7 @@ import {
 } from "../im";
 import { abilityIcon, glyph, itemIcon, monsterIcon, type GlyphId } from "../icons";
 import { pop, type UiScreen } from "../stack";
+import { applyImportedMonsterArt } from "../../boot/sheets";
 
 /**
  * Everything the console can do: the verbs core owns plus the ones mixed in by
@@ -393,6 +394,7 @@ function section(f: UiFrame, body: Rect, label: string): void {
 }
 
 export function debugScreen(actions: ConsoleActions): UiScreen {
+  void applyImportedMonsterArt();
   let spawnCount = 1;
   /** Which sustained beds are latched on — see `BED_LABEL`. */
   const beds: Record<AmbienceId, boolean> = { fire: false, water: false };

@@ -23,6 +23,7 @@ import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type Imp
 import { authoredFacingsFor } from "./manifest-inventory";
 import { sheetCoverage } from "../tools/sprite-forge/build-plan";
 import { _clearPortraitCache } from "../render/monster-portrait";
+import { _clearMonsterIconCache } from "../gui/icons";
 import type { Dir } from "../engine/render/paint-types";
 
 /** The facings a sheet may author. W is drawn as a flipped E. */
@@ -516,6 +517,7 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
   const pal = sheetPalette(loaded);
   if (pal) importedPalettes.set(key, pal);
   _clearPortraitCache();
+  _clearMonsterIconCache();
   const cov = sheetCoverage(loaded.map((s) => s.manifest));
   console.info(
     `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
@@ -577,6 +579,7 @@ export async function applyImportedMonsterArt(): Promise<void> {
  */
 export function rebuild(key: SheetKey): void {
   _clearPortraitCache();
+  _clearMonsterIconCache();
   inFlight.delete(key);
   if (current?.key === key) current = null;
   const sheet = monsterSheet(paintsFor(key), key);
