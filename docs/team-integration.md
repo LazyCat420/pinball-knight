@@ -81,5 +81,14 @@ The project deploy-kit wrapper released `e4ff8dcc` on 2026-09-06 at 23:55 PDT
 
 Play: https://pinballknight.braindeadbot.com/
 
-Other developers can continue in their own worktrees. Integrate their next
-completed batches into this branch before a later release.
+## Six-Armed God & Crawling Hand Integration Checkpoint
+
+- Commit: `74bd5ef8`.
+- Merged `main` (`74755d72`), cleanly unifying:
+  - **Six-Armed Indian God ("Mahadeva Asura")** boss with mouth fire stream (`mouthFire`) and 6-arm dagger volley (`daggerVolley`).
+  - **Crawling Hand** monster with grab-and-pin mechanic.
+  - All sprite forge assets, manifests, and tests for both entities.
+- Zero conflicts remaining: `boot/lazy-sheets.test.ts`, `boot/sheets.ts`, `boss.ts`, `spawn/factory.ts`, and `state.ts` resolved cleanly.
+- Tests verified: `boss-six-armed-god.test.ts`, `boss-roster.test.ts`, `lazy-sheets.test.ts`, and `crawling-hand.test.ts` all passed (33/33 tests).
+- Production build verified: `vite build` completed in 11.80s with 370 modules transformed.
+
