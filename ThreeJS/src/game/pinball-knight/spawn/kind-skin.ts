@@ -87,6 +87,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   espresso: { scale: 0.92 },
   burger: { scale: 1.0 },
   fries: { scale: 1.0 },
+  milkshake: { scale: 1.0 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

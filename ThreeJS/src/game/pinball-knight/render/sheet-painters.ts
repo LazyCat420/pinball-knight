@@ -52,6 +52,7 @@ import { makePlatypusPaints } from "./monsters/platypus";
 import { makeEspressoPaints } from "./monsters/espresso";
 import { makeBurgerPaints } from "./monsters/burger";
 import { makeFriesPaints } from "./monsters/fries";
+import { makeMilkshakePaints } from "./monsters/milkshake";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -96,4 +97,5 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   jade_buddha: makeBossPaints,
   burger: makeBurgerPaints,
   fries: makeFriesPaints,
+  milkshake: makeMilkshakePaints,
 };

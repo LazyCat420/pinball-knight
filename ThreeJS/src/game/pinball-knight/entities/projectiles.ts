@@ -54,6 +54,9 @@ import {
   FRIES_FIRE_RANGE,
   FRIES_DAMAGE,
   FRIES_DART_SPEED,
+  MILKSHAKE_FIRE_RANGE,
+  MILKSHAKE_DAMAGE,
+  MILKSHAKE_SPRAY_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -218,6 +221,14 @@ export function fryDartAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicM
   return { geo: _fryDartGeo, mat: _fryDartMat };
 }
 
+let _shakeSprayGeo: THREE.SphereGeometry | null = null;
+let _shakeSprayMat: THREE.MeshBasicMaterial | null = null;
+export function shakeSprayAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _shakeSprayGeo ??= new THREE.SphereGeometry(0.12, 8, 6);
+  _shakeSprayMat ??= new THREE.MeshBasicMaterial({ color: 0x84cc16 }); // toxic lime green milkshake glob
+  return { geo: _shakeSprayGeo, mat: _shakeSprayMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -248,6 +259,12 @@ export function disposeProjectileAssets(): void {
   _sauceMat?.dispose();
   _fryDartGeo?.dispose();
   _fryDartMat?.dispose();
+  _fryDartGeo = null;
+  _fryDartMat = null;
+  _shakeSprayGeo?.dispose();
+  _shakeSprayMat?.dispose();
+  _shakeSprayGeo = null;
+  _shakeSprayMat = null;
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
@@ -747,6 +764,41 @@ export function launchFryBarrage(x: number, z: number, dx: number, dz: number): 
   }
 }
 
+export function launchMilkshakeSpray(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+
+  // Sizzling green toxic vapor puff at straw nozzle
+  state.vfx?.sparks(x + dx * 0.2, PROJECTILE_Y + 0.15, z + dz * 0.2, dx * 1.2, dz * 1.2, 5);
+
+  // 4 sizzling toxic globules in a spray fan (-0.20, -0.06, +0.06, +0.20 rad)
+  for (const offset of [-0.20, -0.06, 0.06, 0.20]) {
+    const angle = baseAngle + offset;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = shakeSprayAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + fdx * MUZZLE_OFFSET;
+    const sz = z + fdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "shake_spray",
+      x: sx,
+      z: sz,
+      vx: fdx * MILKSHAKE_SPRAY_SPEED,
+      vz: fdz * MILKSHAKE_SPRAY_SPEED,
+      life: MILKSHAKE_FIRE_RANGE / MILKSHAKE_SPRAY_SPEED,
+      maxLife: MILKSHAKE_FIRE_RANGE / MILKSHAKE_SPRAY_SPEED,
+      damage: MILKSHAKE_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
@@ -971,6 +1023,8 @@ export function updateProjectiles(dt: number): void {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 8, 1.0);
         } else if (pr.kind === "fry_dart") {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
+        } else if (pr.kind === "shake_spray") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
         }
         // A bomb against masonry is a bomb going off against masonry. This is
         // what stops "break line of sight" from being the free answer it is
@@ -992,6 +1046,10 @@ export function updateProjectiles(dt: number): void {
       }
       if (pr.kind === "fry_dart") {
         pr.mesh.rotation.z += dt * 15;
+      }
+      if (pr.kind === "shake_spray") {
+        pr.mesh.rotation.y += dt * 10;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
       }
 
       // FUSE BURN: the bomb sheds sparks the whole way in, faster as the fuse
@@ -1040,6 +1098,10 @@ export function updateProjectiles(dt: number): void {
           } else if (pr.kind === "fry_dart") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 10, 1.4);
+          } else if (pr.kind === "shake_spray") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            if (p.iframes <= 0) webPlayer();
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 12, 1.5);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {

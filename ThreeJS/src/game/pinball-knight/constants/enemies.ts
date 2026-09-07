@@ -602,6 +602,23 @@ export const FRIES_DART_SPEED = 7.8;
 export const FRIES_RATIO = 19;
 export const FRIES_FROM_LEVEL = 3;
 
+/**
+ * MILKSHAKE — fast-food milkshake cup monster inspired by Master Shake.
+ * Wears bright yellow rubber dishwasher gloves for hands, has a pink-and-white bend straw,
+ * and sprays high-pressure barrages of toxic green milkshake.
+ */
+export const MILKSHAKE_HP = 6;
+export const MILKSHAKE_R = 0.38;
+export const MILKSHAKE_SPEED_FACTOR = 0.85;
+export const MILKSHAKE_FIRE_RANGE = 6.5;
+export const MILKSHAKE_KITE_RANGE = 3.0;
+export const MILKSHAKE_WINDUP = 0.45;
+export const MILKSHAKE_COOLDOWN = 2.2;
+export const MILKSHAKE_DAMAGE = 1;
+export const MILKSHAKE_SPRAY_SPEED = 7.0;
+export const MILKSHAKE_RATIO = 18;
+export const MILKSHAKE_FROM_LEVEL = 3;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;
