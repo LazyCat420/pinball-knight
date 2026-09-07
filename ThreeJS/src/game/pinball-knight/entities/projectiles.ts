@@ -60,6 +60,9 @@ import {
   SUMO_NINJA_FIRE_RANGE,
   SUMO_NINJA_DAMAGE,
   SUMO_NINJA_SHURIKEN_SPEED,
+  ZIPPO_FIRE_RANGE,
+  ZIPPO_DAMAGE,
+  ZIPPO_FLAME_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -240,6 +243,14 @@ export function shurikenAssets(): { geo: THREE.CylinderGeometry; mat: THREE.Mesh
   return { geo: _shurikenGeo, mat: _shurikenMat };
 }
 
+let _zippoFlameGeo: THREE.SphereGeometry | null = null;
+let _zippoFlameMat: THREE.MeshBasicMaterial | null = null;
+export function zippoFlameAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _zippoFlameGeo ??= new THREE.SphereGeometry(0.16, 8, 6);
+  _zippoFlameMat ??= new THREE.MeshBasicMaterial({ color: 0xff6600 }); // fiery blazing orange
+  return { geo: _zippoFlameGeo, mat: _zippoFlameMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -280,6 +291,10 @@ export function disposeProjectileAssets(): void {
   _shurikenMat?.dispose();
   _shurikenGeo = null;
   _shurikenMat = null;
+  _zippoFlameGeo?.dispose();
+  _zippoFlameMat?.dispose();
+  _zippoFlameGeo = null;
+  _zippoFlameMat = null;
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
@@ -849,6 +864,42 @@ export function launchShuriken(x: number, z: number, dx: number, dz: number): vo
   }
 }
 
+export function launchZippoFlameBreath(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+
+  // Fiery sparks & smoke puff at lighter mouth
+  state.vfx?.sparks(x + dx * 0.25, PROJECTILE_Y + 0.1, z + dz * 0.25, dx * 1.5, dz * 1.5, 6);
+  state.vfx?.smoke(x + dx * 0.2, PROJECTILE_Y + 0.05, z + dz * 0.2, 0.5);
+
+  // Expanding 5-shot fire breath fan (-0.22, -0.10, 0, 0.10, 0.22 rad)
+  for (const offset of [-0.22, -0.10, 0, 0.10, 0.22]) {
+    const angle = baseAngle + offset;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = zippoFlameAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + fdx * MUZZLE_OFFSET;
+    const sz = z + fdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "zippo_flame",
+      x: sx,
+      z: sz,
+      vx: fdx * ZIPPO_FLAME_SPEED,
+      vz: fdz * ZIPPO_FLAME_SPEED,
+      life: ZIPPO_FIRE_RANGE / ZIPPO_FLAME_SPEED,
+      maxLife: ZIPPO_FIRE_RANGE / ZIPPO_FLAME_SPEED,
+      damage: ZIPPO_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
@@ -1077,6 +1128,8 @@ export function updateProjectiles(dt: number): void {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
         } else if (pr.kind === "shuriken") {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
+        } else if (pr.kind === "zippo_flame") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 10, 1.4);
         }
         // A bomb against masonry is a bomb going off against masonry. This is
         // what stops "break line of sight" from being the free answer it is
@@ -1106,6 +1159,10 @@ export function updateProjectiles(dt: number): void {
       if (pr.kind === "shuriken") {
         pr.mesh.rotation.y += dt * 35;
         state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
+      }
+      if (pr.kind === "zippo_flame") {
+        pr.mesh.rotation.y += dt * 15;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.02, -pr.vz * 0.02, 1);
       }
 
       // FUSE BURN: the bomb sheds sparks the whole way in, faster as the fuse
@@ -1162,6 +1219,10 @@ export function updateProjectiles(dt: number): void {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 10, 1.5);
             state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "red", 6);
+          } else if (pr.kind === "zippo_flame") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 14, 1.6);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {

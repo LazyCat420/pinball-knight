@@ -72,6 +72,7 @@ import {
   CRAWLING_HAND_ESCAPE_COUNT,
   CRAWLING_HAND_GRAB_DURATION,
   SUMO_NINJA_DAMAGE,
+  ZIPPO_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -977,6 +978,11 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "milkshake") state.vfx?.burst(z.x, 0.4, z.z, 0x84cc16, 14, 1.5);
   // SUMO NINJA crashes down and scatters a burst of metallic shuriken sparks upon death.
   if (z.kind === "sumo_ninja") state.vfx?.burst(z.x, 0.4, z.z, 0xe2e8f0, 14, 1.5);
+  // PYRO ZIPPO snuffs out in a puff of smoke and lingering fire sparks upon death.
+  if (z.kind === "zippo") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xff6600, 14, 1.5);
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.6);
+  }
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1176,6 +1182,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   milkshake: MILKSHAKE_DAMAGE,
   crawling_hand: CRAWLING_HAND_DAMAGE,
   sumo_ninja: SUMO_NINJA_DAMAGE,
+  zippo: ZIPPO_DAMAGE,
 };
 
 /**

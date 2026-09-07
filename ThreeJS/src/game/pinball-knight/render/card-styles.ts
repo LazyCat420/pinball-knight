@@ -571,7 +571,16 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   magnet: "iron",
   platypus: "iron",
   espresso: "stone",
+  gnome: "iron",
+  cigarette: "bone",
+  toucan: "bone",
   jade_buddha: "stone",
+  burger: "bone",
+  fries: "bone",
+  milkshake: "bone",
+  crawling_hand: "bone",
+  sumo_ninja: "iron",
+  zippo: "iron",
 };
 
 /**

@@ -704,6 +704,24 @@ export const SUMO_NINJA_SHURIKEN_SPEED = 9.5;
 export const SUMO_NINJA_RATIO = 17;
 export const SUMO_NINJA_FROM_LEVEL = 4;
 
+/**
+ * PYRO ZIPPO — 1960s rubber-hose cartoon Zippo lighter monster.
+ * Chrome lighter case with open lid, white-gloved hands, cartoon shoes,
+ * and an expressive living flame face. Chugs alcohol from a bottle and
+ * exhales an expanding fan of scorching fire breath.
+ */
+export const ZIPPO_HP = 6;
+export const ZIPPO_R = 0.36;
+export const ZIPPO_SPEED_FACTOR = 0.90;
+export const ZIPPO_FIRE_RANGE = 5.5;
+export const ZIPPO_KITE_RANGE = 3.2;
+export const ZIPPO_WINDUP = 0.55;
+export const ZIPPO_COOLDOWN = 2.2;
+export const ZIPPO_DAMAGE = 1;
+export const ZIPPO_FLAME_SPEED = 7.2;
+export const ZIPPO_RATIO = 16;
+export const ZIPPO_FROM_LEVEL = 2;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;
