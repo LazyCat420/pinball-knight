@@ -31,6 +31,7 @@ import { syncActorMesh, damageZombie, hitPlayerRanged, playerDamage } from "./co
 import { facingFromWorld } from "./zombie";
 import { spawnFloorFx } from "./floor-fx";
 import { PLAYER_R, PINBALL_MAX_SPEED } from "../constants";
+import { animationPresentation } from "../presentation/animation-system";
 
 export const DRAGON_DEFAULT_SEGMENTS = 12;
 export const DRAGON_SEGMENT_DIST = 0.72;
@@ -107,6 +108,7 @@ export function createDragonSnake(
       radius: DRAGON_SEGMENT_RADIUS * (scale / 2.0),
       flinchT: 0,
     };
+    animationPresentation.register(segment);
     syncActorMesh({ sprite, x: segX, z: segZ });
     segments.push(segment);
   }
@@ -136,6 +138,7 @@ export function createDragonSnake(
     radius: DRAGON_SEGMENT_RADIUS * (scale / 2.0) * 0.9,
     flinchT: 0,
   };
+  animationPresentation.register(tail);
   syncActorMesh({ sprite: tailSprite, x: tailX, z: tailZ });
 
   return {
@@ -197,7 +200,6 @@ export function updateDragonSnakeKinematics(dragon: DragonSnakeBoss, dt: number)
       seg.sprite.setTint?.(null);
     }
 
-    seg.anim.update(dt);
     syncActorMesh({ sprite: seg.sprite, x: seg.x, z: seg.z });
 
     leaderX = seg.x;
@@ -232,7 +234,6 @@ export function updateDragonSnakeKinematics(dragon: DragonSnakeBoss, dt: number)
       dragon.tail.sprite.setTint?.(null);
     }
 
-    dragon.tail.anim.update(dt);
     syncActorMesh({ sprite: dragon.tail.sprite, x: dragon.tail.x, z: dragon.tail.z });
   }
 }
@@ -402,11 +403,15 @@ export function onDragonSnakeDeath(dragon: DragonSnakeBoss, dt: number): void {
  * Disposes all meshes and sprites created for the multi-part dragon snake.
  */
 export function disposeDragonSnake(dragon: DragonSnakeBoss): void {
-  if (state.scene) {
-    for (const seg of dragon.segments) {
+  for (const seg of dragon.segments) {
+    animationPresentation.unregister(seg);
+    if (state.scene) {
       state.scene.remove(seg.mesh);
       seg.sprite.mesh.geometry?.dispose();
     }
+  }
+  animationPresentation.unregister(dragon.tail);
+  if (state.scene) {
     state.scene.remove(dragon.tail.mesh);
     dragon.tail.sprite.mesh.geometry?.dispose();
   }
