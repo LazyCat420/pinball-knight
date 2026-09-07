@@ -2272,6 +2272,47 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     }
   }
 
+  // ── CRAWLING HAND GRAB & HOLD ──
+  if ((p.handGrabT ?? 0) > 0) {
+    if (p.handGrabHost && p.handGrabHost.mode === "dead") {
+      p.handGrabT = 0;
+      p.handGrabEscape = 0;
+      p.handGrabHost = null;
+    } else {
+      p.handGrabT = Math.max(0, (p.handGrabT ?? 0) - dt);
+      const ax = input.axis();
+      const spammed =
+        input.consumeAttack() ||
+        input.consumeDodge() ||
+        ax.x !== 0 ||
+        ax.z !== 0;
+      if (spammed) {
+        p.handGrabEscape = Math.max(0, (p.handGrabEscape ?? 5) - 1);
+        state.vfx?.sparks(p.x, 0.4, p.z, 0, 1, 4);
+        if (p.handGrabEscape <= 0) {
+          p.handGrabT = 0;
+          if (p.handGrabHost) {
+            p.handGrabHost.cooldown = 1.0;
+            p.handGrabHost.slipT = 0.8;
+            p.handGrabHost.slipVX = 0;
+            p.handGrabHost.slipVZ = 0;
+          }
+          p.handGrabHost = null;
+          p.iframes = 0.35;
+          showToast("✨ BROKE FREE!", "Hand knocked loose!");
+        }
+      }
+      if ((p.handGrabT ?? 0) > 0 && p.handGrabHost) {
+        p.x = p.handGrabHost.x;
+        p.z = p.handGrabHost.z;
+        p.momSpeed = 0;
+        syncActorMesh(p);
+        p.anim.play("stumble");
+        return;
+      }
+    }
+  }
+
   // ── RICOCHET FORM ── ⚡ bolt / ✨ laser. Checked FIRST among the owners: it
   // is the one state that ignores input entirely, so anything that reads the
   // stick below must not get a look in while it runs.

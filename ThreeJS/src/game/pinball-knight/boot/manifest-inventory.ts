@@ -20,6 +20,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   clockwork_knight: ["E", "N", "S"],
   compass: ["E", "N", "S"],
   crawler: ["S"],
+  crawling_hand: ["S"],
   croaker: ["S"],
   crystalback: ["S"],
   demon: ["S"],

@@ -80,6 +80,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   burger: "kite",
   fries: "kite",
   milkshake: "kite",
+  crawling_hand: "flanker",
   sumo_ninja: "kite",
 };
 

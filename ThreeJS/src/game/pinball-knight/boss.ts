@@ -55,20 +55,27 @@ import {
 } from "./entities/dragon-snake";
 import {
   chargeHoldsMovement,
+  disposeDaggerVolley,
   disposeFanBoomerang,
+  disposeMouthFire,
   freshBarrage,
   freshCharge,
+  freshDaggerVolley,
   freshFanBoomerang,
+  freshMouthFire,
   freshNova,
   freshSlam,
   freshSummon,
   freshTeleportFire,
   makeOrbiter,
+  mouthFireHoldsMovement,
   syncOrbit,
   teleportFireHoldsMovement,
   updateBarrage,
   updateCharge,
+  updateDaggerVolley,
   updateFanBoomerang,
+  updateMouthFire,
   updateNova,
   updateShots,
   updateSlam,
@@ -77,8 +84,10 @@ import {
   type BarrageRt,
   type BossShot,
   type ChargeRt,
+  type DaggerVolleyRt,
   type FanBoomerangRt,
   type MoveCtx,
+  type MouthFireRt,
   type NovaRt,
   type Orbiter,
   type SlamRt,
@@ -252,6 +261,8 @@ interface BossState {
   teleportFire: TeleportFireRt | null;
   fanBoomerang: FanBoomerangRt | null;
   dragonSnake?: DragonSnakeBoss | null;
+  daggerVolley: DaggerVolleyRt | null;
+  mouthFire: MouthFireRt | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -354,6 +365,8 @@ export function spawnBoss(
     nova: null,
     teleportFire: null,
     fanBoomerang: null,
+    daggerVolley: null,
+    mouthFire: null,
     adds: [],
     spawnAdd,
     portal: null,
@@ -497,7 +510,7 @@ export function updateBoss(dt: number): void {
   // this he would simply stand wherever the leash tripped — which is worse than
   // chasing, because the exit ends up unguarded AND he is loitering in a
   // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
-  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire))) {
+  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire)) && !(boss.mouthFire && mouthFireHoldsMovement(boss.mouthFire))) {
     const step = boss.z.speed * KING_RETURN_SPEED * dt;
     const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
     boss.z.x = res.x;
@@ -542,6 +555,8 @@ export function updateBoss(dt: number): void {
     if (p2.moves.nova) boss.nova = freshNova(p2.moves.nova);
     if (p2.moves.teleportFire) boss.teleportFire = freshTeleportFire(p2.moves.teleportFire);
     if (p2.moves.fanBoomerang) boss.fanBoomerang = freshFanBoomerang(p2.moves.fanBoomerang);
+    if (p2.moves.daggerVolley) boss.daggerVolley = freshDaggerVolley(p2.moves.daggerVolley);
+    if (p2.moves.mouthFire) boss.mouthFire = freshMouthFire(p2.moves.mouthFire);
     if (p2.speedMult) boss.z.speed *= p2.speedMult;
     syncOrbiters();
     showToast(p2.title, boss.spec.tagline);
@@ -595,6 +610,16 @@ export function updateBoss(dt: number): void {
   if (moves.fanBoomerang) {
     boss.fanBoomerang ??= freshFanBoomerang(moves.fanBoomerang);
     updateFanBoomerang(boss.fanBoomerang, moves.fanBoomerang, ctx);
+  }
+
+  if (moves.daggerVolley) {
+    boss.daggerVolley ??= freshDaggerVolley(moves.daggerVolley);
+    updateDaggerVolley(boss.daggerVolley, moves.daggerVolley, ctx);
+  }
+
+  if (moves.mouthFire) {
+    boss.mouthFire ??= freshMouthFire(moves.mouthFire);
+    updateMouthFire(boss.mouthFire, moves.mouthFire, ctx, boss.shots);
   }
 
   // ── The ring wheels (after moves so teleports track orbiters instantly) ──
@@ -689,6 +714,14 @@ function clearTelegraphs(): void {
     disposeFanBoomerang(boss.fanBoomerang);
     boss.fanBoomerang = null;
   }
+  if (boss.daggerVolley) {
+    disposeDaggerVolley(boss.daggerVolley);
+    boss.daggerVolley = null;
+  }
+  if (boss.mouthFire) {
+    disposeMouthFire(boss.mouthFire);
+    boss.mouthFire = null;
+  }
 }
 
 // ── Death → portal ────────────────────────────────────────────────────────────
@@ -699,6 +732,14 @@ function openPortal(): void {
   if (boss.fanBoomerang) {
     disposeFanBoomerang(boss.fanBoomerang);
     boss.fanBoomerang = null;
+  }
+  if (boss.daggerVolley) {
+    disposeDaggerVolley(boss.daggerVolley);
+    boss.daggerVolley = null;
+  }
+  if (boss.mouthFire) {
+    disposeMouthFire(boss.mouthFire);
+    boss.mouthFire = null;
   }
 
   // The ring shatters, and every telegraph in flight is dropped — a boss dying
@@ -789,6 +830,11 @@ export function bossNetState(): BossAux | null {
       if (f.state !== "done") {
         netShots.push({ x: Math.round(f.x * 50) / 50, z: Math.round(f.z * 50) / 50 });
       }
+    }
+  }
+  if (boss.daggerVolley) {
+    for (const d of boss.daggerVolley.daggers) {
+      netShots.push({ x: Math.round(d.x * 50) / 50, z: Math.round(d.z * 50) / 50 });
     }
   }
   return {
@@ -1013,6 +1059,8 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     nova: null,
     teleportFire: null,
     fanBoomerang: null,
+    daggerVolley: null,
+    mouthFire: null,
     adds: [],
     // Adds cannot be adopted: the previous authority's brood is in
     // `state.zombies` as ordinary monsters and stays that way.

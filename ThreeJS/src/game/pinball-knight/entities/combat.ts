@@ -68,6 +68,9 @@ import {
   BURGER_DAMAGE,
   FRIES_DAMAGE,
   MILKSHAKE_DAMAGE,
+  CRAWLING_HAND_DAMAGE,
+  CRAWLING_HAND_ESCAPE_COUNT,
+  CRAWLING_HAND_GRAB_DURATION,
   SUMO_NINJA_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
@@ -1171,6 +1174,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   burger: BURGER_DAMAGE,
   fries: FRIES_DAMAGE,
   milkshake: MILKSHAKE_DAMAGE,
+  crawling_hand: CRAWLING_HAND_DAMAGE,
   sumo_ninja: SUMO_NINJA_DAMAGE,
 };
 
@@ -1235,7 +1239,8 @@ export function hitPlayer(z: Zombie): void {
   const dx = p.x - z.x;
   const dz = p.z - z.z;
   const d = Math.hypot(dx, dz) || 1;
-  const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * knockback, (dz / d) * knockback);
+  const actualKnockback = (p.handGrabT ?? 0) > 0 ? 0 : knockback;
+  const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * actualKnockback, (dz / d) * actualKnockback);
   p.x = res.x;
   syncActorMesh(p);
   if (z.kind === "brute" || z.kind === "platypus") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
@@ -1265,6 +1270,14 @@ export function hitPlayer(z: Zombie): void {
     p.chomperGrabEscape = 5;
     p.chomperGrabHost = z;
     showToast("🪴 GRABBED BY CHOMPER!", "SPAM buttons to break free!");
+  }
+
+  // CRAWLING HAND: Severed hand lunges and clamps onto the knight, pinning them in place!
+  if (z.kind === "crawling_hand" && (p.handGrabT ?? 0) <= 0) {
+    p.handGrabT = CRAWLING_HAND_GRAB_DURATION;
+    p.handGrabEscape = CRAWLING_HAND_ESCAPE_COUNT;
+    p.handGrabHost = z;
+    showToast("🖐️ PINNED BY THE HAND!", "SPAM buttons to break free!");
   }
 }
 

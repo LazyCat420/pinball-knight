@@ -671,6 +671,23 @@ export const MILKSHAKE_RATIO = 18;
 export const MILKSHAKE_FROM_LEVEL = 3;
 
 /**
+ * CRAWLING HAND ("Thing" from Addams Family) — severed pale gothic hand
+ * that skitters on its fingertips like a spider. Lunges and clamps onto the
+ * knight, pinning them in place while the rest of the horde swarms and attacks!
+ */
+export const CRAWLING_HAND_HP = 4;
+export const CRAWLING_HAND_R = 0.28;
+export const CRAWLING_HAND_SPEED_MULT = 1.35;
+export const CRAWLING_HAND_CONTACT_RANGE = 0.75;
+export const CRAWLING_HAND_WINDUP = 0.20;
+export const CRAWLING_HAND_COOLDOWN = 1.8;
+export const CRAWLING_HAND_DAMAGE = 1;
+export const CRAWLING_HAND_ESCAPE_COUNT = 5;
+export const CRAWLING_HAND_GRAB_DURATION = 4.0;
+export const CRAWLING_HAND_RATIO = 8;
+export const CRAWLING_HAND_FROM_LEVEL = 2;
+
+/**
  * SUMO_NINJA — fat drunk sumo wrestler dressed in ninja attire.
  * Stumbles erratically around the arena and whips fast-spinning metallic ninja stars
  * (shurikens) when stumbling off-balance. Heavy, rotund tank with high HP.
