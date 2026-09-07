@@ -527,6 +527,22 @@ export const GNOME_ATTACK_COOLDOWN = 1.4;
 export const GNOME_DAMAGE = 1.5;
 export const GNOME_MOWER_DEFLECT = 13.0;
 
+/**
+ * WALKING CIGARETTE — 1950s rubberhose vintage cartoon walking cigarette.
+ * Spindly legs, white gloved hands, cartoon pie-eyes, and glowing lit cherry tip.
+ * Jabs with its burning ember tip to scorch the player, and stubs out into an ash pile on death.
+ */
+export const CIGARETTE_HP = 4;
+export const CIGARETTE_R = 0.32;
+export const CIGARETTE_SPEED_FACTOR = 1.3;
+export const CIGARETTE_RATIO = 19;
+export const CIGARETTE_FROM_LEVEL = 2;
+export const CIGARETTE_CONTACT_RANGE = 0.75;
+export const CIGARETTE_ATTACK_WINDUP = 0.25;
+export const CIGARETTE_ATTACK_COOLDOWN = 1.2;
+export const CIGARETTE_DAMAGE = 1.25;
+export const CIGARETTE_BURN_DURATION = 2.0;
+
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;

@@ -63,6 +63,7 @@ import {
   PLATYPUS_DAMAGE,
   ESPRESSO_DAMAGE,
   GNOME_DAMAGE,
+  CIGARETTE_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -974,6 +975,10 @@ export function killZombie(z: Zombie): void {
   } else if (z.kind === "gnome") {
     state.vfx?.smoke(z.x, 0.6, z.z, 1.2, 16);
     state.vfx?.sparks(z.x, 0.5, z.z, 0, 0.5, 10);
+  } else if (z.kind === "cigarette") {
+    state.vfx?.burst(z.x, 0.3, z.z, 0x555555, 18, 4);
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.9, 12);
+    state.vfx?.sparks(z.x, 0.35, z.z, 0, 0.6, 12);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1134,6 +1139,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   platypus: PLATYPUS_DAMAGE,
   espresso: ESPRESSO_DAMAGE,
   gnome: GNOME_DAMAGE,
+  cigarette: CIGARETTE_DAMAGE,
   jade_buddha: BRUTE_DAMAGE,
 };
 

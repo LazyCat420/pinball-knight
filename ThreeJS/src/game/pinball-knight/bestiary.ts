@@ -64,6 +64,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   platypus: { label: "Iron Platypus", icon: "🦫", blurb: "armored beast with duck bill and heavy segmented steel tail that slams the ground to create shockwave cracks" },
   espresso: { label: "Espresso Cup", icon: "☕", blurb: "hyperactive caffeine terror that spins like a Disneyland teacup and spills scalding coffee on death" },
   gnome: { label: "Lawnmower Gnome", icon: "🧙‍♂️", blurb: "pipe-smoking garden gnome that attacks with a roaring lawnmower and poofs into smoke on death" },
+  cigarette: { label: "Walking Cigarette", icon: "🚬", blurb: "1950s cartoon cigarette with gloves and shoes that attacks by burning with its cherry ember and stubs out into ash on death" },
   jade_buddha: { label: "Jade Buddha", icon: "🪷", blurb: "serene emerald statue with devastating belly slam and returning war fan boomerang" },
 };
 

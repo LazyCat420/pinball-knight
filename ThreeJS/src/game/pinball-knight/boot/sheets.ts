@@ -152,7 +152,7 @@ export type SheetKey =
   | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
-  | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso" | "gnome"
+  | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso" | "gnome" | "cigarette"
   | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha"
   | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail";
 
@@ -163,7 +163,7 @@ export const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
   "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail",
 ]);
 
@@ -423,6 +423,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   platypus: "platypus",
   espresso: "espresso",
   gnome: "gnome",
+  cigarette: "cigarette",
   jade_buddha: "jade_buddha",
   dragon_snake_head: "dragon_snake_head",
   dragon_snake_body: "dragon_snake_body",
@@ -539,7 +540,7 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
 export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", "boss"];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
-  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome");
+  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");

@@ -147,7 +147,8 @@ import {
   PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE,
   ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
   ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT,
-  GNOME_R, GNOME_CONTACT_RANGE, GNOME_ATTACK_WINDUP, GNOME_ATTACK_COOLDOWN, GNOME_MOWER_DEFLECT } from "../constants";
+  GNOME_R, GNOME_CONTACT_RANGE, GNOME_ATTACK_WINDUP, GNOME_ATTACK_COOLDOWN, GNOME_MOWER_DEFLECT,
+  CIGARETTE_R, CIGARETTE_CONTACT_RANGE, CIGARETTE_ATTACK_WINDUP, CIGARETTE_ATTACK_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -214,6 +215,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   platypus: { bodyR: PLATYPUS_R, contactRange: PLATYPUS_CONTACT_RANGE, windup: PLATYPUS_ATTACK_WINDUP, cooldown: PLATYPUS_ATTACK_COOLDOWN, ranged: false },
   espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
   gnome: { bodyR: GNOME_R, contactRange: GNOME_CONTACT_RANGE, windup: GNOME_ATTACK_WINDUP, cooldown: GNOME_ATTACK_COOLDOWN, ranged: false },
+  cigarette: { bodyR: CIGARETTE_R, contactRange: CIGARETTE_CONTACT_RANGE, windup: CIGARETTE_ATTACK_WINDUP, cooldown: CIGARETTE_ATTACK_COOLDOWN, ranged: false },
   jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
 };
 
@@ -557,6 +559,31 @@ export function gnomeLawnmowerCharge(z: Zombie, pdist: number, contactRange: num
   }
 }
 
+/** CIGARETTE: 1950s Cartoon burn attack — brandishes glowing burning cherry ember, spewing orange sparks & smoke, scorches player! */
+export function cigaretteBurnAttack(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (!p || p.hp <= 0) return;
+
+  z.anim.play("attack", { force: true });
+  state.shakeT = Math.max(state.shakeT, 0.15);
+
+  let dx = p.x - z.x;
+  let dz = p.z - z.z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const nx = dx / dist;
+  const nz = dz / dist;
+
+  // Burning cherry sparks, ember burst & smoke trails
+  state.vfx?.sparks?.(z.x + nx * 0.4, 0.55, z.z + nz * 0.4, nx, nz, 12);
+  state.vfx?.burst?.(z.x + nx * 0.4, 0.5, z.z + nz * 0.4, 0xff5500, 6, 2.0);
+  state.vfx?.smoke?.(z.x + nx * 0.3, 0.6, z.z + nz * 0.3, 0.35, 3);
+
+  if (pdist <= contactRange + 0.3) {
+    hitPlayer(z);
+    p.iframes = Math.max(p.iframes || 0, 0.15);
+  }
+}
+
 /** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
 function necroSummon(z: Zombie): void {
   let near = 0;
@@ -626,6 +653,19 @@ export function updateZombies(dt: number): void {
       z.corpseT = (z.corpseT ?? 0) + dt;
       if (z.kind === "gnome") {
         // Poofs into nothing with smoke animation, then splice out cleanly
+        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
+      if (z.kind === "cigarette") {
+        // Stubbed out into crushed butt & ash pile, then splice out cleanly
         if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
           if (z.sprite?.mesh?.parent) {
             z.sprite.mesh.parent.remove(z.sprite.mesh);
@@ -769,6 +809,15 @@ export function updateZombies(dt: number): void {
       if (z.castT <= 0) {
         z.castT = 0.45 + Math.random() * 0.3;
         state.vfx?.smoke?.(z.x, 0.65, z.z, 0.35, 2);
+      }
+    }
+
+    // ── CIGARETTE CHERRY SMOKE ── puffs little wisps of cherry smoke while active
+    if (z.kind === "cigarette") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = 0.35 + Math.random() * 0.3;
+        state.vfx?.smoke?.(z.x, 0.75, z.z, 0.25, 1);
       }
     }
 
@@ -1095,6 +1144,8 @@ export function updateZombies(dt: number): void {
             espressoTeacupSpin(z, pdist, contactRange); // Disneyland spinning teacup attack
           } else if (z.kind === "gnome") {
             gnomeLawnmowerCharge(z, pdist, contactRange); // spinning mower blades & grass fling
+          } else if (z.kind === "cigarette") {
+            cigaretteBurnAttack(z, pdist, contactRange); // burning cherry ember jab
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

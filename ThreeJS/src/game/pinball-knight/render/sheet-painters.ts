@@ -51,6 +51,7 @@ import { makeNecroPaints } from "./monsters/necro";
 import { makePlatypusPaints } from "./monsters/platypus";
 import { makeEspressoPaints } from "./monsters/espresso";
 import { makeGnomePaints } from "./monsters/gnome";
+import { makeCigarettePaints } from "./monsters/cigarette";
 import {
   makeDragonSnakeHeadPaints,
   makeDragonSnakeBodyPaints,
@@ -98,6 +99,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   platypus: makePlatypusPaints,
   espresso: makeEspressoPaints,
   gnome: makeGnomePaints,
+  cigarette: makeCigarettePaints,
   jade_buddha: makeBossPaints,
   dragon_snake_head: makeDragonSnakeHeadPaints,
   dragon_snake_body: makeDragonSnakeBodyPaints,
