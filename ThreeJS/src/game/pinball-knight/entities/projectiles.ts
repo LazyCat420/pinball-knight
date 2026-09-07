@@ -46,6 +46,11 @@ import {
   WARDEN_BULLET_SPEED,
   WARDEN_BULLET_DAMAGE,
   WARDEN_BULLET_BOUNCES,
+  BURGER_FIRE_RANGE,
+  BURGER_DAMAGE,
+  BURGER_TOMATO_SPEED,
+  BURGER_LETTUCE_SPEED,
+  BURGER_SAUCE_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -178,6 +183,30 @@ function copBulletAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMateri
   return { geo: _copBulletGeo, mat: _copBulletMat };
 }
 
+let _tomatoGeo: THREE.CylinderGeometry | null = null;
+let _tomatoMat: THREE.MeshBasicMaterial | null = null;
+function tomatoAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _tomatoGeo ??= new THREE.CylinderGeometry(0.18, 0.18, 0.04, 10);
+  _tomatoMat ??= new THREE.MeshBasicMaterial({ color: 0xdc2626 }); // ripe red tomato
+  return { geo: _tomatoGeo, mat: _tomatoMat };
+}
+
+let _lettuceGeo: THREE.BoxGeometry | null = null;
+let _lettuceMat: THREE.MeshBasicMaterial | null = null;
+function lettuceAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _lettuceGeo ??= new THREE.BoxGeometry(0.18, 0.03, 0.24);
+  _lettuceMat ??= new THREE.MeshBasicMaterial({ color: 0x22c55e }); // fresh green lettuce leaf
+  return { geo: _lettuceGeo, mat: _lettuceMat };
+}
+
+let _sauceGeo: THREE.SphereGeometry | null = null;
+let _sauceMat: THREE.MeshBasicMaterial | null = null;
+function sauceAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _sauceGeo ??= new THREE.SphereGeometry(0.13, 8, 6);
+  _sauceMat ??= new THREE.MeshBasicMaterial({ color: 0xeab308 }); // tangy mustard/mayo sauce
+  return { geo: _sauceGeo, mat: _sauceMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -200,12 +229,19 @@ export function disposeProjectileAssets(): void {
   _timberMat?.dispose();
   _bombGeo?.dispose();
   _bombMat?.dispose();
+  _tomatoGeo?.dispose();
+  _tomatoMat?.dispose();
+  _lettuceGeo?.dispose();
+  _lettuceMat?.dispose();
+  _sauceGeo?.dispose();
+  _sauceMat?.dispose();
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
   _beamGeo = _beamMat = null;
   _timberGeo = _timberMat = null;
   _bombGeo = _bombMat = null;
+  _tomatoGeo = _tomatoMat = _lettuceGeo = _lettuceMat = _sauceGeo = _sauceMat = null;
 }
 
 /**
@@ -568,6 +604,98 @@ export function fireCopBullet(x: number, z: number, dx: number, dz: number): voi
 }
 
 /**
+ * The BURGER BEAST's deconstruct attack:
+ * The hamburger separates in mid-air and flings a 3-part ingredient fan burst:
+ * 1. Tomato slice (center, spinning red disc)
+ * 2. Lettuce cutter (left, fluttering green leaf)
+ * 3. Mustard/Mayo glob (right, sticky condiment blob that slows the player)
+ */
+export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+
+  // Deconstruct burst VFX
+  state.vfx?.burst(x + dx * 0.3, PROJECTILE_Y, z + dz * 0.3, 0xf59e0b, 8, 1.8);
+
+  // 1. Tomato slice (center)
+  {
+    const { geo, mat } = tomatoAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + dx * MUZZLE_OFFSET;
+    const sz = z + dz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.x = Math.PI / 2;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "burger_tomato",
+      x: sx,
+      z: sz,
+      vx: dx * BURGER_TOMATO_SPEED,
+      vz: dz * BURGER_TOMATO_SPEED,
+      life: BURGER_FIRE_RANGE / BURGER_TOMATO_SPEED,
+      maxLife: BURGER_FIRE_RANGE / BURGER_TOMATO_SPEED,
+      damage: BURGER_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+
+  // 2. Lettuce blade (left fan: -0.28 rad)
+  {
+    const angle = baseAngle - 0.28;
+    const ldx = Math.sin(angle);
+    const ldz = Math.cos(angle);
+    const { geo, mat } = lettuceAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + ldx * MUZZLE_OFFSET;
+    const sz = z + ldz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "burger_lettuce",
+      x: sx,
+      z: sz,
+      vx: ldx * BURGER_LETTUCE_SPEED,
+      vz: ldz * BURGER_LETTUCE_SPEED,
+      life: BURGER_FIRE_RANGE / BURGER_LETTUCE_SPEED,
+      maxLife: BURGER_FIRE_RANGE / BURGER_LETTUCE_SPEED,
+      damage: BURGER_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+
+  // 3. Mustard/Mayo glob (right fan: +0.28 rad)
+  {
+    const angle = baseAngle + 0.28;
+    const rdx = Math.sin(angle);
+    const rdz = Math.cos(angle);
+    const { geo, mat } = sauceAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + rdx * MUZZLE_OFFSET;
+    const sz = z + rdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "burger_sauce",
+      x: sx,
+      z: sz,
+      vx: rdx * BURGER_SAUCE_SPEED,
+      vz: rdz * BURGER_SAUCE_SPEED,
+      life: BURGER_FIRE_RANGE / BURGER_SAUCE_SPEED,
+      maxLife: BURGER_FIRE_RANGE / BURGER_SAUCE_SPEED,
+      damage: BURGER_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
+/**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
  * is a room-clearing event if you detonate it in a crowd.
@@ -783,6 +911,12 @@ export function updateProjectiles(dt: number): void {
         // Arrows/bullets spit a spark off the masonry they bury into.
         if (pr.kind === "arrow" || pr.kind === "bullet") {
           state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
+        } else if (pr.kind === "burger_tomato") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xdc2626, 8, 1.2);
+        } else if (pr.kind === "burger_lettuce") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 6, 1.0);
+        } else if (pr.kind === "burger_sauce") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 8, 1.0);
         }
         // A bomb against masonry is a bomb going off against masonry. This is
         // what stops "break line of sight" from being the free answer it is
@@ -797,6 +931,11 @@ export function updateProjectiles(dt: number): void {
       // motion cue on a projectile this slow — without it the log reads as a
       // static prop sliding across the floor.
       if (pr.kind === "timber") pr.mesh.rotation.y += dt * 7;
+      if (pr.kind === "burger_tomato") pr.mesh.rotation.y += dt * 20;
+      if (pr.kind === "burger_lettuce") {
+        pr.mesh.rotation.y += dt * 8;
+        pr.mesh.rotation.z += dt * 6;
+      }
 
       // FUSE BURN: the bomb sheds sparks the whole way in, faster as the fuse
       // shortens. The trail is the countdown made visible — the player has to be
@@ -831,6 +970,16 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
           } else if (pr.kind === "bomb") {
             detonate(pr.x, pr.z);
+          } else if (pr.kind === "burger_sauce") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            if (p.iframes <= 0) webPlayer();
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 12, 1.5);
+          } else if (pr.kind === "burger_tomato") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xdc2626, 12, 1.8);
+          } else if (pr.kind === "burger_lettuce") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 10, 1.5);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {

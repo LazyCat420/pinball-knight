@@ -561,6 +561,31 @@ export const FISH_FEET_FROM_LEVEL = 2;
  */
 export const FISH_FEET_DAMAGE = 2;
 
+// ── Floating Hamburger Monster (The Deconstructor) ─────────────
+/**
+ * BURGER BEAST / THE DECONSTRUCTOR — a floating hamburger with lobster eyestalks.
+ * Hovers at range, deconstructs its layers to launch a volley of ingredients
+ * (flying tomato discs, razor lettuce leaves, sticky mustard/mayo globs), and
+ * rapidly decomposes upon death, leaving a toxic rotting puddle on the floor.
+ */
+export const BURGER_HP = 4;
+export const BURGER_R = 0.35;
+export const BURGER_SPEED_FACTOR = 0.95;
+export const BURGER_FIRE_RANGE = 6.5;
+export const BURGER_KITE_RANGE = 3.2;
+export const BURGER_WINDUP = 0.55;
+export const BURGER_COOLDOWN = 2.6;
+export const BURGER_DAMAGE = 1;
+export const BURGER_TOMATO_SPEED = 7.5;
+export const BURGER_LETTUCE_SPEED = 6.0;
+export const BURGER_SAUCE_SPEED = 6.8;
+export const BURGER_SAUCE_SLOW_TIME = 1.8;
+export const BURGER_ROT_RADIUS = 1.6;
+export const BURGER_ROT_LIFE = 6.0;
+export const BURGER_ROT_DAMAGE = 1;
+export const BURGER_RATIO = 17;
+export const BURGER_FROM_LEVEL = 3;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;

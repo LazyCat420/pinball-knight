@@ -356,7 +356,8 @@ export type EnemyKind =
   | "mimic" // AMBUSHER — dormant + item-like until you're close, then lunges
   | "platypus" // SLAMMER — heavy armored platypus with metal tail ground slam
   | "espresso" // SKIRMISHER — walking espresso cup, spins like a teacup and spills scalding coffee on death
-  | "jade_buddha"; // BOSS — serene emerald buddha statue with boomerang fan
+  | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
+  | "burger"; // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -834,7 +835,7 @@ export interface Projectile {
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee" | "rot";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;

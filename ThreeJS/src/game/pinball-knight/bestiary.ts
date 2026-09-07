@@ -64,6 +64,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   platypus: { label: "Iron Platypus", icon: "🦫", blurb: "armored beast with duck bill and heavy segmented steel tail that slams the ground to create shockwave cracks" },
   espresso: { label: "Espresso Cup", icon: "☕", blurb: "hyperactive caffeine terror that spins like a Disneyland teacup and spills scalding coffee on death" },
   jade_buddha: { label: "Jade Buddha", icon: "🪷", blurb: "serene emerald statue with devastating belly slam and returning war fan boomerang" },
+  burger: { label: "Burger Beast", icon: "🍔", blurb: "floating hamburger with lobster eyestalks that deconstructs itself to attack with flying ingredients and rots on death" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

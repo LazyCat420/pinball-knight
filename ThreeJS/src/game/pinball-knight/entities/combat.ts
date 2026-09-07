@@ -62,6 +62,7 @@ import {
   CROAKER_SPIN_DAMAGE,
   PLATYPUS_DAMAGE,
   ESPRESSO_DAMAGE,
+  BURGER_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -856,6 +857,15 @@ export function triggerEspressoSpill(x: number, z: number): void {
   onEspressoSpill?.(x, z);
 }
 
+/** BURGER death → decomposed rotting puddle hazard. */
+let onBurgerRot: ((x: number, z: number) => void) | null = null;
+export function setBurgerRotHandler(fn: (x: number, z: number) => void): void {
+  onBurgerRot = fn;
+}
+export function triggerBurgerRot(x: number, z: number): void {
+  onBurgerRot?.(x, z);
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -950,6 +960,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
   // An ESPRESSO cup shatters and spills boiling coffee that burns anyone nearby.
   if (z.kind === "espresso") onEspressoSpill?.(z.x, z.z);
+  // A BURGER decomposes and leaves a rotting mold puddle hazard.
+  if (z.kind === "burger") onBurgerRot?.(z.x, z.z);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1130,6 +1142,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   platypus: PLATYPUS_DAMAGE,
   espresso: ESPRESSO_DAMAGE,
   jade_buddha: BRUTE_DAMAGE,
+  burger: BURGER_DAMAGE,
 };
 
 /**

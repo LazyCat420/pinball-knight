@@ -44,6 +44,7 @@ import {
   setBloaterBurstHandler,
   setSporelingBurstHandler,
   setEspressoSpillHandler,
+  setBurgerRotHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -71,6 +72,9 @@ import {
   ESPRESSO_SPILL_RADIUS,
   ESPRESSO_SPILL_LIFE,
   ESPRESSO_SPILL_DAMAGE,
+  BURGER_ROT_RADIUS,
+  BURGER_ROT_LIFE,
+  BURGER_ROT_DAMAGE,
   CARD_BURN_TICK,
   BOSS_GOLD,
   GOLD_PER_KILL,
@@ -351,6 +355,45 @@ export function installGameplayWiring(deps: WiringDeps): void {
   setSporelingBurstHandler((x, z) => {
     state.vfx?.sporeCloud(x, 0.4, z, 1.8);
     spawnFloorFx("slick", x, z, 1.2, 3.5);
+  });
+  // A BURGER decomposes upon death, leaving a toxic decaying rot puddle with mold spores
+  setBurgerRotHandler((x, z) => {
+    // 1. Persistent rot floor hazard decal
+    spawnFloorFx("rot", x, z, BURGER_ROT_RADIUS, BURGER_ROT_LIFE, true);
+
+    // 2. Rot sludge burst & green decay spore particles
+    state.vfx?.burst(x, 0.25, z, 0x3f5218, 20, 2.2); // green mold sludge
+    state.vfx?.burst(x, 0.3, z, 0x854d0e, 14, 1.8);  // rotting patty brown
+    state.vfx?.dust(x, 0.2, z);
+
+    // 3. Audio cue
+    sfxFlame();
+
+    // 4. Harm nearby monsters in the immediate rot explosion
+    for (const other of state.zombies) {
+      if (other.hp <= 0 || (other.mode as string) === "dead") continue;
+      const dx = other.x - x;
+      const dz = other.z - z;
+      const distSq = dx * dx + dz * dz;
+      const r = BURGER_ROT_RADIUS + (other.bodyR || 0.35);
+      if (distSq <= r * r) {
+        damageZombie(other, BURGER_ROT_DAMAGE, 0, 0, 0.5);
+        state.vfx?.burst(other.x, 0.3, other.z, 0x4d7c0f, 4, 0.8);
+      }
+    }
+
+    // Check player proximity
+    if (state.player && state.player.hp > 0) {
+      const px = state.player.x;
+      const pz = state.player.z;
+      const dx = px - x;
+      const dz = pz - z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= BURGER_ROT_RADIUS * BURGER_ROT_RADIUS) {
+        hitPlayerRanged(BURGER_ROT_DAMAGE, x, z);
+        state.vfx?.burst(px, 0.25, pz, 0x4d7c0f, 6, 1.0);
+      }
+    }
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

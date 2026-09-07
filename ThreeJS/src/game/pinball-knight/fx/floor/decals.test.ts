@@ -65,10 +65,11 @@ describe("the shader registry", () => {
   it("covers every FLUID kind — only the non-substances are left on canvas", () => {
     // Stated as a complement rather than a list, so adding a new FloorFxKind
     // forces a decision here instead of silently defaulting to the canvas path.
-    // `groove` and `fissure` are stone scars, `shard-field` is glitter, and
-    // `coffee` uses a dedicated canvas painter with crema swirl & steam motes.
+    // `groove` and `fissure` are stone scars, `shard-field` is glitter,
+    // `coffee` uses a dedicated canvas painter with crema swirl & steam motes,
+    // and `rot` is a decomposing sludge puddle decal.
     const canvas = FLOOR_FX_KINDS().filter((k: FloorFxKind) => !hasElementShader(k));
-    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "shard-field"]);
+    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "rot", "shard-field"]);
   });
 
   it("builds a working material for every registered kind", () => {

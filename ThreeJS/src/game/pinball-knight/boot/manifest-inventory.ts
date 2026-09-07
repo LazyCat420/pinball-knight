@@ -12,6 +12,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   bloater: ["S"],
   broodmother: ["S"],
   brute: ["S"],
+  burger: ["S"],
   chomper: ["S"],
   compass: ["E", "N", "S"],
   crawler: ["S"],
