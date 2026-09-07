@@ -138,4 +138,21 @@ project-local lock did not protect against a later release from an older branch.
 - Regression checks: all 12 guard tests passed against real divergent Git
   history. The actual regressing revision `0e60c8cc` was rejected; recovery
   `0a6a2634` passed against the running NAS. All 31 focused game tests passed.
-- Full gate and recovered public deployment verification are pending.
+- Recovery deployed at `63d9def9` on 2026-09-07 at 01:22 PDT. Full suite:
+  333 files passed / 5 skipped; 3,924 tests passed / 12 skipped; zero failures.
+- Public browser build `2026-09-07T08:22:26Z` played all seven cinematic phases
+  and entered the tavern with zero monster imports and no script errors.
+- Clockwork Knight was explicitly selected and reached active dungeon gameplay;
+  the character identity and screenshot were checked, with no script or network
+  failures. All 21 relevant public sprite pairs match the source bytes.
+- Image, NAS and public HTML match; NAS is running / healthy at `63d9def9`.
+- Remote `main` was fast-forwarded from `0e60c8cc` to `d2e6f5ca`, including the
+  complete game and a wrapper check that refuses an outdated deploy-kit without
+  `release-guard.sh`. This host-only wrapper change needs no new container image.
+- Confirmed the guard rejects both the regressing branch `0e60c8cc` and the
+  previously good release `b9c68ff2` against the restored running release.
+- Shared deploy-kit `master` is updated locally to `d1cdb39`. Pushing that
+  separate repository to its configured origin returned “Repository not found”;
+  the guard is installed and active on this deployment host. The Pinball Knight
+  main push succeeded. Other hosts must install the updated shared kit; the new
+  game wrapper fails closed if the guard is missing.
