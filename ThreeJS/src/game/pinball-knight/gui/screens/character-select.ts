@@ -1,3 +1,4 @@
+import { CLOCKWORK_LAUNCHES } from "../../clockwork-launches";
 /**
  * WHO ARE YOU PLAYING — the lobby's first question.
  *
@@ -26,6 +27,7 @@
  * null on ANY failure, and an offer the atlas cannot honour is how the stiltneck
  * shipped invisible for weeks.
  */
+import { CLOCKWORK_EMOTES, activeClockworkEmote, emoteUnlocked, equipClockworkEmote } from "../../clockwork-emotes";
 import { UI, GRID, ROW_H } from "../theme";
 import { clampFocus, focusRing, focusable, rect, scrim, sheet, strokeRect, text, button } from "../im";
 import { pop, type UiScreen } from "../stack";
@@ -41,6 +43,7 @@ interface Preview {
   cell: readonly number[];
   /** The sheet's own `mirror` flag — the card must show what the game draws. */
   mirror: boolean;
+  roll: readonly (readonly number[])[];
 }
 
 export function characterSelectScreen(onDone: () => void): UiScreen {
@@ -50,13 +53,13 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
 
   // Kick the loads off once, at construction. `paint` runs every frame and must
   // stay synchronous — starting a fetch from inside it would open one per frame.
-  for (const c of PLAYABLE) {
+  for (const c of [...PLAYABLE, {sheet:"clockwork_knight_football"}, {sheet:"clockwork_knight_baseball"}]) {
     void loadImportedSheet(c.sheet, "S").then((s) => {
       const idle = s?.manifest.rows.find((r) => r.clip === "idle");
       previews.set(
         c.sheet,
         s && idle?.cells.length
-          ? { image: s.image, cell: idle.cells[0], mirror: s.manifest.mirror === true }
+          ? { image: s.image, cell: idle.cells[0], mirror: s.manifest.mirror === true, roll: s.manifest.rows.find(r => r.clip === "roll")?.cells ?? [] }
           : null,
       );
     });
@@ -73,6 +76,20 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
       const cardCount = PLAYABLE.length;
       const confirmIndex = cardCount;
       let handled = false;
+      // Emote row is registered after Confirm, so preserve existing card indices.
+      if (chosen === "clockwork_knight") {
+        if (self.focus >= cardCount + 1) {
+          if (input.left > 0) self.focus = Math.max(cardCount + 1, self.focus - 1);
+          else if (input.right > 0) self.focus = Math.min(cardCount + 3, self.focus + 1);
+          else if (input.up > 0) self.focus = 1;
+          else if (input.down > 0) self.focus = confirmIndex;
+          else return false;
+          f.focus = self.focus; return true;
+        }
+        if (self.focus < cardCount && input.down > 0) {
+          self.focus = cardCount + 1; f.focus = self.focus; return true;
+        }
+      }
 
       if (input.right > 0) {
         if (self.focus < cardCount - 1) {
@@ -116,7 +133,7 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         colour: UI.gold,
         align: "center",
       });
-      text(f, "THE PAINTER STILL DRAWS THE BALL FORMS — ONLY THE ON-FOOT CLIPS CHANGE", body.x + body.w / 2, body.y + 28, {
+      text(f, "CHOOSE YOUR HERO — CLOCKWORK KNIGHT ROLLS HIS OWN HEAD", body.x + body.w / 2, body.y + 28, {
         size: 8,
         colour: UI.textDim,
         align: "center",
@@ -130,7 +147,9 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
       for (const c of PLAYABLE) {
         const cell = rect(x, top, CARD_W, CARD_H);
         const st = focusable(f, cell);
-        const preview = previews.get(c.sheet);
+        const emote = activeClockworkEmote();
+        const previewName = c.sheet === "clockwork_knight" && emote !== "bowling" ? `${c.sheet}_${emote}` : c.sheet;
+        const preview = previews.get(previewName);
         // THE DEFAULT CHARACTER NEEDS NO SHEET. He is the painter's, and
         // `resolvePaints` draws him whether an imported sheet exists or not — so
         // gating him on one makes the fallback character the one you cannot
@@ -143,7 +162,7 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         if ((st.focused || st.activated) && ready && !busy) chosen = c.sheet;
 
         // Instant-pick on direct activation (pressing A or clicking the card)
-        if (st.activated && ready && !busy) {
+        if (st.activated && ready && !busy && chosen !== "clockwork_knight") {
           busy = true;
           void switchPlayerSheet(chosen).finally(() => pop());
         }
@@ -152,7 +171,9 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         if (st.focused) focusRing(f, cell);
 
         if (preview) {
-          const [cx0, cy0, cx1, cy1] = preview.cell;
+          const previewFrame = c.sheet === "clockwork_knight" && chosen === c.sheet && preview.roll.length
+            ? preview.roll[Math.floor(performance.now() / 150) % preview.roll.length] : preview.cell;
+          const [cx0, cy0, cx1, cy1] = previewFrame;
           const sw = cx1 - cx0 + 1;
           const sh = cy1 - cy0 + 1;
           // WHOLE-NUMBER RATIOS BOTH WAYS. This layer is nearest-sampled pixel
@@ -225,6 +246,18 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         // the player into the lobby as whoever they were, with the swap landing
         // a frame or two later — which reads as the choice being ignored.
         void switchPlayerSheet(chosen).finally(() => pop());
+      }
+      if (chosen === "clockwork_knight") {
+        text(f, "PINBALL EMOTES — EQUIP A LAUNCH", body.x + body.w / 2, top + CARD_H + 9, {size:8, colour:UI.gold, align:"center"});
+        CLOCKWORK_EMOTES.forEach((emote, i) => {
+          const owned = emoteUnlocked(emote.id), active = activeClockworkEmote() === emote.id;
+          const label = `${emote.icon} ${emote.label}${active ? " ✓" : owned ? "" : ` · Floor ${emote.floor}`}`;
+          if (button(f, rect(body.x + 16 + i * 184, top + CARD_H + 26, 176, ROW_H), label) && owned && !busy) {
+            equipClockworkEmote(emote.id);
+          }
+        });
+        text(f, CLOCKWORK_LAUNCHES[activeClockworkEmote()].benefit, body.x + body.w / 2, top + CARD_H + 62,
+          {size:8, colour:UI.textDim, align:"center"});
       }
       self.focus = f.focus;
     },

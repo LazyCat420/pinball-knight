@@ -4,7 +4,7 @@
  * the knight around it during the intro.
  *
  * Pure and three-free on purpose (same contract as maze/generator.ts): the
- * intro's visual layer feeds this Grid to buildMaze() unchanged, and the
+ * intro's visual layer instances the walls from this Grid unchanged, and the
  * collision it bounces on is the game's REAL moveCircle — so the intro's
  * physics can never drift from gameplay's.
  */
@@ -44,7 +44,7 @@ function wordWidth(word: string): number {
 
 export interface TitleLayout {
   grid: Grid;
-  /** Where the knight materialises after the 2D world shatters. */
+  /** Where the knight materialises after entering the enchanted cabinet. */
   spawn: { x: number; z: number };
   /** World-space centre of the title block — the camera's final target. */
   center: { x: number; z: number };

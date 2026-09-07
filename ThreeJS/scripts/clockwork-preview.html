@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Clockwork Knight launch animations</title>
+<style>body{margin:0;background:#142033;color:#e4edf5;font:16px system-ui;padding:32px}h1{font-size:25px;margin:0 0 10px}.cards{display:flex;gap:20px;flex-wrap:wrap}article{border:1px solid #536478;border-radius:12px;padding:20px;background:#1b2a40}canvas{width:256px;height:320px;display:block}button{padding:10px 18px;margin:10px 10px 24px 0;color:#142033;background:#e2bd77;border:0;border-radius:6px;cursor:pointer}h2{font-size:20px;margin:0}p{color:#b4c5d9}</style>
+<h1>Clockwork Knight · Launch animations</h1><p>Bowling release, one-handed football pass, and sword batting swing. These are the actual gameplay sprite frames.</p>
+<button id="pause">Pause</button><button id="facing">View side</button><div class="cards"></div>
+<script type="module">
+import { CLOCKWORK_LAUNCHES } from "/src/game/pinball-knight/clockwork-launches.ts";
+let paused=false,side=false,time=0,last=performance.now();const cards=[];
+for(const [name,label,fps] of [['clockwork_knight','🎳 Bowling',40],['clockwork_knight_football','🏈 Football',16],['clockwork_knight_baseball','⚾ Sword baseball',16/1.35]]){
+ const style=name==='clockwork_knight'?'bowling':name.split('_').at(-1);
+ const article=document.createElement('article');article.innerHTML=`<h2>${label}</h2><p>${CLOCKWORK_LAUNCHES[style].benefit}</p><canvas width="256" height="320"></canvas>`;document.querySelector('.cards').append(article);
+ const sheets={};for(const dir of ['S','E']){const manifest=await(await fetch(`/sprites/${name}-${dir}.json`,{cache:'no-store'})).json();const image=new Image();image.src=manifest.image+'?v='+manifest.hash;await image.decode();sheets[dir]={image,count:manifest.rows.find(r=>r.clip==='roll').cells.length};}
+ cards.push({canvas:article.querySelector('canvas'),sheets,fps});
+}
+document.querySelector('#pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Play':'Pause'};
+document.querySelector('#facing').onclick=e=>{side=!side;e.target.textContent=side?'View front':'View side'};
+function frame(now){if(!paused)time+=(now-last)/1000;last=now;for(const c of cards){const g=c.canvas.getContext('2d'),sheet=c.sheets[side?'E':'S'];const phase=time%Math.max(3,(sheet.count+6)/c.fps);const i=Math.min(sheet.count-1,Math.floor(phase*c.fps));const cell=40+i;g.clearRect(0,0,256,320);g.drawImage(sheet.image,(cell%8)*256,Math.floor(cell/8)*320,256,320,0,0,256,320);}requestAnimationFrame(frame)}requestAnimationFrame(frame);
+</script></html>

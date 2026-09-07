@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Clockwork Knight · Sprite studio</title><style>body{margin:0;background:#152336;color:#d8eaf0;font:14px system-ui;padding:24px}h1{font-size:24px}canvas{max-width:100%;height:auto;background:repeating-conic-gradient(#24364b 0% 25%,#1b2c40 0% 50%) 0/24px 24px}</style></head><body><h1>Clockwork Knight · Sprite studio</h1><p>Production sprite sheets rendered from the shared 3D rig. Front / back / right side; west mirrors east.</p><div id="preview"></div><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import { createClockworkKnight } from '/src/game/pinball-knight/render/clockwork-knight.ts';
+const W=256,H=320,COLS=8;
+
+window.bakeClockworkSheets=async(emote="bowling")=>{
+ const clips=[['idle',8],['walk',8],['run',8],['attack',8],['death',8],['roll',emote==='baseball'?40:24],['ball',8]];
+ const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true}); renderer.setSize(W,H); renderer.setPixelRatio(1);renderer.setClearColor(0,0); renderer.outputColorSpace=THREE.SRGBColorSpace;
+ const scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xc3eaff,0x394963,1.4));
+ const light=new THREE.DirectionalLight(0xffeccb,2.1);light.position.set(-3,6,5);scene.add(light);
+ const rim=new THREE.DirectionalLight(0xa1edff,.7);rim.position.set(3,2,-4);scene.add(rim);
+ const camera=new THREE.OrthographicCamera(-2.35,2.35,2.9375,-2.9375,.1,30); camera.position.set(0,3.6,9);camera.lookAt(0,1.5,0);
+ const rig=createClockworkKnight();scene.add(rig.root);
+ const result=[]; const name=emote==='bowling'?'clockwork_knight':`clockwork_knight_${emote}`;
+ for(const [dir,yaw] of [['S',0],['N',Math.PI],['E',Math.PI/2]]){
+  const canvas=document.createElement('canvas');canvas.width=W*COLS;canvas.height=H*(emote==='baseball'?11:9);const ctx=canvas.getContext('2d');const rows=[];let frame=0;
+  rig.root.rotation.y=yaw;
+  for(const [clip,count] of clips){const cells=[];
+   for(let i=0;i<count;i++){
+    const looping=['idle','walk','run','ball'].includes(clip),u=i/(looping?count:count-1);
+    if(clip==='roll') { const enter=count-8; if(i<enter) rig.pose('remove',i/(enter-1),emote); else if(i<enter+4) rig.pose('ball',(i-enter)/4,emote); else rig.pose('return',(i-enter-4)/3,emote); } else rig.pose(clip,u,emote);renderer.render(scene,camera);
+    const x=(frame%COLS)*W,y=Math.floor(frame/COLS)*H;ctx.drawImage(renderer.domElement,x,y);cells.push([x,y,x+W-1,y+H-1]);frame++;
+   }
+   rows.push({clip,cells});
+  }
+  // One shared registration rectangle for every pose: no per-frame crop wobble.
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  let minX=W,minY=H,maxX=0,maxY=0;
+  for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>24){
+    const lx=x%W,ly=y%H;minX=Math.min(minX,lx);maxX=Math.max(maxX,lx);minY=Math.min(minY,ly);maxY=Math.max(maxY,ly);
+  }
+  const half=Math.min(W/2,Math.max(W/2-minX,maxX-W/2)+2);
+  for(const row of rows)row.cells=row.cells.map(([x,y])=>[x+W/2-half,y+Math.max(0,minY-2),x+W/2+half-1,y+Math.min(H-1,maxY+2)]);
+  const png=canvas.toDataURL('image/png');
+  result.push({dir,png,manifest:{name,dir,image:`/sprites/${name}-${dir}.png`,source:[canvas.width,canvas.height],grid:1,mirror:false,palette:['#132337','#182d43','#263c53','#405971','#536f89','#7896af','#94afc3','#b2c9d8','#d0e5ed','#f0f5e9','#725735','#94713b','#c69b52','#e5c57e','#723042','#a93653','#d25565','#f08085','#287c99','#42bdd1','#78edff'],rows}});
+  const label=document.createElement('h2');label.textContent=dir;document.querySelector('#preview').append(label,canvas);
+ }
+ rig.dispose();renderer.dispose();return result;
+};
+window.studioReady=true;
+</script></body></html>

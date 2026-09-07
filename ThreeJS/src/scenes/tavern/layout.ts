@@ -393,7 +393,22 @@ export function moveInRoom(fromX: number, fromZ: number, toX: number, toZ: numbe
   for (const o of OBSTACLES) {
     const hx = o.w / 2 + r;
     const hz = o.d / 2 + r;
-    if (Math.abs(x - o.x) >= hx || Math.abs(z - o.z) >= hz) continue; // clear of this one
+    if (Math.abs(x - o.x) >= hx || Math.abs(z - o.z) >= hz) continue;
+    // The player is a circle. A uniformly expanded box reserves square corner
+    // patches of otherwise open floor, so sideways motion catches on empty air.
+    const nearX = clamp(x, o.x - o.w / 2, o.x + o.w / 2);
+    const nearZ = clamp(z, o.z - o.d / 2, o.z + o.d / 2);
+    const cornerX = x - nearX, cornerZ = z - nearZ;
+    const distance2 = cornerX * cornerX + cornerZ * cornerZ;
+    if (distance2 >= r * r && distance2 > 0) continue;
+    if (cornerX !== 0 && cornerZ !== 0) {
+      // On a corner, slide around its circular contact boundary rather than
+      // snapping to one of the square padding's two imaginary faces.
+      const scale = (r + EJECT_EPS) / Math.sqrt(distance2);
+      x = nearX + cornerX * scale;
+      z = nearZ + cornerZ * scale;
+      continue;
+    }
 
     const wasClearX = Math.abs(fromX - o.x) >= hx;
     const wasClearZ = Math.abs(fromZ - o.z) >= hz;
@@ -433,7 +448,10 @@ export function moveInRoom(fromX: number, fromZ: number, toX: number, toZ: numbe
 export function isOpen(x: number, z: number, r = PLAYER_RADIUS): boolean {
   if (x < ROOM.minX + r || x > ROOM.maxX - r || z < ROOM.minZ + r || z > ROOM.maxZ - r) return false;
   for (const o of OBSTACLES) {
-    if (Math.abs(x - o.x) < o.w / 2 + r && Math.abs(z - o.z) < o.d / 2 + r) return false;
+    const dx = x - clamp(x, o.x - o.w / 2, o.x + o.w / 2);
+    const dz = z - clamp(z, o.z - o.d / 2, o.z + o.d / 2);
+    if (dx * dx + dz * dz < r * r) return false;
+    if (r === 0 && Math.abs(x - o.x) < o.w / 2 && Math.abs(z - o.z) < o.d / 2) return false;
   }
   return true;
 }

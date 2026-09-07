@@ -1,3 +1,5 @@
+import { stepLaunchMomentum, resetLaunchMomentum } from "./launch-momentum";
+import { ballisticArcHeight } from "../ballistic-arc";
 /**
  * The hero — grid-free continuous movement, a 4-way facing, and an attack
  * that depends on what's in the active hand:
@@ -285,6 +287,7 @@ export function resetPlayerMotion(): void {
     state.player.sprintCharge = 0;
     state.player.overcharge = 0;
     state.player.momSpeed = 0;
+    resetLaunchMomentum(state.player);
     state.player.bounceCombo = 0;
     state.player.bounceComboT = 0;
     state.player.oilT = 0;
@@ -1331,7 +1334,7 @@ function updateHop(dt: number): boolean {
   }
   syncActorMesh(p); // pins y=0; lift after, like the ride
   const peakHgt = p.hopHeight && p.hopHeight > 0 ? p.hopHeight : RAMP_HOP_HEIGHT;
-  const hgt = Math.sin(Math.PI * u) * peakHgt;
+  const hgt = ballisticArcHeight(u, peakHgt);
   p.sprite.mesh.position.y = hgt;
   // Pin the contact shadow to the floor. Without this the blob — a child of the
   // sprite mesh — rides up with the knight, killing the only cue that reads as
@@ -1515,7 +1518,13 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     return true;
   }
 
-  if (p.momSpeed <= 0) return false;
+  if (p.momSpeed <= 0) { resetLaunchMomentum(p); return false; }
+  const launchBonus = stepLaunchMomentum(p, dt, Math.min(PINBALL_MAX_SPEED, materialMaxSpeed()));
+  if (launchBonus.boosted) {
+    showPickupNote(launchBonus.label);
+    state.vfx?.sparks(p.x, .5, p.z, p.momX, p.momZ, 16);
+    requestShake(.12); sfxHeavy();
+  }
 
   // Part 2 — TEMPO ZONES. The 0→deep combo is three acts: Launch (accelerate),
   // Cruise (flow, ball form armed, gold aura), Frenzy (edge of control, faster
@@ -1954,7 +1963,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // tight machine route where its bounces belong. Oil/Turbo still zero it out.
   // Marble materials scale the bleed: water glides (near-zero), stone drags more.
   const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul * comboFrictionMul(p.bounceCombo) * materialFrictionMult();
-  p.momSpeed = Math.max(0, p.momSpeed - friction * dt);
+  p.momSpeed = Math.max(0, p.momSpeed - friction * launchBonus.frictionMultiplier * dt);
   // Stone tops out at a lower speed ceiling than the default.
   p.momSpeed = Math.min(p.momSpeed, materialMaxSpeed());
   p.bounceComboT = Math.max(0, p.bounceComboT - dt);
@@ -2069,6 +2078,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // the BALL-form gate now.)
   if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) {
     p.momSpeed = 0;
+    resetLaunchMomentum(p);
     p.grabT = 0; // never leave a grab hanging when the ride ends
     p.bounceCombo = 0;
     p.bounceComboT = 0;
@@ -2188,6 +2198,7 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
 export function updatePlayer(dt: number, input: InputHandle): void {
   const p = state.player;
   const g = state.grid;
+  if (p && (p.momSpeed <= 0 || p.hp <= 0)) resetLaunchMomentum(p);
   // Self-heal the trapdoor's visibility BEFORE the death/no-grid bail: the
   // tunnel run switches the knight's billboard off, and every way a ride can be
   // cancelled from outside (a grave pit, a death, a floor change) just clears

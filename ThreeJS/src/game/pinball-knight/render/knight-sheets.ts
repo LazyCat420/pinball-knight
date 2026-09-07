@@ -1,3 +1,4 @@
+import { CLOCKWORK_LAUNCHES } from "../clockwork-launches";
 /**
  * KNIGHT SHEET CACHE — the ONE place a knight atlas is built or fetched, for
  * both the dungeon player and the walkable-tavern knight.
@@ -11,6 +12,7 @@
  * Eviction never touches the sheet a live sprite is showing: each consumer
  * ("dungeon" / "tavern") pins the last key it fetched.
  */
+import { activeClockworkEmote } from "../clockwork-emotes";
 import { state } from "../state";
 import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
 import { makeKnightPaints } from "./cel-painter";
@@ -24,6 +26,12 @@ const CACHE_CAP = 10;
 
 export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
+
+let loadedSource = "";
+function sourceSheetName(): string {
+  const name = playerSheetName(), emote = activeClockworkEmote();
+  return name === CLOCKWORK_PLAYER_SHEET && emote !== "bowling" ? `${name}_${emote}` : name;
+}
 
 let importedKnightPaints: ActorPaints | null = null;
 /**
@@ -66,6 +74,7 @@ function knightBuildOpts(): { sheetPalette?: number[][] } {
  */
 const PLAYER_SHEET_KEY = "pinball-knight-player-sheet";
 export const DEFAULT_PLAYER_SHEET = "pinball_knight";
+export const CLOCKWORK_PLAYER_SHEET = "clockwork_knight";
 
 /**
  * WHO THE PLAYER MAY BE — the character-select roster.
@@ -89,6 +98,7 @@ export interface PlayableCharacter {
 
 export const PLAYABLE: readonly PlayableCharacter[] = [
   { sheet: DEFAULT_PLAYER_SHEET, label: "PINBALL KNIGHT", blurb: "THE FULL MOVESET" },
+  { sheet: CLOCKWORK_PLAYER_SHEET, label: "CLOCKWORK KNIGHT", blurb: "HEAD-OFF ROLL" },
   { sheet: "mario", label: "MARIO", blurb: "HAMMER SWING · NO DEATH CLIP" },
 ];
 
@@ -129,7 +139,7 @@ export function setPlayerSheetName(name: string | null): void {
  * character the atlas never received.
  */
 export async function switchPlayerSheet(name: string): Promise<boolean> {
-  if (name === playerSheetName() && importedKnightPaints) return true;
+  if (name === playerSheetName() && importedKnightPaints && loadedSource === sourceSheetName()) return true;
   setPlayerSheetName(name);
   importedKnightPaints = null;
   importedKnightPalette = null;
@@ -143,8 +153,8 @@ export async function switchPlayerSheet(name: string): Promise<boolean> {
 }
 
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
-  if (importedKnightPaints) return importedKnightPaints;
-  const name = playerSheetName();
+  if (importedKnightPaints && loadedSource === sourceSheetName()) return importedKnightPaints;
+  const name = sourceSheetName();
   try {
     // S, N, and E are all authored.
     const sheets = (await Promise.all([
@@ -155,6 +165,7 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
     if (!sheets.length) return null;
     const paints = importedPaints(sheets);
     if (paints) {
+      loadedSource = name;
       importedKnightPaints = paints;
       importedKnightPalette = sheetPalette(sheets) ?? null;
       state.playerSheets.clear();
@@ -214,7 +225,7 @@ function resolvePaints(weapon: WeaponId, look: KnightLook): ActorPaints {
  * `lookKey`, or the two will disagree about what is on screen.
  */
 export function playerArtKey(weapon: WeaponId, look: KnightLook): string {
-  return `${playerSheetName()}|${lookKey(weapon, look)}`;
+  return `${playerSheetName()}|${playerSheetName() === CLOCKWORK_PLAYER_SHEET ? activeClockworkEmote() + "|" : ""}${lookKey(weapon, look)}`;
 }
 
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {
@@ -235,6 +246,15 @@ function touch(key: string): SpriteSheet | null {
   // Refresh recency: Map preserves insertion order, so delete + re-set makes
   // iteration order double as the LRU order.
   state.playerSheets.delete(key);
+  if (key.startsWith(`${CLOCKWORK_PLAYER_SHEET}|`)) {
+    const profile = CLOCKWORK_LAUNCHES[key.includes('|baseball|') ? 'baseball' : key.includes('|football|') ? 'football' : 'bowling'];
+    const { enterFrames, fps } = profile;
+    sheet.beats = { ...sheet.beats, roll: (enterFrames + 4) * 14 / fps };
+    sheet.rideTransition = { enterFrames, exitFrames: 4, fps, ...(profile.speedMultiplier > 1 ? {
+      launch: { frame: Math.ceil((enterFrames - 1) * profile.release), speedMultiplier: profile.speedMultiplier,
+        coastSeconds: profile.coastSeconds, frictionMultiplier: profile.frictionMultiplier, label: profile.label },
+    } : {}) };
+  }
   state.playerSheets.set(key, sheet);
   return sheet;
 }
@@ -288,6 +308,15 @@ let building: { key: string; build: SheetBuild } | null = null;
 
 /** Insert into the cache and evict down to the cap. */
 function commit(key: string, sheet: SpriteSheet): SpriteSheet {
+  if (key.startsWith(`${CLOCKWORK_PLAYER_SHEET}|`)) {
+    const profile = CLOCKWORK_LAUNCHES[key.includes('|baseball|') ? 'baseball' : key.includes('|football|') ? 'football' : 'bowling'];
+    const { enterFrames, fps } = profile;
+    sheet.beats = { ...sheet.beats, roll: (enterFrames + 4) * 14 / fps };
+    sheet.rideTransition = { enterFrames, exitFrames: 4, fps, ...(profile.speedMultiplier > 1 ? {
+      launch: { frame: Math.ceil((enterFrames - 1) * profile.release), speedMultiplier: profile.speedMultiplier,
+        coastSeconds: profile.coastSeconds, frictionMultiplier: profile.frictionMultiplier, label: profile.label },
+    } : {}) };
+  }
   state.playerSheets.set(key, sheet);
 
   if (state.playerSheets.size > CACHE_CAP) {

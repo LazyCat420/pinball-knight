@@ -196,6 +196,7 @@ export class Animator {
   private finished = false;
   private onEnd: (() => void) | null = null;
   private rate = 1;
+  private rideTransition: { kind: "enter" | "exit"; time: number } | null = null;
   /**
    * QA counters: how many times `update()` ran, and the last dt it saw.
    *
@@ -220,8 +221,15 @@ export class Animator {
     // Once death begins, it is strictly terminal and non-reentrant for ALL clips.
     if (this.clip === "death") return;
     if (this.clip === clip && !opts.force) return;
+    const transition = this.sprite.sheet.rideTransition;
+    const wasRide = isRideClip(this.clip);
+    const willRide = isRideClip(clip);
+    // Combat interrupts immediately; roll and ball share one uninterrupted launch.
+    if (clip === "death" || clip === "attack" || !transition) this.rideTransition = null;
+    else if (!wasRide && willRide) this.rideTransition = { kind: "enter", time: 0 };
+    else if (wasRide && !willRide) this.rideTransition = { kind: "exit", time: 0 };
     this.clip = clip;
-    this.frameIdx = 0;
+    this.frameIdx = transition && wasRide && willRide && clip === "roll" ? transition.enterFrames : 0;
     this.timer = 0;
     this.finished = false;
     this.onEnd = opts.onEnd ?? null;
@@ -301,6 +309,14 @@ export class Animator {
   update(dt: number): void {
     this.ticks++;
     this.lastDt = dt;
+    if (this.rideTransition && this.sprite.sheet.rideTransition) {
+      const config = this.sprite.sheet.rideTransition;
+      this.rideTransition.time += dt;
+      const count = this.rideTransition.kind === "enter" ? config.enterFrames : config.exitFrames;
+      if (this.rideTransition.time < count / config.fps) { this.apply(); return; }
+      if (this.rideTransition.kind === "enter" && this.clip === "roll") this.frameIdx = config.enterFrames;
+      this.rideTransition = null;
+    }
     const indices = this.indices();
     if (indices.length <= 1) {
       return;
@@ -324,8 +340,9 @@ export class Animator {
       this.timer -= step;
       this.frameIdx++;
       if (this.frameIdx >= indices.length) {
-        if (LOOPS[played]) {
-          this.frameIdx = 0;
+        if (LOOPS[played] || (played === "roll" && this.sprite.sheet.rideTransition)) {
+          // Detachable characters hold the head form during long momentum rides.
+          this.frameIdx = played === "roll" && this.sprite.sheet.rideTransition ? this.sprite.sheet.rideTransition.enterFrames : 0;
         } else {
           // Hold the last frame — a death that snapped back to frame 0 would be
           // a resurrection.
@@ -363,7 +380,10 @@ export class Animator {
     const clip = this.resolved();
     const clips = this.sprite.sheet.clips;
     const own = clips.get(`${dir}:${clip}`);
-    if (own && own.length > 0) return own;
+    if (own && own.length > 0) {
+      const transition = this.sprite.sheet.rideTransition;
+      return clip === "roll" && transition ? own.slice(0, Math.max(1, own.length - transition.exitFrames)) : own;
+    }
     const south = clips.get(`S:${clip}`);
     if (south && south.length > 0) return south;
     const east = clips.get(`E:${clip}`);
@@ -389,6 +409,16 @@ export class Animator {
     // unauthored clip.
     this.sprite.setFlipped(flip);
     if (!indices.length) return;
+    const transition = this.rideTransition, config = this.sprite.sheet.rideTransition;
+    if (transition && config) {
+      const { dir } = resolve(this.facing);
+      const roll = this.sprite.sheet.clips.get(`${dir}:roll`);
+      if (roll?.length) {
+        const start = transition.kind === "enter" ? 0 : Math.max(0, roll.length - config.exitFrames);
+        this.sprite.setFrame(roll[Math.min(roll.length - 1, start + Math.floor(transition.time * config.fps))]);
+        return;
+      }
+    }
     const target = indices[Math.min(this.frameIdx, indices.length - 1)];
     this.sprite.setFrame(target);
   }

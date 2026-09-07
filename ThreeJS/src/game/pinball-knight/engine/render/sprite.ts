@@ -211,6 +211,11 @@ export interface SpriteSheet {
    *  sheets play 1:1 with their frame count and a required field would break
    *  every fake sheet the suite constructs. */
   beats?: Partial<Record<ClipName, number>>;
+  /** Optional visual-only entry/recovery using the beginning/end of `roll`.
+   * Gameplay retains its requested ride clip and keeps processing input. */
+  rideTransition?: { enterFrames: number; exitFrames: number; fps: number;
+    launch?: { frame: number; speedMultiplier: number; coastSeconds: number; frictionMultiplier: number; label: string };
+  };
 }
 
 /** Nearest filtering — authored pixels must stay square on screen. */

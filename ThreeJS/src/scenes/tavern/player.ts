@@ -17,7 +17,7 @@ import { getKnightSheet, playerArtKey } from "../../game/pinball-knight/render/k
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import { Animator, facingFromVelocity, type Facing } from "../../game/pinball-knight/engine/render/animator";
 import { PPU } from "../../game/pinball-knight/constants";
-import { screenDirToWorld } from "../../game/pinball-knight/engine/camera";
+import { screenDirToWorld, worldDirToScreen } from "../../game/pinball-knight/engine/camera";
 import type { InputHandle } from "../../game/pinball-knight/engine/input";
 import { moveInRoom, SPAWN } from "./layout";
 import { tavern, type TavernPlayer } from "./state";
@@ -190,6 +190,10 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
     }
   }
 
+  // A deliberate reversal should move the new way on this frame. Keeping the
+  // old velocity here made short left/right taps disappear into braking time.
+  if (tx * vx + tz * vz < 0) { vx = 0; vz = 0; }
+
   // Ramp toward the target rather than snapping, so starts and stops have weight.
   const dvx = tx - vx;
   const dvz = tz - vz;
@@ -240,7 +244,8 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
     return;
   }
   if (p.speed > WALK_CLIP_THRESHOLD) {
-    p.facing = facingFromVelocity(vx, vz, p.facing);
+    const screenVelocity = worldDirToScreen(vx, vz);
+    p.facing = facingFromVelocity(screenVelocity.x, screenVelocity.z, p.facing);
     animator.setFacing(p.facing);
     animator.play("walk");
     // Gait quickens with speed so hurrying reads without a separate run clip.

@@ -6,6 +6,7 @@ import { tavern, resetTavernState } from "./state";
 import { state as dungeonState } from "../../game/pinball-knight/state";
 import {
   setPlayerSheetName,
+  PLAYABLE,
   playerSheetName,
   DEFAULT_PLAYER_SHEET,
   getKnightSheet,
@@ -179,17 +180,17 @@ describe("tavern character select and sprite update", () => {
     expect(screen.onNavigate?.(f, screen, rightInput)).toBe(true);
     expect(screen.focus).toBe(1);
 
-    // Paint with Mario focused -> updates chosen to mario
+    // Paint with the second character focused -> updates the selected card
     f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
     screen.paint(f, screen);
     expect(screen.focus).toBe(1);
 
-    // Simulate pushing Down on controller stick / D-pad -> jumps to CONFIRM button (index 2)
+    // Simulate pushing Down on controller stick / D-pad -> jumps to Clockwork emotes
     const downInput = { ...emptyUiInput(), down: 1 };
     expect(screen.onNavigate?.(f, screen, downInput)).toBe(true);
-    expect(screen.focus).toBe(2);
+    expect(screen.focus).toBe(PLAYABLE.length + 1);
 
-    // Simulate pushing Up on controller stick / D-pad -> jumps back to Mario card (index 1)
+    // Simulate pushing Up on controller stick / D-pad -> jumps back to the selected card (index 1)
     const upInput = { ...emptyUiInput(), up: 1 };
     expect(screen.onNavigate?.(f, screen, upInput)).toBe(true);
     expect(screen.focus).toBe(1);
@@ -210,8 +211,8 @@ describe("tavern character select and sprite update", () => {
 
     push(screen);
 
-    // Move to Mario (focus 1)
-    screen.focus = 1;
+    // Find Mario by identity so adding another character does not change this check.
+    screen.focus = PLAYABLE.findIndex(c => c.sheet === "mario");
     let f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
     screen.paint(f, screen);
 
