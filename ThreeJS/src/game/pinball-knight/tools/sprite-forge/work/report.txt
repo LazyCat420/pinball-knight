@@ -1259,6 +1259,33 @@ ROSTER entries 20.1  isolated 22.5%  runLen 1.82
 VERDICT: WORSE than the painted roster — too busy for this crush
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/stiltneck-E  (frames + preview.png)
 
+═══ toucan (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NO BLOCK GRID, but 63% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 37.2% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (100% of the border) — keyed 73.9%, 151 pocket(s) LEFT OPAQUE
+⚠ 151 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         32       11.9    2.35        32
+idle1         32       11.7    2.32        32
+idle2         31        9.5    2.78        31
+idle3         31        9.9    2.60        31
+walk0         32       12.8    2.33        32
+walk1         32       12.7    2.39        32
+walk2         32       11.7    2.56        32
+walk3         31       12.1    2.48        31
+attack0       28        8.6    3.23        28
+attack1       30       16.1    2.07        30
+attack2       28       15.5    2.02        28
+attack3       29       10.6    2.77        29
+death0        31       15.5    2.00        31
+death1        31       15.4    1.98        31
+death2        30       25.0    1.61        30
+death3        20       44.0    1.28        20
+MEAN   entries 30.0  isolated 15.2%  runLen 2.30
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: BETTER than the painted roster
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/toucan-S  (frames + preview.png)
+
 ═══ trex (S) — 4 rows [4/4/4/4], 16 frames
 GRID   NO BLOCK GRID, but 59% of neighbouring pixels are identical — this reads as NATIVE-RESOLUTION pixel art. It imports 1:1 only if the cell height already equals the atlas texel height; otherwise re-author it at an integer multiple. Cell purity at ×2: 28.1% — a real lattice is ~100%, so the blocks are mush.
 MATTE  bg #ff00ff (94% of the border) — keyed 61.0%, 10 pocket(s) LEFT OPAQUE
@@ -1569,6 +1596,10 @@ VERDICT: COMPETITIVE — inside the roster's range
   stiltneck-E        attack   centred sweep 0.264 (span 0.374 × r +0.71)  grounded 4px spread
   stiltneck-E        stumble  centred sweep 0.000 (span 0.145 × r +0.00)  grounded 3px spread
   stiltneck-E        death    centred sweep 0.131 (span 0.143 × r +0.91)  grounded 18px spread
+  toucan-S           idle     centred sweep 0.050 (span 0.056 × r +0.89)  grounded 0px spread
+  toucan-S           walk     centred sweep 0.023 (span 0.030 × r -0.76)  grounded 1px spread  gait peak 0.45
+  toucan-S           attack   centred sweep 0.011 (span 0.014 × r +0.83)  grounded 1px spread
+  toucan-S           death    centred sweep 0.005 (span 0.019 × r -0.27)  grounded 1px spread
   trex-S             idle     centred sweep 0.005 (span 0.007 × r -0.77)  grounded 4px spread
   trex-S             walk     centred sweep 0.015 (span 0.026 × r +0.60)  grounded 0px spread  gait peak 0.12
   trex-S             attack   centred sweep 0.004 (span 0.044 × r -0.08)  grounded 0px spread

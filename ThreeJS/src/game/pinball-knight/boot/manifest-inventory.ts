@@ -49,6 +49,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   warden: ["S"],
   webspinner: ["S"],
   trex: ["S"],
+  toucan: ["S"],
   zombie: ["E"],
 };
 

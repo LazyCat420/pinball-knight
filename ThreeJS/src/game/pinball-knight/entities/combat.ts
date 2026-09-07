@@ -64,6 +64,7 @@ import {
   ESPRESSO_DAMAGE,
   GNOME_DAMAGE,
   CIGARETTE_DAMAGE,
+  TOUCAN_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -979,6 +980,10 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.3, z.z, 0x555555, 18, 4);
     state.vfx?.smoke(z.x, 0.4, z.z, 0.9, 12);
     state.vfx?.sparks(z.x, 0.35, z.z, 0, 0.6, 12);
+  } else if (z.kind === "toucan") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0x00ccff, 14, 3);
+    state.vfx?.burst(z.x, 0.5, z.z, 0xffaa00, 14, 3);
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.8, 10);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1140,6 +1145,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   espresso: ESPRESSO_DAMAGE,
   gnome: GNOME_DAMAGE,
   cigarette: CIGARETTE_DAMAGE,
+  toucan: TOUCAN_DAMAGE,
   jade_buddha: BRUTE_DAMAGE,
 };
 

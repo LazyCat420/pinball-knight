@@ -148,7 +148,8 @@ import {
   ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
   ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT,
   GNOME_R, GNOME_CONTACT_RANGE, GNOME_ATTACK_WINDUP, GNOME_ATTACK_COOLDOWN, GNOME_MOWER_DEFLECT,
-  CIGARETTE_R, CIGARETTE_CONTACT_RANGE, CIGARETTE_ATTACK_WINDUP, CIGARETTE_ATTACK_COOLDOWN } from "../constants";
+  CIGARETTE_R, CIGARETTE_CONTACT_RANGE, CIGARETTE_ATTACK_WINDUP, CIGARETTE_ATTACK_COOLDOWN,
+  TOUCAN_R, TOUCAN_CONTACT_RANGE, TOUCAN_ATTACK_WINDUP, TOUCAN_ATTACK_COOLDOWN, TOUCAN_ROLL_DEFLECT } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -216,6 +217,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
   gnome: { bodyR: GNOME_R, contactRange: GNOME_CONTACT_RANGE, windup: GNOME_ATTACK_WINDUP, cooldown: GNOME_ATTACK_COOLDOWN, ranged: false },
   cigarette: { bodyR: CIGARETTE_R, contactRange: CIGARETTE_CONTACT_RANGE, windup: CIGARETTE_ATTACK_WINDUP, cooldown: CIGARETTE_ATTACK_COOLDOWN, ranged: false },
+  toucan: { bodyR: TOUCAN_R, contactRange: TOUCAN_CONTACT_RANGE, windup: TOUCAN_ATTACK_WINDUP, cooldown: TOUCAN_ATTACK_COOLDOWN, ranged: false },
   jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
 };
 
@@ -584,6 +586,38 @@ export function cigaretteBurnAttack(z: Zombie, pdist: number, contactRange: numb
   }
 }
 
+/** TOUCAN: 360-degree aerodynamic corkscrew barrel roll dive attack with rainbow beak drill and deflection */
+export function toucanBarrelRollAttack(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (!p || p.hp <= 0) return;
+
+  sfxSpin();
+  sfxSwing();
+  z.anim.play("attack", { force: true });
+  state.shakeT = Math.max(state.shakeT, 0.16);
+
+  let dx = p.x - z.x;
+  let dz = p.z - z.z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const nx = dx / dist;
+  const nz = dz / dist;
+
+  // Aerodynamic wind vortex spirals & colorful feather sparks
+  state.vfx?.slashCircle?.(z.x + nx * 0.4, 0.5, z.z + nz * 0.4, 0.85);
+  state.vfx?.sparks?.(z.x + nx * 0.4, 0.55, z.z + nz * 0.4, nx, nz, 12);
+  state.vfx?.burst?.(z.x + nx * 0.4, 0.5, z.z + nz * 0.4, 0xffaa00, 6, 2.5);
+  state.vfx?.smoke?.(z.x + nx * 0.3, 0.5, z.z + nz * 0.3, 0.4, 4);
+
+  if (pdist <= contactRange + 0.35) {
+    hitPlayer(z);
+    // Deflect / knock back player from the high-speed drill impact
+    p.momX = nx * TOUCAN_ROLL_DEFLECT;
+    p.momZ = nz * TOUCAN_ROLL_DEFLECT;
+    p.momSpeed = Math.max(p.momSpeed || 0, TOUCAN_ROLL_DEFLECT);
+    p.iframes = Math.max(p.iframes || 0, 0.15);
+  }
+}
+
 /** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
 function necroSummon(z: Zombie): void {
   let near = 0;
@@ -666,6 +700,19 @@ export function updateZombies(dt: number): void {
       }
       if (z.kind === "cigarette") {
         // Stubbed out into crushed butt & ash pile, then splice out cleanly
+        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
+      if (z.kind === "toucan") {
+        // Feather burst and clean splice out
         if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
           if (z.sprite?.mesh?.parent) {
             z.sprite.mesh.parent.remove(z.sprite.mesh);
@@ -1146,6 +1193,8 @@ export function updateZombies(dt: number): void {
             gnomeLawnmowerCharge(z, pdist, contactRange); // spinning mower blades & grass fling
           } else if (z.kind === "cigarette") {
             cigaretteBurnAttack(z, pdist, contactRange); // burning cherry ember jab
+          } else if (z.kind === "toucan") {
+            toucanBarrelRollAttack(z, pdist, contactRange); // corkscrew barrel roll dive
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

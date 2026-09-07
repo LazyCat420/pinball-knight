@@ -150,6 +150,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   espresso: "Espresso",
   gnome: "Gnome",
   cigarette: "Smokes",
+  toucan: "Toucan",
   jade_buddha: "Buddha",
 };
 

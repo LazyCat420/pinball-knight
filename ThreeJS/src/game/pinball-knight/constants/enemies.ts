@@ -543,6 +543,22 @@ export const CIGARETTE_ATTACK_COOLDOWN = 1.2;
 export const CIGARETTE_DAMAGE = 1.25;
 export const CIGARETTE_BURN_DURATION = 2.0;
 
+/**
+ * TROPICAL TOUCAN — high-speed aerial striker with massive rainbow beak.
+ * Glides swiftly and executes a 360-degree corkscrew barrel roll dive attack.
+ */
+export const TOUCAN_HP = 4;
+export const TOUCAN_R = 0.35;
+export const TOUCAN_SPEED_FACTOR = 1.35;
+export const TOUCAN_RATIO = 18;
+export const TOUCAN_FROM_LEVEL = 2;
+export const TOUCAN_CONTACT_RANGE = 0.85;
+export const TOUCAN_ATTACK_WINDUP = 0.28;
+export const TOUCAN_ATTACK_COOLDOWN = 1.3;
+export const TOUCAN_DAMAGE = 1.5;
+export const TOUCAN_ROLL_SPEED = 7.5;
+export const TOUCAN_ROLL_DEFLECT = 12.0;
+
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;
