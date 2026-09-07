@@ -21,6 +21,9 @@ if [[ " $* " != *" --dry-run "* ]]; then
     echo "Another Pinball Knight release build or deployment is running. Retry after it finishes." >&2
     exit 1
   fi
+  # ssh-agent can outlive the release and inherit fd 9. Explicitly unlock the
+  # shared file description when this wrapper exits, including failed tests.
+  trap 'flock -u 9' EXIT
 fi
 
 # pnpm may auto-install before each script. Prepare dependencies once before
