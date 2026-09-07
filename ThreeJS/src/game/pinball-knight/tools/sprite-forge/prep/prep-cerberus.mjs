@@ -12,12 +12,14 @@ const INBOX = join(BASE, "inbox");
 const SOURCES = join(BASE, "sources");
 
 const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/878e1b68-7679-4a65-bf9d-283c58c7185a/cerberus_castlevania_sheet_1788809759128.jpg";
+const RAW_WALK = "/home/lazycat/.gemini/antigravity-ide/brain/878e1b68-7679-4a65-bf9d-283c58c7185a/cerberus_walk_front_1788810606634.jpg";
 const CERBERUS_DIR = join(SOURCES, "cerberus-2026-09-07");
 const ALT_DIR = join(CERBERUS_DIR, "alt-takes");
 const MASTER_SRC = join(ALT_DIR, "cerberus_castlevania_sheet_1788809759128.jpg");
+const WALK_SRC = join(ALT_DIR, "cerberus_walk_front_1788810606634.jpg");
 
 async function run() {
-  console.log("🐺 Preparing Cerberus Three-Headed Hellhound Boss Sprite Sheet (Castlevania Style)...");
+  console.log("🐺 Preparing Cerberus Three-Headed Hellhound Boss Sprite Sheet (Castlevania Style + 3-Headed Walk)...");
 
   mkdirSync(ALT_DIR, { recursive: true });
   mkdirSync(INBOX, { recursive: true });
@@ -25,6 +27,10 @@ async function run() {
   if (existsSync(RAW_IMG) && !existsSync(MASTER_SRC)) {
     copyFileSync(RAW_IMG, MASTER_SRC);
     console.log(`Copied raw take to alt-takes: ${MASTER_SRC}`);
+  }
+  if (existsSync(RAW_WALK) && !existsSync(WALK_SRC)) {
+    copyFileSync(RAW_WALK, WALK_SRC);
+    console.log(`Copied raw walk take to alt-takes: ${WALK_SRC}`);
   }
 
   const readme = join(ALT_DIR, "README.md");
@@ -37,13 +43,14 @@ async function run() {
 - **Primary Source**: \`src/game/pinball-knight/tools/sprite-forge/sources/cerberus-2026-09-07/cerberus-S.png\`
 - **Layout**: 4 columns × 4 rows (16 frames, 1024×1024, 256×256 per cell)
   - Row 0 (0..3): \`idle\` (4 frames: menacing gothic quadruped hellhound stance, 3 heads snarling/breathing, glowing red eyes, chain sway)
-  - Row 1 (4..7): \`walk\` (4 frames: heavy predatory quadruped stalk stride forward, sinewy gait)
+  - Row 1 (4..7): \`walk\` (4 frames: heavy predatory quadruped stalk stride forward with all 3 heads front-and-center, sinewy gait)
   - Row 2 (8..11): \`attack\` (4 frames: center jaws grab knight, violent side-to-side thrash, side heads breathing brimstone fire)
   - Row 3 (12..15): \`death\` (4 frames: agony howl, collapse dissolving into gothic demonic ash, smoke, and charred bone fragments)
 - **Chroma Background**: \`#FF00FF\` magenta
 - **Takes Archive**:
   - \`alt-takes/cerberus_sheet_1788782547671.jpg\` (Take 1 - Volcanic Hellhound)
   - \`alt-takes/cerberus_castlevania_sheet_1788809759128.jpg\` (Take 2 - Master: Gothic Medieval Castlevania Style)
+  - \`alt-takes/cerberus_walk_front_1788810606634.jpg\` (Take 3 - Spliced Walk: 4-Frame 3-Headed Front Walk Cycle)
 `,
   );
   console.log(`Saved README to ${readme}`);
@@ -58,6 +65,51 @@ async function run() {
   const c = createCanvas(w, h);
   const cx = c.getContext("2d");
   cx.drawImage(masterImg, 0, 0, w, h);
+
+  // Splice 3-headed walk cycle into Row 1 (y: 256..512)
+  const walkPath = existsSync(WALK_SRC) ? WALK_SRC : RAW_WALK;
+  if (existsSync(walkPath)) {
+    const walkImg = await loadImage(walkPath);
+    console.log(`Loaded walk strip: ${walkImg.width}x${walkImg.height}`);
+
+    // Clear Row 1 with flat magenta
+    cx.fillStyle = "#FF00FF";
+    cx.fillRect(0, 256, 1024, 256);
+
+    const colW = walkImg.width / 4;
+    const walkCanvas = createCanvas(walkImg.width, walkImg.height);
+    const wcx = walkCanvas.getContext("2d");
+    wcx.drawImage(walkImg, 0, 0);
+    const wd = wcx.getImageData(0, 0, walkImg.width, walkImg.height).data;
+
+    for (let col = 0; col < 4; col++) {
+      let minX = (col + 1) * colW, maxX = col * colW;
+      let minY = walkImg.height, maxY = 0;
+      for (let y = 0; y < walkImg.height; y++) {
+        for (let x = Math.floor(col * colW); x < Math.floor((col + 1) * colW); x++) {
+          const idx = (y * walkImg.width + x) * 4;
+          const r = wd[idx], g = wd[idx + 1], b = wd[idx + 2];
+          const isBg = (r > 160 && b > 160 && g < 70);
+          if (!isBg) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      const srcW = maxX - minX;
+      const srcH = maxY - minY;
+      const scale = 238 / 544;
+      const destW = Math.round(srcW * scale);
+      const destH = Math.round(srcH * scale);
+      const destY = 506 - destH;
+      const destX = Math.round(col * 256 + (256 - destW) / 2);
+
+      cx.drawImage(walkImg, minX, minY, srcW, srcH, destX, destY, destW, destH);
+    }
+    console.log("Spliced 4-frame 3-headed walk cycle into Row 1");
+  }
   const imgData = cx.getImageData(0, 0, w, h);
   const d = imgData.data;
 
