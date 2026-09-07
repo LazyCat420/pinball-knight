@@ -48,6 +48,7 @@
  */
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_STAIRS, T_CRACKED, at, idx, isWalkable, setTile } from "./generator";
 import type { TrackMask } from "./track-carve";
+import { SHAPE_ARC } from "../engine/tile-shape";
 
 /** A typed edge label. The whole plumbing vocabulary. */
 export type Socket = "road" | "room" | "wall" | "rim";
@@ -328,7 +329,9 @@ export function removeWallStubs(g: Grid, mask: TrackMask | null, minOpen = 3, ma
       for (let i = 1; i < g.w - 1; i++) {
         if (isWalkable(g, i, j)) continue;
         if (at(g, i, j) === T_CRACKED) continue; // secret walls are deliberate
-        if (g.arcIdx && g.arcIdx[idx(g, i, j)] >= 0) continue; // a curve's rim
+        // A former rim can retain its index after becoming a plain box. Only
+        // an actual arc-shaped tile is exempt from wall-stub cleanup.
+        if (g.shapes[idx(g, i, j)] === SHAPE_ARC && g.arcIdx && g.arcIdx[idx(g, i, j)] >= 0) continue;
         // A SEALED lane's wall is deliberate too — same category as a secret
         // wall, and for the same reason: it is authored, not left over. The
         // launch chute is the only sealed lane today, and opening one of its

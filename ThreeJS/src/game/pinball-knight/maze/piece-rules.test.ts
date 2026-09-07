@@ -161,7 +161,7 @@ describe("the piece registry", () => {
           // it — see below.
           const leak = v.filter((x) => x.label === "floor-sealed");
           const rest = v.filter((x) => x.label !== "floor-sealed");
-          if (leak.length) sealLeaks++;
+          if (leak.length || f.mask.chuteAccessPorts?.size) sealLeaks++;
           if (rest.length) bad.push(`L${level} ${arch.id} seed=${seed}:\n${summarise(rest)}`);
         }
       }

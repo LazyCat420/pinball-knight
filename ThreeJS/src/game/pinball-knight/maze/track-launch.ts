@@ -403,7 +403,9 @@ export function resealChute(
       setTile(g, x, y, T_WALL);
       if (!reaches()) {
         g.t[idx(g, x, y)] = before; // it was load-bearing — leave the door
+        (mask.chuteAccessPorts ??= new Set()).add(idx(g, x, y));
       } else {
+        mask.chuteAccessPorts?.delete(idx(g, x, y));
         sealed++;
       }
     }

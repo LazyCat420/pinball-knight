@@ -36,7 +36,7 @@ describe("Phase 0 — Regression Census & Fixtures Baseline", () => {
       expect(snapshot.gridDigest.stairs).toBe(1);
       expect(snapshot.endpoints.routeDistance).toBeGreaterThan(0);
 
-      const updateFixtures = process.env.UPDATE_FIXTURES === "1" || !fs.existsSync(jsonPath);
+      const updateFixtures = process.env.UPDATE_FIXTURES === "1";
 
       if (updateFixtures) {
         fs.writeFileSync(jsonPath, JSON.stringify(snapshot, null, 2), "utf8");
@@ -45,14 +45,9 @@ describe("Phase 0 — Regression Census & Fixtures Baseline", () => {
       } else {
         const recorded: FloorSnapshot = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
 
-        // Bit-identical invariants
-        expect(snapshot.gridDigest.tileHash).toBe(recorded.gridDigest.tileHash);
-        expect(snapshot.gridDigest.floors).toBe(recorded.gridDigest.floors);
-        expect(snapshot.gridDigest.walls).toBe(recorded.gridDigest.walls);
-        expect(snapshot.endpoints.start).toEqual(recorded.endpoints.start);
-        expect(snapshot.endpoints.stairs).toEqual(recorded.endpoints.stairs);
-        expect(snapshot.endpoints.routeDistance).toBe(recorded.endpoints.routeDistance);
-        expect(snapshot.clusteringMetrics.totalParts).toBe(recorded.clusteringMetrics.totalParts);
+        // Compare orientations, geometry and diagnostics too. JSON normalizes
+        // omitted optional fields exactly as the persisted fixture writer does.
+        expect(JSON.parse(JSON.stringify(snapshot))).toEqual(recorded);
       }
     });
   }

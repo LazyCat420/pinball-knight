@@ -15,18 +15,15 @@
  */
 import { describe, it, expect } from "vitest";
 import { mulberry32, idx, isWalkable, type TilePos } from "./generator";
-import { archetypeFor, windinessFor } from "./archetypes";
-import { rollModifier } from "./modifiers";
-import { buildTrackFloor } from "./track-floor";
+import { archetypeFor } from "./archetypes";
+import { authorFloorTopology } from "./author-floor";
 import { nearestOpenTile } from "./nearest-open-tile";
 import { clearanceField } from "./doorways";
 import { SLAM_RADIUS, KING_BODY_R, KING_HOME_TILES, BONE_MAX_DIST } from "../boss";
 import { PLAYER_R } from "../constants";
 import { bfsDistances } from "../engine/flow-field";
-import { levelConfig } from "../constants";
 import { FLOOR_RULES, DEFAULT_RULE_WEIGHTS, checkFloorRules, perimeterScore, maxReach, type FloorRuleContext, BOSS_ARENA_R, BOSS_ARENA_MIN_WIDTH } from "./floor-rules";
 import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
-import { floorRng } from "./floor-seed";
 import { SWEEP_LEVELS, SHALLOW, sweepPairs } from "./sweep-axis";
 
 const RUN_SEEDS = [1, 12345, 0xc0ffee, 987654321, 424242, 7777];
@@ -75,15 +72,7 @@ const EXPECTED_FLOORS = PAIRS.length;
  * `rollModifier` draws, so it must be called even though nothing here reads it.
  */
 function floorContext(level: number, runSeed: number): FloorRuleContext | null {
-  const rng = floorRng(runSeed, level);
-  const cfg = levelConfig(level);
-  const arch = archetypeFor(level);
-  rollModifier(level, rng); // draws — see the header
-  const windiness = windinessFor(level, arch, rng);
-  const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
-    profile: arch.track,
-    density: Math.max(0.35, Math.min(0.85, windiness)),
-  });
+  const { track, arch } = authorFloorTopology({ level, runSeed });
   if (!track) return null;
   const grid = track.grid;
   // The king rides the stairs — core.ts sites him with exactly this call.

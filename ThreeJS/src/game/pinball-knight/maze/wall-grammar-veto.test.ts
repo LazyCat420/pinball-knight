@@ -12,7 +12,8 @@
  * nothing else. Both matter — a neutrality proof alone passes if the flag is
  * dead, which is the classic way a feature ships switched off.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import * as cornerShapes from "./corner-shapes";
 import { buildHeadlessPlan } from "../dev/headless-floor";
 import { sweepPairs } from "./sweep-axis";
 import { type Grid, idx } from "./generator";
@@ -43,25 +44,33 @@ interface Pair {
   seed: number;
   off: Grid;
   on: Grid;
+  pre: Grid;
 }
-const FLOORS: Pair[] = PAIRS.map(({ level, seed }) => {
-  const off = buildHeadlessPlan(level, seed, false, false);
-  const on = buildHeadlessPlan(level, seed, false, true);
-  return off && on ? { level, seed, off: off.grid, on: on.grid } : null;
-}).filter((p): p is Pair => p !== null);
+// Capture the actual input to the production shape pass. Reconstructing it
+// from the finished grid is wrong once secret pruning and lamp authoring have
+// changed tiles after shapes were assigned.
+const assignShapes = cornerShapes.assignCornerShapes;
+const beforeShapes: Grid[] = [];
+const shapeSpy = vi.spyOn(cornerShapes, "assignCornerShapes").mockImplementation((g, policy) => {
+  beforeShapes.push(structuredClone(g));
+  assignShapes(g, policy);
+});
+const FLOORS: Pair[] = (() => {
+  try {
+    return PAIRS.map(({ level, seed }) => {
+      beforeShapes.length = 0;
+      const off = buildHeadlessPlan(level, seed, false, false);
+      const pre = beforeShapes[0];
+      const on = buildHeadlessPlan(level, seed, false, true);
+      if (off && on && !pre) throw new Error("shape pass was not observed");
+      return off && on && pre ? { level, seed, off: off.grid, on: on.grid, pre } : null;
+    }).filter((p): p is Pair => p !== null);
+  } finally {
+    shapeSpy.mockRestore();
+  }
+})();
 
 const label = (p: Pair): string => `L${p.level} s${p.seed}`;
-
-/**
- * The grid as `assignCornerShapes` saw it: every shape it could have written
- * stripped back to a plain box, arc slices (owned by arc-sweeps/arc-contract,
- * assigned long before) left alone.
- */
-function preShapeGrid(g: Grid): Grid {
-  const shapes = new Uint8Array(g.shapes);
-  for (let k = 0; k < shapes.length; k++) if (shapes[k] !== SHAPE_ARC) shapes[k] = SHAPE_FULL;
-  return { ...g, shapes } as Grid;
-}
 
 describe("the vetoes touch shapes and nothing else", () => {
   for (const p of FLOORS) {
@@ -112,16 +121,12 @@ describe("the vetoes do something", () => {
   it("removes curves, and only where the run compiler says there is no wall", () => {
     // SABOTAGE SEEN RED: return before the veto loop — `removed` goes to 0.
     //
-    // ⚠️ The masks have to be read off the grid PRODUCTION read them off: the
-    // one before any shell was assigned. Reading them off the finished floor
-    // scores 3,240 perfectly good removals as unexplained, because on that grid
-    // the tile in question is a shell and therefore not part of any run at all.
-    // `assignCornerShapes` is the last shape mutation and only ever writes
-    // non-ARC shapes, so stripping those reconstructs its input exactly.
+    // Use the captured generation input; later secret/lamp mutations cannot
+    // change the explanation for a shape decision made before those stages.
     let removed = 0;
     let onLongRun = 0;
     for (const p of FLOORS) {
-      const pre = preShapeGrid(p.off);
+      const pre = p.pre;
       const runLen = runLengthMask(pre);
       const interior = runInteriorMask(pre, 3);
       for (let k = 0; k < p.on.shapes.length; k++) {

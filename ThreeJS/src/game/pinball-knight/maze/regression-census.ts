@@ -28,29 +28,13 @@ import {
   T_CRACKED,
 } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC } from "../engine/tile-shape";
-import { archetypeFor, windinessFor, ARCHETYPES } from "./archetypes";
-import { buildTrackFloor, type TrackFloor } from "./track-floor";
-import { decorateMaze, type LevelPlan, type PinballPartSpot } from "./decorate";
-import { walkableCount } from "./floor-metrics";
-import { floorRng } from "./floor-seed";
+import { archetypeFor } from "./archetypes";
+import { authorHeadlessPlan } from "../dev/headless-floor";
 import { bfsDistances } from "../engine/flow-field";
-import { checkPieces, type PieceViolation } from "./piece-rules";
-import { compileWallRuns, type WallRun } from "./wall-runs";
+import { checkPieces } from "./piece-rules";
+import { compileWallRuns } from "./wall-runs";
 import { analyzePatternGrammar } from "./pattern-grammar";
 import { exitRay, type FlowPart } from "./flow-loops";
-import {
-  levelConfig,
-  floorBudgets,
-  PARTS_BASE,
-  PARTS_PER_LEVEL,
-  PARTS_MAX,
-  TARGETS_PER_FLOOR,
-  TRAPDOORS_PER_FLOOR,
-  VAULT_RAMPS_PER_FLOOR,
-  HAZARDS_BASE,
-  HAZARDS_PER_LEVEL,
-  HAZARDS_MAX,
-} from "../constants";
 
 export interface PinnedFloorKey {
   level: number;
@@ -83,6 +67,8 @@ export interface FlowEdge {
 }
 
 export interface FloorSnapshot {
+  /** Explicit fixture migration: stable direction shuffle and live authoring. */
+  generation: "fisher-yates-live-v1";
   key: PinnedFloorKey;
   gridDigest: {
     w: number;
@@ -114,6 +100,7 @@ export interface FloorSnapshot {
     shapedEndsOnShortRuns: number;
   };
   assemblies: {
+    chuteAccessPorts: TilePos[];
     hasChute: boolean;
     chuteLength?: number;
     hasOrbit: boolean;
@@ -152,34 +139,13 @@ function fnv1a(data: Uint8Array): string {
 
 /** Build and extract a full headless floor snapshot */
 export function captureFloorSnapshot(level: number, seed: number): { snapshot: FloorSnapshot; grid: Grid } | null {
-  const cfg = levelConfig(level);
+  // Use the parity-tested authoring chain, including modifier draws, rooms,
+  // doorway reservations, secret pruning and lamp parts. Reconstructing a
+  // shorter pipeline here produced fixtures for floors the player never got.
+  const authored = authorHeadlessPlan({ level, runSeed: seed });
+  if (!authored) return null;
+  const { grid, plan, track } = authored;
   const arch = archetypeFor(level);
-  const rng = floorRng(seed, level);
-  const windiness = windinessFor(level, arch, rng);
-  const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
-    profile: arch.track,
-    density: Math.max(0.35, Math.min(0.85, windiness)),
-  });
-  if (!track) return null;
-
-  const grid = track.grid;
-  const walkable = walkableCount(grid);
-  const budget = floorBudgets(level, walkable);
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + budget.partsArea;
-
-  const plan = decorateMaze(grid, rng, budget.zombies, budget.torches, partBudget, [], {
-    targets: TARGETS_PER_FLOOR,
-    trapdoors: TRAPDOORS_PER_FLOOR,
-    vaultRamps: VAULT_RAMPS_PER_FLOOR,
-    hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
-    launchBreaks: cfg.launchBreaks,
-    endpoints: { start: track.start, stairs: track.stairs },
-    strictLaunchers: true,
-    chute: track.chute ?? null,
-    orbit: track.orbit ?? null,
-    wallsAuthored: true,
-    floor: level,
-  });
 
   // 1. Grid digest
   let floors = 0;
@@ -209,8 +175,8 @@ export function captureFloorSnapshot(level: number, seed: number): { snapshot: F
   const tileHash = fnv1a(combined);
 
   // 2. Endpoints & Route
-  const dist = bfsDistances(grid, track.start.i, track.start.j);
-  const routeDistance = dist[idx(grid, track.stairs.i, track.stairs.j)];
+  const dist = bfsDistances(grid, plan.start.i, plan.start.j);
+  const routeDistance = dist[idx(grid, plan.stairs.i, plan.stairs.j)];
 
   // 3. Pattern Grammar & Clustering Metrics
   const grammar = analyzePatternGrammar(grid, track.doorways, track.chambers);
@@ -269,6 +235,8 @@ export function captureFloorSnapshot(level: number, seed: number): { snapshot: F
 
   // 5. Assemblies
   const assemblies = {
+    chuteAccessPorts: [...(track.mask.chuteAccessPorts ?? [])].sort((a, b) => a - b)
+      .map((k) => ({ i: k % grid.w, j: Math.floor(k / grid.w) })),
     hasChute: Boolean(track.chute),
     chuteLength: track.chute ? track.chute.spine.length : undefined,
     hasOrbit: Boolean(track.orbit),
@@ -302,7 +270,7 @@ export function captureFloorSnapshot(level: number, seed: number): { snapshot: F
   }
 
   // 7. Violations
-  const violations = checkPieces(grid, track.mask, { parts: parts as FlowPart[] }).map((v) => ({
+  const violations = checkPieces(grid, track.mask, { parts: plan.parts }).map((v) => ({
     label: v.label,
     rule: v.rule,
     i: v.i,
@@ -313,6 +281,7 @@ export function captureFloorSnapshot(level: number, seed: number): { snapshot: F
   const depthTier = level <= 5 ? "shallow" : level <= 15 ? "mid" : "deep";
 
   const snapshot: FloorSnapshot = {
+    generation: "fisher-yates-live-v1",
     key: {
       level,
       seed,
@@ -332,8 +301,8 @@ export function captureFloorSnapshot(level: number, seed: number): { snapshot: F
       tileHash,
     },
     endpoints: {
-      start: track.start,
-      stairs: track.stairs,
+      start: plan.start,
+      stairs: plan.stairs,
       routeDistance,
     },
     clusteringMetrics: {

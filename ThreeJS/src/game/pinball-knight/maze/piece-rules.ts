@@ -178,7 +178,7 @@ export const PIECE_RULES: Record<PieceLabel, readonly string[]> = {
   ],
   "floor-sealed": [
     // The launch chute. Its whole value is that it commits you.
-    "side walls solid for its full length except the mouth",
+    "side walls solid except the mouth and verified connectivity access ports",
   ],
   crack: [
     // A secret wall that separates nothing is a smash that opens onto the space
@@ -387,6 +387,9 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
           const y = j + dj;
           if (!isWalkable(g, x, y)) continue;
           if (mask.lane[idx(g, x, y)] === 1) continue;
+          // Only the strand-guarded reseal pass can declare an access port.
+          // Ordinary accidental side openings still fail this rule.
+          if (mask.chuteAccessPorts?.has(idx(g, x, y))) continue;
           push("floor-sealed", PIECE_RULES["floor-sealed"][0], i, j, `opens onto off-lane floor at (${x},${y})`);
         }
       }

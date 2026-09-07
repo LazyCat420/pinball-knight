@@ -51,6 +51,8 @@ import type { TrackPath } from "./track-path";
 
 /** Marks which tiles belong to the circuit, so later passes can respect it. */
 export interface TrackMask {
+  /** Off-lane doors that resealChute proved necessary to keep a pocket reachable. */
+  chuteAccessPorts?: Set<number>;
   /** 1 = carved as track surface. Row-major, same layout as Grid.t. */
   lane: Uint8Array;
   /** Distance in tiles from the track centreline (Infinity off-track). */
@@ -454,7 +456,14 @@ export function growMazeAround(
       [0, 2],
       [0, -2],
     ] as const;
-    const order = [...dirs].sort(() => rng() - 0.5);
+    // A random sort comparator changes its answer and consumes a runtime-
+    // dependent number of draws. Fisher–Yates uses exactly three draws here,
+    // so Node and browser sort implementations cannot reroll the maze.
+    const order = [...dirs];
+    for (let k = order.length - 1; k > 0; k--) {
+      const n = Math.floor(rng() * (k + 1));
+      [order[k], order[n]] = [order[n], order[k]];
+    }
     let grew = false;
     for (const [di, dj] of order) {
       const ni = c.i + di;
@@ -913,4 +922,3 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
   }
   return cleared;
 }
-

@@ -10,13 +10,9 @@
  *           stone ends, no panel inside a run, moss per run.
  *   tiles   the shipped square kept, but everything else run-aware.
  *
- * The flag exists because the choice is the user's and it has to be seen side
- * by side to be made. It is NOT a setting to ship: once a look is picked, this
- * file and the switch in maze/build.ts go away and the winner becomes the only
- * code path. A permanent flag would mean two wall renderers to keep alive, and
- * co-op peers on different looks would disagree about nothing visible today but
- * about `grid.shapes` the moment the shape vetoes land — which the collider
- * reads.
+ * This preference controls rendering only. Corner placement is shared across
+ * all looks in maze/corner-shapes.ts; it must not depend on a local URL or
+ * stored preference because the collider consumes those same shapes.
  *
  * Precedence copies dev/floor-lock.ts and boot/seed-param.ts, for the same
  * reason: one funnel, one answer to "what am I looking at".
