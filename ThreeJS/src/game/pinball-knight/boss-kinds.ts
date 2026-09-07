@@ -37,7 +37,7 @@
 import type { SheetKey } from "./boot/sheets";
 import { passFor, themeFor } from "./maze/prefabs";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -186,6 +186,35 @@ export interface MouthFireSpec {
   spread?: number;
 }
 
+/** A telegraphed lunge that clamps the knight in jaws, violently thrashes, and drops with heavy launch. */
+export interface ThrashGrabSpec {
+  interval: number;
+  /** Seconds the pincer jaws telegraph on the ground before lunging. */
+  telegraph: number;
+  /** Distance the lunge bite covers. */
+  distance: number;
+  /** Forward lunge speed. */
+  lungeSpeed: number;
+  /** Hitbox radius of the jaws. */
+  biteRadius: number;
+  /** Initial bite damage on grab. */
+  grabDamage: number;
+  /** Maximum duration of grab if not escaped. */
+  grabDuration: number;
+  /** Number of button presses required to break free. */
+  escapeCount: number;
+  /** Periodic chew/thrash damage tick while held (seconds between ticks). */
+  thrashTickInterval: number;
+  /** Damage dealt per thrash tick. */
+  thrashDamage: number;
+  /** Final fling/drop damage when duration expires. */
+  dropDamage: number;
+  /** Knockback impulse when flung/dropped. */
+  launch: number;
+  /** Color of the tell on the ground. */
+  color: number;
+}
+
 export interface BossMoves {
   orbit?: OrbitSpec;
   barrage?: BarrageSpec;
@@ -197,6 +226,7 @@ export interface BossMoves {
   fanBoomerang?: FanBoomerangSpec;
   daggerVolley?: DaggerVolleySpec;
   mouthFire?: MouthFireSpec;
+  thrashGrab?: ThrashGrabSpec;
 }
 
 export interface BossSpec {
@@ -613,6 +643,83 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           spreadAngle: Math.PI / 2.5,
           color: 0xffaa00,
           doubleVolley: true,
+        },
+      },
+    },
+  },
+
+  // ══ THE COLD CRYPT, SECOND PASS — iron jaws of the underworld ═══════════
+  //
+  // Cerberus: The mythical three-headed hellhound guarding the gates of Hades.
+  // Lunges forward with a vicious telegraphed bite, holds the player in its
+  // mouth, violently thrashes side-to-side, and drops/flings them unless
+  // they spam buttons to break free! Also unleashes roaring triple hellfire breath.
+  cerberus: {
+    kind: "cerberus",
+    name: "Cerberus",
+    biome: "crypt",
+    title: "🐕 CERBERUS 🐕",
+    tagline: "three jaws of iron, guardian of the abyss",
+    label: "CERBERUS",
+    art: { sheetKey: "cerberus", tint: null, scale: 2.2 },
+    hpMult: 1.3,
+    speedMult: 1.05,
+    moves: {
+      thrashGrab: {
+        interval: 6.5,
+        telegraph: 0.75,
+        distance: 4.5,
+        lungeSpeed: 14,
+        biteRadius: 1.25,
+        grabDamage: 1,
+        grabDuration: 4.0,
+        escapeCount: 5,
+        thrashTickInterval: 0.8,
+        thrashDamage: 1,
+        dropDamage: 2,
+        launch: 20,
+        color: 0xd02020,
+      },
+      mouthFire: {
+        interval: 5.5,
+        telegraph: 0.7,
+        fireDuration: 1.2,
+        fireSpeed: 12,
+        damage: 2,
+        shotCount: 9,
+        color: 0xff3300,
+        spread: 0.45,
+      },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🔥 CERBERUS ENRAGES: INFERNAL THRASH & TRIPLE HELLFIRE",
+      speedMult: 1.25,
+      moves: {
+        thrashGrab: {
+          interval: 4.5,
+          telegraph: 0.55,
+          distance: 5.0,
+          lungeSpeed: 18,
+          biteRadius: 1.35,
+          grabDamage: 1,
+          grabDuration: 4.0,
+          escapeCount: 6,
+          thrashTickInterval: 0.7,
+          thrashDamage: 1,
+          dropDamage: 2,
+          launch: 22,
+          color: 0xff1111,
+        },
+        mouthFire: {
+          interval: 3.8,
+          telegraph: 0.55,
+          fireDuration: 1.4,
+          fireSpeed: 14,
+          damage: 2,
+          shotCount: 12,
+          color: 0xff2200,
+          spread: 0.55,
         },
       },
     },

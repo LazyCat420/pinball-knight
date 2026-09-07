@@ -1183,6 +1183,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   crawling_hand: CRAWLING_HAND_DAMAGE,
   sumo_ninja: SUMO_NINJA_DAMAGE,
   zippo: ZIPPO_DAMAGE,
+  cerberus: 2,
 };
 
 /**

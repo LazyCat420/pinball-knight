@@ -71,6 +71,7 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   crawling_hand: CRAWLING_HAND_HP,
   sumo_ninja: SUMO_NINJA_HP,
   zippo: ZIPPO_HP,
+  cerberus: 60,
 };
 
 export { skinSheet };
@@ -360,6 +361,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= ZIPPO_FROM_LEVEL ? makeSkinned("zippo", x, z, baseSpeed * ZIPPO_SPEED_FACTOR) : null;
     case "jade_buddha":
       return makeSkinned("jade_buddha", x, z, baseSpeed * 0.85);
+    case "cerberus":
+      return makeSkinned("cerberus", x, z, baseSpeed * 1.05);
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

@@ -231,6 +231,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   crawling_hand: { bodyR: CRAWLING_HAND_R, contactRange: CRAWLING_HAND_CONTACT_RANGE, windup: CRAWLING_HAND_WINDUP, cooldown: CRAWLING_HAND_COOLDOWN, ranged: false },
   sumo_ninja: { bodyR: SUMO_NINJA_R, contactRange: SUMO_NINJA_FIRE_RANGE, windup: SUMO_NINJA_WINDUP, cooldown: SUMO_NINJA_COOLDOWN, ranged: true },
   zippo: { bodyR: ZIPPO_R, contactRange: ZIPPO_FIRE_RANGE, windup: ZIPPO_WINDUP, cooldown: ZIPPO_COOLDOWN, ranged: true },
+  cerberus: { bodyR: 0.88, contactRange: 3.0, windup: 0.75, cooldown: 5.5, ranged: true },
 };
 
 /**

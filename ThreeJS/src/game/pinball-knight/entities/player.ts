@@ -177,7 +177,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../engine/camera";
 import { InputHandle } from "../engine/input";
 import { WEAPONS } from "../items";
-import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
+import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit, hitPlayerRanged } from "./combat";
 import { carveGroove, meltFloor } from "./floor-fx";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
@@ -2309,6 +2309,76 @@ export function updatePlayer(dt: number, input: InputHandle): void {
         syncActorMesh(p);
         p.anim.play("stumble");
         return;
+      }
+    }
+  }
+
+  // ── CERBERUS THREE-HEADED DOG JAWS GRAB & THRASH ──
+  if ((p.cerberusGrabT ?? 0) > 0) {
+    if (p.cerberusGrabHost && (p.cerberusGrabHost.mode === "dead" || p.cerberusGrabHost.hp <= 0)) {
+      p.cerberusGrabT = 0;
+      p.cerberusGrabEscape = 0;
+      p.cerberusGrabHost = null;
+    } else {
+      p.cerberusGrabT = Math.max(0, (p.cerberusGrabT ?? 0) - dt);
+      const ax = input.axis();
+      const spammed =
+        input.consumeAttack() ||
+        input.consumeDodge() ||
+        ax.x !== 0 ||
+        ax.z !== 0;
+      if (spammed) {
+        p.cerberusGrabEscape = Math.max(0, (p.cerberusGrabEscape ?? 5) - 1);
+        state.vfx?.sparks(p.x, 0.4, p.z, 0, 1, 5);
+        if (p.cerberusGrabEscape <= 0) {
+          p.cerberusGrabT = 0;
+          if (p.cerberusGrabHost) {
+            p.cerberusGrabHost.cooldown = 1.5;
+            p.cerberusGrabHost.slipT = 0.8;
+            p.cerberusGrabHost.slipVX = 0;
+            p.cerberusGrabHost.slipVZ = 0;
+          }
+          p.cerberusGrabHost = null;
+          p.iframes = 0.5;
+          showToast("✨ BROKE FREE!", "Escaped Cerberus's iron jaws!");
+        }
+      }
+
+      // If still grabbed, apply thrash motion and chew damage ticks!
+      if ((p.cerberusGrabT ?? 0) > 0 && p.cerberusGrabHost) {
+        p.cerberusThrashTimer = (p.cerberusThrashTimer ?? 0) + dt;
+        if (p.cerberusThrashTimer >= 0.8) {
+          p.cerberusThrashTimer = 0;
+          hitPlayerRanged(1, p.cerberusGrabHost.x, p.cerberusGrabHost.z);
+          state.vfx?.blood(p.x, 0.6, p.z, "red", 6);
+          state.vfx?.sparks(p.x, 0.5, p.z, 0, 0, 8);
+          state.shakeT = Math.max(state.shakeT, 0.18);
+        }
+
+        // Violent side-to-side thrash oscillation
+        const thrashPhase = Math.sin((p.cerberusGrabT ?? 0) * 26) * 0.45;
+        p.x = p.cerberusGrabHost.x + thrashPhase;
+        p.z = p.cerberusGrabHost.z;
+        p.momSpeed = 0;
+        syncActorMesh(p);
+        p.anim.play("stumble");
+        state.shakeT = Math.max(state.shakeT, 0.08);
+        return;
+      } else if ((p.cerberusGrabT ?? 0) <= 0 && p.cerberusGrabHost && (p.cerberusGrabEscape ?? 0) > 0) {
+        // Grab duration expired without escape: Cerberus drops/flings the knight!
+        const host = p.cerberusGrabHost;
+        p.cerberusGrabHost = null;
+        hitPlayerRanged(2, host.x, host.z);
+        // Launch player away in pinball momentum channel
+        const flingAngle = Math.random() * Math.PI * 2;
+        p.momX = Math.cos(flingAngle);
+        p.momZ = Math.sin(flingAngle);
+        p.momSpeed = 20;
+        p.iframes = 0.4;
+        state.vfx?.dust(p.x, 0.15, p.z);
+        state.vfx?.sparks(p.x, 0.5, p.z, 0, 1, 14);
+        state.shakeT = Math.max(state.shakeT, 0.4);
+        showToast("💥 DROPPED BY CERBERUS!", "Flung into the stone floor!");
       }
     }
   }

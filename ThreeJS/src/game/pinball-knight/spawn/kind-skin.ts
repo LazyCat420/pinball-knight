@@ -95,6 +95,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   sumo_ninja: { scale: 1.0 },
   zippo: { scale: 1.0 },
   jade_buddha: { scale: 2.15 },
+  cerberus: { scale: 2.2 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

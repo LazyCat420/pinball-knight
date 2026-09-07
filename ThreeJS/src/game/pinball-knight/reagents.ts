@@ -127,6 +127,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   crawling_hand: [{ id: "rotflesh", chance: 0.3 }, { id: "grimbone", chance: 0.15 }],
   sumo_ninja: [{ id: "ironshard", chance: 0.32 }, { id: "steelpin", chance: 0.18 }],
   zippo: [{ id: "ironshard", chance: 0.30 }, { id: "glass", chance: 0.20 }],
+  cerberus: [{ id: "fang", chance: 0.5 }, { id: "hide", chance: 0.35 }, { id: "grimbone", chance: 0.25 }],
 };
 
 /**

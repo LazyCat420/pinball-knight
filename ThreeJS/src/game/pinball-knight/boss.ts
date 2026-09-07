@@ -58,6 +58,7 @@ import {
   disposeDaggerVolley,
   disposeFanBoomerang,
   disposeMouthFire,
+  disposeThrashGrab,
   freshBarrage,
   freshCharge,
   freshDaggerVolley,
@@ -67,10 +68,12 @@ import {
   freshSlam,
   freshSummon,
   freshTeleportFire,
+  freshThrashGrab,
   makeOrbiter,
   mouthFireHoldsMovement,
   syncOrbit,
   teleportFireHoldsMovement,
+  thrashGrabHoldsMovement,
   updateBarrage,
   updateCharge,
   updateDaggerVolley,
@@ -81,6 +84,7 @@ import {
   updateSlam,
   updateSummon,
   updateTeleportFire,
+  updateThrashGrab,
   type BarrageRt,
   type BossShot,
   type ChargeRt,
@@ -93,6 +97,7 @@ import {
   type SlamRt,
   type SummonRt,
   type TeleportFireRt,
+  type ThrashGrabRt,
 } from "./boss-moves";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
@@ -263,6 +268,7 @@ interface BossState {
   dragonSnake?: DragonSnakeBoss | null;
   daggerVolley: DaggerVolleyRt | null;
   mouthFire: MouthFireRt | null;
+  thrashGrab: ThrashGrabRt | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -367,6 +373,7 @@ export function spawnBoss(
     fanBoomerang: null,
     daggerVolley: null,
     mouthFire: null,
+    thrashGrab: null,
     adds: [],
     spawnAdd,
     portal: null,
@@ -510,7 +517,7 @@ export function updateBoss(dt: number): void {
   // this he would simply stand wherever the leash tripped — which is worse than
   // chasing, because the exit ends up unguarded AND he is loitering in a
   // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
-  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire)) && !(boss.mouthFire && mouthFireHoldsMovement(boss.mouthFire))) {
+  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire)) && !(boss.mouthFire && mouthFireHoldsMovement(boss.mouthFire)) && !(boss.thrashGrab && thrashGrabHoldsMovement(boss.thrashGrab))) {
     const step = boss.z.speed * KING_RETURN_SPEED * dt;
     const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
     boss.z.x = res.x;
@@ -557,6 +564,7 @@ export function updateBoss(dt: number): void {
     if (p2.moves.fanBoomerang) boss.fanBoomerang = freshFanBoomerang(p2.moves.fanBoomerang);
     if (p2.moves.daggerVolley) boss.daggerVolley = freshDaggerVolley(p2.moves.daggerVolley);
     if (p2.moves.mouthFire) boss.mouthFire = freshMouthFire(p2.moves.mouthFire);
+    if (p2.moves.thrashGrab) boss.thrashGrab = freshThrashGrab(p2.moves.thrashGrab);
     if (p2.speedMult) boss.z.speed *= p2.speedMult;
     syncOrbiters();
     showToast(p2.title, boss.spec.tagline);
@@ -622,6 +630,11 @@ export function updateBoss(dt: number): void {
     updateMouthFire(boss.mouthFire, moves.mouthFire, ctx, boss.shots);
   }
 
+  if (moves.thrashGrab) {
+    boss.thrashGrab ??= freshThrashGrab(moves.thrashGrab);
+    updateThrashGrab(boss.thrashGrab, moves.thrashGrab, ctx);
+  }
+
   // ── The ring wheels (after moves so teleports track orbiters instantly) ──
   if (moves.orbit) {
     boss.orbitT += dt * moves.orbit.speed;
@@ -680,6 +693,19 @@ function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
     setFacing(dir) {
       b.z.anim.setFacing(dir);
     },
+    grabPlayer(grabDuration, escapeCount, damage) {
+      const p = state.player;
+      if (!p || p.hp <= 0 || (p.cerberusGrabT ?? 0) > 0 || state.godMode || p.shieldT > 0) return false;
+      hitPlayerRanged(damage, b.z.x, b.z.z);
+      p.cerberusGrabT = grabDuration;
+      p.cerberusGrabEscape = escapeCount;
+      p.cerberusGrabHost = b.z;
+      p.cerberusThrashTimer = 0;
+      p.momSpeed = 0;
+      showToast("🐕 CAUGHT IN CERBERUS'S JAWS!", "SPAM buttons to break free!");
+      state.shakeT = Math.max(state.shakeT, 0.35);
+      return true;
+    },
   };
 }
 
@@ -722,6 +748,10 @@ function clearTelegraphs(): void {
     disposeMouthFire(boss.mouthFire);
     boss.mouthFire = null;
   }
+  if (boss.thrashGrab) {
+    disposeThrashGrab(boss.thrashGrab);
+    boss.thrashGrab = null;
+  }
 }
 
 // ── Death → portal ────────────────────────────────────────────────────────────
@@ -740,6 +770,10 @@ function openPortal(): void {
   if (boss.mouthFire) {
     disposeMouthFire(boss.mouthFire);
     boss.mouthFire = null;
+  }
+  if (boss.thrashGrab) {
+    disposeThrashGrab(boss.thrashGrab);
+    boss.thrashGrab = null;
   }
 
   // The ring shatters, and every telegraph in flight is dropped — a boss dying
@@ -1064,6 +1098,7 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     fanBoomerang: null,
     daggerVolley: null,
     mouthFire: null,
+    thrashGrab: null,
     adds: [],
     // Adds cannot be adopted: the previous authority's brood is in
     // `state.zombies` as ordinary monsters and stays that way.

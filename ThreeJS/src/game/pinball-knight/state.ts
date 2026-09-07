@@ -126,6 +126,11 @@ export interface Player extends Actor {
   handGrabT?: number;
   handGrabEscape?: number;
   handGrabHost?: Zombie | null;
+  /** Cerberus Three-Headed Dog grab & thrash: while > 0 player is caught in jaws, thrashed, and dropped. */
+  cerberusGrabT?: number;
+  cerberusGrabEscape?: number;
+  cerberusGrabHost?: Zombie | null;
+  cerberusThrashTimer?: number;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -369,7 +374,8 @@ export type EnemyKind =
   | "milkshake" // SPRAYER — cartoon milkshake cup with yellow dishwashing gloves that sprays toxic milkshake
   | "crawling_hand" // PINNER — severed walking hand that grabs and pins the knight while horde attacks
   | "sumo_ninja" // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
-  | "zippo"; // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
+  | "zippo" // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
+  | "cerberus"; // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

@@ -581,6 +581,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   crawling_hand: "bone",
   sumo_ninja: "iron",
   zippo: "iron",
+  cerberus: "bone",
 };
 
 /**

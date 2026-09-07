@@ -28,7 +28,7 @@
  * with the boss about who it is aiming at.
  */
 import * as THREE from "three";
-import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
+import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec, ThrashGrabSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import { moveCircle } from "./engine/collision";
@@ -51,6 +51,7 @@ export interface MoveCtx {
   moveTo(x: number, z: number): void;
   playAnim?(clip: string, opts?: { force?: boolean }): void;
   setFacing?(dir: "N" | "S" | "E" | "W"): void;
+  grabPlayer?(grabDuration: number, escapeCount: number, damage: number): boolean;
 }
 
 function add(mesh: THREE.Mesh): THREE.Mesh {
@@ -1316,4 +1317,128 @@ export function disposeMouthFire(rt: MouthFireRt | null): void {
     rt.tell = null;
   }
 }
+
+// ── CERBERUS JAWS GRAB & THRASH ─────────────────────────────────────────────
+
+export interface ThrashGrabRt {
+  t: number;
+  phase: "idle" | "telegraph" | "lunging" | "holding";
+  dx: number;
+  dz: number;
+  left: number;
+  lane: THREE.Mesh | null;
+}
+
+export function freshThrashGrab(spec: ThrashGrabSpec): ThrashGrabRt {
+  return { t: spec.interval, phase: "idle", dx: 0, dz: 0, left: 0, lane: null };
+}
+
+export function thrashGrabHoldsMovement(rt: ThrashGrabRt): boolean {
+  return rt.phase === "lunging" || rt.phase === "holding";
+}
+
+export function updateThrashGrab(
+  rt: ThrashGrabRt,
+  spec: ThrashGrabSpec,
+  ctx: MoveCtx,
+): void {
+  if (rt.phase === "holding") {
+    ctx.playAnim?.("attack", { force: true });
+    const p = state.player;
+    if (!p || (p.cerberusGrabT ?? 0) <= 0) {
+      rt.phase = "idle";
+      rt.t = spec.interval;
+      ctx.playAnim?.("idle");
+    }
+    return;
+  }
+
+  if (rt.phase === "lunging") {
+    const step = spec.lungeSpeed * ctx.dt;
+    const nx = ctx.x + rt.dx * step;
+    const nz = ctx.z + rt.dz * step;
+    if (ctx.grid) {
+      const res = moveCircle(ctx.grid, ctx.x, ctx.z, ctx.bodyR, rt.dx * step, rt.dz * step);
+      const moved = Math.hypot(res.x - ctx.x, res.z - ctx.z);
+      ctx.moveTo(res.x, res.z);
+      if (moved < step * 0.4) rt.left = 0;
+    } else {
+      ctx.moveTo(nx, nz);
+    }
+    ctx.setFacing?.(facingFromWorld(rt.dx, rt.dz, "S"));
+    ctx.playAnim?.("attack", { force: true });
+
+    if (Math.random() < ctx.dt * 18) {
+      state.vfx?.dust(ctx.x, 0.05, ctx.z);
+    }
+
+    const p = state.player;
+    if (p && p.hp > 0 && Math.hypot(p.x - ctx.x, p.z - ctx.z) <= spec.biteRadius) {
+      const grabbed = ctx.grabPlayer?.(spec.grabDuration, spec.escapeCount, spec.grabDamage);
+      if (grabbed) {
+        rt.phase = "holding";
+        rt.left = spec.grabDuration;
+        state.shakeT = Math.max(state.shakeT, 0.35);
+        state.vfx?.sparks(ctx.x, 0.6, ctx.z, 0, 1, 10);
+        return;
+      }
+    }
+
+    rt.left -= step;
+    if (rt.left <= 0) {
+      state.shakeT = Math.max(state.shakeT, 0.2);
+      rt.phase = "idle";
+      rt.t = spec.interval;
+      ctx.playAnim?.("idle");
+    }
+    return;
+  }
+
+  rt.t -= ctx.dt;
+  if (rt.phase === "idle" && rt.t <= spec.telegraph) {
+    rt.phase = "telegraph";
+    const dx = ctx.target.x - ctx.x;
+    const dz = ctx.target.z - ctx.z;
+    const len = Math.hypot(dx, dz) || 1;
+    rt.dx = dx / len;
+    rt.dz = dz / len;
+    ctx.setFacing?.(facingFromWorld(rt.dx, rt.dz, "S"));
+    ctx.playAnim?.("attack", { force: true });
+
+    const geo = new THREE.PlaneGeometry(1.6, spec.distance);
+    const mat = new THREE.MeshBasicMaterial({
+      color: spec.color,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const lane = new THREE.Mesh(geo, mat);
+    lane.rotation.x = -Math.PI / 2;
+    lane.rotation.z = -Math.atan2(rt.dz, rt.dx) + Math.PI / 2;
+    lane.position.set(ctx.x + rt.dx * spec.distance * 0.5, 0.045, ctx.z + rt.dz * spec.distance * 0.5);
+    lane.renderOrder = 5;
+    rt.lane = add(lane);
+  }
+
+  if (rt.phase === "telegraph") {
+    pulse(rt.lane, rt.t);
+    if (rt.t <= 0) {
+      disposeMesh(rt.lane);
+      rt.lane = null;
+      rt.phase = "lunging";
+      rt.left = spec.distance;
+      state.shakeT = Math.max(state.shakeT, 0.2);
+    }
+  }
+}
+
+export function disposeThrashGrab(rt: ThrashGrabRt | null): void {
+  if (!rt) return;
+  if (rt.lane) {
+    disposeMesh(rt.lane);
+    rt.lane = null;
+  }
+}
+
 
