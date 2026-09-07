@@ -35,14 +35,18 @@ PRE_TEST() {
   export pnpm_config_verify_deps_before_run=error
 }
 
-# Resolve deploy-kit library location
-if [ -f "${SCRIPT_DIR}/../../../../deploy-kit/lib.sh" ]; then
-  source "${SCRIPT_DIR}/../../../../deploy-kit/lib.sh"
-elif [ -f "${SCRIPT_DIR}/../../deploy-kit/lib.sh" ]; then
-  source "${SCRIPT_DIR}/../../deploy-kit/lib.sh"
-elif [ -f "${SCRIPT_DIR}/../deploy-kit/lib.sh" ]; then
-  source "${SCRIPT_DIR}/../deploy-kit/lib.sh"
-else
+# Resolve the shared library and require its release guard. A fresh checkout
+# with an outdated deploy-kit must stop instead of silently losing protection.
+DEPLOY_KIT_LIB=""
+for candidate in "${SCRIPT_DIR}/../../../../deploy-kit/lib.sh" "${SCRIPT_DIR}/../../deploy-kit/lib.sh" "${SCRIPT_DIR}/../deploy-kit/lib.sh"; do
+  if [ -f "$candidate" ]; then DEPLOY_KIT_LIB="$candidate"; break; fi
+done
+if [ -z "$DEPLOY_KIT_LIB" ]; then
   echo "Error: deploy-kit/lib.sh not found" >&2
   exit 1
 fi
+if [ ! -f "$(dirname "$DEPLOY_KIT_LIB")/release-guard.sh" ]; then
+  echo "Error: deploy-kit is missing release-guard.sh. Update the shared deploy kit before releasing; older branches must not overwrite the integrated game." >&2
+  exit 1
+fi
+source "$DEPLOY_KIT_LIB"
