@@ -81,14 +81,19 @@ The project deploy-kit wrapper released `e4ff8dcc` on 2026-09-06 at 23:55 PDT
 
 Play: https://pinballknight.braindeadbot.com/
 
-## Six-Armed God & Crawling Hand Integration Checkpoint
+## Six-Armed God & Crawling Hand Released to NAS
 
-- Commit: `74bd5ef8`.
-- Merged `main` (`74755d72`), cleanly unifying:
+- Commit: `4aa5b82f`.
+- Merged `main` (`860c9638`), cleanly unifying:
   - **Six-Armed Indian God ("Mahadeva Asura")** boss with mouth fire stream (`mouthFire`) and 6-arm dagger volley (`daggerVolley`).
   - **Crawling Hand** monster with grab-and-pin mechanic.
   - All sprite forge assets, manifests, and tests for both entities.
-- Zero conflicts remaining: `boot/lazy-sheets.test.ts`, `boot/sheets.ts`, `boss.ts`, `spawn/factory.ts`, and `state.ts` resolved cleanly.
-- Tests verified: `boss-six-armed-god.test.ts`, `boss-roster.test.ts`, `lazy-sheets.test.ts`, and `crawling-hand.test.ts` all passed (33/33 tests).
-- Production build verified: `vite build` completed in 11.80s with 370 modules transformed.
+- Zero conflicts: `boot/lazy-sheets.test.ts`, `boot/sheets.ts`, `boss.ts`, `spawn/factory.ts`, and `state.ts` resolved cleanly.
+- Full sharded test suite passed: 334 test files across 3 shards (zero failures).
+- Docker release image built, transferred via SSH to Synology NAS, and container restarted to `running / healthy`.
+- Both NAS (`http://10.0.0.16:8789/health`) and public (`https://pinballknight.braindeadbot.com/health`) endpoints verified healthy (HTTP 200).
+- Windows release executable ready at `dist/pinball-knight-windows-x86_64/pk-game.exe`.
+
+Play: https://pinballknight.braindeadbot.com/ (Local NAS: http://10.0.0.16:8789)
+
 
