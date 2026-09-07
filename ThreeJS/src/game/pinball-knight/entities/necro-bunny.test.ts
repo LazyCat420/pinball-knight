@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, type Zombie } from "../state";
 import { installGameplayWiring } from "../boot/wiring";
-import { damageZombie, setReagentDropHandler, setCoinDropHandler } from "./combat";
+import { damageZombie, setReagentDropHandler, setCoinDropHandler, setCardRollHandler } from "./combat";
 import {
   NECRO_HP,
   NECRO_R,
@@ -36,6 +36,13 @@ describe("Necromancer & Zombie Mini Bunny Rabbit Summons", () => {
               fillRect: () => {},
               clearRect: () => {},
               drawImage: () => {},
+              save: () => {},
+              restore: () => {},
+              setTransform: () => {},
+              beginPath: () => {},
+              arc: () => {},
+              fill: () => {},
+              stroke: () => {},
               fillStyle: "",
             }),
           };
@@ -165,6 +172,7 @@ describe("Necromancer & Zombie Mini Bunny Rabbit Summons", () => {
     });
     setReagentDropHandler(() => {});
     setCoinDropHandler(() => {});
+    setCardRollHandler(() => {});
 
     queueSummon(4, 4);
     drainPendingSummons();
