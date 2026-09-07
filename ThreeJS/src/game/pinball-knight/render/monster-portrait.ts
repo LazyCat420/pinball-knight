@@ -63,6 +63,7 @@ import { makeWardenPaints } from "./monsters/warden";
 import { makeNecroPaints } from "./monsters/necro";
 import { makePlatypusPaints } from "./monsters/platypus";
 import { makeEspressoPaints } from "./monsters/espresso";
+import { makeGnomePaints } from "./monsters/gnome";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -117,6 +118,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   mimic: { paints: makeGolemPaints },
   platypus: { paints: makePlatypusPaints },
   espresso: { paints: makeEspressoPaints },
+  gnome: { paints: makeGnomePaints },
   jade_buddha: { paints: makeBossPaints },
 };
 
