@@ -20,9 +20,10 @@ installation from changing another developer's files.
 - Resolved overlaps: retain Cigarette and all three Clockwork variants in the
   sprite inventory; combine Milkshake with all existing sheet keys and enemy
   kinds; retain pinned pnpm 11.8.0 and frozen dependency installation.
-- Deployment remains on hold while the user brings in the other developers'
-  commits. This integration is a checkpoint, not a claim that their branches are
-  finished. Recheck branch heads before the next merge or deployment.
+- The user authorized deployment of this integration while the other developers
+  continue working. Published Sumo Ninja commit `80791fd4` was merged as
+  `3a49bc2f` to preserve its already-public sprite. Release this checkpoint;
+  later developer batches can be integrated separately.
 
 ## Working agreement
 
@@ -59,3 +60,9 @@ are resolved in integration, and feature branches retain their original commits.
   common directory caused a second release invocation to stop before building.
   Older developer checkouts must adopt this wrapper for mutual exclusion.
 - No NAS deployment has been performed for this integration checkpoint.
+
+## Release in progress
+
+The user lifted the deployment hold and requested the integrated game for testing.
+The project deploy-kit wrapper will validate and deploy the Sumo-inclusive
+checkpoint. Record the actual NAS and public checks after it completes.
