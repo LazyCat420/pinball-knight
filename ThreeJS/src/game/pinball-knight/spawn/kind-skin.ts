@@ -90,6 +90,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   milkshake: { scale: 1.0 },
   crawling_hand: { scale: 0.95 },
   sumo_ninja: { scale: 1.0 },
+  jade_buddha: { scale: 2.15 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //
