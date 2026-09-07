@@ -25,6 +25,8 @@ import { makeSkinned, makeZombie, skinSheet, spawnKind } from "../spawn/factory"
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { variantIndicesFor, type ZombieType } from "../zombie-types";
+import { adoptBoss, bossActive, disposeBoss } from "../boss";
+import { BOSSES } from "../boss-kinds";
 
 /** Core-owned actions these helpers drive. Set once by launchDungeonGame. */
 interface DebugActionDeps {
@@ -168,6 +170,9 @@ export function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
     }
     state.zombies.push(zz);
     placed.push({ x: pt.x, z: pt.z });
+    if (spec.kind === "jade_buddha" && !bossActive()) {
+      adoptBoss(zz, BOSSES.jade_buddha);
+    }
   }
   return { spawned: placed.length, requested, kind: spec.kind, points: placed };
 }
@@ -194,6 +199,7 @@ export function debugClearEnemies(): void {
   for (const z of state.zombies) state.scene?.remove(z.sprite.mesh);
   state.zombies.length = 0;
   state.reaperOut = false; // let the reaper be re-summoned after a clear
+  disposeBoss();
 }
 
 /** Yank non-boss adds off the floor instantly — keeps the boss. */

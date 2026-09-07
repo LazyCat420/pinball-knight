@@ -355,6 +355,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= CRAWLING_HAND_FROM_LEVEL ? makeSkinned("crawling_hand", x, z, baseSpeed * CRAWLING_HAND_SPEED_MULT) : null;
     case "sumo_ninja":
       return level >= SUMO_NINJA_FROM_LEVEL ? makeSkinned("sumo_ninja", x, z, baseSpeed * SUMO_NINJA_SPEED_FACTOR) : null;
+    case "jade_buddha":
+      return makeSkinned("jade_buddha", x, z, baseSpeed * 0.85);
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

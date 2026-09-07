@@ -1033,6 +1033,9 @@ export function updateBossReplica(dt: number): void {
  */
 export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void {
   if (boss || !state.scene) return;
+  z.boss = true;
+  z.bossKind = spec.kind;
+  z.bodyR = BRUTE_R * spec.art.scale * 0.86;
   disposeReplicaAux();
   boss = {
     spec,

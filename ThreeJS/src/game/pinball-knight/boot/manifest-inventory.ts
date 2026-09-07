@@ -37,6 +37,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   goblin: ["S"],
   golem: ["S"],
   hound: ["S"],
+  jade_buddha: ["S"],
   jester: ["S"],
   magnet: ["S"],
   mario: ["N", "S"],

@@ -11,13 +11,13 @@ const BASE = join(__dirname, "..");
 const INBOX = join(BASE, "inbox");
 const SOURCES = join(BASE, "sources");
 
-const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/c3e4a78c-99fa-41ea-ba61-e57d6b4d78f0/fries_monster_sheet_1788756165361.jpg";
+const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/4321b33f-3337-4e16-b603-ef2e52ab7300/fry_monster_sheet_green_1788766951778.jpg";
 const FRIES_DIR = join(SOURCES, "fries-2026-09-06");
 const ALT_DIR = join(FRIES_DIR, "alt-takes");
-const MASTER_SRC = join(ALT_DIR, "fries_monster_sheet_1788756165361.jpg");
+const MASTER_SRC = join(ALT_DIR, "fry_monster_sheet_green_1788766951778.jpg");
 
 async function run() {
-  console.log("🍟 Preparing Fry Sentinel Monster (Crinkle-Cut Limbs & Head Fry Barrage) Sprite Sheet...");
+  console.log("🍟 Preparing Fry Sentinel Monster (Green Chroma #00FF00 - High Contrast) Sprite Sheet...");
 
   mkdirSync(ALT_DIR, { recursive: true });
   mkdirSync(INBOX, { recursive: true });
@@ -33,7 +33,7 @@ async function run() {
   const w = 1024;
   const h = 1024;
 
-  // Chroma key helper for #FF00FF magenta + border cleanup
+  // Chroma key helper for #00FF00 green + border cleanup
   function cleanSheet(srcImg) {
     const c = createCanvas(w, h);
     const cx = c.getContext("2d");
@@ -48,18 +48,25 @@ async function run() {
       const px = (i / 4) % w;
       const py = Math.floor((i / 4) / w);
 
-      // Magenta chroma key check (high red & blue, low green)
-      const isMagenta = (r > 160 && b > 160 && g < 110) || (r > 130 && b > 130 && (r + b) > g * 2.1);
+      // Red carton protection: if it's noticeably reddish, NEVER treat as green background!
+      const isRedCarton = r > 90 && r > g * 1.2 && r > b * 1.2;
+
+      // Green chroma key check (high green, lower red and blue)
+      const isGreen = !isRedCarton && (
+        (g > 140 && g > r * 1.4 && g > b * 1.4) ||
+        (g > 200 && (r + b) < 160)
+      );
+
       // Strip any edge grid line artifacts
-      const isGridLine = (px % 256 <= 2 || px % 256 >= 253 || py % 256 <= 2 || py % 256 >= 253) && (r < 80 && g < 80 && b < 80);
+      const isGridLine = (px % 256 <= 2 || px % 256 >= 253 || py % 256 <= 2 || py % 256 >= 253) && (r < 60 && g < 60 && b < 60);
       // Outer border frame
       const isOuterBorder = px < 4 || px >= w - 4 || py < 4 || py >= h - 4;
 
-      if (isMagenta || isGridLine || isOuterBorder) {
-        d[i] = 255;
-        d[i + 1] = 0;
-        d[i + 2] = 255;
-        d[i + 3] = 255; // solid magenta background for sprite forge
+      if (isGreen || isGridLine || isOuterBorder) {
+        d[i] = 0;
+        d[i + 1] = 255;
+        d[i + 2] = 0;
+        d[i + 3] = 255; // solid pure green background for sprite forge
       }
     }
     cx.putImageData(imgData, 0, 0);
@@ -94,7 +101,8 @@ async function run() {
     const r = d[idx];
     const g = d[idx + 1];
     const b = d[idx + 2];
-    return r > 235 && g < 30 && b > 235;
+    // Background is pure green [0, 255, 0]
+    return g > 200 && r < 50 && b < 50;
   }
 
   for (let r = 0; r < 4; r++) {
@@ -140,12 +148,12 @@ async function run() {
   const manifest = {
     sheet: "fries-S",
     author: "LazyCat420 & Nano Banana",
-    notes: "Fry Sentinel monster with crinkle-cut limbs, eye amulet necklace, head fry barrage attack, and crispy crumbs death",
+    notes: "Fry Sentinel monster with crinkle-cut limbs, eye amulet necklace, head fry barrage attack, and crispy crumbs death on pure green chroma",
     grid: [4, 4],
     rows: rows,
     rects: rects,
     matte: {
-      bg: [255, 0, 255],
+      bg: [0, 255, 0],
       tolerance: 64,
     },
   };
