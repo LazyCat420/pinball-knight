@@ -61,6 +61,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   toucan: ["S"],
   zippo: ["S"],
   cerberus: ["S"],
+  clam: ["S"],
   zombie: ["E"],
 };
 

@@ -84,6 +84,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   sumo_ninja: "kite",
   zippo: "kite",
   cerberus: "chase",
+  clam: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
@@ -162,5 +163,12 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     bar: CARD_PINBALL_SPEED,
     soft: CRYSTAL_GATE_SOFT,
     text: "A reflector that taxes momentum: ramming it sprays shards back INTO you, and the spray scales with how fast you hit it. A graze throws one; a full ram throws the lot.",
+  },
+  clam: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: 0.25,
+    gatesDamage: true,
+    text: "Scalloped Shell: its tightly clamped shell deflects physical blows down to chip damage unless struck at pinball speed or when opened to spit pearls.",
   },
 };

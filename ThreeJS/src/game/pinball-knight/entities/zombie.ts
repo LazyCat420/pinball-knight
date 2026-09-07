@@ -155,7 +155,8 @@ import {
   MILKSHAKE_R, MILKSHAKE_FIRE_RANGE, MILKSHAKE_WINDUP, MILKSHAKE_COOLDOWN,
   CRAWLING_HAND_R, CRAWLING_HAND_CONTACT_RANGE, CRAWLING_HAND_WINDUP, CRAWLING_HAND_COOLDOWN,
   SUMO_NINJA_R, SUMO_NINJA_FIRE_RANGE, SUMO_NINJA_WINDUP, SUMO_NINJA_COOLDOWN,
-  ZIPPO_R, ZIPPO_FIRE_RANGE, ZIPPO_WINDUP, ZIPPO_COOLDOWN } from "../constants";
+  ZIPPO_R, ZIPPO_FIRE_RANGE, ZIPPO_WINDUP, ZIPPO_COOLDOWN,
+  CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -168,7 +169,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -232,6 +233,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sumo_ninja: { bodyR: SUMO_NINJA_R, contactRange: SUMO_NINJA_FIRE_RANGE, windup: SUMO_NINJA_WINDUP, cooldown: SUMO_NINJA_COOLDOWN, ranged: true },
   zippo: { bodyR: ZIPPO_R, contactRange: ZIPPO_FIRE_RANGE, windup: ZIPPO_WINDUP, cooldown: ZIPPO_COOLDOWN, ranged: true },
   cerberus: { bodyR: 0.88, contactRange: 3.0, windup: 0.75, cooldown: 5.5, ranged: true },
+  clam: { bodyR: CLAM_R, contactRange: CLAM_FIRE_RANGE, windup: CLAM_WINDUP, cooldown: CLAM_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1264,6 +1266,9 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "zippo") {
                 // 1960s cartoon lighter chugs alcohol and exhales flame breath
                 launchZippoFlameBreath(z.x, z.z, ux, uz);
+              } else if (z.kind === "clam") {
+                // Old Clam spits a bouncy trajectory-deflecting pearl
+                spitPearl(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);

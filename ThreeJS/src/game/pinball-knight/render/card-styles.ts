@@ -582,6 +582,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   sumo_ninja: "iron",
   zippo: "iron",
   cerberus: "bone",
+  clam: "chitin",
 };
 
 /**

@@ -66,6 +66,7 @@ import { makeSumoNinjaPaints } from "./monsters/sumo_ninja";
 import { makeSixArmedGodPaints } from "./monsters/six-armed-god";
 import { makeZippoPaints } from "./monsters/zippo";
 import { makeCerberusPaints } from "./monsters/cerberus";
+import { makeClamPaints } from "./monsters/clam";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -122,4 +123,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   six_armed_god: makeSixArmedGodPaints,
   zippo: makeZippoPaints,
   cerberus: makeCerberusPaints,
+  clam: makeClamPaints,
 };
+
+export { makeClamPaints };

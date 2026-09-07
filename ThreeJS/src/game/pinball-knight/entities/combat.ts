@@ -405,6 +405,7 @@ const GATE_REFUSED_TOAST: Partial<Record<EnemyKind, string>> = {
   golem: "🧱 IT SHRUGS OFF STEEL",
   goblin: "🟢 IT BOUNCES OFF STEEL",
   jester: "🤡 THE SPRING THROWS YOU OFF",
+  clam: "🦪 SHELL DEFLECTS STEEL",
 };
 
 /**
@@ -493,7 +494,7 @@ export function damageZombie(
   // bestiary prints from — so what the screen teaches and what the code
   // enforces cannot drift apart. `gatesDamage` used to be a `z.kind === …` list
   // right here, which is a second roster to keep in step by hand.
-  const gate = force ? undefined : MOMENTUM_GATES[z.kind];
+  const gate = (force || (z.kind === "clam" && z.mode === "windup")) ? undefined : MOMENTUM_GATES[z.kind];
   if (gate?.gatesDamage) {
     const f = momentum <= gate.minSpeed ? 0 : momentumGate(momentum, gate.bar, gate.soft);
     if (f <= GATE_MIN_FACTOR) {
@@ -1184,6 +1185,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sumo_ninja: SUMO_NINJA_DAMAGE,
   zippo: ZIPPO_DAMAGE,
   cerberus: 2,
+  clam: 1,
 };
 
 /**

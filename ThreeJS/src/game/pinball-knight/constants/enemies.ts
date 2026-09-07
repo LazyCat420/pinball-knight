@@ -1068,3 +1068,18 @@ export const BOSS_BASE_HP = 40;
 export const BOSS_HP_PER_TIER = 25; // +this much per boss encounter (level/5)
 export const BOSS_SPEED_FACTOR = 0.55;
 export const BOSS_GOLD = 50; // bonus gold on kill (on top of per-kill)
+
+// ── Old Clam (Deflector / Sniper) ──────────────────────────────
+export const CLAM_HP = 8;
+export const CLAM_R = 0.38;
+export const CLAM_SPEED_FACTOR = 0.85;
+export const CLAM_FIRE_RANGE = 7.0;
+export const CLAM_WINDUP = 0.65;
+export const CLAM_COOLDOWN = 3.2;
+export const CLAM_PEARL_DAMAGE = 1;
+export const CLAM_PEARL_SPEED = 7.5;
+export const CLAM_PEARL_BOUNCE_SPEED = 12.0;
+export const CLAM_PEARL_BOUNCES = 2;
+export const CLAM_RATIO = 16;
+export const CLAM_FROM_LEVEL = 2;
+

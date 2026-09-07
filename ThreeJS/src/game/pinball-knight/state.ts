@@ -375,7 +375,8 @@ export type EnemyKind =
   | "crawling_hand" // PINNER — severed walking hand that grabs and pins the knight while horde attacks
   | "sumo_ninja" // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
   | "zippo" // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
-  | "cerberus"; // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
+  | "cerberus" // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
+  | "clam"; // DEFLECTOR / SNIPER — old bivalve with sunglasses & mustache that spits bouncy trajectory-deflecting pearls
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

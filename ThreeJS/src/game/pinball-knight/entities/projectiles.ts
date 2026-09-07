@@ -63,6 +63,12 @@ import {
   ZIPPO_FIRE_RANGE,
   ZIPPO_DAMAGE,
   ZIPPO_FLAME_SPEED,
+  CLAM_FIRE_RANGE,
+  CLAM_PEARL_DAMAGE,
+  CLAM_PEARL_SPEED,
+  CLAM_PEARL_BOUNCE_SPEED,
+  CLAM_PEARL_BOUNCES,
+  PINBALL_MAX_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -251,6 +257,14 @@ export function zippoFlameAssets(): { geo: THREE.SphereGeometry; mat: THREE.Mesh
   return { geo: _zippoFlameGeo, mat: _zippoFlameMat };
 }
 
+let _pearlGeo: THREE.SphereGeometry | null = null;
+let _pearlMat: THREE.MeshBasicMaterial | null = null;
+export function pearlAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _pearlGeo ??= new THREE.SphereGeometry(0.18, 12, 10);
+  _pearlMat ??= new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+  return { geo: _pearlGeo, mat: _pearlMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -292,9 +306,13 @@ export function disposeProjectileAssets(): void {
   _shurikenGeo = null;
   _shurikenMat = null;
   _zippoFlameGeo?.dispose();
-  _zippoFlameMat?.dispose();
   _zippoFlameGeo = null;
+  _zippoFlameMat?.dispose();
   _zippoFlameMat = null;
+  _pearlGeo?.dispose();
+  _pearlGeo = null;
+  _pearlMat?.dispose();
+  _pearlMat = null;
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
@@ -901,6 +919,36 @@ export function launchZippoFlameBreath(x: number, z: number, dx: number, dz: num
 }
 
 /**
+ * An Old Clam's hostile bouncy pearl projectile: launched from (x, z) along (dx, dz).
+ * Bounces off walls up to CLAM_PEARL_BOUNCES times, and on contact with the player,
+ * inflicts slight damage and imparts a high-velocity pinball bounce impulse that
+ * completely disrupts player trajectory.
+ */
+export function spitPearl(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = pearlAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "pearl",
+    x: sx,
+    z: sz,
+    vx: dx * CLAM_PEARL_SPEED,
+    vz: dz * CLAM_PEARL_SPEED,
+    life: (CLAM_FIRE_RANGE / CLAM_PEARL_SPEED) * 2.5,
+    maxLife: (CLAM_FIRE_RANGE / CLAM_PEARL_SPEED) * 2.5,
+    damage: CLAM_PEARL_DAMAGE,
+    hostile: true,
+    bounces: CLAM_PEARL_BOUNCES,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
  * is a room-clearing event if you detonate it in a crowd.
@@ -1187,7 +1235,8 @@ export function updateProjectiles(dt: number): void {
     if (pr.hostile) {
       // Bouncing bullets (Warden cop shot): initial direct shot always misses
       // and only damages the player AFTER bouncing off a wall.
-      const canHitPlayer = pr.bounces === undefined || pr.bounced;
+      // Pearls can hit directly or after ricocheting off walls.
+      const canHitPlayer = pr.kind === "pearl" || pr.bounces === undefined || pr.bounced;
       const p = state.player;
       if (canHitPlayer && p && p.hp > 0) {
         const dx = p.x - pr.x;
@@ -1223,6 +1272,21 @@ export function updateProjectiles(dt: number): void {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 14, 1.6);
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
+          } else if (pr.kind === "pearl") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            // Deflect player momentum: bounce off pearl normal
+            const dist = Math.hypot(dx, dz) || 1;
+            const nx = dx / dist;
+            const nz = dz / dist;
+            const curSpeed = p.momSpeed || 0;
+            p.momX = nx;
+            p.momZ = nz;
+            p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(curSpeed * 1.15, CLAM_PEARL_BOUNCE_SPEED));
+            p.bounceCombo = (p.bounceCombo || 0) + 1;
+            p.iframes = Math.max(p.iframes || 0, 0.2);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf1f5f9, 14, 1.8);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, nx * 2, nz * 2, 8);
+            sfxTarget();
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {
