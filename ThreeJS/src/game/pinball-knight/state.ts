@@ -364,7 +364,8 @@ export type EnemyKind =
   | "burger" // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
   | "fries" // SENTINEL — sentient red fry carton with crinkle-cut limbs and eye amulet that launches head fry rockets
   | "milkshake" // SPRAYER — cartoon milkshake cup with yellow dishwashing gloves that sprays toxic milkshake
-  | "crawling_hand"; // PINNER — severed walking hand that grabs and pins the knight while horde attacks
+  | "crawling_hand" // PINNER — severed walking hand that grabs and pins the knight while horde attacks
+  | "sumo_ninja"; // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

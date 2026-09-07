@@ -68,6 +68,7 @@ import {
   CRAWLING_HAND_DAMAGE,
   CRAWLING_HAND_ESCAPE_COUNT,
   CRAWLING_HAND_GRAB_DURATION,
+  SUMO_NINJA_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -971,6 +972,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "fries") state.vfx?.burst(z.x, 0.4, z.z, 0xfacc15, 12, 1.4);
   // MILKSHAKE crumples and splashes a burst of toxic green shake upon death.
   if (z.kind === "milkshake") state.vfx?.burst(z.x, 0.4, z.z, 0x84cc16, 14, 1.5);
+  // SUMO NINJA crashes down and scatters a burst of metallic shuriken sparks upon death.
+  if (z.kind === "sumo_ninja") state.vfx?.burst(z.x, 0.4, z.z, 0xe2e8f0, 14, 1.5);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1155,6 +1158,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   fries: FRIES_DAMAGE,
   milkshake: MILKSHAKE_DAMAGE,
   crawling_hand: CRAWLING_HAND_DAMAGE,
+  sumo_ninja: SUMO_NINJA_DAMAGE,
 };
 
 /**

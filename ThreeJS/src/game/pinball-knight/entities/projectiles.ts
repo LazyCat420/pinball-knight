@@ -57,6 +57,9 @@ import {
   MILKSHAKE_FIRE_RANGE,
   MILKSHAKE_DAMAGE,
   MILKSHAKE_SPRAY_SPEED,
+  SUMO_NINJA_FIRE_RANGE,
+  SUMO_NINJA_DAMAGE,
+  SUMO_NINJA_SHURIKEN_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -229,6 +232,14 @@ export function shakeSprayAssets(): { geo: THREE.SphereGeometry; mat: THREE.Mesh
   return { geo: _shakeSprayGeo, mat: _shakeSprayMat };
 }
 
+let _shurikenGeo: THREE.CylinderGeometry | null = null;
+let _shurikenMat: THREE.MeshBasicMaterial | null = null;
+export function shurikenAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _shurikenGeo ??= new THREE.CylinderGeometry(0.14, 0.14, 0.02, 4); // 4-pointed metallic diamond star
+  _shurikenMat ??= new THREE.MeshBasicMaterial({ color: 0xe2e8f0 }); // gleaming metallic steel
+  return { geo: _shurikenGeo, mat: _shurikenMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -265,6 +276,10 @@ export function disposeProjectileAssets(): void {
   _shakeSprayMat?.dispose();
   _shakeSprayGeo = null;
   _shakeSprayMat = null;
+  _shurikenGeo?.dispose();
+  _shurikenMat?.dispose();
+  _shurikenGeo = null;
+  _shurikenMat = null;
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
@@ -799,6 +814,41 @@ export function launchMilkshakeSpray(x: number, z: number, dx: number, dz: numbe
   }
 }
 
+export function launchShuriken(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+
+  // Metallic glint sparks at throw release
+  state.vfx?.sparks(x + dx * 0.25, PROJECTILE_Y + 0.1, z + dz * 0.25, dx * 1.5, dz * 1.5, 6);
+
+  // Stumbling sumo flings 2 spinning stars with slight drunken spread (-0.12, +0.12 rad)
+  for (const offset of [-0.12, 0.12]) {
+    const angle = baseAngle + offset;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = shurikenAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + fdx * MUZZLE_OFFSET;
+    const sz = z + fdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "shuriken",
+      x: sx,
+      z: sz,
+      vx: fdx * SUMO_NINJA_SHURIKEN_SPEED,
+      vz: fdz * SUMO_NINJA_SHURIKEN_SPEED,
+      life: SUMO_NINJA_FIRE_RANGE / SUMO_NINJA_SHURIKEN_SPEED,
+      maxLife: SUMO_NINJA_FIRE_RANGE / SUMO_NINJA_SHURIKEN_SPEED,
+      damage: SUMO_NINJA_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
@@ -1025,6 +1075,8 @@ export function updateProjectiles(dt: number): void {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
         } else if (pr.kind === "shake_spray") {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
+        } else if (pr.kind === "shuriken") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
         }
         // A bomb against masonry is a bomb going off against masonry. This is
         // what stops "break line of sight" from being the free answer it is
@@ -1049,6 +1101,10 @@ export function updateProjectiles(dt: number): void {
       }
       if (pr.kind === "shake_spray") {
         pr.mesh.rotation.y += dt * 10;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
+      }
+      if (pr.kind === "shuriken") {
+        pr.mesh.rotation.y += dt * 35;
         state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
       }
 
@@ -1102,6 +1158,10 @@ export function updateProjectiles(dt: number): void {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (p.iframes <= 0) webPlayer();
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 12, 1.5);
+          } else if (pr.kind === "shuriken") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 10, 1.5);
+            state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "red", 6);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {
