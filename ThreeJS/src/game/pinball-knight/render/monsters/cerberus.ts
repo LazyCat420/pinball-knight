@@ -46,34 +46,29 @@ function drawHead(
   ctx.rotate(angle);
 
   // Head base skull
-  ellShaded(ctx, 0, 0, 11 * sizeScale, 8 * sizeScale, R_PELT);
+  ellShaded(ctx, 0, 0, 12 * sizeScale, 9 * sizeScale, R_PELT);
 
   // Snout
-  ellShaded(ctx, 0, 5 * sizeScale, 7 * sizeScale, 6 * sizeScale, R_PELT);
+  ellShaded(ctx, 0, 5 * sizeScale, 8 * sizeScale, 6 * sizeScale, R_PELT);
 
   // Ears
-  ellShaded(ctx, -7 * sizeScale, -6 * sizeScale, 4 * sizeScale, 7 * sizeScale, R_HACKLE);
-  ellShaded(ctx, 7 * sizeScale, -6 * sizeScale, 4 * sizeScale, 7 * sizeScale, R_HACKLE);
+  ellShaded(ctx, -7 * sizeScale, -6 * sizeScale, 5 * sizeScale, 7 * sizeScale, R_HACKLE);
+  ellShaded(ctx, 7 * sizeScale, -6 * sizeScale, 5 * sizeScale, 7 * sizeScale, R_HACKLE);
 
-  // Glowing eyes
-  ellShaded(ctx, -4 * sizeScale, -1 * sizeScale, 2.5 * sizeScale, 2.5 * sizeScale, R_EYE);
-  ellShaded(ctx, 4 * sizeScale, -1 * sizeScale, 2.5 * sizeScale, 2.5 * sizeScale, R_EYE);
+  // Glowing eyes - wide horizontal slits for clean runs
+  ellShaded(ctx, -4.5 * sizeScale, -1 * sizeScale, 3.5 * sizeScale, 2 * sizeScale, R_EYE);
+  ellShaded(ctx, 4.5 * sizeScale, -1 * sizeScale, 3.5 * sizeScale, 2 * sizeScale, R_EYE);
 
   // Muzzle / Jaws
   if (mouthOpen) {
-    // Open jaws with sharp teeth
-    ellShaded(ctx, 0, 7 * sizeScale, 6 * sizeScale, 4 * sizeScale, R_UNDER);
-    // Upper fangs
-    ellShaded(ctx, -3 * sizeScale, 6 * sizeScale, 1.5 * sizeScale, 3 * sizeScale, R_TOOTH);
-    ellShaded(ctx, 3 * sizeScale, 6 * sizeScale, 1.5 * sizeScale, 3 * sizeScale, R_TOOTH);
-    // Lower fangs
-    ellShaded(ctx, -2 * sizeScale, 8 * sizeScale, 1.5 * sizeScale, 2.5 * sizeScale, R_TOOTH);
-    ellShaded(ctx, 2 * sizeScale, 8 * sizeScale, 1.5 * sizeScale, 2.5 * sizeScale, R_TOOTH);
+    // Open jaws with sharp fangs
+    ellShaded(ctx, 0, 7 * sizeScale, 7 * sizeScale, 4.5 * sizeScale, R_UNDER);
+    // Broad upper fangs
+    ellShaded(ctx, 0, 6.5 * sizeScale, 5 * sizeScale, 2.5 * sizeScale, R_TOOTH);
   } else {
-    // Closed snarling mouth
-    ellShaded(ctx, 0, 6 * sizeScale, 5 * sizeScale, 3 * sizeScale, R_UNDER);
-    ellShaded(ctx, -2.5 * sizeScale, 6.5 * sizeScale, 1.5 * sizeScale, 2 * sizeScale, R_TOOTH);
-    ellShaded(ctx, 2.5 * sizeScale, 6.5 * sizeScale, 1.5 * sizeScale, 2 * sizeScale, R_TOOTH);
+    // Closed snarling mouth with horizontal bared fangs
+    ellShaded(ctx, 0, 6 * sizeScale, 6 * sizeScale, 3 * sizeScale, R_UNDER);
+    ellShaded(ctx, 0, 6.5 * sizeScale, 4.5 * sizeScale, 2 * sizeScale, R_TOOTH);
   }
 
   ctx.restore();
@@ -97,10 +92,10 @@ function cerberusFrame(dir: Dir, phase: number, opts: PoseOpts = {}): FramePaint
       groundShadow(ctx, CX, GROUND + 1, 30 * (1 + t * 0.2));
 
       // Crumbling collapsed body
-      ellShaded(ctx, CX, collapseY, 24 * (1 - t * 0.3), 12 * (1 - t * 0.4), R_PELT);
-      ellShaded(ctx, CX - 14, collapseY + 2, 8, 6, R_PELT);
-      ellShaded(ctx, CX, collapseY + 1, 9, 7, R_PELT);
-      ellShaded(ctx, CX + 14, collapseY + 3, 8, 6, R_PELT);
+      ellShaded(ctx, CX, collapseY, 26 * (1 - t * 0.3), 13 * (1 - t * 0.4), R_PELT);
+      ellShaded(ctx, CX - 14, collapseY + 2, 9, 7, R_PELT);
+      ellShaded(ctx, CX, collapseY + 1, 10, 8, R_PELT);
+      ellShaded(ctx, CX + 14, collapseY + 3, 9, 7, R_PELT);
       return;
     }
 
@@ -108,28 +103,29 @@ function cerberusFrame(dir: Dir, phase: number, opts: PoseOpts = {}): FramePaint
     const by = GROUND - 22 + lungeY;
 
     // Ground shadow
-    groundShadow(ctx, bx, GROUND + 1, 28);
+    groundShadow(ctx, bx, GROUND + 1, 30);
 
     // Hind legs
     const legSwing = Math.sin(walkPhase * Math.PI * 2);
-    limbShaded(ctx, [bx - 14, by + 4], [bx - 16 + legSwing * 5, GROUND - 2], 5, R_UNDER, { rim: false });
-    limbShaded(ctx, [bx + 14, by + 4], [bx + 16 - legSwing * 5, GROUND - 2], 5, R_UNDER, { rim: false });
+    limbShaded(ctx, [bx - 14, by + 4], [bx - 16 + legSwing * 5, GROUND - 2], 6, R_UNDER, { rim: false });
+    limbShaded(ctx, [bx + 14, by + 4], [bx + 16 - legSwing * 5, GROUND - 2], 6, R_UNDER, { rim: false });
 
-    // Main torso
-    ellShaded(ctx, bx, by + 2, 22, 14, R_PELT);
+    // Main torso - deep broad obsidian trunk
+    ellShaded(ctx, bx, by + 2, 25, 16, R_PELT);
+    ellShaded(ctx, bx, by + 6, 21, 6, R_UNDER);
 
     // Spine hackle ridge
-    ellShaded(ctx, bx, by - 6, 16, 5, R_HACKLE);
+    ellShaded(ctx, bx, by - 6, 18, 6, R_HACKLE);
 
     // Fore legs
-    limbShaded(ctx, [bx - 9, by + 8], [bx - 10 - legSwing * 6, GROUND - 2], 6, R_PELT, { rim: true });
-    limbShaded(ctx, [bx + 9, by + 8], [bx + 10 + legSwing * 6, GROUND - 2], 6, R_PELT, { rim: true });
+    limbShaded(ctx, [bx - 9, by + 8], [bx - 10 - legSwing * 6, GROUND - 2], 7, R_PELT, { rim: true });
+    limbShaded(ctx, [bx + 9, by + 8], [bx + 10 + legSwing * 6, GROUND - 2], 7, R_PELT, { rim: true });
 
     // Spiked iron collar across chest
-    ellShaded(ctx, bx, by - 4, 18, 5, R_COLLAR);
-    for (let i = -12; i <= 12; i += 6) {
-      ellShaded(ctx, bx + i, by - 7, 2, 3, R_TOOTH);
-    }
+    ellShaded(ctx, bx, by - 4, 20, 6, R_COLLAR);
+    ellShaded(ctx, bx - 8, by - 5, 4, 3, R_TOOTH);
+    ellShaded(ctx, bx, by - 5, 4, 3, R_TOOTH);
+    ellShaded(ctx, bx + 8, by - 5, 4, 3, R_TOOTH);
 
     // Three Heads
     const bob = Math.sin(phase * Math.PI * 2) * 1.5;
