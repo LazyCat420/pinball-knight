@@ -7,6 +7,7 @@
  * `state`. Both are "which pixels does this actor draw with", so splitting them
  * would just mean two files importing the same painters.
  */
+import { guardianFor } from "../boss-kinds";
 import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
 import { ZOMBIE_VARIANTS, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
@@ -356,7 +357,7 @@ const inFlight = new Map<SheetKey, SheetBuild>();
 let current: { key: SheetKey; build: SheetBuild } | null = null;
 
 /**
- * Build the atlases the first floor needs, then queue the rest for idle time.
+ * Build the essential fallback atlases. Optional work starts on descent.
  *
  * Synchronous cost is the zombie variants plus ESSENTIAL — measured target is
  * no single task over 200 ms, versus the 6,075 ms this replaced.
@@ -369,7 +370,7 @@ export function buildMonsterSheets(): void {
   state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => monsterSheet(makeZombiePaints(v)));
   state.sheets.zombie = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
-  startBackfill();
+  // Optional monster atlases start on descent, never during the intro or lobby.
   // Load knight imported art on startup
   void loadImportedKnightArt();
 }
@@ -490,12 +491,9 @@ export function importedArtEnabled(): boolean {
  * braindeadbot.com those six tasks land squarely on top of the title intro,
  * which rendered 4 frames in 2.4 seconds while one of them ran.
  *
- * The player's own art is cheap and wanted early. The monsters are the
- * expensive half and nothing on screen before the lobby draws one, so the
- * caller gets to say WHEN — `core.ts` runs it after the title sequence, and
- * every entry that skips the sequence (`?no-intro=1`, `?autostart=1`, the
- * playtest bot) reaches the same call immediately, because they all arrive
- * through the intro's `onDone`.
+ * Player art loads at boot. Normal gameplay loads monster art through the
+ * descent screen, after it has been presented, and awaits the required sheets
+ * before spawning the floor. This all-roster entry remains for explicit art QA.
  */
 export async function applyImportedArt(): Promise<void> {
   if (!importedArtEnabled()) return;
@@ -515,7 +513,7 @@ export function resetImportedMonsterArtForTest(): void {
  * Load imported art for a specific monster sheet on-demand.
  * Idempotent: returns true immediately if already loaded.
  */
-export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
+export async function loadMonsterSheet(key: SheetKey, active: () => boolean = () => true): Promise<boolean> {
   if (!importedArtEnabled()) return false;
   if (imported.has(key)) return true;
   const name = IMPORTED_ART[key];
@@ -524,7 +522,7 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
   const loaded = (await Promise.all(facings.map((d) => loadImportedSheet(name, d)))).filter(
     (s): s is ImportedSheet => s !== null,
   );
-  if (!loaded.length) return false;
+  if (!active() || !loaded.length) return false;
   const paints = importedPaints(loaded);
   if (!paints) return false;
   imported.set(key, paints);
@@ -547,22 +545,31 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
  * Determine which monster sheets are required for a given floor level.
  */
 export function keysForFloor(level: number): SheetKey[] {
-  const keys: SheetKey[] = ["zombie", "boss"];
+  const keys: SheetKey[] = ["zombie", guardianFor(level).art.sheetKey];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
-  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan");
-  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries");
-  if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
+  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand");
+  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake");
+  if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");
-  return keys;
+  return [...new Set(keys)];
 }
 
 /**
  * Load imported monster art specifically needed for a given floor level.
  */
-export async function loadMonsterSheetsForFloor(level: number): Promise<void> {
+export async function loadMonsterSheetsForFloor(
+  level: number,
+  progress: (done: number, total: number) => void | Promise<void> = () => {},
+  active: () => boolean = () => true,
+): Promise<void> {
   if (!importedArtEnabled()) return;
   const needed = keysForFloor(level);
-  await Promise.all(needed.map((k) => loadMonsterSheet(k)));
+  for (let i = 0; i < needed.length; i++) {
+    if (!active()) return;
+    await loadMonsterSheet(needed[i], active);
+    if (!active()) return;
+    await progress(i + 1, needed.length);
+  }
 }
 
 /** The background backfill — loads remaining monster art during idle/delay. */
@@ -660,7 +667,7 @@ const BACKFILL_SLICE_MIN_MS = 1;
  * much of this frame is spare — capped, because rIC's 50 ms allowance is three
  * frames. A partial atlas is never handed out (`sheetFor` finishes it first).
  */
-function startBackfill(): void {
+export function startSheetBackfill(): void {
   stopSheetBackfill();
   const queue = [...BACKFILL];
   /** The slice this callback may spend. Fixed when there is no rIC to ask. */

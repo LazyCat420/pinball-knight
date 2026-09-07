@@ -24,6 +24,7 @@ import { createCanvas } from "canvas";
 import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "../render/palette";
 import { setEnginePalette } from "../engine/palette-source";
 import { invalidatePaletteCaches } from "../engine/render/sprite";
+import { guardianFor } from "../boss-kinds";
 import { sheetFor, SHEET_KEY_BY_KIND, type SheetKey, keysForFloor } from "./sheets";
 import { hasAuthoredFacing, authoredFacingsFor } from "./manifest-inventory";
 import { skinSheet } from "../spawn/factory";
@@ -147,13 +148,23 @@ describe("manifest inventory & floor loading", () => {
     expect(hasAuthoredFacing("fish_feet", "N")).toBe(false);
   });
 
+  it("prepares each guardian and the recent monster additions without lobby backfill", () => {
+    for (let level = 1; level <= 100; level++) {
+      expect(keysForFloor(level)).toContain(guardianFor(level).art.sheetKey);
+    }
+    for (const [key, from] of [["crawling_hand", 2], ["milkshake", 3], ["sumo_ninja", 4]] as const) {
+      expect(keysForFloor(from)).toContain(key);
+      expect(keysForFloor(from - 1)).not.toContain(key);
+    }
+  });
+
   it("keysForFloor scales with level depth without loading the entire 29-monster roster up-front", () => {
     const f1 = keysForFloor(1);
     expect(f1).toContain("zombie");
     expect(f1).toContain("goblin");
     expect(f1).toContain("spider");
     expect(f1).not.toContain("dragon");
-    expect(f1).not.toContain("reaper");
+    expect(f1).toContain("reaper"); // the actual floor-one guardian needs its art
     expect(f1).not.toContain("archivist");
 
     const f5 = keysForFloor(5);

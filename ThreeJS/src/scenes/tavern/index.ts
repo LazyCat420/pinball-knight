@@ -11,6 +11,7 @@
 import { openTavernScene, closeTavern, isTavernSceneOpen } from "./core";
 import { tavernScreen } from "../../game/pinball-knight/gui/screens/tavern";
 import { push as pushUiScreen } from "../../game/pinball-knight/gui/stack";
+import { stopSheetBackfill } from "../../game/pinball-knight/boot/sheets";
 import { installEngine } from "../../game/pinball-knight/GameEngine";
 import type { TavernStats } from "./state";
 
@@ -45,6 +46,7 @@ export function enterTavern(container: HTMLElement, opts: OpenTavernOptions): "s
   // pipeline) and is reachable WITHOUT going through the dungeon first, so it
   // must install the engine config itself. installEngine is idempotent — it
   // overwrites the same config object — so doing it on both paths is safe.
+  stopSheetBackfill();
   installEngine();
   if (openTavernScene(container, opts)) return "scene";
   // Fallback when the walkable scene cannot run: the flat tavern sheet. Same

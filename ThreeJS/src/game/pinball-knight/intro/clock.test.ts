@@ -1,23 +1,17 @@
-/**
- * A TITLE SEQUENCE MUST NOT GET LONGER WHEN THE MACHINE GETS SLOWER.
- *
- * The regression is one line: the phase clock advanced by the SIMULATION's
- * clamped delta, so a 1000ms frame moved the choreography 50ms. Measured live,
- * that turned an 11.4s intro into 22s of /dungeon before the lobby.
- *
- * The clamp itself is not the bug and must survive — remove it and the intro's
- * ball tunnels through the letterforms of its own title on the first long
- * frame. The bug is that ONE number served both.
- */
 import { describe, it, expect } from "vitest";
-import { introDeltas, SIM_DT_CLAMP } from "./clock";
+import { introDeltas, SIM_DT_CLAMP, PRESENTATION_DT_CLAMP } from "./clock";
 
 describe("introDeltas", () => {
-  it("advances the phase clock by REAL time, however long the frame was", () => {
-    // THE REGRESSION. A one-second frame is a second of the sequence; the old
-    // code moved it 50ms and put the other 950ms nowhere.
-    expect(introDeltas(1000, 0).pdt).toBeCloseTo(1.0, 6);
-    expect(introDeltas(6000, 0).pdt).toBeCloseTo(6.0, 6);
+  it("preserves unseen animation after a stall instead of skipping a chapter", () => {
+    expect(introDeltas(1000, 0).pdt).toBe(PRESENTATION_DT_CLAMP);
+    expect(introDeltas(6000, 0).pdt).toBe(PRESENTATION_DT_CLAMP);
+    // A 6-second stall at arcade entry cannot jump past the machine shot.
+    expect(9 + introDeltas(6000, 0).pdt).toBeLessThan(12);
+  });
+
+  it("keeps normal 20fps choreography on time without the physics clamp", () => {
+    expect(introDeltas(50, 0).pdt).toBeCloseTo(0.05);
+    expect(introDeltas(80, 0).pdt).toBeCloseTo(0.08);
   });
 
   it("still clamps the simulation step, however long the frame was", () => {

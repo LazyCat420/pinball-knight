@@ -19,7 +19,7 @@
 import { openFloorLoading, type FloorLoading } from "../floor-loading";
 import { presentUiFrame } from "../boot/renderer";
 import { state } from "../state";
-import { loadMonsterSheetsForFloor } from "../boot/sheets";
+import { loadMonsterSheetsForFloor, startSheetBackfill } from "../boot/sheets";
 
 let floorLoad: FloorLoading | null = null;
 let held = false;
@@ -81,13 +81,30 @@ export function armFloorLoading(level: number, then: () => void): void {
     then();
     return;
   }
-  holdForFloorLoad(openFloorLoading(state.container, level));
-  void loadMonsterSheetsForFloor(level);
-  requestAnimationFrame(() => {
-    presentUiFrame();
-    requestAnimationFrame(() => {
-      presentUiFrame();
-      then();
-    });
-  });
+  const load = openFloorLoading(state.container, level);
+  holdForFloorLoad(load);
+  const active = () => state.active && currentFloorLoad() === load;
+  const present = () => new Promise<void>((resolve) => requestAnimationFrame(() => {
+    if (active()) presentUiFrame();
+    resolve();
+  }));
+  void (async () => {
+    // Submit and present the loading screen before any atlas rebuild can block.
+    await present();
+    await present();
+    if (!active()) return;
+    load.phase("PREPARING THE HORDE", 0.02);
+    try {
+      await loadMonsterSheetsForFloor(level, async (done, total) => {
+        load.phase("PREPARING THE HORDE", 0.02 + 0.25 * done / total);
+        await present();
+      }, active);
+    } catch (error) {
+      // The procedural painters remain available if imported art cannot load.
+      console.warn("[dungeon] Floor art unavailable; using painted sprites", error);
+    }
+    if (!active()) return;
+    startSheetBackfill();
+    then();
+  })();
 }

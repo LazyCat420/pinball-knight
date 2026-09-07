@@ -4,6 +4,7 @@ import { state } from '../state';
 import { introDeltas } from './clock';
 import { INTRO_BALL_SPEED, stepIntroBall, type IntroBall } from './title-grid';
 import { createCinematic } from './cinematic';
+import { warmIntro } from './warmup';
 import { sfxRoll, sfxBumper, sfxLevelStart } from '../sfx';
 
 let played = false;
@@ -30,6 +31,7 @@ export function runPinballIntro(onDone: () => void): void {
   chapter.style.cssText = 'position:absolute;left:6%;top:7%;font-size:11px;font-weight:700;letter-spacing:.25em;color:#b9efea;';
   const caption = document.createElement('div');
   caption.style.cssText = 'position:absolute;left:6%;bottom:10%;font-size:clamp(20px,3.5vw,44px);font-weight:750;letter-spacing:-.04em;max-width:75%;text-shadow:0 2px 14px #12182b;';
+  chapter.textContent = 'PINBALL KNIGHT'; caption.textContent = 'Opening the arcade…';
   const skip = document.createElement('button'); skip.textContent = 'Skip intro ↗';
   skip.style.cssText = 'position:absolute;right:5%;top:6%;pointer-events:auto;background:#19233acc;border:1px solid #b4dbdd66;border-radius:30px;color:#e9f3ed;padding:12px 19px;cursor:pointer;font:600 12px system-ui;';
   const progress = document.createElement('div'); progress.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:#b8f1df;';
@@ -47,7 +49,7 @@ export function runPinballIntro(onDone: () => void): void {
     if (disposed) return;
     disposed = true; cancelAnimationFrame(raf); clearTimeout(finishTimer);
     if (state.animFrameId === raf) state.animFrameId = null;
-    window.removeEventListener('keydown', key, true); window.removeEventListener('pointerdown', pointer, true);
+    window.removeEventListener('keydown', key, true);
     hud.remove(); hidden.forEach(({ el, visibility }) => el.style.visibility = visibility);
     renderer!.setPixelRatio(ratio); film.dispose(); diagnostics.__dungeonIntroPhase = null;
   }
@@ -57,17 +59,19 @@ export function runPinballIntro(onDone: () => void): void {
     finishTimer = setTimeout(() => { cleanup(); if (state.active && !state.player) { sfxLevelStart(); onDone(); } }, 260);
   }
   function key(e: KeyboardEvent) {
-    if (['Shift', 'Control', 'Alt', 'Meta', 'F5', 'F11', 'F12', 'Tab'].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!['Escape', 'Enter', ' '].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault(); e.stopImmediatePropagation(); finish();
   }
-  function pointer(e: PointerEvent) { e.stopImmediatePropagation(); finish(); }
-  window.addEventListener('keydown', key, true); window.addEventListener('pointerdown', pointer, true); skip.onclick = finish;
+  window.addEventListener('keydown', key, true);
+  skip.onpointerdown = e => e.stopPropagation();
+  skip.onclick = e => { e.stopPropagation(); finish(); };
   function aim(x: number, y: number, z: number, tx: number, ty: number, tz: number) {
     camera.position.set(x, y, z); target.set(tx, ty, tz); camera.lookAt(target);
   }
   function tick(now: number) {
     if (disposed) return;
     if (!state.active || state.player) { cleanup(); return; }
+    if (document.hidden) { last = -1; raf = requestAnimationFrame(tick); state.animFrameId = raf; return; }
     const { pdt, dt } = introDeltas(now, last); last = now;
     if (!finishing) elapsed += pdt;
     camera.aspect = Math.max(.3, renderer!.domElement.clientWidth / Math.max(1, renderer!.domElement.clientHeight));
@@ -139,7 +143,9 @@ export function runPinballIntro(onDone: () => void): void {
     renderer!.setRenderTarget(null); renderer!.render(scene, camera);
     raf = requestAnimationFrame(tick); state.animFrameId = raf;
   }
-  void renderer.init().then(() => {
+  void renderer.init().then(async () => {
+    if (disposed || finishing) return;
+    await warmIntro(renderer, scene, camera);
     if (!disposed && !finishing) { raf = requestAnimationFrame(tick); state.animFrameId = raf; }
   }).catch(error => {
     console.error('[pinball-knight] Intro renderer initialization failed', error);

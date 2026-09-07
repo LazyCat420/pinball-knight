@@ -36,6 +36,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+const loadArt = vi.fn<(...args: unknown[]) => Promise<void>>();
+const startBackfill = vi.fn();
+vi.mock("../boot/sheets", () => ({
+  loadMonsterSheetsForFloor: (...args: unknown[]) => loadArt(...args),
+  startSheetBackfill: () => startBackfill(),
+}));
+
 const presentUiFrame = vi.fn(() => true);
 const openFloorLoading = vi.fn(() => ({ phase: vi.fn(), close: vi.fn() }));
 
@@ -51,14 +58,18 @@ import { state } from "../state";
  * real rAF would let the assertion race the callback it is about.
  */
 let pending: FrameRequestCallback[] = [];
-function flushFrame(): void {
+async function flushFrame(): Promise<void> {
   const due = pending;
   pending = [];
   for (const cb of due) cb(0);
+  for (let i = 0; i < 4; i++) await Promise.resolve();
 }
 
 beforeEach(() => {
   presentUiFrame.mockClear();
+  loadArt.mockReset().mockResolvedValue(undefined);
+  startBackfill.mockClear();
+  state.active = true;
   openFloorLoading.mockClear();
   pending = [];
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -72,30 +83,65 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   state.container = null;
+  state.active = false;
   releaseFloorLoad(null);
 });
 
 describe("armFloorLoading", () => {
-  it("presents a frame before the continuation is allowed to block the thread", () => {
+  it("presents a frame before the continuation is allowed to block the thread", async () => {
     const then = vi.fn();
     armFloorLoading(4, then);
 
     // Nothing has been presented yet and — critically — `then` has NOT run.
     // It is the caller that blocks for ~544ms inside buildLevel.
     expect(presentUiFrame).not.toHaveBeenCalled();
+    expect(loadArt).not.toHaveBeenCalled();
     expect(then).not.toHaveBeenCalled();
 
-    flushFrame();
+    await flushFrame();
     expect(presentUiFrame).toHaveBeenCalledTimes(1);
     expect(then).not.toHaveBeenCalled();
 
-    flushFrame();
+    await flushFrame();
     // TWO presents, then the build. The second is not superstition: GPU
     // submission is async, so the first frame is only QUEUED when it returns.
     // The second gives the compositor a turn to actually put it up, which is
     // the difference the player sees.
     expect(presentUiFrame).toHaveBeenCalledTimes(2);
     expect(then).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for required art before building the floor, with the loading screen visible", async () => {
+    let resolve!: () => void;
+    loadArt.mockImplementation(() => new Promise<void>(r => { resolve = r; }));
+    const then = vi.fn();
+    armFloorLoading(4, then);
+    await flushFrame();
+    expect(loadArt).not.toHaveBeenCalled();
+    await flushFrame();
+    expect(loadArt).toHaveBeenCalledTimes(1);
+    expect(presentUiFrame).toHaveBeenCalledTimes(2);
+    expect(then).not.toHaveBeenCalled();
+    resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(then).toHaveBeenCalledTimes(1);
+    expect(startBackfill).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start an abandoned floor when a late art load finishes", async () => {
+    let resolve!: () => void;
+    loadArt.mockImplementation(() => new Promise<void>(r => { resolve = r; }));
+    const then = vi.fn();
+    armFloorLoading(4, then);
+    await flushFrame();
+    await flushFrame();
+    releaseFloorLoad(null);
+    resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(then).not.toHaveBeenCalled();
+    expect(startBackfill).not.toHaveBeenCalled();
   });
 
   it("raises the hold and the screen synchronously, before any frame elapses", () => {
