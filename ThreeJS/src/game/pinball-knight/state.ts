@@ -362,7 +362,8 @@ export type EnemyKind =
   | "burger" // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
   | "fries" // SENTINEL — sentient red fry carton with crinkle-cut limbs and eye amulet that launches head fry rockets
   | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
-  | "milkshake"; // SPRAYER — toxic milkshake spray
+  | "milkshake" // SPRAYER — toxic milkshake spray
+  | "sumo_ninja"; // STUMBLER — spinning ninja stars
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

@@ -152,7 +152,8 @@ import {
   TOUCAN_R, TOUCAN_CONTACT_RANGE, TOUCAN_ATTACK_WINDUP, TOUCAN_ATTACK_COOLDOWN, TOUCAN_ROLL_DEFLECT,
   BURGER_R, BURGER_FIRE_RANGE, BURGER_WINDUP, BURGER_COOLDOWN,
   FRIES_R, FRIES_FIRE_RANGE, FRIES_WINDUP, FRIES_COOLDOWN,
-  MILKSHAKE_R, MILKSHAKE_FIRE_RANGE, MILKSHAKE_WINDUP, MILKSHAKE_COOLDOWN } from "../constants";
+  MILKSHAKE_R, MILKSHAKE_FIRE_RANGE, MILKSHAKE_WINDUP, MILKSHAKE_COOLDOWN,
+  SUMO_NINJA_R, SUMO_NINJA_FIRE_RANGE, SUMO_NINJA_WINDUP, SUMO_NINJA_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -165,7 +166,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -225,6 +226,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   burger: { bodyR: BURGER_R, contactRange: BURGER_FIRE_RANGE, windup: BURGER_WINDUP, cooldown: BURGER_COOLDOWN, ranged: true },
   fries: { bodyR: FRIES_R, contactRange: FRIES_FIRE_RANGE, windup: FRIES_WINDUP, cooldown: FRIES_COOLDOWN, ranged: true },
   milkshake: { bodyR: MILKSHAKE_R, contactRange: MILKSHAKE_FIRE_RANGE, windup: MILKSHAKE_WINDUP, cooldown: MILKSHAKE_COOLDOWN, ranged: true },
+  sumo_ninja: { bodyR: SUMO_NINJA_R, contactRange: SUMO_NINJA_FIRE_RANGE, windup: SUMO_NINJA_WINDUP, cooldown: SUMO_NINJA_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1251,6 +1253,9 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "milkshake") {
                 // Toxic shake sprays a barrage of toxic milkshake
                 launchMilkshakeSpray(z.x, z.z, ux, uz);
+              } else if (z.kind === "sumo_ninja") {
+                // Drunk sumo ninja flings spinning ninja stars
+                launchShuriken(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
