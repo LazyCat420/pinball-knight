@@ -28,7 +28,7 @@
  * with the boss about who it is aiming at.
  */
 import * as THREE from "three";
-import type { BarrageSpec, ChargeSpec, FanBoomerangSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
+import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import { moveCircle } from "./engine/collision";
@@ -58,11 +58,19 @@ function add(mesh: THREE.Mesh): THREE.Mesh {
   return mesh;
 }
 
-export function disposeMesh(m: THREE.Mesh | null): void {
+export function disposeMesh(m: THREE.Mesh | THREE.Object3D | null): void {
   if (!m) return;
   m.parent?.remove(m);
-  m.geometry.dispose();
-  (m.material as THREE.Material).dispose();
+  m.traverse((child) => {
+    if ((child as THREE.Mesh).geometry) {
+      (child as THREE.Mesh).geometry.dispose();
+    }
+    const mat = (child as THREE.Mesh).material;
+    if (mat) {
+      if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+      else mat.dispose();
+    }
+  });
 }
 
 /** A flat ring on the ground — the shared vocabulary for "this area is about to hurt". */
@@ -971,3 +979,341 @@ export function disposeFanBoomerang(rt: FanBoomerangRt | null): void {
   }
   rt.fans = [];
 }
+
+// ── SIX-ARMED DAGGER VOLLEY ────────────────────────────────────────────────
+//
+// The Six-Armed God raises all six arms in unison, charging glowing golden
+// ritual blades, and flings a synchronized 6-dagger fan across the chamber.
+// In Phase 2, fires a double wave (12 daggers) in rapid succession.
+
+export interface ThrownDagger {
+  mesh: THREE.Mesh;
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  dist: number;
+  maxDist: number;
+  damage: number;
+  launch: number;
+  hasHit: boolean;
+}
+
+export interface DaggerVolleyRt {
+  t: number;
+  phase: "idle" | "windup" | "active";
+  aimX: number;
+  aimZ: number;
+  tell: THREE.Mesh | null;
+  daggers: ThrownDagger[];
+  secondWaveTimer: number;
+  secondWavePending: boolean;
+}
+
+export function freshDaggerVolley(spec: DaggerVolleySpec): DaggerVolleyRt {
+  return {
+    t: spec.interval,
+    phase: "idle",
+    aimX: 0,
+    aimZ: 0,
+    tell: null,
+    daggers: [],
+    secondWaveTimer: 0,
+    secondWavePending: false,
+  };
+}
+
+function makeDaggerMesh(color: number): THREE.Mesh {
+  const geo = new THREE.ConeGeometry(0.14, 0.75, 5);
+  geo.rotateZ(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 13;
+  return add(mesh);
+}
+
+function spawnDagger(
+  bx: number,
+  bz: number,
+  angle: number,
+  spec: DaggerVolleySpec,
+): ThrownDagger {
+  const vx = Math.cos(angle) * spec.speed;
+  const vz = Math.sin(angle) * spec.speed;
+
+  const mesh = makeDaggerMesh(spec.color);
+  mesh.position.set(bx, SHOT_Y, bz);
+  mesh.rotation.y = -angle;
+
+  return {
+    mesh,
+    x: bx,
+    z: bz,
+    vx,
+    vz,
+    dist: 0,
+    maxDist: 18,
+    damage: spec.damage,
+    launch: spec.launch,
+    hasHit: false,
+  };
+}
+
+function fireDaggerFan(
+  bx: number,
+  bz: number,
+  aimX: number,
+  aimZ: number,
+  spec: DaggerVolleySpec,
+  offsetAngle = 0,
+): ThrownDagger[] {
+  const dx = aimX - bx;
+  const dz = aimZ - bz;
+  const baseAngle = Math.atan2(dz, dx) + offsetAngle;
+  const count = spec.daggerCount || 6;
+  const spread = spec.spreadAngle || (Math.PI / 3);
+  const startAngle = baseAngle - spread / 2;
+  const step = count > 1 ? spread / (count - 1) : 0;
+
+  const result: ThrownDagger[] = [];
+  for (let i = 0; i < count; i++) {
+    const angle = startAngle + step * i;
+    result.push(spawnDagger(bx, bz, angle, spec));
+  }
+  return result;
+}
+
+export function updateDaggerVolley(rt: DaggerVolleyRt, spec: DaggerVolleySpec, ctx: MoveCtx): void {
+  // ── IDLE PHASE ──
+  if (rt.phase === "idle") {
+    rt.t -= ctx.dt;
+    if (rt.t <= spec.telegraph + 1e-4) {
+      rt.phase = "windup";
+      rt.aimX = ctx.target.x;
+      rt.aimZ = ctx.target.z;
+
+      // Tell: crimson sacred mandala ring
+      const ring = groundRing(1.8, 0xff2200, 0.14);
+      ring.position.set(ctx.x, 0.04, ctx.z);
+      rt.tell = add(ring);
+      ctx.setFacing?.(facingFromWorld(ctx.target.x - ctx.x, ctx.target.z - ctx.z, "S"));
+      ctx.playAnim?.("attack", { force: true });
+    }
+    return;
+  }
+
+  // ── WINDUP PHASE ──
+  if (rt.phase === "windup") {
+    rt.t -= ctx.dt;
+    if (rt.tell) {
+      rt.tell.position.set(ctx.x, 0.04, ctx.z);
+      pulse(rt.tell, rt.t);
+      if (Math.random() < ctx.dt * 20) {
+        state.vfx?.mote(ctx.x, SHOT_Y, ctx.z, spec.color);
+      }
+    }
+    if (rt.t <= 0) {
+      disposeMesh(rt.tell);
+      rt.tell = null;
+      rt.phase = "active";
+      rt.t = spec.interval;
+
+      // Launch primary wave of 6 daggers
+      const fired = fireDaggerFan(ctx.x, ctx.z, rt.aimX, rt.aimZ, spec);
+      rt.daggers.push(...fired);
+      state.vfx?.burst(ctx.x, SHOT_Y, ctx.z, spec.color, 18, 5);
+
+      if (spec.doubleVolley) {
+        rt.secondWavePending = true;
+        rt.secondWaveTimer = 0.28; // Staggered second burst
+      }
+    }
+    return;
+  }
+
+  // ── ACTIVE FLIGHT PHASE ──
+  if (rt.phase === "active") {
+    // Handle staggered second wave
+    if (rt.secondWavePending) {
+      rt.secondWaveTimer -= ctx.dt;
+      if (rt.secondWaveTimer <= 0) {
+        rt.secondWavePending = false;
+        // Fire second wave offset by half a step
+        const offset = (spec.spreadAngle || (Math.PI / 3)) / (spec.daggerCount * 2);
+        const secondWave = fireDaggerFan(ctx.x, ctx.z, ctx.target.x, ctx.target.z, spec, offset);
+        rt.daggers.push(...secondWave);
+        state.vfx?.burst(ctx.x, SHOT_Y, ctx.z, spec.color, 16, 4);
+      }
+    }
+
+    const DAGGER_HIT_R = 0.65;
+    for (let i = rt.daggers.length - 1; i >= 0; i--) {
+      const d = rt.daggers[i];
+      d.x += d.vx * ctx.dt;
+      d.z += d.vz * ctx.dt;
+      d.dist += Math.hypot(d.vx, d.vz) * ctx.dt;
+      d.mesh.position.set(d.x, SHOT_Y, d.z);
+
+      if (Math.random() < ctx.dt * 25) {
+        state.vfx?.mote(d.x, SHOT_Y, d.z, spec.color);
+      }
+
+      // Check wall collision
+      let hitWall = false;
+      if (ctx.grid) {
+        const t = worldToTile(ctx.grid, d.x, d.z);
+        if (!isWalkable(ctx.grid, t.i, t.j)) {
+          hitWall = true;
+        }
+      }
+
+      // Damage player
+      const hitPlayer = !d.hasHit && ctx.hitAt(d.x, d.z, DAGGER_HIT_R, d.damage, d.launch);
+      if (hitPlayer) {
+        d.hasHit = true;
+        state.vfx?.burst(d.x, SHOT_Y, d.z, 0xffd700, 12, 4);
+      }
+
+      if (hitPlayer || hitWall || d.dist >= d.maxDist) {
+        if (hitWall) {
+          state.vfx?.burst(d.x, SHOT_Y, d.z, 0xffd700, 6, 2);
+        }
+        disposeMesh(d.mesh);
+        rt.daggers.splice(i, 1);
+      }
+    }
+
+    if (rt.daggers.length === 0 && !rt.secondWavePending) {
+      rt.phase = "idle";
+      ctx.playAnim?.("idle");
+    }
+  }
+}
+
+export function disposeDaggerVolley(rt: DaggerVolleyRt | null): void {
+  if (!rt) return;
+  if (rt.tell) {
+    disposeMesh(rt.tell);
+    rt.tell = null;
+  }
+  for (const d of rt.daggers) {
+    disposeMesh(d.mesh);
+  }
+  rt.daggers = [];
+}
+
+// ── MOUTH FIRE BREATH ──────────────────────────────────────────────────────
+//
+// The Six-Armed God's throat and head flare with molten light before unleashing
+// a roaring spray of fire projectiles directly from the mouth.
+
+export interface MouthFireRt {
+  t: number;
+  phase: "idle" | "telegraph" | "spray";
+  tell: THREE.Mesh | null;
+  sprayT: number;
+  sprayInterval: number;
+  sprayTimer: number;
+  shotsFired: number;
+}
+
+export function freshMouthFire(spec: MouthFireSpec): MouthFireRt {
+  return {
+    t: spec.interval,
+    phase: "idle",
+    tell: null,
+    sprayT: 0,
+    sprayInterval: spec.fireDuration / Math.max(1, spec.shotCount),
+    sprayTimer: 0,
+    shotsFired: 0,
+  };
+}
+
+export function mouthFireHoldsMovement(rt: MouthFireRt): boolean {
+  return rt.phase === "telegraph" || rt.phase === "spray";
+}
+
+export function updateMouthFire(
+  rt: MouthFireRt,
+  spec: MouthFireSpec,
+  ctx: MoveCtx,
+  shots: BossShot[],
+): void {
+  if (rt.phase === "spray") {
+    rt.sprayT -= ctx.dt;
+    rt.sprayTimer -= ctx.dt;
+    if (rt.sprayTimer <= 0 && rt.shotsFired < spec.shotCount) {
+      rt.sprayTimer = rt.sprayInterval;
+      rt.shotsFired++;
+      ctx.setFacing?.(facingFromWorld(ctx.target.x - ctx.x, ctx.target.z - ctx.z, "S"));
+      ctx.playAnim?.("attack", { force: true });
+
+      // Spray flame shot
+      const spread = (Math.random() - 0.5) * (spec.spread ?? 0.35);
+      const dx = ctx.target.x - ctx.x;
+      const dz = ctx.target.z - ctx.z;
+      const baseAngle = Math.atan2(dz, dx) + spread;
+      const vx = Math.cos(baseAngle) * spec.fireSpeed;
+      const vz = Math.sin(baseAngle) * spec.fireSpeed;
+
+      const geo = new THREE.SphereGeometry(0.25, 8, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: spec.color });
+      const mesh = add(new THREE.Mesh(geo, mat));
+      mesh.renderOrder = 13;
+      mesh.position.set(ctx.x, 1.45, ctx.z);
+
+      state.vfx?.burst(ctx.x, 1.45, ctx.z, 0xffbb00, 6, 3);
+
+      shots.push({
+        mesh,
+        x: ctx.x,
+        z: ctx.z,
+        vx,
+        vz,
+        dist: 0,
+        damage: spec.damage,
+        maxDist: 16,
+        slowFor: 0,
+      });
+    }
+
+    if (rt.sprayT <= 0 || rt.shotsFired >= spec.shotCount) {
+      rt.phase = "idle";
+      rt.t = spec.interval;
+      ctx.playAnim?.("idle");
+    }
+    return;
+  }
+
+  rt.t -= ctx.dt;
+  if (rt.phase === "idle" && rt.t <= spec.telegraph) {
+    rt.phase = "telegraph";
+    const ring = groundRing(1.6, 0xff4500, 0.15); // Fiery orange tell
+    ring.position.set(ctx.x, 0.04, ctx.z);
+    rt.tell = add(ring);
+    state.vfx?.burst(ctx.x, 1.4, ctx.z, 0xff6600, 8, 3);
+  }
+
+  if (rt.phase === "telegraph") {
+    pulse(rt.tell, rt.t);
+    state.vfx?.burst(ctx.x, 1.4, ctx.z, 0xff8800, 2, 1);
+    if (rt.t <= 0) {
+      disposeMesh(rt.tell);
+      rt.tell = null;
+      rt.phase = "spray";
+      rt.sprayT = spec.fireDuration;
+      rt.sprayInterval = spec.fireDuration / Math.max(1, spec.shotCount);
+      rt.sprayTimer = 0;
+      rt.shotsFired = 0;
+    }
+  }
+}
+
+export function disposeMouthFire(rt: MouthFireRt | null): void {
+  if (!rt) return;
+  if (rt.tell) {
+    disposeMesh(rt.tell);
+    rt.tell = null;
+  }
+}
+

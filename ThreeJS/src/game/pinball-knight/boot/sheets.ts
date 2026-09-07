@@ -154,7 +154,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries" | "milkshake" | "crawling_hand" | "sumo_ninja";
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries" | "milkshake" | "crawling_hand" | "sumo_ninja" | "six_armed_god";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -163,7 +163,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "six_armed_god",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -427,6 +427,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   milkshake: "milkshake",
   crawling_hand: "crawling_hand",
   sumo_ninja: "sumo_ninja",
+  six_armed_god: "six_armed_god",
 };
 
 

@@ -37,7 +37,7 @@
 import type { SheetKey } from "./boot/sheets";
 import { passFor, themeFor } from "./maze/prefabs";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -148,6 +148,44 @@ export interface FanBoomerangSpec {
   dual?: boolean;
 }
 
+/** Simultaneous or staggered dagger fan throw with 6 arms. */
+export interface DaggerVolleySpec {
+  interval: number;
+  /** Seconds the tell gathers before throwing. */
+  telegraph: number;
+  /** Number of daggers thrown (6 arms = 6 daggers). */
+  daggerCount: number;
+  /** Projectile speed. */
+  speed: number;
+  damage: number;
+  /** Knockback impulse into pinball momentum channel. */
+  launch: number;
+  /** Angular spread of dagger fan. */
+  spreadAngle: number;
+  /** Golden dagger glow / particle color. */
+  color: number;
+  /** In phase 2, fires a double wave of daggers (12 daggers). */
+  doubleVolley?: boolean;
+}
+
+/** Unleash roaring fire breath stream from the mouth. */
+export interface MouthFireSpec {
+  interval: number;
+  /** Seconds the throat glow gathers before exhaling fire. */
+  telegraph: number;
+  /** Duration in seconds of the flame spray. */
+  fireDuration: number;
+  /** Projectile speed. */
+  fireSpeed: number;
+  damage: number;
+  /** Number of flame shots emitted over fireDuration. */
+  shotCount: number;
+  /** Flame color. */
+  color: number;
+  /** Spread arc for flame breath stream. */
+  spread?: number;
+}
+
 export interface BossMoves {
   orbit?: OrbitSpec;
   barrage?: BarrageSpec;
@@ -157,6 +195,8 @@ export interface BossMoves {
   nova?: NovaSpec;
   teleportFire?: TeleportFireSpec;
   fanBoomerang?: FanBoomerangSpec;
+  daggerVolley?: DaggerVolleySpec;
+  mouthFire?: MouthFireSpec;
 }
 
 export interface BossSpec {
@@ -505,6 +545,74 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           curve: 3.2,
           color: 0x11ff88,
           dual: true,
+        },
+      },
+    },
+  },
+
+  // ══ THE MAGMA ABYSS, SECOND PASS — sacred fire and six-blade storm ═══════
+  //
+  // Mahadeva Asura: A fierce six-armed deity with radiant bronze skin, an ornate
+  // golden crown, and glowing third eye. Breathes roaring streams of fire from
+  // its mouth and hurls 6 ceremonial golden daggers simultaneously in a wide
+  // calibrated fan across the arena!
+  six_armed_god: {
+    kind: "six_armed_god",
+    name: "Mahadeva Asura",
+    biome: "magma",
+    title: "🔱 MAHADEVA ASURA 🔱",
+    tagline: "six arms of steel, breath of roaring inferno",
+    label: "ASURA",
+    art: { sheetKey: "six_armed_god", tint: null, scale: 2.22 },
+    hpMult: 1.35,
+    speedMult: 0.95,
+    moves: {
+      mouthFire: {
+        interval: 5.5,
+        telegraph: 0.75,
+        fireDuration: 1.2,
+        fireSpeed: 11,
+        damage: 2,
+        shotCount: 7,
+        color: 0xff4500,
+        spread: 0.35,
+      },
+      daggerVolley: {
+        interval: 4.2,
+        telegraph: 0.7,
+        daggerCount: 6,
+        speed: 15,
+        damage: 2,
+        launch: 18,
+        spreadAngle: Math.PI / 3,
+        color: 0xffd700,
+      },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🔱 ASURA UNLEASHES THE TANDAVA: INFERNO & 12-DAGGER SPIRAL",
+      speedMult: 1.25,
+      moves: {
+        mouthFire: {
+          interval: 3.8,
+          telegraph: 0.55,
+          fireDuration: 1.4,
+          fireSpeed: 13,
+          damage: 2,
+          shotCount: 9,
+          color: 0xff2200,
+          spread: 0.45,
+        },
+        daggerVolley: {
+          interval: 3.0,
+          telegraph: 0.55,
+          daggerCount: 6,
+          speed: 17,
+          damage: 2,
+          launch: 20,
+          spreadAngle: Math.PI / 2.5,
+          color: 0xffaa00,
+          doubleVolley: true,
         },
       },
     },
