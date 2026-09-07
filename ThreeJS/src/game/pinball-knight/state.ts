@@ -361,7 +361,8 @@ export type EnemyKind =
   | "toucan" // DIVER — aerial tropical toucan executing 360-degree corkscrew barrel roll dive attacks
   | "burger" // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
   | "fries" // SENTINEL — sentient red fry carton with crinkle-cut limbs and eye amulet that launches head fry rockets
-  | "jade_buddha"; // BOSS — serene emerald buddha statue with boomerang fan
+  | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
+  | "milkshake"; // SPRAYER — toxic milkshake spray
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

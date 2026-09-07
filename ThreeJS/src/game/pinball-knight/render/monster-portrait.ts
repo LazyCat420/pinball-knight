@@ -68,6 +68,7 @@ import { makeCigarettePaints } from "./monsters/cigarette";
 import { makeToucanPaints } from "./monsters/toucan";
 import { makeBurgerPaints } from "./monsters/burger";
 import { makeFriesPaints } from "./monsters/fries";
+import { makeMilkshakePaints } from "./monsters/milkshake";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -128,6 +129,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   jade_buddha: { paints: makeBossPaints },
   burger: { paints: makeBurgerPaints },
   fries: { paints: makeFriesPaints },
+  milkshake: { paints: makeMilkshakePaints },
 };
 
 /**

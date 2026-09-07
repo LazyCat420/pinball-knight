@@ -69,6 +69,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   jade_buddha: { label: "Jade Buddha", icon: "🪷", blurb: "serene emerald statue with devastating belly slam and returning war fan boomerang" },
   burger: { label: "Burger Beast", icon: "🍔", blurb: "floating hamburger with lobster eyestalks that deconstructs itself to attack with flying ingredients and rots on death" },
   fries: { label: "Fry Sentinel", icon: "🍟", blurb: "sentient red fry carton with crinkle-cut limbs and eye amulet that launches sizzling fry rockets from its head" },
+  milkshake: { label: "Toxic Shake", icon: "🥤", blurb: "erratic fast-food milkshake cup with yellow dishwasher gloves that sprays corrosive streams of toxic green shake" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

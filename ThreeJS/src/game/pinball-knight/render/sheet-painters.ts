@@ -60,6 +60,7 @@ import {
 } from "./monsters/dragon-snake";
 import { makeBurgerPaints } from "./monsters/burger";
 import { makeFriesPaints } from "./monsters/fries";
+import { makeMilkshakePaints } from "./monsters/milkshake";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -110,4 +111,5 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   dragon_snake_tail: makeDragonSnakeTailPaints,
   burger: makeBurgerPaints,
   fries: makeFriesPaints,
+  milkshake: makeMilkshakePaints,
 };

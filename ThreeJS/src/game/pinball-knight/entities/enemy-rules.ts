@@ -79,6 +79,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   jade_buddha: "chase",
   burger: "kite",
   fries: "kite",
+  milkshake: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the

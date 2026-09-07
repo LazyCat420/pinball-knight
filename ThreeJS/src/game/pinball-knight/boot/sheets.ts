@@ -154,7 +154,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso" | "gnome" | "cigarette" | "toucan"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries"
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries" | "milkshake"
   | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail";
 
 /**
@@ -164,7 +164,7 @@ export const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "toucan", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "toucan", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries", "milkshake",
   "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail",
 ]);
 
@@ -259,7 +259,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries", "milkshake"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
@@ -432,6 +432,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   dragon_snake_tail: "dragon_snake_tail",
   burger: "burger",
   fries: "fries",
+  milkshake: "milkshake",
 };
 
 
