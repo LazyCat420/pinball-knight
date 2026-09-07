@@ -146,7 +146,8 @@ import {
   PLATYPUS_R, PLATYPUS_CONTACT_RANGE, PLATYPUS_ATTACK_WINDUP, PLATYPUS_ATTACK_COOLDOWN,
   PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE,
   ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
-  ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT } from "../constants";
+  ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT,
+  GNOME_R, GNOME_CONTACT_RANGE, GNOME_ATTACK_WINDUP, GNOME_ATTACK_COOLDOWN, GNOME_MOWER_DEFLECT } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -212,6 +213,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
   platypus: { bodyR: PLATYPUS_R, contactRange: PLATYPUS_CONTACT_RANGE, windup: PLATYPUS_ATTACK_WINDUP, cooldown: PLATYPUS_ATTACK_COOLDOWN, ranged: false },
   espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
+  gnome: { bodyR: GNOME_R, contactRange: GNOME_CONTACT_RANGE, windup: GNOME_ATTACK_WINDUP, cooldown: GNOME_ATTACK_COOLDOWN, ranged: false },
   jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
 };
 
@@ -518,6 +520,43 @@ export function espressoTeacupSpin(z: Zombie, pdist: number, contactRange: numbe
   }
 }
 
+/** GNOME: Lawnmower attack — revs spinning rotary blades, spews grass clippings & blade sparks, damages and deflects player! */
+export function gnomeLawnmowerCharge(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || p.hp <= 0) return;
+
+  z.anim.play("attack", { force: true });
+  state.shakeT = Math.max(state.shakeT, 0.22);
+
+  // Direction to player
+  let dx = p.x - z.x;
+  let dz = p.z - z.z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const nx = dx / dist;
+  const nz = dz / dist;
+
+  // Lawnmower friction sparks & green grass clippings burst
+  state.vfx?.sparks?.(z.x + nx * 0.5, 0.4, z.z + nz * 0.5, nx, nz, 14);
+  state.vfx?.burst?.(z.x + nx * 0.5, 0.35, z.z + nz * 0.5, 0x44bb33, 8, 2.5); // green grass clippings
+  state.vfx?.smoke?.(z.x, 0.7, z.z, 0.6, 6); // pipe smoke puff
+
+  if (pdist <= contactRange + 0.35) {
+    hitPlayer(z);
+    // Pinball momentum kick / bounce off the steel mower deck
+    if (p.momSpeed > 0) {
+      p.momX = nx;
+      p.momZ = nz;
+      p.momSpeed = Math.max(p.momSpeed, GNOME_MOWER_DEFLECT);
+    } else if (g) {
+      const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.5, nz * 0.5);
+      p.x = res.x;
+      p.z = res.z;
+    }
+    p.iframes = Math.max(p.iframes || 0, 0.2);
+  }
+}
+
 /** NECROMANCER: raise zombie mini bunny rabbits (deferred), unless the local horde is already thick. */
 function necroSummon(z: Zombie): void {
   let near = 0;
@@ -585,6 +624,19 @@ export function updateZombies(dt: number): void {
     }
     if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) {
       z.corpseT = (z.corpseT ?? 0) + dt;
+      if (z.kind === "gnome") {
+        // Poofs into nothing with smoke animation, then splice out cleanly
+        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;
@@ -593,7 +645,7 @@ export function updateZombies(dt: number): void {
           detonateCroakerCorpse(z, i);
         }
       }
-      continue; // the death clip plays out; the corpse stays (unless exploded)
+      continue; // the death clip plays out; the corpse stays (unless exploded or poofed)
     }
 
     if (!p) continue;
@@ -708,6 +760,15 @@ export function updateZombies(dt: number): void {
       if (z.castT <= 0) {
         z.castT = 1.5;
         spawnFloorFx("fire", z.x, z.z, 0.5, 1.4, true);
+      }
+    }
+
+    // ── GNOME PIPE SMOKE ── puffs little rings of wooden-pipe smoke while active
+    if (z.kind === "gnome") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = 0.45 + Math.random() * 0.3;
+        state.vfx?.smoke?.(z.x, 0.65, z.z, 0.35, 2);
       }
     }
 
@@ -1032,6 +1093,8 @@ export function updateZombies(dt: number): void {
             platypusTailSlam(z, pdist, contactRange); // heavy metal tail ground slam
           } else if (z.kind === "espresso") {
             espressoTeacupSpin(z, pdist, contactRange); // Disneyland spinning teacup attack
+          } else if (z.kind === "gnome") {
+            gnomeLawnmowerCharge(z, pdist, contactRange); // spinning mower blades & grass fling
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

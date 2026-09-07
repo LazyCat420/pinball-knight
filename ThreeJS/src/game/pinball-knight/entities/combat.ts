@@ -62,6 +62,7 @@ import {
   CROAKER_SPIN_DAMAGE,
   PLATYPUS_DAMAGE,
   ESPRESSO_DAMAGE,
+  GNOME_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -970,6 +971,9 @@ export function killZombie(z: Zombie): void {
   // dissipates into a cold ectoplasm puff (a spray of blue sparks) — no gore.
   if (z.kind === "ghost") {
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 22);
+  } else if (z.kind === "gnome") {
+    state.vfx?.smoke(z.x, 0.6, z.z, 1.2, 16);
+    state.vfx?.sparks(z.x, 0.5, z.z, 0, 0.5, 10);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1129,6 +1133,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   mimic: BRUTE_DAMAGE,
   platypus: PLATYPUS_DAMAGE,
   espresso: ESPRESSO_DAMAGE,
+  gnome: GNOME_DAMAGE,
   jade_buddha: BRUTE_DAMAGE,
 };
 

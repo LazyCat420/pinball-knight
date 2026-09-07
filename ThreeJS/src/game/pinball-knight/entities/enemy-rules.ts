@@ -73,6 +73,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   mimic: "chase",
   platypus: "chase",
   espresso: "chase",
+  gnome: "chase",
   jade_buddha: "chase",
 };
 

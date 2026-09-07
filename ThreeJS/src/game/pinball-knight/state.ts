@@ -347,6 +347,7 @@ export type EnemyKind =
   | "mimic" // AMBUSHER — dormant + item-like until you're close, then lunges
   | "platypus" // SLAMMER — heavy armored platypus with metal tail ground slam
   | "espresso" // SKIRMISHER — walking espresso cup, spins like a teacup and spills scalding coffee on death
+  | "gnome" // RAMMER — eccentric pipe-smoking lawnmower gnome with spinning blades and smoke poof death
   | "jade_buddha"; // BOSS — serene emerald buddha statue with boomerang fan
 
 export interface Zombie extends Actor {

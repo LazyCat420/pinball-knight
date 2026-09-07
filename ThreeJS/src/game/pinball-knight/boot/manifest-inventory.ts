@@ -26,6 +26,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   fish_feet: ["E", "S"],
   frog: ["E", "S"],
   ghost: ["S"],
+  gnome: ["S"],
   goblin: ["S"],
   golem: ["S"],
   hound: ["S"],

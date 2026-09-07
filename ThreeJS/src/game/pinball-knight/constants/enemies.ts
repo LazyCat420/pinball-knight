@@ -508,6 +508,25 @@ export const ESPRESSO_SPIN_DEFLECT = 12.0;
 export const ESPRESSO_SPILL_RADIUS = 1.8;
 export const ESPRESSO_SPILL_LIFE = 5.5;
 export const ESPRESSO_SPILL_DAMAGE = 1;
+
+// ── Lawnmower Pipe Gnome (Whirring Blades & Vanishing Smoke Poof) ──
+/**
+ * LAWNMOWER PIPE GNOME — an eccentric bearded gnome puffing tobacco smoke
+ * from a wooden pipe while pushing a whirring rotary lawnmower.
+ * Aggressively rams the player with spinning mower blades, spewing grass
+ * clippings and friction sparks, and poofs into dissolving cartoon smoke on death.
+ */
+export const GNOME_HP = 5;
+export const GNOME_R = 0.38;
+export const GNOME_SPEED_FACTOR = 1.25;
+export const GNOME_RATIO = 17;
+export const GNOME_FROM_LEVEL = 2;
+export const GNOME_CONTACT_RANGE = 0.85;
+export const GNOME_ATTACK_WINDUP = 0.3;
+export const GNOME_ATTACK_COOLDOWN = 1.4;
+export const GNOME_DAMAGE = 1.5;
+export const GNOME_MOWER_DEFLECT = 13.0;
+
 /** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
  *  two rubber families teach ONE rule about momentum rather than two. */
 export const JESTER_GATE_SOFT = 0.5;
