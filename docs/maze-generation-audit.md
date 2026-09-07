@@ -275,8 +275,8 @@ protected. It consumes no RNG and records the removed coordinates. The existing
 density limits are unchanged. This content correction is distinct from the
 layout-preserving extraction and may reduce crowding on affected seeds.
 
-Local release checks passed on the combined integration branch. NAS deployment
-remains on hold at the user's request while the other developers finish.
+Local release checks passed on the combined integration branch. The user later
+lifted the deployment hold; the verified NAS release is recorded below.
 
 Additional verification:
 
@@ -306,6 +306,17 @@ Combined integration verification (`fix/shared-author-release`, `3fc6c0f9`):
 - All 18 relevant sprite manifests and PNG pairs match the production output.
 - The local production build reached actual gameplay with Clockwork visible,
   HUD/toasts only, no script exceptions and no failed network requests.
-- No NAS release was performed for this integration. The deployment hold remains
-  in effect; container/public verification must follow the eventual release.
+- This initial checkpoint preceded release. The user subsequently authorized
+  deployment while the other developers continue; see the completed release below.
 - See `docs/team-integration.md` for commit handoff and worktree ownership.
+
+Completed release (`e4ff8dcc`, 2026-09-06 23:55 PDT):
+
+- Preserved published Sumo Ninja commit `80791fd4` in merge `3a49bc2f`.
+- Deploy-kit release tests: 3,889 passed, 12 skipped; 327 files passed and
+  5 skipped. Build, image transfer, restart and container health all passed.
+- NAS and public health endpoints responded successfully. The image, NAS and
+  public HTML matched byte for byte; all 19 relevant public sprite pairs matched.
+- Public browser build `2026-09-07T06:54:55Z` reached gameplay with Clockwork
+  visible and no script or network errors.
+- Deployment completed; later monster work remains in the developers' worktrees.

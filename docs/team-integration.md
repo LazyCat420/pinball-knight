@@ -59,10 +59,27 @@ are resolved in integration, and feature branches retain their original commits.
 - The release wrapper passed shell syntax validation. A held lock in the Git
   common directory caused a second release invocation to stop before building.
   Older developer checkouts must adopt this wrapper for mutual exclusion.
-- No NAS deployment has been performed for this integration checkpoint.
+- This was the initial integration validation; the completed release is recorded
+  below.
 
-## Release in progress
+## Completed NAS release
 
 The user lifted the deployment hold and requested the integrated game for testing.
-The project deploy-kit wrapper will validate and deploy the Sumo-inclusive
-checkpoint. Record the actual NAS and public checks after it completes.
+The project deploy-kit wrapper released `e4ff8dcc` on 2026-09-06 at 23:55 PDT
+(2026-09-07 06:55 UTC), including the Sumo Ninja merge.
+
+- All release tests passed: 327 files passed, 5 skipped; 3,889 tests passed,
+  12 skipped; zero failures.
+- Docker build passed in 191 seconds. Image transfer completed in 9 seconds;
+  the NAS container restarted and reached `running / healthy`.
+- Both NAS and public `/health` endpoints returned `healthy`.
+- Built-image, NAS and public `index.html` files matched byte for byte.
+- All 19 relevant public sprite manifests and PNGs matched the source files.
+- Public browser build `2026-09-07T06:54:55Z` reached gameplay with Clockwork
+  visible, HUD/toasts open, no script exceptions and no failed network requests.
+- Previous image retained as `pinball-knight-web:previous` for rollback.
+
+Play: https://pinballknight.braindeadbot.com/
+
+Other developers can continue in their own worktrees. Integrate their next
+completed batches into this branch before a later release.
