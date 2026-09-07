@@ -36,4 +36,9 @@ lighting from the arm plates, and shortens Crawling Hand's debug label. Existing
 test thresholds are unchanged. All 63 tests across the noise, imported-monster
 pipeline, debug-panel and Six-Armed God boss suites passed.
 
+The other integration owner released equivalent monster fixes at `4aa5b82f`
+while this correction was being validated. Merge `bd1f28b9` preserves that
+released fallback painter and short label; it supersedes the local follow-up
+implementation. The intro, tavern and floor-loading fixes are retained.
+
 The repeated project deployment gate and public verification are pending.
