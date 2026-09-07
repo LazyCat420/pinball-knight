@@ -121,3 +121,21 @@ Play: https://pinballknight.braindeadbot.com/ (Local NAS: http://10.0.0.16:8789)
 - This branch is the latest verified NAS release and must be integrated before
   another branch releases, to preserve the intro and tavern loading correction.
 - Other developers' worktrees and uncommitted work have not been modified.
+
+## Recovery from a divergent follow-up release
+
+The NAS was subsequently overwritten by `0e60c8cc`, whose ancestry omitted the
+Clockwork Knight, cinematic intro, maze integration, and tavern correction.
+The previous release verification was accurate at its completion, but the
+project-local lock did not protect against a later release from an older branch.
+
+- Recovery merge: `0a6a2634`, preserving the complete release plus the latest
+  Buddha debugger fix and Fry Sentinel transparency correction from `main`.
+- Shared deploy-kit guard: `d1cdb39`. It runs for Pinball Knight even from older
+  project wrappers, requires both the integrated baseline and running NAS commit
+  in the candidate's ancestry, checks the actual image label, and blocks release
+  if the NAS cannot be verified. It also provides the common release lock.
+- Regression checks: all 12 guard tests passed against real divergent Git
+  history. The actual regressing revision `0e60c8cc` was rejected; recovery
+  `0a6a2634` passed against the running NAS. All 31 focused game tests passed.
+- Full gate and recovered public deployment verification are pending.

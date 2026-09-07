@@ -18,6 +18,11 @@
   All older checkouts must adopt this wrapper before relying on the lock.
 - Follow the user's current release hold. A request to continue development or
   integrate branches does not by itself end a hold on deployment.
+- Every release must include the running NAS commit and the integrated baseline.
+  The shared deploy-kit release guard enforces this even for older wrappers;
+  do not bypass it. A newer commit date or a passing branch-local test suite does
+  not prove that a branch contains previously released features. Integrate the
+  latest release branch before deploying, and verify the actual image revision.
 - Record handoff details in docs/team-integration.md: branch, commit, changed
   areas, validation, and integration status. A record is a handoff, not evidence
   that another developer has read it or finished working.
