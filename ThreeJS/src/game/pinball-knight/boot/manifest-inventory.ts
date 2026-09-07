@@ -59,6 +59,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   webspinner: ["S"],
   trex: ["S"],
   toucan: ["S"],
+  zippo: ["S"],
   zombie: ["E"],
 };
 

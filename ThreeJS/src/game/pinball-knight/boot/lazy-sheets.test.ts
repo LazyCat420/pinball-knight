@@ -49,7 +49,7 @@ const ALL_KEYS: SheetKey[] = [
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
   "necromancer", "crystalback", "mimic", "reaper", "bloater", "platypus",
-  "espresso", "gnome", "cigarette", "toucan", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "six_armed_god",
+  "espresso", "gnome", "cigarette", "toucan", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "six_armed_god", "zippo",
 ];
 
 /**
@@ -152,7 +152,7 @@ describe("manifest inventory & floor loading", () => {
     for (let level = 1; level <= 100; level++) {
       expect(keysForFloor(level)).toContain(guardianFor(level).art.sheetKey);
     }
-    for (const [key, from] of [["crawling_hand", 2], ["milkshake", 3], ["sumo_ninja", 4]] as const) {
+    for (const [key, from] of [["crawling_hand", 2], ["zippo", 2], ["milkshake", 3], ["sumo_ninja", 4]] as const) {
       expect(keysForFloor(from)).toContain(key);
       expect(keysForFloor(from - 1)).not.toContain(key);
     }

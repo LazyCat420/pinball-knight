@@ -368,7 +368,8 @@ export type EnemyKind =
   | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
   | "milkshake" // SPRAYER — cartoon milkshake cup with yellow dishwashing gloves that sprays toxic milkshake
   | "crawling_hand" // PINNER — severed walking hand that grabs and pins the knight while horde attacks
-  | "sumo_ninja"; // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
+  | "sumo_ninja" // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
+  | "zippo"; // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
