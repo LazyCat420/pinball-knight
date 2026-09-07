@@ -122,6 +122,10 @@ export interface Player extends Actor {
   chomperGrabT?: number;
   chomperGrabEscape?: number;
   chomperGrabHost?: Zombie | null;
+  /** Crawling Hand grab & hold: while > 0 player is pinned in place while horde attacks. */
+  handGrabT?: number;
+  handGrabEscape?: number;
+  handGrabHost?: Zombie | null;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -359,7 +363,8 @@ export type EnemyKind =
   | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
   | "burger" // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
   | "fries" // SENTINEL — sentient red fry carton with crinkle-cut limbs and eye amulet that launches head fry rockets
-  | "milkshake"; // SPRAYER — cartoon milkshake cup with yellow dishwashing gloves that sprays toxic milkshake
+  | "milkshake" // SPRAYER — cartoon milkshake cup with yellow dishwashing gloves that sprays toxic milkshake
+  | "crawling_hand"; // PINNER — severed walking hand that grabs and pins the knight while horde attacks
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

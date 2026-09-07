@@ -121,6 +121,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   burger: [{ id: "rotflesh", chance: 0.3 }, { id: "slimegel", chance: 0.2 }],
   fries: [{ id: "rotflesh", chance: 0.25 }, { id: "glass", chance: 0.2 }],
   milkshake: [{ id: "slimegel", chance: 0.28 }, { id: "glass", chance: 0.18 }],
+  crawling_hand: [{ id: "rotflesh", chance: 0.3 }, { id: "grimbone", chance: 0.15 }],
 };
 
 /**

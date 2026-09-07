@@ -16,6 +16,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   chomper: ["S"],
   compass: ["E", "N", "S"],
   crawler: ["S"],
+  crawling_hand: ["S"],
   croaker: ["S"],
   crystalback: ["S"],
   demon: ["S"],

@@ -149,7 +149,8 @@ import {
   ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT,
   BURGER_R, BURGER_FIRE_RANGE, BURGER_WINDUP, BURGER_COOLDOWN,
   FRIES_R, FRIES_FIRE_RANGE, FRIES_WINDUP, FRIES_COOLDOWN,
-  MILKSHAKE_R, MILKSHAKE_FIRE_RANGE, MILKSHAKE_WINDUP, MILKSHAKE_COOLDOWN } from "../constants";
+  MILKSHAKE_R, MILKSHAKE_FIRE_RANGE, MILKSHAKE_WINDUP, MILKSHAKE_COOLDOWN,
+  CRAWLING_HAND_R, CRAWLING_HAND_CONTACT_RANGE, CRAWLING_HAND_WINDUP, CRAWLING_HAND_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -219,6 +220,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   burger: { bodyR: BURGER_R, contactRange: BURGER_FIRE_RANGE, windup: BURGER_WINDUP, cooldown: BURGER_COOLDOWN, ranged: true },
   fries: { bodyR: FRIES_R, contactRange: FRIES_FIRE_RANGE, windup: FRIES_WINDUP, cooldown: FRIES_COOLDOWN, ranged: true },
   milkshake: { bodyR: MILKSHAKE_R, contactRange: MILKSHAKE_FIRE_RANGE, windup: MILKSHAKE_WINDUP, cooldown: MILKSHAKE_COOLDOWN, ranged: true },
+  crawling_hand: { bodyR: CRAWLING_HAND_R, contactRange: CRAWLING_HAND_CONTACT_RANGE, windup: CRAWLING_HAND_WINDUP, cooldown: CRAWLING_HAND_COOLDOWN, ranged: false },
 };
 
 /**
