@@ -275,7 +275,8 @@ protected. It consumes no RNG and records the removed coordinates. The existing
 density limits are unchanged. This content correction is distinct from the
 layout-preserving extraction and may reduce crowding on affected seeds.
 
-Release checks and deployment verification are pending for this follow-up.
+Local release checks passed on the combined integration branch. NAS deployment
+remains on hold at the user's request while the other developers finish.
 
 Additional verification:
 
@@ -291,3 +292,20 @@ Additional verification:
   dependencies once in `PRE_TEST` and sets `verify_deps_before_run=error` for
   subsequent scripts. This preserves validation while preventing parallel
   test shards from mutating their dependency tree.
+
+Combined integration verification (`fix/shared-author-release`, `3fc6c0f9`):
+
+- Merged the shared maze author and density fixes with Clockwork/intro changes,
+  the committed Toucan, Cigarette, Gnome and Dragon Snake batch, and published
+  main through `14cdc544` (Burger, Fries and Milkshake included).
+- Full suite: 326 files passed and 5 skipped; 3,881 tests passed and 12 skipped,
+  no failures; completed exit status 0 in 479.75 seconds. Earlier interrupted
+  runs are superseded by this completed run.
+- Production Vite build passed with 367 modules. The existing bundle-size
+  warning remains.
+- All 18 relevant sprite manifests and PNG pairs match the production output.
+- The local production build reached actual gameplay with Clockwork visible,
+  HUD/toasts only, no script exceptions and no failed network requests.
+- No NAS release was performed for this integration. The deployment hold remains
+  in effect; container/public verification must follow the eventual release.
+- See `docs/team-integration.md` for commit handoff and worktree ownership.

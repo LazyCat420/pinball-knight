@@ -11,10 +11,15 @@ installation from changing another developer's files.
 - Worktree: `.worktrees/wt-shared-author-release`.
 - Imported committed batch: `feat/maze-pipeline` at `26664121`, including the
   merged monster additions and main through `295efdd1`.
-- Local batch: shared maze author, density repairs, earlier corner/shuffle fixes,
-  and the previously developed Clockwork and intro changes.
+- Published follow-up: `origin/main` at `14cdc544` adds Milkshake. Merge commit
+  `3fc6c0f9` preserves it alongside the earlier monster batch.
+- Maze batch: `d8ab8444` shares live authoring, repairs excess ambient density,
+  and includes the earlier corner/shuffle fixes.
+- Clockwork and intro batch: `5b1966d9`.
+- Worktree and release coordination: `8aafc39b`.
 - Resolved overlaps: retain Cigarette and all three Clockwork variants in the
-  sprite inventory; retain pinned pnpm 11.8.0 and frozen dependency installation.
+  sprite inventory; combine Milkshake with all existing sheet keys and enemy
+  kinds; retain pinned pnpm 11.8.0 and frozen dependency installation.
 - Deployment remains on hold while the user brings in the other developers'
   commits. This integration is a checkpoint, not a claim that their branches are
   finished. Recheck branch heads before the next merge or deployment.
@@ -36,3 +41,21 @@ installation from changing another developer's files.
 
 No developer's working directory is reset or deleted by this workflow. Conflicts
 are resolved in integration, and feature branches retain their original commits.
+
+## Validation of the integration checkpoint
+
+- Production build at `3fc6c0f9` passed (367 modules). Vite reports its existing
+  large-bundle warning.
+- All 18 Clockwork and new-monster manifest/PNG pairs match their source files
+  byte for byte in the production output, including Milkshake.
+- The updated production build reached gameplay in a browser with Clockwork
+  visible, only the HUD/toasts open, no script exceptions and no failed network
+  requests (browser build `2026-09-07T05:47:42Z`).
+- Full suite at `3fc6c0f9`: **326 test files passed, 5 skipped; 3,881 tests
+  passed, 12 skipped; zero failures**. The completed run exited 0 in 479.75s.
+  Earlier command sessions were interrupted by SIGTERM; the final independent
+  run completed and wrote its JSON report and exit status.
+- The release wrapper passed shell syntax validation. A held lock in the Git
+  common directory caused a second release invocation to stop before building.
+  Older developer checkouts must adopt this wrapper for mutual exclusion.
+- No NAS deployment has been performed for this integration checkpoint.
