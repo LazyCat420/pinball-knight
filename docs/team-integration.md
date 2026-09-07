@@ -108,5 +108,16 @@ Play: https://pinballknight.braindeadbot.com/ (Local NAS: http://10.0.0.16:8789)
   the Crawling Hand debug label, after the full release gate exposed failures.
 - Focused regression tests and production browser checks passed; follow-up
   integration suites passed all 63 tests. Full release gate is being repeated.
-- Public deployment verification will be recorded after transfer and restart.
+- Merged the other owner's released monster corrections and handoff `bd1f28b9`
+  via `376af872`, preserving their exact fallback painter and short label.
+- Released `b9c68ff2` on 2026-09-07 at 00:57 PDT; full suite passed (332 files,
+  3,919 tests; 5 files / 12 tests skipped). Build, transfer and restart succeeded.
+- NAS runs healthy at `b9c68ff2`; NAS/public health and image/NAS/public HTML
+  equality verified. All 21 checked public sprite pairs match source bytes.
+- Public build `2026-09-07T07:57:11Z`: complete intro, zero tavern monster
+  imports, and successful first-floor gameplay without script/network errors.
+- Release wrapper now explicitly unlocks on exit to prevent orphan SSH agents
+  from retaining its descriptor. Adopt this wrapper before subsequent releases.
+- This branch is the latest verified NAS release and must be integrated before
+  another branch releases, to preserve the intro and tavern loading correction.
 - Other developers' worktrees and uncommitted work have not been modified.

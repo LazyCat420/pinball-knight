@@ -41,4 +41,20 @@ while this correction was being validated. Merge `bd1f28b9` preserves that
 released fallback painter and short label; it supersedes the local follow-up
 implementation. The intro, tavern and floor-loading fixes are retained.
 
-The repeated project deployment gate and public verification are pending.
+Release `b9c68ff2` deployed successfully on 2026-09-07 at 00:57 PDT.
+
+- Full gate: 332 test files passed, 5 skipped; 3,919 tests passed, 12 skipped;
+  zero failures. Production image built and transferred in 7 seconds.
+- NAS container: running / healthy at `b9c68ff2`; both NAS and public health
+  endpoints pass. Image, NAS and public HTML hashes match exactly.
+- All 21 relevant public sprite manifest/PNG pairs match source bytes.
+- Public browser build `2026-09-07T07:57:11Z` played town, head-off, head-roll,
+  arcade, machine, sweep and title, then entered the tavern with zero automatic
+  monster imports and no script errors. The arcade and machine phases each
+  remained visible for approximately three seconds.
+- Public first-floor descent reached active gameplay with only HUD/toasts open,
+  no script errors and no failed requests; screenshot visually checked.
+- The release wrapper now explicitly unlocks on exit: an orphaned SSH agent
+  from a finished release had retained the descriptor. Verified that concurrent
+  releases remain blocked, inherited child processes no longer strand the lock,
+  and the lock was available after this completed deployment.
