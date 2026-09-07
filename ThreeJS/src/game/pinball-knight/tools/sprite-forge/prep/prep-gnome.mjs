@@ -52,21 +52,101 @@ async function run() {
   const w = 1024;
   const h = 1024;
 
-  // Chroma key helper for #FF00FF magenta + border cleanup
+  // Chroma key helper for #FF00FF magenta + border cleanup + hat taper
   function cleanSheet(srcImg) {
     const c = createCanvas(w, h);
     const cx = c.getContext("2d");
-    cx.drawImage(srcImg, 0, 0, w, h);
-    // Enhance cell 3,3 (death3) with dissolving smoke puff cluster from death2 (cell 2,3)
-    // Clear cell 3,3 to clean magenta first
     cx.fillStyle = "#FF00FF";
-    cx.fillRect(768, 768, 256, 256);
-    // Draw 0.75x dissolving smoke cloud from cell 2,3 centered in cell 3,3
-    cx.drawImage(srcImg, 550, 790, 180, 180, 830, 830, 130, 130);
+    cx.fillRect(0, 0, w, h);
+
+    // Scale each 256x256 cell by 0.94x anchored to bottom center (grounding the lawnmower)
+    // to give 15px headroom so the hat is never cut off at the top border
+    for (let r = 0; r < 4; r++) {
+      for (let col = 0; col < 4; col++) {
+        const srcCell = createCanvas(256, 256);
+        const scx = srcCell.getContext("2d");
+
+        if (r === 3 && col === 3) {
+          // Enhance cell 3,3 (death3) with dissolving smoke puff cluster from death2 (cell 2,3)
+          scx.fillStyle = "#FF00FF";
+          scx.fillRect(0, 0, 256, 256);
+          scx.drawImage(srcImg, 550, 790, 180, 180, 64, 64, 130, 130);
+        } else {
+          scx.drawImage(srcImg, col * 256, r * 256, 256, 256, 0, 0, 256, 256);
+        }
+
+        const tgtCell = createCanvas(256, 256);
+        const tcx = tgtCell.getContext("2d");
+        tcx.fillStyle = "#FF00FF";
+        tcx.fillRect(0, 0, 256, 256);
+
+        const scale = 0.94;
+        const sw = 256 * scale;
+        const sh = 256 * scale;
+        const sx = (256 - sw) / 2;
+        const sy = 254 - (254 * scale);
+
+        tcx.drawImage(srcCell, sx, sy, sw, sh);
+
+        // In living rows (0, 1, 2), taper the gnome's red cone hat to a sharp pointed apex
+        if (r < 3) {
+          const cellData = tcx.getImageData(0, 0, 256, 256);
+          const cd = cellData.data;
+          let topY = 256, topX = 128;
+          for (let y = 0; y < 100; y++) {
+            for (let x = 50; x < 180; x++) {
+              const idx = (y * 256 + x) * 4;
+              const red = cd[idx], green = cd[idx+1], blue = cd[idx+2];
+              if (!(red > 180 && blue > 180 && green < 80)) {
+                topY = y;
+                topX = x;
+                break;
+              }
+            }
+            if (topY < 256) break;
+          }
+
+          let minX = topX, maxX = topX;
+          for (let x = 50; x < 180; x++) {
+            const idx = (topY * 256 + x) * 4;
+            const red = cd[idx], green = cd[idx+1], blue = cd[idx+2];
+            if (!(red > 180 && blue > 180 && green < 80)) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+            }
+          }
+          const midX = Math.round((minX + maxX) / 2);
+
+          const setPixel = (px, py, col) => {
+            const idx = (py * 256 + px) * 4;
+            cd[idx] = col[0]; cd[idx+1] = col[1]; cd[idx+2] = col[2]; cd[idx+3] = 255;
+          };
+          const cHi = [224, 48, 48];
+          const cMid = [196, 32, 32];
+          const cDk = [152, 24, 24];
+
+          if (topY >= 4) {
+            // Row topY - 1: 3px wide
+            setPixel(midX - 1, topY - 1, cDk);
+            setPixel(midX, topY - 1, cMid);
+            setPixel(midX + 1, topY - 1, cHi);
+            // Row topY - 2: 2px wide
+            setPixel(midX - 1, topY - 2, cDk);
+            setPixel(midX, topY - 2, cHi);
+            // Row topY - 3: 1px sharp apex!
+            setPixel(midX, topY - 3, cMid);
+          }
+          tcx.putImageData(cellData, 0, 0);
+        }
+
+        cx.drawImage(tgtCell, col * 256, r * 256);
+      }
+    }
 
     const imgData = cx.getImageData(0, 0, w, h);
     const d = imgData.data;
 
+    // Clean magenta keying
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i];
       const g = d[i + 1];
@@ -74,18 +154,14 @@ async function run() {
       const px = (i / 4) % w;
       const py = Math.floor((i / 4) / w);
 
-      // Magenta chroma key check (high red & blue, low green)
-      const isMagenta = (r > 150 && b > 150 && g < 110) || (r > 120 && b > 120 && (r + b) > g * 2.1);
-      // Strip any edge grid line artifacts
-      const isGridLine = (px % 256 <= 2 || px % 256 >= 253 || py % 256 <= 2 || py % 256 >= 253) && (r < 80 && g < 80 && b < 80);
-      // Outer border frame
-      const isOuterBorder = px < 8 || px >= w - 8 || py < 8 || py >= h - 8;
+      const isMagenta = (r > 160 && b > 160 && g < 80) || (r > 130 && b > 130 && g < 50);
+      const isGridLine = (px % 256 <= 1 || px % 256 >= 254 || py % 256 <= 1 || py % 256 >= 254) && (r < 75 && g < 75 && b < 75);
 
-      if (isMagenta || isGridLine || isOuterBorder) {
+      if (isMagenta || isGridLine) {
         d[i] = 255;
         d[i + 1] = 0;
         d[i + 2] = 255;
-        d[i + 3] = 255; // solid magenta background for sprite forge
+        d[i + 3] = 255;
       }
     }
     cx.putImageData(imgData, 0, 0);

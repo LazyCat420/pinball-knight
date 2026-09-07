@@ -49,7 +49,7 @@ async function run() {
       const py = Math.floor((i / 4) / w);
 
       // Magenta chroma key check (high red & blue, low green)
-      const isMagenta = (r > 150 && b > 150 && g < 110) || (r > 120 && b > 120 && (r + b) > g * 2.1);
+      const isMagenta = (r > 160 && b > 160 && g < 80) || (r > 130 && b > 130 && g < 50);
       // Strip any edge grid line artifacts
       const isGridLine = (px % 256 <= 2 || px % 256 >= 253 || py % 256 <= 2 || py % 256 >= 253) && (r < 80 && g < 80 && b < 80);
       // Outer border frame
@@ -60,6 +60,12 @@ async function run() {
         d[i + 1] = 0;
         d[i + 2] = 255;
         d[i + 3] = 255; // solid magenta background for sprite forge
+      } else {
+        // Balance neon beak and feathers with dungeon palette
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        d[i] = Math.round(Math.min(255, Math.max(0, luma + (r - luma) * 0.80)));
+        d[i + 1] = Math.round(Math.min(255, Math.max(0, luma + (g - luma) * 0.80)));
+        d[i + 2] = Math.round(Math.min(255, Math.max(0, luma + (b - luma) * 0.80)));
       }
     }
     cx.putImageData(imgData, 0, 0);

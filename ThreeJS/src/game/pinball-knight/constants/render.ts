@@ -507,7 +507,7 @@ export const CEL_CURVE = 0.5;
  * pushed the Bloodworks — a biome that is already one blood ramp for all of its
  * masonry (maze/build.ts BIOME_STONE) — to a flat screaming red.
  */
-export const CEL_SATURATION = 1.15;
+export const CEL_SATURATION = 1.02;
 /**
  * Luma step (rough-gamma space, 0..1) a COLOUR edge must exceed before the ink
  * pass darkens it — the second outline term, added because a depth edge cannot

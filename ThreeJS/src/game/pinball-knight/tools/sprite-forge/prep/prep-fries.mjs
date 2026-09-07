@@ -67,6 +67,12 @@ async function run() {
         d[i + 1] = 255;
         d[i + 2] = 0;
         d[i + 3] = 255; // solid pure green background for sprite forge
+      } else {
+        // Balance oversaturated fries/carton colors to blend naturally with dungeon palette
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        d[i] = Math.round(Math.min(255, Math.max(0, luma + (r - luma) * 0.80)));
+        d[i + 1] = Math.round(Math.min(255, Math.max(0, luma + (g - luma) * 0.80)));
+        d[i + 2] = Math.round(Math.min(255, Math.max(0, luma + (b - luma) * 0.80)));
       }
     }
     cx.putImageData(imgData, 0, 0);

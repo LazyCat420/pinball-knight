@@ -33,7 +33,7 @@ async function run() {
   const w = 1024;
   const h = 1024;
 
-  // Clean sheet: clean magenta background and remove cell grid line dividers
+  // Clean sheet: clean magenta background and remove cell grid line dividers via flood fill
   function cleanSheet(srcImg) {
     const c = createCanvas(w, h);
     const cx = c.getContext("2d");
@@ -41,27 +41,65 @@ async function run() {
     const imgData = cx.getImageData(0, 0, w, h);
     const d = imgData.data;
 
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i];
-      const g = d[i + 1];
-      const b = d[i + 2];
-      const px = (i / 4) % w;
-      const py = Math.floor((i / 4) / w);
+    // Flood fill from borders to only key background pixels, protecting all interior hand flesh
+    const visited = new Uint8Array(w * h);
+    const queue = [];
 
-      // Magenta chroma key check (high red & blue, low green)
-      const isMagenta = (r > 160 && b > 160 && g < 110) || (r > 130 && b > 130 && (r + b) > g * 2.1);
+    function isBgPixel(px, py) {
+      const idx = (py * w + px) * 4;
+      const r = d[idx];
+      const g = d[idx + 1];
+      const b = d[idx + 2];
+      // True magenta background (high red & blue, low green)
+      const isMagenta = (r > 170 && b > 170 && g < 60) || (r > 140 && b > 140 && g < 40);
       // Strip any edge grid line artifacts
       const isGridLine = (px % 256 <= 2 || px % 256 >= 253 || py % 256 <= 2 || py % 256 >= 253) && (r < 80 && g < 80 && b < 80);
       // Outer border frame
       const isOuterBorder = px < 4 || px >= w - 4 || py < 4 || py >= h - 4;
+      return isMagenta || isGridLine || isOuterBorder;
+    }
 
-      if (isMagenta || isGridLine || isOuterBorder) {
-        d[i] = 255;
-        d[i + 1] = 0;
-        d[i + 2] = 255;
-        d[i + 3] = 255; // solid magenta background for sprite forge
+    for (let x = 0; x < w; x++) {
+      if (isBgPixel(x, 0)) { queue.push(x); visited[x] = 1; }
+      const btm = (h - 1) * w + x;
+      if (isBgPixel(x, h - 1)) { queue.push(btm); visited[btm] = 1; }
+    }
+    for (let y = 0; y < h; y++) {
+      const left = y * w;
+      if (isBgPixel(0, y)) { queue.push(left); visited[left] = 1; }
+      const right = y * w + (w - 1);
+      if (isBgPixel(w - 1, y)) { queue.push(right); visited[right] = 1; }
+    }
+
+    let head = 0;
+    while (head < queue.length) {
+      const pos = queue[head++];
+      const px = pos % w;
+      const py = Math.floor(pos / w);
+      const neighbors = [
+        [px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]
+      ];
+      for (const [nx, ny] of neighbors) {
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+          const npos = ny * w + nx;
+          if (!visited[npos] && isBgPixel(nx, ny)) {
+            visited[npos] = 1;
+            queue.push(npos);
+          }
+        }
       }
     }
+
+    for (let i = 0; i < w * h; i++) {
+      if (visited[i]) {
+        const idx = i * 4;
+        d[idx] = 255;
+        d[idx + 1] = 0;
+        d[idx + 2] = 255;
+        d[idx + 3] = 255; // solid magenta background for sprite forge
+      }
+    }
+
     cx.putImageData(imgData, 0, 0);
     return c;
   }

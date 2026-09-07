@@ -196,7 +196,7 @@ export const engineConfig: EngineConfig = {
     frenzyAberration: 0.006,
     celSteps: 10,
     celCurve: 0.5,
-    celSaturation: 1.15,
+    celSaturation: 1.02,
   },
   anim: {
     idle: 3,

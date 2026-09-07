@@ -104,15 +104,22 @@ async function run() {
       }
     }
 
-    // Outer edge cleanup
+    // Outer edge cleanup & saturation balance
     for (let y = 0; y < 1024; y++) {
       for (let x = 0; x < 1024; x++) {
+        const idx = (y * 1024 + x) * 4;
         if (x < 3 || x >= 1021 || y < 3 || y >= 1021) {
-          const idx = (y * 1024 + x) * 4;
           d[idx] = 255;
           d[idx + 1] = 0;
           d[idx + 2] = 255;
           d[idx + 3] = 255;
+        } else if (!(d[idx] === 255 && d[idx + 1] === 0 && d[idx + 2] === 255)) {
+          // Balance neon pinks/reds to fit gothic palette
+          const r = d[idx], g = d[idx + 1], b = d[idx + 2];
+          const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+          d[idx] = Math.round(Math.min(255, Math.max(0, luma + (r - luma) * 0.85)));
+          d[idx + 1] = Math.round(Math.min(255, Math.max(0, luma + (g - luma) * 0.85)));
+          d[idx + 2] = Math.round(Math.min(255, Math.max(0, luma + (b - luma) * 0.85)));
         }
       }
     }
