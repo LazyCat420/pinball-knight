@@ -147,7 +147,8 @@ import {
   PLATYPUS_SLAM_RADIUS, PLATYPUS_SLAM_DEFLECT, GROOVE_RADIUS, GROOVE_LIFE,
   ESPRESSO_R, ESPRESSO_CONTACT_RANGE, ESPRESSO_ATTACK_WINDUP, ESPRESSO_ATTACK_COOLDOWN,
   ESPRESSO_SPIN_RANGE, ESPRESSO_SPIN_DEFLECT,
-  BURGER_R, BURGER_FIRE_RANGE, BURGER_WINDUP, BURGER_COOLDOWN } from "../constants";
+  BURGER_R, BURGER_FIRE_RANGE, BURGER_WINDUP, BURGER_COOLDOWN,
+  FRIES_R, FRIES_FIRE_RANGE, FRIES_WINDUP, FRIES_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -160,7 +161,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -215,6 +216,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   espresso: { bodyR: ESPRESSO_R, contactRange: ESPRESSO_CONTACT_RANGE, windup: ESPRESSO_ATTACK_WINDUP, cooldown: ESPRESSO_ATTACK_COOLDOWN, ranged: false },
   jade_buddha: { bodyR: 0.86, contactRange: 2.8, windup: 1.0, cooldown: 4.5, ranged: true },
   burger: { bodyR: BURGER_R, contactRange: BURGER_FIRE_RANGE, windup: BURGER_WINDUP, cooldown: BURGER_COOLDOWN, ranged: true },
+  fries: { bodyR: FRIES_R, contactRange: FRIES_FIRE_RANGE, windup: FRIES_WINDUP, cooldown: FRIES_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1078,6 +1080,9 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "burger") {
                 // The BURGER BEAST deconstructs itself and flings flying ingredients
                 flingBurgerDeconstruction(z.x, z.z, ux, uz);
+              } else if (z.kind === "fries") {
+                // Sentient fry carton launches crinkle-cut fries out of its head
+                launchFryBarrage(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);

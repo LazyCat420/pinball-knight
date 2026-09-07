@@ -51,6 +51,9 @@ import {
   BURGER_TOMATO_SPEED,
   BURGER_LETTUCE_SPEED,
   BURGER_SAUCE_SPEED,
+  FRIES_FIRE_RANGE,
+  FRIES_DAMAGE,
+  FRIES_DART_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -207,6 +210,14 @@ function sauceAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMateria
   return { geo: _sauceGeo, mat: _sauceMat };
 }
 
+let _fryDartGeo: THREE.BoxGeometry | null = null;
+let _fryDartMat: THREE.MeshBasicMaterial | null = null;
+export function fryDartAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _fryDartGeo ??= new THREE.BoxGeometry(0.08, 0.08, 0.36);
+  _fryDartMat ??= new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // crispy golden crinkle fry
+  return { geo: _fryDartGeo, mat: _fryDartMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -235,13 +246,15 @@ export function disposeProjectileAssets(): void {
   _lettuceMat?.dispose();
   _sauceGeo?.dispose();
   _sauceMat?.dispose();
+  _fryDartGeo?.dispose();
+  _fryDartMat?.dispose();
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
   _beamGeo = _beamMat = null;
   _timberGeo = _timberMat = null;
   _bombGeo = _bombMat = null;
-  _tomatoGeo = _tomatoMat = _lettuceGeo = _lettuceMat = _sauceGeo = _sauceMat = null;
+  _tomatoGeo = _tomatoMat = _lettuceGeo = _lettuceMat = _sauceGeo = _sauceMat = _fryDartGeo = _fryDartMat = null;
 }
 
 /**
@@ -696,6 +709,45 @@ export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: 
 }
 
 /**
+ * The FRY SENTINEL's head-rocket attack:
+ * Fires a 3-shot burst of sizzling crinkle-cut fries launched right out of its head carton!
+ */
+export function launchFryBarrage(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+
+  // Sizzling steam & spark VFX at head carton muzzle
+  state.vfx?.sparks(x + dx * 0.2, PROJECTILE_Y + 0.2, z + dz * 0.2, dx * 1.5, dz * 1.5, 6);
+
+  // 3 crinkle-cut fries in a spread (-0.18, 0, +0.18 rad)
+  for (const offset of [-0.18, 0, 0.18]) {
+    const angle = baseAngle + offset;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = fryDartAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + fdx * MUZZLE_OFFSET;
+    const sz = z + fdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "fry_dart",
+      x: sx,
+      z: sz,
+      vx: fdx * FRIES_DART_SPEED,
+      vz: fdz * FRIES_DART_SPEED,
+      life: FRIES_FIRE_RANGE / FRIES_DART_SPEED,
+      maxLife: FRIES_FIRE_RANGE / FRIES_DART_SPEED,
+      damage: FRIES_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
+/**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
  * is a room-clearing event if you detonate it in a crowd.
@@ -917,6 +969,8 @@ export function updateProjectiles(dt: number): void {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 6, 1.0);
         } else if (pr.kind === "burger_sauce") {
           state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 8, 1.0);
+        } else if (pr.kind === "fry_dart") {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
         }
         // A bomb against masonry is a bomb going off against masonry. This is
         // what stops "break line of sight" from being the free answer it is
@@ -935,6 +989,9 @@ export function updateProjectiles(dt: number): void {
       if (pr.kind === "burger_lettuce") {
         pr.mesh.rotation.y += dt * 8;
         pr.mesh.rotation.z += dt * 6;
+      }
+      if (pr.kind === "fry_dart") {
+        pr.mesh.rotation.z += dt * 15;
       }
 
       // FUSE BURN: the bomb sheds sparks the whole way in, faster as the fuse
@@ -980,6 +1037,9 @@ export function updateProjectiles(dt: number): void {
           } else if (pr.kind === "burger_lettuce") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 10, 1.5);
+          } else if (pr.kind === "fry_dart") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 10, 1.4);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {

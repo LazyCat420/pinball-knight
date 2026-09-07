@@ -154,7 +154,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger";
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -163,7 +163,7 @@ const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -257,7 +257,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
@@ -423,6 +423,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   espresso: "espresso",
   jade_buddha: "jade_buddha",
   burger: "burger",
+  fries: "fries",
 };
 
 

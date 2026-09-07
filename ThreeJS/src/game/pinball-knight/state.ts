@@ -357,7 +357,8 @@ export type EnemyKind =
   | "platypus" // SLAMMER — heavy armored platypus with metal tail ground slam
   | "espresso" // SKIRMISHER — walking espresso cup, spins like a teacup and spills scalding coffee on death
   | "jade_buddha" // BOSS — serene emerald buddha statue with boomerang fan
-  | "burger"; // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
+  | "burger" // DECONSTRUCTOR — floating hamburger with lobster eyes that flings ingredients and rots on death
+  | "fries"; // SENTINEL — sentient red fry carton with crinkle-cut limbs and eye amulet that launches head fry rockets
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

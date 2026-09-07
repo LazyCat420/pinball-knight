@@ -63,6 +63,7 @@ import {
   PLATYPUS_DAMAGE,
   ESPRESSO_DAMAGE,
   BURGER_DAMAGE,
+  FRIES_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -962,6 +963,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "espresso") onEspressoSpill?.(z.x, z.z);
   // A BURGER decomposes and leaves a rotting mold puddle hazard.
   if (z.kind === "burger") onBurgerRot?.(z.x, z.z);
+  // FRY SENTINEL deflates and scatters crispy fry crumbs upon death.
+  if (z.kind === "fries") state.vfx?.burst(z.x, 0.4, z.z, 0xfacc15, 12, 1.4);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
@@ -1143,6 +1146,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   espresso: ESPRESSO_DAMAGE,
   jade_buddha: BRUTE_DAMAGE,
   burger: BURGER_DAMAGE,
+  fries: FRIES_DAMAGE,
 };
 
 /**

@@ -586,6 +586,22 @@ export const BURGER_ROT_DAMAGE = 1;
 export const BURGER_RATIO = 17;
 export const BURGER_FROM_LEVEL = 3;
 
+/**
+ * FRIES — Fry Sentinel: Sentient red carton with crinkle-cut limbs and amulet
+ * that launches sizzling crinkle-cut fry darts out of its head carton.
+ */
+export const FRIES_HP = 5;
+export const FRIES_R = 0.35;
+export const FRIES_SPEED_FACTOR = 0.90;
+export const FRIES_FIRE_RANGE = 7.0;
+export const FRIES_KITE_RANGE = 3.5;
+export const FRIES_WINDUP = 0.50;
+export const FRIES_COOLDOWN = 2.4;
+export const FRIES_DAMAGE = 1;
+export const FRIES_DART_SPEED = 7.8;
+export const FRIES_RATIO = 19;
+export const FRIES_FROM_LEVEL = 3;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;
