@@ -388,6 +388,88 @@ ROSTER entries 20.1  isolated 22.5%  runLen 1.82
 VERDICT: COMPETITIVE — inside the roster's range
 → /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/dragon-S  (frames + preview.png)
 
+═══ dragon_snake_body (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NOT PIXEL ART — no lattice (best ×2 at 5.8%, need 90%) and only 45% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 27.8% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (99% of the border) — keyed 83.8%, 464 pocket(s) LEFT OPAQUE
+⚠ 464 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         12       20.3    1.82        12
+idle1         11       22.6    1.82        11
+idle2         16       22.9    1.72        16
+idle3         12       23.8    1.82        12
+walk0         10       28.2    1.60        10
+walk1         10       29.3    1.61        10
+walk2         10       27.0    1.63        10
+walk3         11       31.2    1.60        11
+attack0       17       38.0    1.43        17
+attack1       18       37.3    1.53        18
+attack2       16       35.6    1.55        16
+attack3       14       33.3    1.55        14
+death0        18       22.6    1.65        18
+death1        15       21.7    1.70        15
+death2        14       19.0    1.83        14
+death3        13       22.5    1.82        13
+MEAN   entries 13.6  isolated 27.2%  runLen 1.67
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/dragon_snake_body-S  (frames + preview.png)
+
+═══ dragon_snake_head (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NOT PIXEL ART — no lattice (best ×2 at 4.0%, need 90%) and only 47% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 29.1% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (97% of the border) — keyed 76.2%, 2 sealed pocket(s) opened, 592 pocket(s) LEFT OPAQUE
+⚠ 592 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+⚠ 2 pocket(s) keyed on size alone (>= 0.20% of the sheet) — a ruled sheet seals every cell, and those interiors are background. Pass keepEnclosed with a seed to hold one open.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         21       37.5    1.42        21
+idle1         23       38.4    1.43        23
+idle2         22       39.1    1.40        22
+idle3         21       36.3    1.44        21
+walk0         20       36.9    1.47        20
+walk1         22       39.5    1.41        22
+walk2         21       38.4    1.45        21
+walk3         20       35.6    1.46        20
+attack0       23       33.0    1.54        23
+attack1       22       31.8    1.56        22
+attack2       23       30.4    1.70        23
+attack3       24       26.2    1.88        24
+death0        24       36.8    1.50        24
+death1        23       39.8    1.46        23
+death2        18       28.5    1.69        18
+death3        20       32.4    1.57        20
+MEAN   entries 21.7  isolated 35.0%  runLen 1.52
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/dragon_snake_head-S  (frames + preview.png)
+
+═══ dragon_snake_tail (S) — 4 rows [4/4/4/4], 16 frames
+GRID   NOT PIXEL ART — no lattice (best ×2 at 4.4%, need 90%) and only 48% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 27.8% — a real lattice is ~100%, so the blocks are mush.
+MATTE  bg #ff00ff (99% of the border) — keyed 83.9%, 456 pocket(s) LEFT OPAQUE
+⚠ 456 enclosed background-coloured pocket(s) left opaque. Inspect them: a spring's inside should be keyed, a white glove must not be.
+monster  entries  isolated%  runLen  invented
+---------------------------------------------
+idle0         15       22.2    1.81        15
+idle1         13       20.7    1.77        13
+idle2         15       22.4    1.83        15
+idle3         16       23.4    1.73        16
+walk0         10       26.3    1.63        10
+walk1         10       27.3    1.71        10
+walk2         10       24.9    1.70        10
+walk3         10       25.1    1.72        10
+attack0       18       22.8    1.72        18
+attack1       18       21.4    1.82        18
+attack2       16       19.6    1.81        16
+attack3       17       23.6    1.79        17
+death0        17       27.3    1.61        17
+death1        15       17.6    1.82        15
+death2        16       22.7    1.59        16
+death3        11       19.5    1.84        11
+MEAN   entries 14.2  isolated 22.9%  runLen 1.74
+ROSTER entries 20.1  isolated 22.5%  runLen 1.82
+VERDICT: COMPETITIVE — inside the roster's range
+→ /home/lazycat/github/projects/sun/pinball-knight/.worktrees/wt-maze-pipeline/ThreeJS/src/game/pinball-knight/tools/sprite-forge/work/dragon_snake_tail-S  (frames + preview.png)
+
 ═══ espresso (S) — 4 rows [4/4/4/4], 16 frames
 GRID   NOT PIXEL ART — no lattice (best ×2 at 0.7%, need 90%) and only 48% flat neighbours. Continuous/anti-aliased art: it will be RESAMPLED, not reduced, and CANNOT import 1:1. Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size. Cell purity at ×2: 38.6% — a real lattice is ~100%, so the blocks are mush.
 MATTE  bg #ff00ff (99% of the border) — keyed 62.4%, 606 pocket(s) LEFT OPAQUE
@@ -1299,6 +1381,18 @@ VERDICT: COMPETITIVE — inside the roster's range
   dragon-S           walk     centred sweep 0.008 (span 0.017 × r +0.50)  grounded 0px spread  gait peak 0.30
   dragon-S           attack   centred sweep 0.025 (span 0.027 × r -0.92)  grounded 0px spread
   dragon-S           death    centred sweep 0.092 (span 0.096 × r +0.96)  grounded 0px spread
+  dragon_snake_body-S idle     centred sweep 0.006 (span 0.006 × r -0.98)  grounded 0px spread
+  dragon_snake_body-S walk     centred sweep 0.004 (span 0.009 × r +0.48)  grounded 0px spread  gait peak 0.71
+  dragon_snake_body-S attack   centred sweep 0.058 (span 0.094 × r +0.61)  grounded 2px spread
+  dragon_snake_body-S death    centred sweep 0.028 (span 0.063 × r -0.45)  grounded 1px spread
+  dragon_snake_head-S idle     centred sweep 0.004 (span 0.007 × r -0.59)  grounded 0px spread
+  dragon_snake_head-S walk     centred sweep 0.007 (span 0.010 × r +0.67)  grounded 1px spread  gait peak 0.75
+  dragon_snake_head-S attack   centred sweep 0.092 (span 0.092 × r +1.00)  grounded 10px spread
+  dragon_snake_head-S death    centred sweep 0.001 (span 0.019 × r +0.05)  grounded 1px spread
+  dragon_snake_tail-S idle     centred sweep 0.003 (span 0.008 × r +0.43)  grounded 0px spread
+  dragon_snake_tail-S walk     centred sweep 0.005 (span 0.013 × r +0.36)  grounded 1px spread  gait peak 0.74
+  dragon_snake_tail-S attack   centred sweep 0.006 (span 0.148 × r +0.04)  grounded 4px spread
+  dragon_snake_tail-S death    centred sweep 0.054 (span 0.089 × r -0.60)  grounded 2px spread
   espresso-S         idle     centred sweep 0.004 (span 0.013 × r -0.32)  grounded 0px spread
   espresso-S         walk     centred sweep 0.038 (span 0.051 × r -0.74)  grounded 1px spread  gait peak 0.23
   espresso-S         attack   centred sweep 0.004 (span 0.076 × r -0.06)  grounded 0px spread

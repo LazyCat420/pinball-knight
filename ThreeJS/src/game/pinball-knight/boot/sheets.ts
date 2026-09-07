@@ -153,7 +153,8 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha";
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha"
+  | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -163,6 +164,7 @@ const SHEET_KEYS = new Set<string>([
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
   "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
+  "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -421,6 +423,9 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   platypus: "platypus",
   espresso: "espresso",
   jade_buddha: "jade_buddha",
+  dragon_snake_head: "dragon_snake_head",
+  dragon_snake_body: "dragon_snake_body",
+  dragon_snake_tail: "dragon_snake_tail",
 };
 
 
@@ -536,7 +541,7 @@ export function keysForFloor(level: number): SheetKey[] {
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
-  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha");
+  if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");
   return keys;
 }
 

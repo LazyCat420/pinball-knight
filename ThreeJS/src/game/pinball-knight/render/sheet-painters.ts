@@ -50,6 +50,11 @@ import { makeWardenPaints } from "./monsters/warden";
 import { makeNecroPaints } from "./monsters/necro";
 import { makePlatypusPaints } from "./monsters/platypus";
 import { makeEspressoPaints } from "./monsters/espresso";
+import {
+  makeDragonSnakeHeadPaints,
+  makeDragonSnakeBodyPaints,
+  makeDragonSnakeTailPaints,
+} from "./monsters/dragon-snake";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -86,10 +91,13 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   broodmother: makeSpiderPaints,
   overlord: makeBossPaints,
   archivist: makeGhostPaints,
-  dragon: makeBossPaints,
+  dragon: makeDragonSnakeHeadPaints,
   trex: makeBossPaints,
   bloater: makeBloaterPaints,
   platypus: makePlatypusPaints,
   espresso: makeEspressoPaints,
   jade_buddha: makeBossPaints,
+  dragon_snake_head: makeDragonSnakeHeadPaints,
+  dragon_snake_body: makeDragonSnakeBodyPaints,
+  dragon_snake_tail: makeDragonSnakeTailPaints,
 };

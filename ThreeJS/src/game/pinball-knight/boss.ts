@@ -42,6 +42,17 @@ import { hitPlayerRanged, syncActorMesh } from "./entities/combat";
 import { facingFromWorld } from "./entities/zombie";
 import { peers } from "../../net/presence";
 import { BOSSES, BOSS_KINDS, movesAt, type BossKind, type BossSpec } from "./boss-kinds";
+import { sheetFor, type SheetKey } from "./boot/sheets";
+import { MonsterAnimator } from "./engine/render/monster-animator";
+import {
+  createDragonSnake,
+  updateDragonSnakeKinematics,
+  checkDragonSnakeCollisions,
+  updateDragonSnakeAttacks,
+  onDragonSnakeDeath,
+  disposeDragonSnake,
+  type DragonSnakeBoss,
+} from "./entities/dragon-snake";
 import {
   chargeHoldsMovement,
   disposeFanBoomerang,
@@ -240,6 +251,7 @@ interface BossState {
   nova: NovaRt | null;
   teleportFire: TeleportFireRt | null;
   fanBoomerang: FanBoomerangRt | null;
+  dragonSnake?: DragonSnakeBoss | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -273,8 +285,6 @@ export function bossActive(): boolean {
 }
 
 // ── Procedural meshes ─────────────────────────────────────────────────────────
-
-
 
 function makePortal(): THREE.Mesh {
   const geo = new THREE.TorusGeometry(0.95, 0.22, 12, 32);
@@ -348,10 +358,28 @@ export function spawnBoss(
     spawnAdd,
     portal: null,
     opened: false,
+    dragonSnake: null,
     // Spawn hp is the 1-knight value; the first updateBoss tick rescales to
     // however many knights are actually on the floor.
     scaledFor: 1,
   };
+
+  if (spec.kind === "dragon") {
+    const headSheet = sheetFor("dragon_snake_head");
+    if (headSheet) {
+      z.sprite?.setSheet?.(headSheet);
+      if (
+        z.sprite?.sheet &&
+        typeof z.sprite?.setFlipped === "function" &&
+        typeof z.sprite?.setFrame === "function"
+      ) {
+        z.anim = new MonsterAnimator(z.sprite);
+        z.anim.play("idle");
+      }
+    }
+    boss.dragonSnake = createDragonSnake(z, 12, spec.art.scale);
+  }
+
   syncOrbiters();
   state.exitLocked = true;
   showToast(spec.title, spec.tagline);
@@ -392,11 +420,13 @@ export function updateBoss(dt: number): void {
 
   // Death: the king left `state.zombies` (killZombie removed it) or hp bottomed.
   if (!boss.opened && (boss.z.hp <= 0 || !state.zombies.includes(boss.z))) {
+    if (boss.dragonSnake) onDragonSnakeDeath(boss.dragonSnake, dt);
     openPortal();
     return;
   }
 
   if (boss.opened) {
+    if (boss.dragonSnake) onDragonSnakeDeath(boss.dragonSnake, dt);
     updatePortal(dt);
     // Let anything already in flight finish; the target is irrelevant now.
     updateShots(boss.shots, makeCtx(dt, { x: boss.z.x, z: boss.z.z }));
@@ -571,6 +601,13 @@ export function updateBoss(dt: number): void {
   if (moves.orbit) {
     boss.orbitT += dt * moves.orbit.speed;
     syncOrbit(boss.orbiters, moves.orbit, boss.z.x, boss.z.z, boss.orbitT);
+  }
+
+  // ── Modular Serpentine Dragon Boss (Snake kinematics, bumper collisions, fire breath) ──
+  if (boss.dragonSnake) {
+    updateDragonSnakeKinematics(boss.dragonSnake, dt);
+    checkDragonSnakeCollisions(boss.dragonSnake, p, dt);
+    updateDragonSnakeAttacks(boss.dragonSnake, dt, target);
   }
 }
 
@@ -1005,6 +1042,10 @@ function disposeReplicaAux(): void {
 export function disposeBoss(): void {
   disposeReplicaAux();
   if (!boss) return;
+  if (boss.dragonSnake) {
+    disposeDragonSnake(boss.dragonSnake);
+    boss.dragonSnake = null;
+  }
   for (const o of boss.orbiters) disposeMesh(o.mesh);
   for (const b of boss.shots) disposeMesh(b.mesh);
   clearTelegraphs();
