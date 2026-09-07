@@ -51,6 +51,7 @@ export interface DebugActions {
 }
 
 const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
+  crawling_hand: "Crawl Hand",
   magnet: "Crawler",
   webspinner: "Spinner",
   necromancer: "Necro",

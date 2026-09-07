@@ -92,3 +92,16 @@ Play: https://pinballknight.braindeadbot.com/
 - Tests verified: `boss-six-armed-god.test.ts`, `boss-roster.test.ts`, `lazy-sheets.test.ts`, and `crawling-hand.test.ts` all passed (33/33 tests).
 - Production build verified: `vite build` completed in 11.80s with 370 modules transformed.
 
+
+## Intro and tavern loading release handoff
+
+- Branch: `fix/intro-tavern-loading`, worktree `.worktrees/wt-intro-tavern-loading`.
+- Base: `8c67adb0`; includes the completed Six-Armed God/Crawling Hand merge.
+- Fix commit: `cd96423c`; removes tavern monster backfill, moves required art
+  loading behind visible descent progress, and preserves all intro phases.
+- Follow-up corrects the new boss fallback death frames and arm shading, plus
+  the Crawling Hand debug label, after the full release gate exposed failures.
+- Focused regression tests and production browser checks passed; follow-up
+  integration suites passed all 63 tests. Full release gate is being repeated.
+- Public deployment verification will be recorded after transfer and restart.
+- Other developers' worktrees and uncommitted work have not been modified.

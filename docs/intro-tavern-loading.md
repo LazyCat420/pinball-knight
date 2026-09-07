@@ -28,4 +28,12 @@ Validation before release:
 - This removes the repeated monster rebuild stalls; constructing and warming the
   tavern itself still takes time. No universal FPS improvement is claimed.
 
-The project deployment gate and public verification are pending.
+The first full release gate exposed three integration issues in the new monster
+batch: inconsistent Six-Armed God death-frame counts, noisy small fallback arm
+plates, and a debug label exceeding the existing length limit. The follow-up
+uses four falling/spreading death frames in every facing, removes thin edge
+lighting from the arm plates, and shortens Crawling Hand's debug label. Existing
+test thresholds are unchanged. All 63 tests across the noise, imported-monster
+pipeline, debug-panel and Six-Armed God boss suites passed.
+
+The repeated project deployment gate and public verification are pending.
