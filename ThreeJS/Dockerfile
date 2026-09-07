@@ -6,11 +6,11 @@
 FROM node:26-alpine AS builder
 WORKDIR /app
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11.8.0
 RUN apk add --no-cache python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev pixman-dev
 
 COPY package.json pnpm-workspace.yaml* pnpm-lock.yaml* ./
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # Copy source and config files
 COPY tsconfig.json vite.config.ts index.html ./
