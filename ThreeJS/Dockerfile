@@ -10,7 +10,7 @@ RUN npm install -g pnpm
 RUN apk add --no-cache python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev pixman-dev
 
 COPY package.json pnpm-workspace.yaml* pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --no-frozen-lockfile
 
 # Copy source and config files
 COPY tsconfig.json vite.config.ts index.html ./
