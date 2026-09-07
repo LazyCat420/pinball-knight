@@ -43,6 +43,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   slime: ["S"],
   spider: ["S"],
   sporeling: ["S"],
+  sumo_ninja: ["S"],
   stiltneck: ["E", "S"],
   warden: ["S"],
   webspinner: ["S"],

@@ -619,6 +619,23 @@ export const MILKSHAKE_SPRAY_SPEED = 7.0;
 export const MILKSHAKE_RATIO = 18;
 export const MILKSHAKE_FROM_LEVEL = 3;
 
+/**
+ * SUMO_NINJA — fat drunk sumo wrestler dressed in ninja attire.
+ * Stumbles erratically around the arena and whips fast-spinning metallic ninja stars
+ * (shurikens) when stumbling off-balance. Heavy, rotund tank with high HP.
+ */
+export const SUMO_NINJA_HP = 11;
+export const SUMO_NINJA_R = 0.46;
+export const SUMO_NINJA_SPEED_FACTOR = 0.72;
+export const SUMO_NINJA_FIRE_RANGE = 7.0;
+export const SUMO_NINJA_KITE_RANGE = 2.2;
+export const SUMO_NINJA_WINDUP = 0.5;
+export const SUMO_NINJA_COOLDOWN = 2.0;
+export const SUMO_NINJA_DAMAGE = 1;
+export const SUMO_NINJA_SHURIKEN_SPEED = 9.5;
+export const SUMO_NINJA_RATIO = 17;
+export const SUMO_NINJA_FROM_LEVEL = 4;
+
 // ── Projectiles (gun / bow / flamethrower) ──────────────────────
 /** Where projectiles fly, world Y — chest height on the actors. */
 export const PROJECTILE_Y = 0.55;
