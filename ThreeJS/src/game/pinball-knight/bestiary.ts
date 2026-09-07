@@ -67,6 +67,8 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   cigarette: { label: "Walking Cigarette", icon: "🚬", blurb: "1950s cartoon cigarette with gloves and shoes that attacks by burning with its cherry ember and stubs out into ash on death" },
   toucan: { label: "Toucan", icon: "🦜", blurb: "tropical aerial striker with a massive rainbow beak that executes high-speed corkscrew barrel rolls" },
   jade_buddha: { label: "Jade Buddha", icon: "🪷", blurb: "serene emerald statue with devastating belly slam and returning war fan boomerang" },
+  burger: { label: "Burger Beast", icon: "🍔", blurb: "floating hamburger with lobster eyestalks that deconstructs itself to attack with flying ingredients and rots on death" },
+  fries: { label: "Fry Sentinel", icon: "🍟", blurb: "sentient red fry carton with crinkle-cut limbs and eye amulet that launches sizzling fry rockets from its head" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

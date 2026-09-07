@@ -47,6 +47,12 @@
  * from geometry. Ports are pure data and carry no behaviour; the router in
  * `assembly-place.ts` is what matches them up.
  *
+ * A port also carries the machine's one PROMISE ABOUT FAILURE. Ports described
+ * only the ride working; the ride not working was left to runtime rescue. A
+ * port tagged `RECOVERY_TAG` declares, at authoring time, where a failed ride
+ * puts the player down — see that constant for why it is a tag and not a
+ * fourth `PortWay`, and `no-recovery` in `assembly-check.ts` for who reads it.
+ *
  * Everything here is pure: no THREE, no DOM, no grid mutation. That is
  * deliberate — the whole module is unit-testable, and the rotation algebra
  * (the part most likely to harbour a sign error) is pinned by tests rather
@@ -85,6 +91,36 @@ export type PartRole =
   | "score"
   /** Bounces the ball back into play — bumpers, slingshots. */
   | "rebound"
+  /**
+   * STOPS the ball and HOLDS it. A scoop, a vault, a gargoyle's mouth.
+   *
+   * Flow does not continue through a capture, it RESTARTS on the other side —
+   * which is why this is a role of its own rather than a `drive` that happens
+   * to be slow. Everything upstream of a capture is a shot the player aimed;
+   * everything downstream is a release the MACHINE chose. A capture with no
+   * authored release is therefore a softlock by construction, and
+   * `capture-no-release` in `assembly-check.ts` is what refuses to ship one.
+   *
+   * The shipped `maw` is the first of these: it swallows the player on a fast
+   * aimed line (`MAW_SWALLOW_SPEED`, a 45° cone) and spits them out "along an
+   * authored or Φ-bounded path". Before this role there was no way to author
+   * that path, so every maw in the game takes the Φ branch — a guess made from
+   * the flow field at runtime rather than a route someone designed.
+   */
+  | "capture"
+  /**
+   * MOVES the ball between two graph positions without it travelling the
+   * ground between them — a magnet strip, a lift, a lane that crosses another
+   * lane on a different layer.
+   *
+   * Distinct from `drive` (which accelerates the ball ALONG its through-line)
+   * and from `turn` (which bends that line). A transfer breaks the line: the
+   * ball leaves one place and appears at another, so any pass that reasons
+   * about continuity — runway repair, flow loops, the duel breaker — is
+   * reasoning about a path the ball never takes. Naming it is what lets those
+   * passes stop guessing.
+   */
+  | "transfer"
   /** Hazard: costs the player something. */
   | "hazard"
   /** Structural decoration with no flow role. */
@@ -129,9 +165,17 @@ export interface AssemblyPart {
   seq?: number;
 }
 
-/** Which way a port faces relative to the machine: a ball ENTERS through an
- *  `in` port travelling along `dir`, and LEAVES through an `out` port along
- *  `dir`. `both` is a lane usable in either direction. */
+/**
+ * Which way a port faces relative to the machine: a ball ENTERS through an
+ * `in` port travelling along `dir`, and LEAVES through an `out` port along
+ * `dir`. `both` is a lane usable in either direction.
+ *
+ * Three members, and it stays three. This union is read NEGATIVELY by every
+ * consumer (`!== "in"`, `!== "out"`), in this module, in `assembly-check.ts`
+ * and in `assembly-place.ts` — so a fourth member is silently included by all
+ * of them rather than rejected by any. `RECOVERY_TAG` below is what the
+ * recovery contract uses instead, and the reasoning is written out there.
+ */
 export type PortWay = "in" | "out" | "both";
 
 /**
@@ -178,8 +222,86 @@ export interface AssemblyPort {
    * shot rolling back down the ramp. 0/undefined = accepts anything.
    */
   minSpeed?: number;
-  /** Optional label for authoring clarity ("main", "return", "skill"). */
+  /**
+   * Optional label for authoring clarity ("main", "return", "skill").
+   *
+   * One value is RESERVED: `RECOVERY_TAG`. See below — a tagged port is the
+   * recovery contract's carrier, so a tag is not purely cosmetic and it is in
+   * `signatureOf`.
+   */
   tag?: string;
+}
+
+/**
+ * THE RECOVERY CONTRACT — where a FAILED ride puts the player down.
+ *
+ * Everything above this line describes a ride that WORKS. Nothing described
+ * where the player ends up when it does not: the ramp shot that dies half way
+ * up, the scoop entered too slowly to swallow, the orbit whose ball stalls on
+ * the bend. Today that case is handled entirely at RUNTIME and entirely by
+ * RESCUE — `breakLaunchDuels`, `breakFlowLoops` and the booster-jam guard each
+ * exist to notice a player who is already stuck and do something about it
+ * after the fact. Every one of them is a repair, and a repair can only ever
+ * pick somewhere plausible.
+ *
+ * A machine that declares its own landing turns that into a CONTRACT: the
+ * definition says, in advance, which tile a failed ride deposits the ball on,
+ * and the router gates on that tile being real floor like any other exit.
+ *
+ * ── Why a reserved TAG and not a fourth `PortWay` ──────────────────────────
+ *
+ * `way` looks like the cleaner home for it. It is a trap, because every
+ * consumer of `way` tests it NEGATIVELY:
+ *
+ *   · `portsChain`     — `from.way === "in"`, `to.way === "out"`     (here)
+ *   · `hasExit`        — `p.way !== "in"`                            (here)
+ *   · `checkHasEntry`  — `p.way !== "out"`            (assembly-check.ts)
+ *   · `checkExitLines` — `port.way === "in"`          (assembly-check.ts)
+ *   · `scoreAt`        — `p.way !== "out"` picks the ENTRY the whole
+ *     footprint is anchored on, and `port.way === "in"` picks the exits to
+ *     runway-check                                    (assembly-place.ts)
+ *
+ * A new member is therefore admitted by all six by DEFAULT and in silence. A
+ * `way: "recovery"` port would count as an exit for `hasExit`, as an entrance
+ * for `checkHasEntry`, as a chainable source for `portsChain`, and — worst —
+ * the router would anchor a machine's entire footprint on its recovery port
+ * whenever that port happened to sit first in the array. Six behaviour changes
+ * across three modules, not one of them announced by a type error.
+ *
+ * The tag costs nothing and gets the semantics right for free, because a
+ * recovery port genuinely IS an exit: the ball really does leave the machine
+ * there. So each of those predicates already does the correct thing with it —
+ * the router demands real floor beyond it (a landing on rock is not a landing)
+ * and the slingshot rule refuses to let it fire into a rebounder. It is an
+ * `out` port with an `eject` flow and a reserved label, and the label is what
+ * `no-recovery` reads.
+ *
+ * `eject` is not decoration either: a landing whose momentum is inherited from
+ * the ride that just failed is a landing at whatever speed the failure left,
+ * which is the ball trickling back into the same dead spot. The whole point is
+ * a KNOWN vector out.
+ *
+ * The tag is in `signatureOf`, so it rotates and mirrors with everything else
+ * and two machines that differ only in where they put a failed rider are two
+ * machines rather than one.
+ */
+export const RECOVERY_TAG = "recovery";
+
+/**
+ * Is this the port a failed ride deposits the player on?
+ *
+ * Keyed on the TAG, never on the flow. Plenty of ports eject — a scoop's
+ * release does — and treating any eject as the landing would let a machine
+ * satisfy `no-recovery` with the very exit whose failure case it was supposed
+ * to declare.
+ */
+export function isRecoveryPort(p: AssemblyPort): boolean {
+  return p.tag === RECOVERY_TAG && p.way !== "in";
+}
+
+/** The machine's declared landing for a failed ride, if it has one. */
+export function recoveryPortOf(a: Assembly): AssemblyPort | undefined {
+  return a.ports.find(isRecoveryPort);
 }
 
 /**
@@ -329,6 +451,18 @@ export function orientationsOf(a: Assembly): Assembly[] {
  * the key. Getting this wrong silently halves the orientation pool for every
  * asymmetric machine, which is a variety bug that would never surface as an
  * error — only as floors that feel repetitive.
+ *
+ * ROLE, and the port's FLOW and TAG, are in the key too, and they were not
+ * always. Be precise about what that omission cost, because it is not the
+ * `dir2` scar repeated: all three are rotation-INVARIANT, so leaving them out
+ * never changed an orientation COUNT and never halved a pool. What it changed
+ * is IDENTITY. Two machines differing only in that one part HOLDS the ball
+ * rather than decorating the wall, or that one exit is the recovery landing
+ * rather than an ordinary spill, hashed to the same string — so anything that
+ * compares machines by signature (these tests; any future cross-library
+ * de-dupe) would have been told they were the same machine. That is the same
+ * shape of bug as `dir2`, caught one level earlier: a signature that quietly
+ * agrees two different things are one.
  */
 export function signatureOf(a: Assembly): string {
   const floor = a.floor
@@ -336,11 +470,14 @@ export function signatureOf(a: Assembly): string {
     .sort()
     .join(";");
   const parts = a.parts
-    .map((p) => `${p.ci},${p.cj},${p.kind},${p.dir.di},${p.dir.dj},${p.dir2?.di ?? ""},${p.dir2?.dj ?? ""}`)
+    .map(
+      (p) =>
+        `${p.ci},${p.cj},${p.kind},${p.dir.di},${p.dir.dj},${p.dir2?.di ?? ""},${p.dir2?.dj ?? ""},${p.role}`,
+    )
     .sort()
     .join(";");
   const ports = a.ports
-    .map((p) => `${p.ci},${p.cj},${p.dir.di},${p.dir.dj},${p.way}`)
+    .map((p) => `${p.ci},${p.cj},${p.dir.di},${p.dir.dj},${p.way},${p.flow ?? ""},${p.tag ?? ""}`)
     .sort()
     .join(";");
   return `${a.w}x${a.h}|${floor}|${parts}|${ports}`;

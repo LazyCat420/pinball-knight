@@ -35,6 +35,7 @@ import { updateArcKickers } from "../render/arc-kickers";
 import { updateArcLanes } from "../render/arc-lanes";
 import { updatePinballParts, updatePlungerRig } from "../render/pinball-parts";
 import { updateShots } from "../shots";
+import { updateMachineEffects } from "../machine-effects";
 import { setElementTorch, tickElements } from "../fx/floor/decals";
 import { pushHeatField } from "../fx/heat";
 import {showPickupNote, spawnFloatingCombo} from "../ui";
@@ -274,6 +275,13 @@ export function loop(now: number): void {
   updateLampPuzzle(frame); // brazier glow + vault chest reveal
   updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay
+  // MACHINE CONSEQUENCES — drains the events `machines.ts` queued this frame and
+  // applies them (vault seals, the overcharge window). It MUST run after
+  // `updateShots`, which is where a collect is recorded, or a completion waits a
+  // frame for its payout. Without this line the whole effect layer is inert: the
+  // registry, the seals and the window are all correct and nothing ever ticks
+  // them, which is exactly how it shipped green and did nothing.
+  updateMachineEffects(frame);
   animationPresentation.update(frame);
 
   // Loot bobs, snapped to the pixel grid so it doesn't shimmer. Coins are

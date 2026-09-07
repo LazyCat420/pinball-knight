@@ -88,6 +88,8 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   gnome: { scale: 1.0 },
   cigarette: { scale: 1.0 },
   toucan: { scale: 1.0 },
+  burger: { scale: 1.0 },
+  fries: { scale: 1.0 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { STATS, espressoTeacupSpin } from "./zombie";
@@ -17,6 +17,7 @@ import { triggerEspressoSpill, killZombie, setCoinDropHandler, setReagentDropHan
 import { spawnFloorFx, updateFloorFx } from "./floor-fx";
 import { installGameplayWiring } from "../boot/wiring";
 import { makeEspressoPaints } from "../render/monsters/espresso";
+import { installSpriteTestDom } from "../testkit/atlas-census";
 import type { Grid } from "../maze/generator";
 
 function makeGrid(): Grid {
@@ -44,6 +45,16 @@ function mockAnim(initial = "idle") {
 }
 
 describe("walking espresso cup monster mechanics & sprite sheet", () => {
+  let restoreDom: () => void;
+
+  beforeAll(() => {
+    restoreDom = installSpriteTestDom();
+  });
+
+  afterAll(() => {
+    restoreDom?.();
+  });
+
   beforeEach(() => {
     resetState();
     state.grid = makeGrid();

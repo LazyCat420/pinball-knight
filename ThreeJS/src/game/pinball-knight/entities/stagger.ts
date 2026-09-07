@@ -108,6 +108,8 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   cigarette: 0.6,
   toucan: 0.55,
   jade_buddha: 0,
+  burger: 0.6,
+  fries: 0.5,
 };
 
 /**

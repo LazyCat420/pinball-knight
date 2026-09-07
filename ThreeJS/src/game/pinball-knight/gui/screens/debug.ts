@@ -82,6 +82,7 @@ import {
 } from "../im";
 import { abilityIcon, glyph, itemIcon, monsterIcon, type GlyphId } from "../icons";
 import { pop, type UiScreen } from "../stack";
+import { applyImportedMonsterArt } from "../../boot/sheets";
 
 /**
  * Everything the console can do: the verbs core owns plus the ones mixed in by
@@ -152,6 +153,8 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   cigarette: "Smokes",
   toucan: "Toucan",
   jade_buddha: "Buddha",
+  burger: "Burger",
+  fries: "Fries",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];
@@ -396,6 +399,7 @@ function section(f: UiFrame, body: Rect, label: string): void {
 }
 
 export function debugScreen(actions: ConsoleActions): UiScreen {
+  void applyImportedMonsterArt();
   let spawnCount = 1;
   /** Which sustained beds are latched on — see `BED_LABEL`. */
   const beds: Record<AmbienceId, boolean> = { fire: false, water: false };

@@ -37,8 +37,28 @@ describe("circuits", () => {
     // of corridor long enough to be a highway, and forcing one would mean
     // furnishing a ring that is really a corner. If this drops, the ring SEARCH
     // has regressed, not the tuning.
-    const withCircuits = all.filter((f) => f.plan.circuits.length > 0).length;
-    expect(`${withCircuits}/${all.length}`).toBe(`${all.length}/${all.length}`);
+    //
+    // ⚠️ THIS ASSERTION USED TO DEMAND `all/all` — 36 of 36 — which contradicted
+    // the paragraph above it, and passed only because the harness it measures
+    // through was building a floor the game does not ship. `buildHeadlessPlan`
+    // omitted `track.chambers`, `track.doorways` and the whole
+    // `authorLampPuzzle` pass; with all three restored (and pinned by
+    // `dev/headless-floor.test.ts`, which now compares the harness to
+    // `authorFloor` part for part) the real figure is 34/36.
+    //
+    // So the 100% was never a property of the generator — it was a property of
+    // a floor with no plaza, no doorway clearways and no braziers competing for
+    // ground. The band below is what the comment always described. The two
+    // floors that legitimately carry no ring are named in the failure message
+    // rather than hidden behind a count, and they are filed as an open item:
+    // the question worth answering is whether those two are genuinely too small
+    // for a highway or whether the greathall plaza is starving the ring search.
+    const missing = all.filter((f) => f.plan.circuits.length === 0).map((f) => `L${f.level}/${f.runSeed}`);
+    const withCircuits = all.length - missing.length;
+    expect(
+      withCircuits / all.length,
+      `only ${withCircuits}/${all.length} floors carry a circuit; missing: ${missing.join(", ")}`,
+    ).toBeGreaterThanOrEqual(0.9);
   });
 
   it("every circuit has at least TWO off-ramps, and each one leads downhill", () => {

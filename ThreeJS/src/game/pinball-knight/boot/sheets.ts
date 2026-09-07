@@ -23,6 +23,7 @@ import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type Imp
 import { authoredFacingsFor } from "./manifest-inventory";
 import { sheetCoverage } from "../tools/sprite-forge/build-plan";
 import { _clearPortraitCache } from "../render/monster-portrait";
+import { _clearMonsterIconCache } from "../gui/icons";
 import type { Dir } from "../engine/render/paint-types";
 
 /** The facings a sheet may author. W is drawn as a flipped E. */
@@ -153,7 +154,7 @@ export type SheetKey =
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet"
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso" | "gnome" | "cigarette" | "toucan"
-  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha"
+  | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries"
   | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail";
 
 /**
@@ -163,7 +164,7 @@ export const SHEET_KEYS = new Set<string>([
   "zombie", "spider", "brute", "warden", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
-  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "toucan", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha",
+  "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "toucan", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries",
   "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail",
 ]);
 
@@ -258,7 +259,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
@@ -429,6 +430,8 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   dragon_snake_head: "dragon_snake_head",
   dragon_snake_body: "dragon_snake_body",
   dragon_snake_tail: "dragon_snake_tail",
+  burger: "burger",
+  fries: "fries",
 };
 
 
@@ -524,6 +527,7 @@ export async function loadMonsterSheet(key: SheetKey): Promise<boolean> {
   const pal = sheetPalette(loaded);
   if (pal) importedPalettes.set(key, pal);
   _clearPortraitCache();
+  _clearMonsterIconCache();
   const cov = sheetCoverage(loaded.map((s) => s.manifest));
   console.info(
     `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
@@ -542,7 +546,7 @@ export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", "boss"];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan");
-  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic");
+  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");
   return keys;
@@ -585,6 +589,7 @@ export async function applyImportedMonsterArt(): Promise<void> {
  */
 export function rebuild(key: SheetKey): void {
   _clearPortraitCache();
+  _clearMonsterIconCache();
   inFlight.delete(key);
   if (current?.key === key) current = null;
   const sheet = monsterSheet(paintsFor(key), key);

@@ -63,7 +63,7 @@ import {
 import { ambience, type AmbienceId } from "../sfx/ambience";
 import { PALETTE_HEX } from "../render/palette";
 import { skillAgg } from "../skill-runtime";
-import { damageZombie, hitPlayerRanged } from "./combat";
+import { damageZombie, hitPlayerRanged, webPlayer } from "./combat";
 import {
   attachElement,
   clearElements,
@@ -100,6 +100,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   molten: PALETTE_HEX[26], // leather shadow — the CHAR, not the glow. See below.
   fissure: PALETTE_HEX[2], // stone dark — ground smash fracture cracks
   coffee: PALETTE_HEX[26], // dark roast espresso with golden crema foam rim
+  rot: PALETTE_HEX[6], // rot green sludge
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -111,7 +112,7 @@ function discGeo(): THREE.CircleGeometry {
  *  worked for water but made fire look like an orange coaster and oil vanish
  *  into dark stone; every kind that has to be identified at a glance from
  *  across a room gets its own canvas. */
-const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod", "fissure", "coffee"];
+const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod", "fissure", "coffee", "rot"];
 /** Kinds that ADD light (they feed the bloom) rather than sitting on the scene. */
 const ADDITIVE: FloorFxKind[] = ["fire", "frost", "rod"];
 
@@ -348,6 +349,25 @@ function paintKindTexture(kind: FloorFxKind): THREE.CanvasTexture | null {
       ctx.beginPath();
       ctx.arc(cx, cx, r, a0, a0 + Math.PI * 0.8);
       ctx.stroke();
+    }
+  } else if (kind === "rot") {
+    // ROTTING HAMBURGER DECAY: dark decomposed green-brown sludge with mold spots and decomposing vegetable mush
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(22, 28, 14, 0.95)");
+    g.addColorStop(0.6, "rgba(42, 54, 20, 0.9)");
+    g.addColorStop(0.85, "rgba(75, 95, 35, 0.8)"); // moldy spore ring
+    g.addColorStop(0.95, "rgba(90, 115, 45, 0.4)");
+    g.addColorStop(1, "rgba(90, 115, 45, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Mold specks & decomposing burger bits
+    ctx.fillStyle = "rgba(140, 175, 70, 0.75)";
+    for (let i = 0; i < 8; i++) {
+      const a = (i * 2.39) % (Math.PI * 2);
+      const r = s * (0.1 + ((i * 17) % 25) * 0.012);
+      ctx.fillRect(cx + Math.cos(a) * r, cx + Math.sin(a) * r, 3, 3);
     }
   } else {
     // Oil: a dark pool whose RIM catches the light, plus thin sheen arcs.
@@ -895,6 +915,8 @@ export function updateFloorFx(dt: number): void {
         if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
         else if (fx.kind === "coffee" && Math.random() < 0.4) {
           state.vfx?.steam?.(ex, 0.08, ez, 1, 1.2);
+        } else if (fx.kind === "rot" && Math.random() < 0.4) {
+          state.vfx?.burst(ex, 0.08, ez, 0x5a7a24, 1, 0.5);
         } else if (fx.kind === "oil") {
           state.vfx.mote(ex, 0.08, ez); // iridescent glints, every tick
           if (Math.random() < 0.3) state.vfx.burst(ex, 0.12, ez, 0x6fd0e8, 2, 0.7);
@@ -904,8 +926,8 @@ export function updateFloorFx(dt: number): void {
       }
     }
 
-    // ── Enemy overlap ── (skipped for hostile enemy hazards, except coffee which burns anyone)
-    for (const zmb of (fx.hostile && fx.kind !== "coffee") ? [] : state.zombies) {
+    // ── Enemy overlap ── (skipped for hostile enemy hazards, except coffee/rot which affect anyone)
+    for (const zmb of (fx.hostile && fx.kind !== "coffee" && fx.kind !== "rot") ? [] : state.zombies) {
       if (zmb.mode === "dead") continue;
       const dx = zmb.x - fx.x;
       const dz = zmb.z - fx.z;
@@ -924,6 +946,13 @@ export function updateFloorFx(dt: number): void {
         damageZombie(zmb, FIRE_PUDDLE_DMG, 0, 0, 0);
         state.vfx?.sparks(zmb.x, 0.4, zmb.z, 0, 1, 3);
         if (fx.kind === "coffee") state.vfx?.steam?.(zmb.x, 0.3, zmb.z, 2, 1.0);
+      } else if (fx.kind === "rot") {
+        zmb.chillT = CARD_CHILL_TIME;
+        if (ticked && zmb.burnT <= 0) {
+          zmb.burnT = CARD_BURN_TICK;
+          damageZombie(zmb, 1, 0, 0, 0);
+          if (Math.random() < 0.3) state.vfx?.burst(zmb.x, 0.2, zmb.z, 0x4d7c0f, 3, 0.6);
+        }
       } else if (fx.kind === "oil") {
         // Greased: steering barely bites while oiledT holds (zombie.ts blends
         // the heading), refreshed for as long as the foe stays in the pool.
@@ -978,13 +1007,16 @@ export function updateFloorFx(dt: number): void {
 
     // ── Player harm ── a HOSTILE fire or boiling coffee always burns you; your OWN
     // fire only bites under the self-harm toggle — or under the CINDER WAKE keystone.
-    if ((fx.kind === "fire" || fx.kind === "coffee") && ticked && (fx.hostile || state.dbgMaterialSelfHarm || skillAgg().cinderWake) && p && p.hp > 0 && p.iframes <= 0) {
+    if ((fx.kind === "fire" || fx.kind === "coffee" || fx.kind === "rot") && ticked && (fx.hostile || state.dbgMaterialSelfHarm || skillAgg().cinderWake) && p && p.hp > 0 && p.iframes <= 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;
       if (dx * dx + dz * dz <= rr * rr) {
         hitPlayerRanged(MATERIAL_SELF_HARM_DMG, fx.x, fx.z);
-        if (fx.kind === "coffee") state.vfx?.steam?.(p.x, 0.25, p.z, 2, 1.2);
+        if (fx.kind === "rot") {
+          webPlayer();
+          state.vfx?.burst(p.x, 0.25, p.z, 0x4d7c0f, 6, 1.0);
+        } else if (fx.kind === "coffee") state.vfx?.steam?.(p.x, 0.25, p.z, 2, 1.2);
       }
     }
   }

@@ -220,23 +220,36 @@ describe("the dead tier is a picture, not the end of a ramp", () => {
     expect(count(await cells(0.12), inJaw)).toBeLessThan(4);
   });
 
-  it("keeps both x-eyes whole and on something they can be read against", async () => {
-    // The x is the one mark that MEANS dead. It survived before (19 of its 20
-    // cells did), but it sat on lit skin ringed by splatter, which is a dark
-    // mark among dark marks. Both halves are pinned: every cell of both x's is
-    // ink, and every one of them sits on the socket floor — so a future pass
-    // cannot quietly take the hollow away and leave the mark floating.
+  it("shows an exposed skeletal socket and cranium at death without cartoon x marks", async () => {
     const g = await cells(0);
-    let ink = 0;
-    for (const ox of [11, 20]) {
-      for (let i = 0; i < 5; i++) {
-        if (g[14 + i][ox + i] === 1) ink++;
-        if (g[14 + i][ox + 4 - i] === 1) ink++;
+    // Right eye socket: deep hollow orbital void (ink / bg) framed by bone
+    let socketVoid = 0;
+    for (let y = 14; y <= 16; y++) {
+      for (let x = 21; x <= 23; x++) {
+        if (g[y][x] === 0 || g[y][x] === 1) socketVoid++;
       }
-      // The socket floor, sampled beside the x rather than under it.
-      expect(g[16][ox + 1]).toBe(23); // skin shadow — the mid the ink reads on
     }
-    expect(ink).toBe(20);
+    expect(socketVoid).toBe(9); // Full 3x3 void core
+
+    // Supraorbital bone brow ridge above right eye socket (boneHi: 5, bone: 4)
+    let browBone = 0;
+    for (let x = 21; x <= 23; x++) {
+      if (g[12][x] >= 2 && g[12][x] <= 5) browBone++;
+    }
+    expect(browBone).toBe(3);
+
+    // Exposed upper cranium bone under shattered helm (y: 2..6, x: 21..24)
+    let craniumBone = 0;
+    for (let y = 2; y <= 6; y++) {
+      for (let x = 21; x <= 24; x++) {
+        if (g[y][x] >= 2 && g[y][x] <= 5) craniumBone++;
+      }
+    }
+    expect(craniumBone).toBeGreaterThanOrEqual(10);
+
+    // Left eye is a dead sunken mortis lid, NOT cartoon x marks
+    expect(g[15][13]).toBe(1); // dark center slit
+    expect(g[14][13]).toBe(23); // collapsed dead lid (skinDk = 23)
   });
 });
 
@@ -319,5 +332,42 @@ describe("the face looks around on its own", () => {
       frames.add(Buffer.from(ctx.getImageData(0, 0, cv.width, cv.height).data).toString("base64"));
     }
     expect(frames.size).toBeGreaterThan(2);
+  });
+
+  it("tracks gaze with parallel conjugated eyes when glancing around (Doom style)", async () => {
+    const m = await face();
+    m.disposeFace();
+    const cv = m.createFace();
+    m.setFaceHealth(100, 100);
+
+    // Damage from the right (angle 0) -> glances right (turn = 1)
+    m.faceOnDamage(0);
+    // Advance past pain recoil (0.32s) but within turn hold (0.55s)
+    m.renderFace(0.35);
+
+    const ctx = (cv as unknown as { getContext(t: "2d"): CanvasRenderingContext2D }).getContext("2d");
+    const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
+    const N = 36;
+    const s = cv.width / N;
+    const grid: number[][] = [];
+    for (let y = 0; y < N; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < N; x++) {
+        const i = (y * s * cv.width + x * s) * 4;
+        row.push(PALETTE_HEX.indexOf((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]));
+      }
+      grid.push(row);
+    }
+
+    // Iris entries: 29 (iris), 30 (irisHi), 1 (pupil), 18 (glint)
+    const isIris = (idx: number) => idx === 29 || idx === 30 || idx === 1 || idx === 18;
+    // Both irises must shift right in unison:
+    // Left eye (sclera 13..17): iris at 15..16
+    expect(isIris(grid[15][15])).toBe(true);
+    // Right eye (sclera 22..26): iris at 25..26
+    expect(isIris(grid[15][25])).toBe(true);
+    // In the old cross-eyed bug, right iris mirrored to x=23 (inner corner).
+    // Now x=22..23 must be sclera white (22), not iris!
+    expect(grid[15][22]).toBe(22);
   });
 });

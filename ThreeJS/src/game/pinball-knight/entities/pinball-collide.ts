@@ -20,6 +20,7 @@
  */
 import { PART_TOUCH_BROAD_SQ } from "../constants";
 import { state, type Player, type PinballPart, type PinballPartKind } from "../state";
+import { isWalkable, tileCenter } from "../maze/generator";
 import { canMawSwallow, MAW_COOLDOWN } from "./maw";
 import {
   PLAYER_R,
@@ -62,6 +63,14 @@ import {
   JUMP_PAD_SPEED,
   JUMP_PAD_COOLDOWN,
   JUMP_PAD_STEER_LOCK,
+  SEESAW_RADIUS,
+  SEESAW_SPEED,
+  SEESAW_COOLDOWN,
+  SEESAW_STEER_LOCK,
+  CATAPULT_RADIUS,
+  CATAPULT_COOLDOWN,
+  CANNON_RADIUS,
+  CANNON_COOLDOWN,
   DEFLECTOR_GRAB_TIME,
   DEFLECTOR_THROW_SPEED,
   DEFLECTOR_THROW_BOOST,
@@ -125,7 +134,7 @@ import { moveCircle } from "../engine/collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { PALETTE_HEX } from "../render/palette";
-import { recordShot, hitOrbitRail, hitRollover, trySkillShot, payTimedFlip } from "../shots";
+import { recordShot, hitOrbitRail, hitRollover, trySkillShot, payTimedFlip, advanceMachineShot } from "../shots";
 import { swingIsLive, isHeldUp, releaseCradle, noteCradled } from "./flippers";
 import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../engine/camera";
@@ -142,6 +151,12 @@ import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } 
 export interface PinballDeps {
   /** Launch the airborne ramp arc (bypasses wall collision mid-flight). */
   startRampHop(dirX: number, dirZ: number, speed: number): void;
+  /** Traverse across a seesaw shortcut plank directly to the opposite landing. */
+  startSeesawHop?(landX: number, landZ: number, dirX: number, dirZ: number, speed: number): void;
+  /** Launch the airborne catapult toss to (destX, destZ). */
+  startCatapultLaunch?(destX: number, destZ: number): void;
+  /** Sucks player into cannon barrel for aiming and firing. */
+  enterCannon?(part: PinballPart): void;
   /** Open the hatch and hand off to the rollercoaster ride. */
   startDrop(x: number, z: number): void;
   /** Set the post-dash no-steer window to exactly `t` (the ramp's dash panel). */
@@ -401,6 +416,9 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     p.momZ = part.dirZ;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
     onPartTrigger();
+    // A spring is step 2 of RAMP_RETURN and step 0 of KICKER_LANE. Without this
+    // the machine holds a step it can never be given.
+    if (part.asm) advanceMachineShot(part);
     part.cooldownT = SPRING_COOLDOWN;
     part.hitT = 0;
     state.vfx?.dust(part.x, 0.1, part.z);
@@ -417,6 +435,9 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // so the panel actually carries you down its lane before you can bend it.
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, RAMP_SPEED));
     recordShot("ramp");
+    // A ramp is step 0 of RAMP_RETURN. `advanceMachineShot`, not the recording
+    // variant — the combo identity was banked on the line above.
+    if (part.asm) advanceMachineShot(part);
     trySkillShot(part);
     deps.setSteerLock(RAMP_STEER_LOCK);
     part.cooldownT = RAMP_COOLDOWN;
@@ -474,6 +495,10 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, BOOSTER_SPEED));
     deps.raiseSteerLock(BOOSTER_STEER_LOCK);
     onPartTrigger();
+    // A booster is steps 0 AND 3 of the ORBIT assembly — the two the deflector
+    // path below can never see. Without this the flagship machine tops out at
+    // two of its four steps and is uncompletable by construction.
+    if (part.asm) advanceMachineShot(part);
     part.cooldownT = BOOSTER_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.25, part.z, part.dirX, part.dirZ, 10);
@@ -623,9 +648,11 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     requestShake(0.12);
     state.vfx?.sparks(part.x, 0.35, part.z, 0, 0, 10);
     sfxHeavy();
-    // D2 — if this rail is a corner of an ORBIT, it might have just advanced
-    // (or completed) a lap. hitOrbitRail owns that bookkeeping.
-    if (part.orbit !== undefined) hitOrbitRail(part);
+    // D2 — if this rail is a corner of an ORBIT, or a turn inside an authored
+    // MACHINE, it might have just advanced (or completed) one. hitOrbitRail
+    // owns both bookkeepings and records the shot itself; a loose rail is still
+    // just a banked shot.
+    if (part.orbit !== undefined || part.asm !== undefined) hitOrbitRail(part);
     else recordShot("bank");
     trySkillShot(part);
   },
@@ -759,7 +786,19 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     if (d2 > TARGET_RADIUS * TARGET_RADIUS) return;
     part.done = true;
     part.hitT = 0;
-    state.targetsHit += 1;
+    // A MACHINE's target advances its machine. Without this the target handler
+    // never called the machine at all, so `target-bank` — and the bank guarding
+    // `gargoyle-scoop`'s maw, ~3.2 placements per floor at depth — could qualify
+    // once per floor at most and never tier.
+    if (part.asm) advanceMachineShot(part);
+    // The floor objective counts each target ONCE IN ITS LIFE. A machine's bank
+    // stands back up when the machine arms, so counting on every break would
+    // drive `targetsHit` past `targetsTotal` and re-pay the clear bonus on a
+    // loop. A loose target can only fall once, so this is a no-op for it.
+    if (!part.counted) {
+      part.counted = true;
+      state.targetsHit += 1;
+    }
     onPartTrigger();
     recordShot("target");
     trySkillShot(part);
@@ -1077,9 +1116,143 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // Swallow!
     part.cooldownT = MAW_COOLDOWN;
     part.hitT = 0;
+    // A MAW is a machine step. `gargoyle-scoop`'s fourth and final step IS this
+    // mouth — break the three-target bank, then take the throat — so without
+    // this the library's own capture machine could reach `total - 1` and never
+    // complete. It is the case no hand-made test fixture would have thought to
+    // route, because a maw does not look like a shot; it looks like a hazard.
+    if (part.asm) advanceMachineShot(part);
     recordShot("trapdoor");
     onPartTrigger();
     deps.startDrop(part.x, part.z);
+  },
+
+  seesaw: ({ part, p, deps }) => {
+    // ── THE SEESAW — a pivoting shortcut plank across wall bands.
+    //
+    // Two ends: Side A (part.x, part.z) and Side B (span ahead along dir).
+    // Tilt state:
+    //   -1: Side A is grounded (entry), Side B is elevated (exit).
+    //   +1: Side B is grounded (entry), Side A is elevated (exit).
+    // Walking onto the grounded end activates the plank, vaults the knight across
+    // to the far corridor, and flips the tilt so the previous entry is now elevated.
+    // Stepping on the elevated end is blocked / no-ops.
+    const span = part.span ?? 3;
+    const bx = part.x + part.dirX * span;
+    const bz = part.z + part.dirZ * span;
+    const r2 = SEESAW_RADIUS * SEESAW_RADIUS;
+    const currentTilt = part.tilt ?? -1;
+
+    if (currentTilt === -1) {
+      // Side A is down
+      const dxA = p.x - part.x;
+      const dzA = p.z - part.z;
+      if (dxA * dxA + dzA * dzA > r2) return;
+
+      part.tilt = 1;
+      part.cooldownT = SEESAW_COOLDOWN;
+      part.hitT = 0;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SEESAW_SPEED));
+      deps.setSteerLock(SEESAW_STEER_LOCK);
+      if (deps.startSeesawHop) {
+        deps.startSeesawHop(bx, bz, part.dirX, part.dirZ, p.momSpeed);
+      } else {
+        deps.startRampHop(part.dirX, part.dirZ, p.momSpeed);
+      }
+      onPartTrigger();
+      state.vfx?.dust(p.x, 0.06, p.z);
+      state.vfx?.sparks(part.x, 0.4, part.z, part.dirX, part.dirZ, 16);
+      requestShake(0.14);
+      sfxSpin();
+    } else {
+      // Side B is down
+      const dxB = p.x - bx;
+      const dzB = p.z - bz;
+      if (dxB * dxB + dzB * dzB > r2) return;
+
+      part.tilt = -1;
+      part.cooldownT = SEESAW_COOLDOWN;
+      part.hitT = 0;
+      const revX = -part.dirX;
+      const revZ = -part.dirZ;
+      p.momX = revX;
+      p.momZ = revZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SEESAW_SPEED));
+      deps.setSteerLock(SEESAW_STEER_LOCK);
+      if (deps.startSeesawHop) {
+        deps.startSeesawHop(part.x, part.z, revX, revZ, p.momSpeed);
+      } else {
+        deps.startRampHop(revX, revZ, p.momSpeed);
+      }
+      onPartTrigger();
+      state.vfx?.dust(p.x, 0.06, p.z);
+      state.vfx?.sparks(bx, 0.4, bz, revX, revZ, 16);
+      requestShake(0.14);
+      sfxSpin();
+    }
+  },
+
+  catapult: ({ part, p, d2, deps }) => {
+    if (d2 > CATAPULT_RADIUS * CATAPULT_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0) return;
+
+    const g = state.grid;
+    if (!g) return;
+
+    let bestX = p.x;
+    let bestZ = p.z;
+    let bestDist = 0;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+      const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+      if (!isWalkable(g, ti, tj)) continue;
+      const c = tileCenter(g, ti, tj);
+      const dist = Math.hypot(c.x - part.x, c.z - part.z);
+      if (dist < 10) continue;
+      if (state.pinballParts.some((q) => (q.kind === "pit" || q.kind === "gravepit" || q.kind === "trapdoor") && Math.hypot(q.x - c.x, q.z - c.z) < 1.5)) continue;
+      bestX = c.x;
+      bestZ = c.z;
+      bestDist = dist;
+      if (dist >= 14) break;
+    }
+
+    if (bestDist < 6) {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+        const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+        if (!isWalkable(g, ti, tj)) continue;
+        const c = tileCenter(g, ti, tj);
+        if (Math.hypot(c.x - part.x, c.z - part.z) >= 4) {
+          bestX = c.x;
+          bestZ = c.z;
+          break;
+        }
+      }
+    }
+
+    part.cooldownT = CATAPULT_COOLDOWN;
+    part.hitT = 0;
+
+    if (deps.startCatapultLaunch) {
+      deps.startCatapultLaunch(bestX, bestZ);
+    }
+    onPartTrigger();
+    state.vfx?.dust(p.x, 0.08, p.z);
+    state.vfx?.sparks(part.x, 0.4, part.z, 0, 1, 20);
+    requestShake(0.25);
+    sfxHeavy();
+    recordShot("catapult");
+  },
+
+  cannon: ({ part, p, d2, deps }) => {
+    if (d2 > CANNON_RADIUS * CANNON_RADIUS) return;
+    if (part.cooldownT > 0 || p.hopT >= 0 || p.rideT >= 0 || p.cannonPart) return;
+
+    if (deps.enterCannon) {
+      deps.enterCannon(part);
+    }
   },
 };
 

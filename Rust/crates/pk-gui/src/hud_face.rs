@@ -629,17 +629,9 @@ fn paint_brow(buf: &mut [Rgba], mood: Mood, tier: Expr, off_x: i32, off_y: i32) 
     }
 }
 
-fn draw_x(buf: &mut [Rgba], gx: i32, gy: i32, off_x: i32, off_y: i32, color: Rgba) {
-    for i in 0..5 {
-        px(buf, gx + i, gy + i, off_x, off_y, color);
-        px(buf, gx + 4 - i, gy + i, off_x, off_y, color);
-    }
-}
-
 fn paint_eyes(buf: &mut [Rgba], mood: Mood, tier: Expr, off_x: i32, off_y: i32, look_y: f64, blink: bool) {
     if mood == Mood::Dead {
-        draw_x(buf, 11, 14, off_x, off_y, c(1));
-        draw_x(buf, 20, 14, off_x, off_y, c(1));
+        // Sockets and exposed skull eyes are handled in paint_death()
         return;
     }
     if blink {
@@ -658,13 +650,30 @@ fn paint_eyes(buf: &mut [Rgba], mood: Mood, tier: Expr, off_x: i32, off_y: i32, 
     sym(buf, 11, ey, 5, eh, off_x, off_y, c(22));
     sym(buf, 11, ey, 5, 1, off_x, off_y, c(23));
 
-    let ix = 12 + ox;
+    // CONJUGATED GAZE — DOOM STATUS BAR STYLE:
+    // Both irises and pupils shift together in the direction of the gaze (ox).
+    // Left eye spans x: 11..15. Centered iris is at x: 12..13.
+    // Right eye spans x: 20..24. Centered iris is at x: 22..23.
+    let l_iris_x = 12 + ox;
+    let r_iris_x = 22 + ox;
     let iy = if squint { 15 } else { 15 + dy };
-    sym(buf, ix, iy, 2, 2, off_x, off_y, c(29));
-    sym(buf, ix, iy + 1, 2, 1, off_x, off_y, c(30));
-    sym_px(buf, ix + if ox > 0 { 1 } else { 0 }, iy, off_x, off_y, c(1));
+
+    // Irises
+    cell(buf, l_iris_x, iy, 2, 2, off_x, off_y, c(29));
+    cell(buf, l_iris_x, iy + 1, 2, 1, off_x, off_y, c(30));
+    cell(buf, r_iris_x, iy, 2, 2, off_x, off_y, c(29));
+    cell(buf, r_iris_x, iy + 1, 2, 1, off_x, off_y, c(30));
+
+    // Pupils (darkest point of gaze, shift with look direction)
+    let p_offset = if ox > 0 { 1 } else { 0 };
+    px(buf, l_iris_x + p_offset, iy, off_x, off_y, c(1));
+    px(buf, r_iris_x + p_offset, iy, off_x, off_y, c(1));
+
+    // Catch-light / Glint (always top-left keylight, so upper-left of each iris)
     if !squint {
-        sym_px(buf, ix + if ox > 0 { 0 } else { 1 }, iy, off_x, off_y, c(18));
+        let g_offset = if ox > 0 { 0 } else { 1 };
+        px(buf, l_iris_x + g_offset, iy, off_x, off_y, c(18));
+        px(buf, r_iris_x + g_offset, iy, off_x, off_y, c(18));
     }
 
     sym(buf, 11, ey + eh, 5, 1, off_x, off_y, c(25));
@@ -845,8 +854,8 @@ fn paint_damage(buf: &mut [Rgba], tier: Expr, off_x: i32, off_y: i32) {
 }
 
 fn paint_death(buf: &mut [Rgba], off_x: i32, off_y: i32) {
+    // ── 1. SUNKEN & DRAINED CORPSE FLESH ──
     cell(buf, 11, 20, 4, 2, off_x, off_y, c(26));
-    cell(buf, 21, 20, 3, 2, off_x, off_y, c(26));
     cell(buf, 10, 24, 2, 2, off_x, off_y, c(26));
     cell(buf, 23, 24, 2, 2, off_x, off_y, c(26));
 
@@ -855,43 +864,94 @@ fn paint_death(buf: &mut [Rgba], off_x: i32, off_y: i32) {
     cell(buf, 16, 18, 2, 1, off_x, off_y, c(25));
     px(buf, 11, 18, off_x, off_y, c(25));
 
-    cell(buf, 21, 18, 5, 1, off_x, off_y, c(12));
-    cell(buf, 21, 19, 1, 6, off_x, off_y, c(11));
-    cell(buf, 21, 20, 1, 3, off_x, off_y, c(12));
-    px(buf, 21, 25, off_x, off_y, c(10));
-    cell(buf, 22, 25, 4, 1, off_x, off_y, c(11));
-    px(buf, 23, 26, off_x, off_y, c(10));
-    px(buf, 25, 19, off_x, off_y, c(10));
+    // ── 2. LEFT EYE: DEAD COLLAPSED MORTIS SOCKET (NO CARTOON 'X') ──
+    cell(buf, 11, 13, 5, 1, off_x, off_y, c(27)); // deep upper brow shadow
+    cell(buf, 11, 14, 5, 2, off_x, off_y, c(23)); // collapsed dead eyelid
+    cell(buf, 12, 15, 3, 1, off_x, off_y, c(27)); // sunken eye slit
+    px(buf, 13, 15, off_x, off_y, c(1));          // dark center slit
+    cell(buf, 11, 17, 5, 1, off_x, off_y, c(26)); // bruised orbital hollow below
 
-    cell(buf, 22, 19, 3, 1, off_x, off_y, c(4));
-    cell(buf, 22, 20, 4, 2, off_x, off_y, c(4));
-    cell(buf, 25, 20, 1, 2, off_x, off_y, c(3));
-    cell(buf, 22, 22, 3, 1, off_x, off_y, c(3));
-    px(buf, 24, 21, off_x, off_y, c(2));
+    // ── 3. EXPOSED CRANIUM DOME UNDER SHATTERED HELMET ──
+    // Fractured metal rim framing the cracked bone dome
+    cell(buf, 19, 2, 1, 6, off_x, off_y, c(19));
+    px(buf, 20, 2, off_x, off_y, c(12));
+    px(buf, 20, 7, off_x, off_y, c(11));
 
-    cell(buf, 21, 23, 5, 2, off_x, off_y, c(1));
-    cell(buf, 22, 23, 4, 1, off_x, off_y, c(5));
-    px(buf, 24, 23, off_x, off_y, c(3));
-    cell(buf, 22, 24, 3, 1, off_x, off_y, c(4));
-    px(buf, 23, 24, off_x, off_y, c(3));
+    // Exposed parietal cranium bone
+    cell(buf, 20, 2, 5, 6, off_x, off_y, c(4));
+    cell(buf, 21, 2, 4, 1, off_x, off_y, c(5));
+    cell(buf, 21, 3, 3, 2, off_x, off_y, c(5));
+    cell(buf, 24, 4, 1, 4, off_x, off_y, c(3));
+    // Cranial fissure / fracture suture lines
+    px(buf, 22, 4, off_x, off_y, c(2));
+    px(buf, 23, 5, off_x, off_y, c(1));
+    px(buf, 23, 6, off_x, off_y, c(2));
 
+    // ── 4. RIGHT EYE: FULL EXPOSED SKELETAL ORBITAL SOCKET ──
+    // Supraorbital bone brow ridge above
+    cell(buf, 20, 12, 5, 1, off_x, off_y, c(4));
+    cell(buf, 21, 12, 3, 1, off_x, off_y, c(5));
+
+    // The deep, hollow, pitch-black skull orbital void
+    cell(buf, 20, 13, 5, 5, off_x, off_y, c(1));
+    cell(buf, 21, 14, 3, 3, off_x, off_y, c(0)); // deep void black interior
+
+    // Zygomatic cheekbone arch below the eye
+    cell(buf, 20, 18, 5, 1, off_x, off_y, c(4));
+    cell(buf, 21, 18, 3, 1, off_x, off_y, c(5));
+    px(buf, 24, 17, off_x, off_y, c(3));
+
+    // Jagged blood-torn skin edge framing the eye socket
+    cell(buf, 19, 13, 1, 6, off_x, off_y, c(11));
+    px(buf, 19, 15, off_x, off_y, c(12));
+    cell(buf, 25, 13, 1, 5, off_x, off_y, c(10));
+
+    // ── 5. SKELETAL NASAL APERTURE (PIRIFORM CAVITY) ──
+    // Cartilage sheared away, exposing the dark triangular skull nasal cavity
+    cell(buf, 17, 15, 2, 1, off_x, off_y, c(5));
+    cell(buf, 17, 16, 2, 4, off_x, off_y, c(1));
+    cell(buf, 17, 17, 2, 2, off_x, off_y, c(0)); // deep void core
+    px(buf, 16, 17, off_x, off_y, c(4));
+    px(buf, 19, 17, off_x, off_y, c(11));
+    px(buf, 16, 18, off_x, off_y, c(3));
+    px(buf, 19, 18, off_x, off_y, c(10));
+    cell(buf, 17, 20, 2, 1, off_x, off_y, c(2));
+
+    // ── 6. EXPOSED MAXILLA, JAWBONE & GRINNING SKULL TEETH ──
+    // Torn cheek border
+    cell(buf, 20, 21, 6, 1, off_x, off_y, c(12));
+    cell(buf, 20, 22, 1, 5, off_x, off_y, c(11));
+    cell(buf, 21, 26, 5, 1, off_x, off_y, c(11));
+    px(buf, 26, 22, off_x, off_y, c(10));
+    px(buf, 26, 25, off_x, off_y, c(10));
+
+    // Maxilla and jaw bone surface
+    cell(buf, 21, 22, 5, 1, off_x, off_y, c(4));
+    cell(buf, 22, 22, 3, 1, off_x, off_y, c(5));
+    cell(buf, 25, 22, 1, 2, off_x, off_y, c(3));
+
+    // Upper teeth arch (individual teeth in boneHi separated by dark ink notches)
+    cell(buf, 21, 23, 5, 1, off_x, off_y, c(5));
+    px(buf, 22, 23, off_x, off_y, c(1));
+    px(buf, 24, 23, off_x, off_y, c(1));
+
+    // Dark dental interstitial void between upper and lower teeth
+    cell(buf, 20, 24, 6, 1, off_x, off_y, c(1));
+    cell(buf, 21, 24, 4, 1, off_x, off_y, c(0));
+
+    // Lower teeth arch
+    cell(buf, 21, 25, 4, 1, off_x, off_y, c(4));
+    px(buf, 23, 25, off_x, off_y, c(1));
+
+    // ── 7. CLEAN COMBAT WOUNDS (PURPOSEFUL, NO NOISE) ──
     cell(buf, 10, 10, 2, 5, off_x, off_y, c(11));
     cell(buf, 10, 10, 1, 5, off_x, off_y, c(10));
     px(buf, 11, 12, off_x, off_y, c(12));
+
     cell(buf, 14, 26, 3, 1, off_x, off_y, c(13));
     cell(buf, 13, 27, 2, 1, off_x, off_y, c(11));
     cell(buf, 14, 27, 1, 2, off_x, off_y, c(12));
     px(buf, 14, 29, off_x, off_y, c(11));
-
-    let mut socket = |x: i32| {
-        cell(buf, x, 14, 5, 5, off_x, off_y, c(23));
-        cell(buf, x, 14, 5, 1, off_x, off_y, c(27));
-        cell(buf, x + 1, 19, 3, 1, off_x, off_y, c(26));
-    };
-    socket(11);
-    socket(20);
-    draw_x(buf, 11, 14, off_x, off_y, c(1));
-    draw_x(buf, 20, 14, off_x, off_y, c(1));
 }
 
 // ── Top-Level 1:1 API Adapters ──

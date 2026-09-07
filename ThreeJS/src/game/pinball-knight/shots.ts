@@ -18,9 +18,29 @@
  *   D5 NAMED      — the last few shot identities are matched against a table of
  *                   named combos (RAMP→ORBIT = ORBIT RUNNER, and so on). Each
  *                   name pays once per floor, so it stays an event.
+ *   MACHINES      — a part belonging to an AUTHORED MACHINE (an assembly the
+ *                   maze generator placed) advances that machine's own state
+ *                   instead. See machines.ts.
  *
  * Kept out of player.ts so the physics code stays physics: player.ts reports
  * "this kind of shot happened" and this module decides what it was worth.
+ *
+ * ── Two paths, and which one actually runs ────────────────────────────────
+ *
+ * `hitOrbitRail` and `hitRollover` each fork on `part.asm`. The MACHINE path is
+ * per-machine, derives its sequence length from the floor, and decays rather
+ * than confiscates. The LEGACY path underneath it is the shipped `orbit`/
+ * `lane` bookkeeping, kept byte-for-byte for loose circuit parts.
+ *
+ * ⚠️ The legacy ORBIT branch is dead code in the shipped game and has been for
+ * a while. Measured 2026-09-06 over 20 floors (5 seeds × depths 1/8/16/24)
+ * through `dev/headless-floor.ts`: parts carrying `orbit`/`orbitSeq` = 0.0 PER
+ * FLOOR at every depth. The one producer is the four-corner rail ring at
+ * `maze/decorate.ts:1381`, gated on a `bumper`/`speedway` room of ≥6×6, and
+ * `plan.rooms` came back empty on every floor measured — so `hitOrbitRail`
+ * returns on its first line for every call it will ever receive. The ORBIT that
+ * IS placed (~1 per floor) is an ASSEMBLY and carries `asm`. Keep the branch,
+ * but do not mistake a green legacy test for evidence that a machine works.
  */
 import { state, type PinballPart } from "./state";
 import {
@@ -37,6 +57,7 @@ import {
 import { addGold } from "../../utils/gold-wallet";
 import { showToast, showPickupNote } from "./ui";
 import { sfxTarget, sfxSpring, sfxBumper } from "./sfx";
+import { hitMachine, tickMachines, type MachineEvent } from "./machines";
 
 /** Bank the gold in both the run ledger and the wallet — one place, one rule. */
 function pay(amount: number): void {
@@ -86,11 +107,90 @@ export function clearShotChain(): void {
 }
 
 /**
+ * Announce what a machine just did, and BANK a completed one.
+ *
+ * The payout goes through `pay` like every other shot in this file, so there is
+ * still exactly one place the game banks gold — `machines.ts` deliberately
+ * computes the number and never touches the wallet. The events themselves have
+ * already been queued for whatever slice reacts to a `collected`; this function
+ * is only the player-facing half.
+ */
+function announceMachine(events: readonly MachineEvent[]): void {
+  for (const e of events) {
+    if (e.kind === "advance") {
+      if (e.step < e.total) showPickupNote(`⚙ ${e.name.toUpperCase()} ${e.step}/${e.total}`);
+      continue;
+    }
+    if (e.kind === "lit") {
+      // Its own sting, not the part's — a rollover already clicked on the way
+      // in, and the same sound twice reads as a double trigger rather than as
+      // the machine lighting.
+      showPickupNote(`⚙ ${e.name.toUpperCase()} LIT — shoot it again`);
+      sfxTarget();
+      continue;
+    }
+    if (e.kind === "armed") {
+      showPickupNote(`⚙ ${e.name.toUpperCase()} READY`);
+      continue;
+    }
+    const gold = e.gold ?? 0;
+    pay(gold);
+    const tier = e.tier > 1 ? ` · tier ${e.tier}` : "";
+    const mult = (e.mult ?? 1) > 1 ? ` · ×${(e.mult ?? 1).toFixed(2)}` : "";
+    showToast(`⚙ ${e.name.toUpperCase()}!`, `${e.total} shots${tier}${mult} · +${gold}g`);
+    state.shakeT = Math.max(state.shakeT, 0.32);
+    sfxSpring();
+  }
+}
+
+/**
+ * A part of an AUTHORED MACHINE was hit: step the machine, announce it, bank a
+ * completion. Returns true if that hit COLLECTED, so a caller that owns its own
+ * combo bookkeeping can decide what identity to record.
+ *
+ * This exists separately from `hitMachinePart` below because a machine's steps
+ * are not all rails and rollovers. `assembly-lib`'s ORBIT is booster → deflector
+ * → deflector → booster and its RAMP_RETURN is ramp → deflector → spring, and
+ * those three drive kinds are dispatched by handlers in `pinball-collide.ts`
+ * that already record their own shot. Calling the recording version from them
+ * would put every booster in the chain twice; calling neither would leave the
+ * flagship machine holding two of its four steps and unable to ever complete.
+ */
+export function advanceMachineShot(part: PinballPart): boolean {
+  const events = hitMachine(part);
+  announceMachine(events);
+  return events.some((e) => e.kind === "collected");
+}
+
+/**
+ * The same, plus the combo identity. `base` is the shot identity this part
+ * would have had on its own ("bank" for a rail, "lane" for a rollover) — the
+ * combo chain keeps speaking the existing vocabulary so NAMED_COMBOS still
+ * matches, and a completed machine records the big identity that vocabulary
+ * already has for it.
+ *
+ * A shot is recorded even when the machine had nothing to say (it was cooling,
+ * or spinning up), because the part was still HIT: dropping it there would put
+ * a silent hole in the combo chain for the two seconds after a jackpot.
+ */
+export function hitMachinePart(part: PinballPart, base: string, big: string): void {
+  recordShot(advanceMachineShot(part) ? big : base);
+}
+
+/**
  * D2 — a banked rail belonging to an ORBIT was hit. Advance the lap if it's the
  * next corner clockwise; otherwise (re)start the lap from this corner. A lap
  * only counts as a lap if you actually went round.
  */
 export function hitOrbitRail(part: PinballPart): void {
+  // An assembly's rail belongs to a MACHINE, which owns its own progression —
+  // its own window, its own length, its own tier. The single global slot below
+  // could not have held two of them.
+  if (part.asm) {
+    hitMachinePart(part, "bank", "orbit");
+    return;
+  }
+
   const id = part.orbit;
   const seq = part.orbitSeq;
   if (id === undefined || seq === undefined) return;
@@ -133,6 +233,12 @@ export function hitOrbitRail(part: PinballPart): void {
  * and resets the bank so it can be run again.
  */
 export function hitRollover(part: PinballPart): void {
+  if (part.asm) {
+    sfxBumper(); // the switch click, same as the legacy lane below
+    hitMachinePart(part, "lane", "lanes");
+    return;
+  }
+
   const id = part.lane;
   const seq = part.laneSeq;
   if (id === undefined || seq === undefined) return;
@@ -213,6 +319,10 @@ export function trySkillShot(part: PinballPart): void {
  * to be one continuous run rather than a shopping list assembled over a floor.
  */
 export function updateShots(dt: number): void {
+  // The machines age first: their windows DECAY a step rather than confiscating
+  // a run, and `armed` is reached on this clock rather than on a hit, so a floor
+  // that stops being ticked must not leave a machine half-lit.
+  announceMachine(tickMachines(dt));
   if (state.orbitT > 0) {
     state.orbitT -= dt;
     if (state.orbitT <= 0) {
