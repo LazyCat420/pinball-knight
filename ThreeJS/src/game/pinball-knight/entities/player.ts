@@ -2263,6 +2263,38 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
 
+  // ── MEDUSA PETRIFICATION (SOLID STONE) ──
+  if ((p.petrifiedT ?? 0) > 0) {
+    p.petrifiedT = Math.max(0, (p.petrifiedT ?? 0) - dt);
+    p.momSpeed = Math.max(0, p.momSpeed - dt * 15);
+    const ax = input.axis();
+    const spammed =
+      input.consumeAttack() ||
+      input.consumeDodge() ||
+      ax.x !== 0 ||
+      ax.z !== 0;
+    if (spammed) {
+      p.petrifiedT = Math.max(0, p.petrifiedT - dt * 1.5);
+      if (Math.random() < 0.3) {
+        state.vfx?.dust(p.x, 0.05, p.z);
+        state.vfx?.sparks(p.x, 0.5, p.z, 0, 1, 3);
+      }
+    }
+    p.sprite?.setTint?.(0x808080);
+    if (Math.random() < dt * 4) {
+      state.vfx?.dust(p.x, 0.05, p.z);
+    }
+    if (p.petrifiedT <= 0) {
+      p.sprite?.setTint?.(null);
+      state.vfx?.dust(p.x, 0.2, p.z);
+      state.vfx?.sparks(p.x, 0.6, p.z, 0, 1, 8);
+      showToast("🗿 SHATTERED FREE!", "Stone shell cracked!");
+    } else {
+      syncActorMesh(p);
+      return; // Freeze movement, rolling and attacks while petrified
+    }
+  }
+
   // ── CHOMPER GRAB & HOLD ──
   if ((p.chomperGrabT ?? 0) > 0) {
     if (p.chomperGrabHost && p.chomperGrabHost.mode === "dead") {

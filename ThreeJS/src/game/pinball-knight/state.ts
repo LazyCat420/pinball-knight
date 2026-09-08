@@ -135,6 +135,8 @@ export interface Player extends Actor {
   flattenT?: number;
   /** Wall crunch damage to apply if player collides with a wall while launched from pinball charge. */
   pinballWallCrunchDamage?: number;
+  /** Medusa petrification: while > 0 player is turned into a granite statue, immobilized. */
+  petrifiedT?: number;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -381,7 +383,8 @@ export type EnemyKind =
   | "zippo" // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
   | "cerberus" // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
   | "clam" // DEFLECTOR / SNIPER — old bivalve with sunglasses & mustache that spits bouncy trajectory-deflecting pearls
-  | "crab"; // SLASHER / FLANKER — dapper gentleman crab with top hat & monocle that scissor-slashes with knife arms
+  | "crab" // SLASHER / FLANKER — dapper gentleman crab with top hat & monocle that scissor-slashes with knife arms
+  | "medusa"; // PETRIFIER — serpentine gorgon with living snake hair whose scanned gaze turns looking knights to solid stone
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -488,6 +491,9 @@ export interface Zombie extends Actor {
   castT?: number;
   /** MIMIC: dormant + disguised until the player steps close. */
   dormant?: boolean;
+  /** MEDUSA: gaze cadence / active scan timer and beam state. */
+  medusaGazeT?: number;
+  medusaGazeActive?: boolean;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
@@ -1482,6 +1488,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     squashT: 0,
     flattenT: 0,
     pinballWallCrunchDamage: 0,
+    petrifiedT: 0,
     squashAmp: 0,
     squashHx: 0,
     squashHy: 0,

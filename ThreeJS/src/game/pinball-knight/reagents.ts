@@ -130,6 +130,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   cerberus: [{ id: "fang", chance: 0.5 }, { id: "hide", chance: 0.35 }, { id: "grimbone", chance: 0.25 }],
   clam: [{ id: "glass", chance: 0.35 }, { id: "lodestone", chance: 0.20 }, { id: "steelpin", chance: 0.15 }],
   crab: [{ id: "ironshard", chance: 0.35 }, { id: "glass", chance: 0.25 }, { id: "steelpin", chance: 0.20 }],
+  medusa: [{ id: "venomsac", chance: 0.35 }, { id: "fang", chance: 0.25 }, { id: "ironshard", chance: 0.20 }],
 };
 
 /**

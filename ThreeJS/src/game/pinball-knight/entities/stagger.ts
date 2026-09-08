@@ -117,6 +117,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   cerberus: 0,
   clam: 0.35,
   crab: 0.30,
+  medusa: 0.35,
 };
 
 /**
