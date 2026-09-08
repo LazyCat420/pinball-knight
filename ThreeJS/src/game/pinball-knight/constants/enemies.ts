@@ -1094,3 +1094,17 @@ export const CRAB_SLASH_DAMAGE = 2;
 export const CRAB_RATIO = 18;
 export const CRAB_FROM_LEVEL = 2;
 
+// ── Gorgon Medusa (The Petrifier) ──────────────────────────────
+export const MEDUSA_HP = 14;
+export const MEDUSA_R = 0.45;
+export const MEDUSA_SPEED_FACTOR = 0.85;
+export const MEDUSA_GAZE_WIDTH = 3.6; // Width of petrifying scan sector/box (tiles)
+export const MEDUSA_GAZE_LENGTH = 6.5; // Forward reach of petrifying scan sector/box (tiles)
+export const MEDUSA_GAZE_DURATION = 5.0; // Seconds the knight stays turned to stone
+export const MEDUSA_WINDUP = 0.8; // Seconds of golden-eye warning before active beam
+export const MEDUSA_ACTIVE_GAZE = 1.5; // Seconds the petrifying scan beam sweeps/pulses
+export const MEDUSA_COOLDOWN = 3.5; // Cadence between scan beam activations
+export const MEDUSA_RATIO = 16;
+export const MEDUSA_FROM_LEVEL = 12;
+
+

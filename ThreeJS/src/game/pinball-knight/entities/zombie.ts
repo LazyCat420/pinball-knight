@@ -157,7 +157,9 @@ import {
   SUMO_NINJA_R, SUMO_NINJA_FIRE_RANGE, SUMO_NINJA_WINDUP, SUMO_NINJA_COOLDOWN,
   ZIPPO_R, ZIPPO_FIRE_RANGE, ZIPPO_WINDUP, ZIPPO_COOLDOWN,
   CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN,
-  CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN } from "../constants";
+  CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN,
+  MEDUSA_R, MEDUSA_WINDUP, MEDUSA_COOLDOWN } from "../constants";
+import { updateMedusaGaze } from "./medusa";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -236,6 +238,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   cerberus: { bodyR: 0.88, contactRange: 3.0, windup: 0.75, cooldown: 5.5, ranged: true },
   clam: { bodyR: CLAM_R, contactRange: CLAM_FIRE_RANGE, windup: CLAM_WINDUP, cooldown: CLAM_COOLDOWN, ranged: true },
   crab: { bodyR: CRAB_R, contactRange: CRAB_SLASH_RANGE, windup: CRAB_WINDUP, cooldown: CRAB_COOLDOWN, ranged: false },
+  medusa: { bodyR: MEDUSA_R, contactRange: 5.5, windup: MEDUSA_WINDUP, cooldown: MEDUSA_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1046,6 +1049,11 @@ export function updateZombies(dt: number): void {
         continue;
       }
       // otherwise fall through to normal kiting/steering below
+    }
+
+    // ── GORGON MEDUSA (THE PETRIFIER) ──
+    if (z.kind === "medusa") {
+      updateMedusaGaze(z, p, dt);
     }
 
     // ── BUMPER GOBLIN ── it never bites: contact POPS the knight away like a

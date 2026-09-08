@@ -86,6 +86,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   cerberus: "chase",
   clam: "kite",
   crab: "flanker",
+  medusa: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
