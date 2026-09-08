@@ -123,24 +123,24 @@ export function makeDolphinBrawlerPaints(): ActorPaints {
     const cy = GROUND - 20 + bob;
     groundShadow(ctx, CX, GROUND, 15);
 
-    // Blue jeans
-    rrectShaded(ctx, CX - 8, cy + 8, 16, 12, 2, R_JEANS);
-    limbShaded(ctx, [CX - 4, cy + 12], [CX - 4, GROUND - 2], 4, R_JEANS);
-    limbShaded(ctx, [CX + 4, cy + 12], [CX + 4, GROUND - 2], 4, R_JEANS);
+    // 90s Baggy Blue Jeans (wide horizontal spans)
+    rrectShaded(ctx, CX - 10, cy + 6, 20, 14, 2, R_JEANS);
+    rrectShaded(ctx, CX - 9, cy + 14, 8, 10, 2, R_JEANS);
+    rrectShaded(ctx, CX + 1, cy + 14, 8, 10, 2, R_JEANS);
 
-    // Dolphin torso & bottle-nose head
-    ellShaded(ctx, CX, cy - 4, 12, 14, R_DOLPHIN);
-    ellShaded(ctx, CX, cy + 1, 8, 9, R_WHITE);
+    // Dolphin muscular torso & head
+    ellShaded(ctx, CX, cy - 4, 14, 15, R_DOLPHIN);
+    ellShaded(ctx, CX, cy + 2, 9, 10, R_WHITE);
     // Snout
-    ellShaded(ctx, CX, cy - 12, 6, 4, R_DOLPHIN);
+    ellShaded(ctx, CX, cy - 12, 8, 5, R_DOLPHIN);
     // Sunglasses
-    rrectShaded(ctx, CX - 6, cy - 8, 12, 3, 1, R_BLACK);
+    rrectShaded(ctx, CX - 7, cy - 8, 14, 4, 1, R_BLACK);
 
     // Boxing gloves (red)
-    const punchX = clip === "attack" ? (phase % 2 === 0 ? 10 : -10) : 0;
-    const punchY = clip === "attack" ? -6 : 0;
-    ellShaded(ctx, CX - 10, cy + punchY, 5, 5, R_RED);
-    ellShaded(ctx, CX + 10 + punchX, cy + punchY, 5, 5, R_RED);
+    const punchX = clip === "attack" ? (phase % 2 === 0 ? 8 : -8) : 0;
+    const punchY = clip === "attack" ? -4 : 0;
+    ellShaded(ctx, CX - 12, cy + punchY, 6, 6, R_RED);
+    ellShaded(ctx, CX + 12 + punchX, cy + punchY, 6, 6, R_RED);
   });
 }
 

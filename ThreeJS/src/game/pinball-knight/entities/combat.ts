@@ -1384,7 +1384,7 @@ export function webPlayer(): void {
   const p = state.player;
   if (!p || p.hp <= 0 || p.shieldT > 0) return;
   p.webbedT = WEB_TIME;
-  p.sprite.setTint(0xdfe7f2);
+  p.sprite?.setTint(0xdfe7f2);
   p.flashT = 0.2;
   showToast("🕸️ WEBBED", "slowed — touch any pinball part to shake it off");
   state.hudDirty = true;

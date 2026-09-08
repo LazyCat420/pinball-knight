@@ -56,6 +56,8 @@ describe("the shader registry", () => {
     expect(hasElementShader("groove")).toBe(false);
     expect(hasElementShader("fissure")).toBe(false);
     expect(hasElementShader("shard-field")).toBe(false);
+    expect(hasElementShader("ink")).toBe(false);
+    expect(hasElementShader("shock")).toBe(false);
   });
 
   it("reports its kinds so the prewarm sweep can find them", () => {
@@ -68,8 +70,9 @@ describe("the shader registry", () => {
     // `groove` and `fissure` are stone scars, `shard-field` is glitter,
     // `coffee` uses a dedicated canvas painter with crema swirl & steam motes,
     // and `rot` is a decomposing sludge puddle decal.
+    // `ink` and `shock` are non-elemental aquatic floor hazards.
     const canvas = FLOOR_FX_KINDS().filter((k: FloorFxKind) => !hasElementShader(k));
-    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "rot", "shard-field"]);
+    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "ink", "rot", "shard-field", "shock"]);
   });
 
   it("builds a working material for every registered kind", () => {
