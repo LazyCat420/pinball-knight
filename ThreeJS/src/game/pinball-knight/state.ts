@@ -376,7 +376,8 @@ export type EnemyKind =
   | "sumo_ninja" // STUMBLER — rotund drunk sumo ninja that stumbles around and flings spinning ninja stars
   | "zippo" // PYRO — 1960s cartoon flip-top lighter that chugs alcohol and blows fire breath
   | "cerberus" // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
-  | "clam"; // DEFLECTOR / SNIPER — old bivalve with sunglasses & mustache that spits bouncy trajectory-deflecting pearls
+  | "clam" // DEFLECTOR / SNIPER — old bivalve with sunglasses & mustache that spits bouncy trajectory-deflecting pearls
+  | "crab"; // SLASHER / FLANKER — dapper gentleman crab with top hat & monocle that scissor-slashes with knife arms
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
