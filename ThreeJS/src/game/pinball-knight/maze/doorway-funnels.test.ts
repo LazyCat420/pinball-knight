@@ -8,14 +8,14 @@
  * defect this pass could plausibly cause is a defect about real geometry:
  * stranding, an opening quietly widened, a curve with no stone behind it.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildHeadlessFloor } from "../dev/headless-floor";
 import { findArcJunctions, backedFraction } from "./arc-contract";
 import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
 import { bfsDistances } from "../engine/flow-field";
 import { isWalkable, idx, T_STAIRS, at } from "./generator";
 import { parabolicJaws } from "./conic-fit";
-import { authorDoorwayFunnels } from "./doorway-funnels";
+import * as funnels from "./doorway-funnels";
 
 const SEEDS = [1, 12345, 424242];
 const LEVELS = [1, 5, 12];
@@ -86,17 +86,24 @@ describe("doorway funnels, with the switch on", () => {
     // arms of a pair routinely have different numbers of links, so feature
     // parity says nothing. Jaws come in twos; features do not have to.
     let sawAny = false;
-    for (const s of SEEDS) {
-      for (const l of LEVELS) {
-        const f = buildHeadlessFloor(l, s, false)!;
-        const r = authorDoorwayFunnels(f.grid, f.doorways, f.start);
-        // The strand guard unwinds individual jaws, which can legitimately
-        // leave an odd count; the authoring rule is only observable when it
-        // did not have to.
-        if (r.reverted > 0) continue;
-        expect(r.jaws % 2, `level ${l} seed ${s} committed an odd number of jaws`).toBe(0);
-        if (r.jaws > 0) sawAny = true;
+    const author = vi.spyOn(funnels, "authorDoorwayFunnels");
+    try {
+      for (const s of SEEDS) for (const l of LEVELS) {
+        author.mockClear();
+        buildHeadlessFloor(l, s, true);
+        // Observe the real authoring stage. Re-running the author on the
+        // FINISHED, pruned grid can have no remaining sites even though the
+        // same floor built paired jaws at the proper point in the pipeline.
+        for (const call of author.mock.results) {
+          if (call.type !== "return") continue;
+          const r = call.value;
+          if (r.reverted > 0) continue;
+          expect(r.jaws % 2, `level ${l} seed ${s} committed an odd number of jaws`).toBe(0);
+          if (r.jaws > 0) sawAny = true;
+        }
       }
+    } finally {
+      author.mockRestore();
     }
     expect(sawAny, "no sampled floor built a jaw — the pass is not firing").toBe(true);
   });
