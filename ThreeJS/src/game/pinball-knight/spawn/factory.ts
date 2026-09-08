@@ -88,6 +88,7 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   swordfish_mob: SWORDFISH_MOB_HP,
   moray_mob: MORAY_MOB_HP,
   seahorse_mob: SEAHORSE_MOB_HP,
+  pinball_boss: 75,
 };
 
 export { skinSheet };
@@ -440,6 +441,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= MORAY_MOB_FROM_LEVEL ? makeSkinned("moray_mob", x, z, baseSpeed * MORAY_MOB_SPEED_FACTOR) : null;
     case "seahorse_mob":
       return level >= SEAHORSE_MOB_FROM_LEVEL ? makeSkinned("seahorse_mob", x, z, baseSpeed * SEAHORSE_MOB_SPEED_FACTOR) : null;
+    case "pinball_boss":
+      return makeSkinned("pinball_boss", x, z, baseSpeed * 1.05);
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

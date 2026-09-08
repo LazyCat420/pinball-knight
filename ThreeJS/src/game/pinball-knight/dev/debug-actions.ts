@@ -173,6 +173,9 @@ export function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
     if (spec.kind === "jade_buddha" && !bossActive()) {
       adoptBoss(zz, BOSSES.jade_buddha);
     }
+    if (spec.kind === "pinball_boss" && !bossActive()) {
+      adoptBoss(zz, BOSSES.pinball_boss);
+    }
   }
   return { spawned: placed.length, requested, kind: spec.kind, points: placed };
 }

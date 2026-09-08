@@ -100,6 +100,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   swordfish_mob: "flanker",
   moray_mob: "kite",
   seahorse_mob: "kite",
+  pinball_boss: "chase",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the

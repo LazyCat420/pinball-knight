@@ -111,6 +111,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   swordfish_mob: { scale: 1.1 },
   moray_mob: { scale: 1.05 },
   seahorse_mob: { scale: 1.0 },
+  pinball_boss: { scale: 2.2 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

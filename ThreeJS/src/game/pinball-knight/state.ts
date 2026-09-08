@@ -397,7 +397,8 @@ export type EnemyKind =
   | "pufferfish_mob" // CAPO — blunderbuss slug and 360-degree death spike nova
   | "swordfish_mob" // DUELIST — harpoon speargun bolt and piercing lunge
   | "moray_mob" // SHOCK EXTORTIONIST — electric shock orbs leaving hazard pools
-  | "seahorse_mob"; // ARTILLERY — high-angle water mortar lobbed over walls
+  | "seahorse_mob" // ARTILLERY — high-angle water mortar lobbed over walls
+  | "pinball_boss"; // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

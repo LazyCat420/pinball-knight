@@ -131,6 +131,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   swordfish_mob: 0.35,
   moray_mob: 0.45,
   seahorse_mob: 0.50,
+  pinball_boss: 0,
 };
 
 /**
