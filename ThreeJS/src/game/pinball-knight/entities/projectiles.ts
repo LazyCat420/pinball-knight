@@ -69,7 +69,37 @@ import {
   CLAM_PEARL_BOUNCE_SPEED,
   CLAM_PEARL_BOUNCES,
   PINBALL_MAX_SPEED,
+  SHARK_TRAPPER_HOOK_RANGE,
+  SHARK_TRAPPER_HOOK_SPEED,
+  SHARK_TRAPPER_HOOK_DAMAGE,
+  OCTOPUS_GUNNER_FIRE_RANGE,
+  OCTOPUS_GUNNER_BULLET_SPEED,
+  OCTOPUS_GUNNER_DAMAGE,
+  CLOWNFISH_MOB_FIRE_RANGE,
+  CLOWNFISH_MOB_BULLET_SPEED,
+  CLOWNFISH_MOB_DAMAGE,
+  LIONFISH_MOB_FIRE_RANGE,
+  LIONFISH_MOB_SPINE_SPEED,
+  LIONFISH_MOB_DAMAGE,
+  ANGLERFISH_MOB_FIRE_RANGE,
+  ANGLERFISH_MOB_SNIPER_SPEED,
+  ANGLERFISH_MOB_DAMAGE,
+  PUFFERFISH_MOB_FIRE_RANGE,
+  PUFFERFISH_MOB_SLUG_SPEED,
+  PUFFERFISH_MOB_DAMAGE,
+  PUFFERFISH_MOB_SPIKE_SPEED,
+  PUFFERFISH_MOB_SPIKE_DAMAGE,
+  SWORDFISH_MOB_HARPOON_RANGE,
+  SWORDFISH_MOB_HARPOON_SPEED,
+  SWORDFISH_MOB_HARPOON_DAMAGE,
+  MORAY_MOB_FIRE_RANGE,
+  MORAY_MOB_ORB_SPEED,
+  MORAY_MOB_DAMAGE,
+  SEAHORSE_MOB_FIRE_RANGE,
+  SEAHORSE_MOB_MORTAR_SPEED,
+  SEAHORSE_MOB_DAMAGE,
 } from "../constants";
+import { spawnFloorFx } from "./floor-fx";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
 import { damageZombie, playerDamage, hitPlayerRanged, webPlayer, applyCardOnHit } from "./combat";
@@ -265,6 +295,86 @@ export function pearlAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasic
   return { geo: _pearlGeo, mat: _pearlMat };
 }
 
+let _hookGeo: THREE.CylinderGeometry | null = null;
+let _hookMat: THREE.MeshBasicMaterial | null = null;
+export function hookAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _hookGeo ??= new THREE.CylinderGeometry(0.08, 0.08, 0.28, 6);
+  _hookMat ??= new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+  return { geo: _hookGeo, mat: _hookMat };
+}
+
+let _octoBulletGeo: THREE.SphereGeometry | null = null;
+let _octoBulletMat: THREE.MeshBasicMaterial | null = null;
+export function octoBulletAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _octoBulletGeo ??= new THREE.SphereGeometry(0.12, 8, 6);
+  _octoBulletMat ??= new THREE.MeshBasicMaterial({ color: 0x334155 });
+  return { geo: _octoBulletGeo, mat: _octoBulletMat };
+}
+
+let _fishBulletGeo: THREE.BoxGeometry | null = null;
+let _fishBulletMat: THREE.MeshBasicMaterial | null = null;
+export function fishBulletAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _fishBulletGeo ??= new THREE.BoxGeometry(0.06, 0.06, 0.20);
+  _fishBulletMat ??= new THREE.MeshBasicMaterial({ color: 0xd97706 });
+  return { geo: _fishBulletGeo, mat: _fishBulletMat };
+}
+
+let _lionSpineGeo: THREE.CylinderGeometry | null = null;
+let _lionSpineMat: THREE.MeshBasicMaterial | null = null;
+export function lionSpineAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _lionSpineGeo ??= new THREE.CylinderGeometry(0.03, 0.03, 0.35, 6);
+  _lionSpineMat ??= new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+  return { geo: _lionSpineGeo, mat: _lionSpineMat };
+}
+
+let _magnumBulletGeo: THREE.BoxGeometry | null = null;
+let _magnumBulletMat: THREE.MeshBasicMaterial | null = null;
+export function magnumBulletAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _magnumBulletGeo ??= new THREE.BoxGeometry(0.08, 0.08, 0.38);
+  _magnumBulletMat ??= new THREE.MeshBasicMaterial({ color: 0xfef08a });
+  return { geo: _magnumBulletGeo, mat: _magnumBulletMat };
+}
+
+let _pufferSlugGeo: THREE.SphereGeometry | null = null;
+let _pufferSlugMat: THREE.MeshBasicMaterial | null = null;
+export function pufferSlugAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _pufferSlugGeo ??= new THREE.SphereGeometry(0.20, 10, 8);
+  _pufferSlugMat ??= new THREE.MeshBasicMaterial({ color: 0x1e293b });
+  return { geo: _pufferSlugGeo, mat: _pufferSlugMat };
+}
+
+let _pufferSpikeGeo: THREE.BoxGeometry | null = null;
+let _pufferSpikeMat: THREE.MeshBasicMaterial | null = null;
+export function pufferSpikeAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _pufferSpikeGeo ??= new THREE.BoxGeometry(0.06, 0.06, 0.22);
+  _pufferSpikeMat ??= new THREE.MeshBasicMaterial({ color: 0xf1f5f9 });
+  return { geo: _pufferSpikeGeo, mat: _pufferSpikeMat };
+}
+
+let _spearBoltGeo: THREE.BoxGeometry | null = null;
+let _spearBoltMat: THREE.MeshBasicMaterial | null = null;
+export function spearBoltAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _spearBoltGeo ??= new THREE.BoxGeometry(0.07, 0.07, 0.48);
+  _spearBoltMat ??= new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+  return { geo: _spearBoltGeo, mat: _spearBoltMat };
+}
+
+let _electricBulletGeo: THREE.SphereGeometry | null = null;
+let _electricBulletMat: THREE.MeshBasicMaterial | null = null;
+export function electricBulletAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _electricBulletGeo ??= new THREE.SphereGeometry(0.16, 8, 6);
+  _electricBulletMat ??= new THREE.MeshBasicMaterial({ color: 0x67e8f9 });
+  return { geo: _electricBulletGeo, mat: _electricBulletMat };
+}
+
+let _waterMortarGeo: THREE.SphereGeometry | null = null;
+let _waterMortarMat: THREE.MeshBasicMaterial | null = null;
+export function waterMortarAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _waterMortarGeo ??= new THREE.SphereGeometry(0.22, 10, 8);
+  _waterMortarMat ??= new THREE.MeshBasicMaterial({ color: 0x0284c7 });
+  return { geo: _waterMortarGeo, mat: _waterMortarMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -313,6 +423,16 @@ export function disposeProjectileAssets(): void {
   _pearlGeo = null;
   _pearlMat?.dispose();
   _pearlMat = null;
+  _hookGeo?.dispose(); _hookGeo = null; _hookMat?.dispose(); _hookMat = null;
+  _octoBulletGeo?.dispose(); _octoBulletGeo = null; _octoBulletMat?.dispose(); _octoBulletMat = null;
+  _fishBulletGeo?.dispose(); _fishBulletGeo = null; _fishBulletMat?.dispose(); _fishBulletMat = null;
+  _lionSpineGeo?.dispose(); _lionSpineGeo = null; _lionSpineMat?.dispose(); _lionSpineMat = null;
+  _magnumBulletGeo?.dispose(); _magnumBulletGeo = null; _magnumBulletMat?.dispose(); _magnumBulletMat = null;
+  _pufferSlugGeo?.dispose(); _pufferSlugGeo = null; _pufferSlugMat?.dispose(); _pufferSlugMat = null;
+  _pufferSpikeGeo?.dispose(); _pufferSpikeGeo = null; _pufferSpikeMat?.dispose(); _pufferSpikeMat = null;
+  _spearBoltGeo?.dispose(); _spearBoltGeo = null; _spearBoltMat?.dispose(); _spearBoltMat = null;
+  _electricBulletGeo?.dispose(); _electricBulletGeo = null; _electricBulletMat?.dispose(); _electricBulletMat = null;
+  _waterMortarGeo?.dispose(); _waterMortarGeo = null; _waterMortarMat?.dispose(); _waterMortarMat = null;
   _bulletGeo = _bulletMat = _copBulletGeo = _copBulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
@@ -948,6 +1068,263 @@ export function spitPearl(x: number, z: number, dx: number, dz: number): void {
   });
 }
 
+/** Shark Trapper's fishing hook */
+export function launchFishingHook(x: number, z: number, dx: number, dz: number, ownerNid?: string): void {
+  if (!state.scene) return;
+  const { geo, mat } = hookAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.x = Math.PI / 2;
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "fishing_hook",
+    x: sx,
+    z: sz,
+    vx: dx * SHARK_TRAPPER_HOOK_SPEED,
+    vz: dz * SHARK_TRAPPER_HOOK_SPEED,
+    life: SHARK_TRAPPER_HOOK_RANGE / SHARK_TRAPPER_HOOK_SPEED,
+    maxLife: SHARK_TRAPPER_HOOK_RANGE / SHARK_TRAPPER_HOOK_SPEED,
+    damage: SHARK_TRAPPER_HOOK_DAMAGE,
+    hostile: true,
+    ownerNid,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Octopus Mob Boss 8-way bullet */
+export function shootOctoBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = octoBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "octo_bullet",
+    x: sx,
+    z: sz,
+    vx: dx * OCTOPUS_GUNNER_BULLET_SPEED,
+    vz: dz * OCTOPUS_GUNNER_BULLET_SPEED,
+    life: OCTOPUS_GUNNER_FIRE_RANGE / OCTOPUS_GUNNER_BULLET_SPEED,
+    maxLife: OCTOPUS_GUNNER_FIRE_RANGE / OCTOPUS_GUNNER_BULLET_SPEED,
+    damage: OCTOPUS_GUNNER_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Clownfish Mobster tommy gun bullet */
+export function shootFishBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = fishBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "fish_bullet",
+    x: sx,
+    z: sz,
+    vx: dx * CLOWNFISH_MOB_BULLET_SPEED,
+    vz: dz * CLOWNFISH_MOB_BULLET_SPEED,
+    life: CLOWNFISH_MOB_FIRE_RANGE / CLOWNFISH_MOB_BULLET_SPEED,
+    maxLife: CLOWNFISH_MOB_FIRE_RANGE / CLOWNFISH_MOB_BULLET_SPEED,
+    damage: CLOWNFISH_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Lionfish Mob Enforcer venom spine */
+export function shootLionSpine(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = lionSpineAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.x = Math.PI / 2;
+  mesh.rotation.z = -Math.atan2(dx, dz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "lion_spine",
+    x: sx,
+    z: sz,
+    vx: dx * LIONFISH_MOB_SPINE_SPEED,
+    vz: dz * LIONFISH_MOB_SPINE_SPEED,
+    life: LIONFISH_MOB_FIRE_RANGE / LIONFISH_MOB_SPINE_SPEED,
+    maxLife: LIONFISH_MOB_FIRE_RANGE / LIONFISH_MOB_SPINE_SPEED,
+    damage: LIONFISH_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Anglerfish Hitman sniper slug */
+export function shootMagnumBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = magnumBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "magnum_bullet",
+    x: sx,
+    z: sz,
+    vx: dx * ANGLERFISH_MOB_SNIPER_SPEED,
+    vz: dz * ANGLERFISH_MOB_SNIPER_SPEED,
+    life: ANGLERFISH_MOB_FIRE_RANGE / ANGLERFISH_MOB_SNIPER_SPEED,
+    maxLife: ANGLERFISH_MOB_FIRE_RANGE / ANGLERFISH_MOB_SNIPER_SPEED,
+    damage: ANGLERFISH_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Pufferfish Capo blunderbuss slug */
+export function shootPufferSlug(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = pufferSlugAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "puffer_slug",
+    x: sx,
+    z: sz,
+    vx: dx * PUFFERFISH_MOB_SLUG_SPEED,
+    vz: dz * PUFFERFISH_MOB_SLUG_SPEED,
+    life: PUFFERFISH_MOB_FIRE_RANGE / PUFFERFISH_MOB_SLUG_SPEED,
+    maxLife: PUFFERFISH_MOB_FIRE_RANGE / PUFFERFISH_MOB_SLUG_SPEED,
+    damage: PUFFERFISH_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Pufferfish Capo 8-way death spike explosion */
+export function burstPufferSpikes(x: number, z: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = pufferSpikeAssets();
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, PROJECTILE_Y, z);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "puffer_spike",
+      x,
+      z,
+      vx: dx * PUFFERFISH_MOB_SPIKE_SPEED,
+      vz: dz * PUFFERFISH_MOB_SPIKE_SPEED,
+      life: 0.9,
+      maxLife: 0.9,
+      damage: PUFFERFISH_MOB_SPIKE_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
+/** Swordfish Mobster harpoon speargun bolt */
+export function shootSpearBolt(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = spearBoltAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "spear_bolt",
+    x: sx,
+    z: sz,
+    vx: dx * SWORDFISH_MOB_HARPOON_SPEED,
+    vz: dz * SWORDFISH_MOB_HARPOON_SPEED,
+    life: SWORDFISH_MOB_HARPOON_RANGE / SWORDFISH_MOB_HARPOON_SPEED,
+    maxLife: SWORDFISH_MOB_HARPOON_RANGE / SWORDFISH_MOB_HARPOON_SPEED,
+    damage: SWORDFISH_MOB_HARPOON_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Moray Eel Mobster electric shock orb */
+export function shootElectricBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = electricBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "electric_bullet",
+    x: sx,
+    z: sz,
+    vx: dx * MORAY_MOB_ORB_SPEED,
+    vz: dz * MORAY_MOB_ORB_SPEED,
+    life: MORAY_MOB_FIRE_RANGE / MORAY_MOB_ORB_SPEED,
+    maxLife: MORAY_MOB_FIRE_RANGE / MORAY_MOB_ORB_SPEED,
+    damage: MORAY_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Seahorse Mobster arcing water mortar */
+export function launchWaterMortar(x: number, z: number, targetX: number, targetZ: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = waterMortarAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  const dx = targetX - x;
+  const dz = targetZ - z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const flightTime = Math.max(0.6, dist / SEAHORSE_MOB_MORTAR_SPEED);
+  state.projectiles.push({
+    kind: "water_mortar",
+    x,
+    z,
+    startX: x,
+    startZ: z,
+    targetX,
+    targetZ,
+    vx: dx / flightTime,
+    vz: dz / flightTime,
+    life: flightTime,
+    maxLife: flightTime,
+    damage: SEAHORSE_MOB_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
@@ -1159,33 +1536,50 @@ export function updateProjectiles(dt: number): void {
       pr.z += pr.vz * dt;
 
       // ── Walls ──
-      const t = worldToTile(g, pr.x, pr.z);
-      if (!isWalkable(g, t.i, t.j)) {
-        // Arrows/bullets spit a spark off the masonry they bury into.
-        if (pr.kind === "arrow" || pr.kind === "bullet") {
-          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
-        } else if (pr.kind === "burger_tomato") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xdc2626, 8, 1.2);
-        } else if (pr.kind === "burger_lettuce") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 6, 1.0);
-        } else if (pr.kind === "burger_sauce") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 8, 1.0);
-        } else if (pr.kind === "fry_dart") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
-        } else if (pr.kind === "shake_spray") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
-        } else if (pr.kind === "shuriken") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
-        } else if (pr.kind === "zippo_flame") {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 10, 1.4);
+      if (pr.kind === "water_mortar") {
+        const u = 1 - pr.life / pr.maxLife;
+        const h = 4 * 2.2 * u * (1 - u);
+        pr.mesh.position.y = PROJECTILE_Y + h;
+        if (pr.life <= dt) {
+          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x0284c7, 16, 2.0);
+          spawnFloorFx("slick", pr.x, pr.z, 1.2, 4.0, true);
+          const p = state.player;
+          if (p && Math.hypot(p.x - pr.x, p.z - pr.z) < 1.4) {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+          }
+          despawn(i);
+          continue;
         }
-        // A bomb against masonry is a bomb going off against masonry. This is
-        // what stops "break line of sight" from being the free answer it is
-        // against the spitter and the rotortail: duck behind a corner at close
-        // range and the blast comes round it anyway.
-        if (pr.kind === "bomb") detonate(pr.x, pr.z);
-        despawn(i);
-        continue;
+      } else {
+        const t = worldToTile(g, pr.x, pr.z);
+        if (!isWalkable(g, t.i, t.j)) {
+          // Arrows/bullets spit a spark off the masonry they bury into.
+          if (pr.kind === "arrow" || pr.kind === "bullet") {
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
+          } else if (pr.kind === "burger_tomato") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xdc2626, 8, 1.2);
+          } else if (pr.kind === "burger_lettuce") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x16a34a, 6, 1.0);
+          } else if (pr.kind === "burger_sauce") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xeab308, 8, 1.0);
+          } else if (pr.kind === "fry_dart") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
+          } else if (pr.kind === "shake_spray") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
+          } else if (pr.kind === "shuriken") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
+          } else if (pr.kind === "zippo_flame") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 10, 1.4);
+          } else if (pr.kind === "puffer_slug") {
+            burstPufferSpikes(pr.x, pr.z);
+          } else if (pr.kind === "electric_bullet") {
+            spawnFloorFx("shock", pr.x, pr.z, 1.2, 3.0, true);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
+          }
+          if (pr.kind === "bomb") detonate(pr.x, pr.z);
+          despawn(i);
+          continue;
+        }
       }
 
       // TIMBER TUMBLE: it turns end over end as it flies. Rotation is the only
@@ -1287,6 +1681,34 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf1f5f9, 14, 1.8);
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, nx * 2, nz * 2, 8);
             sfxTarget();
+          } else if (pr.kind === "fishing_hook") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
+            if (pr.ownerNid) {
+              const shark = state.zombies.find(zb => zb.nid === pr.ownerNid && zb.mode !== "dead");
+              if (shark) shark.hookTetherT = 1.2;
+            }
+          } else if (pr.kind === "lion_spine") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            webPlayer();
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xa855f7, 10, 1.4);
+          } else if (pr.kind === "puffer_slug") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            burstPufferSpikes(pr.x, pr.z);
+          } else if (pr.kind === "puffer_spike") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf1f5f9, 6, 1.2);
+          } else if (pr.kind === "electric_bullet") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            spawnFloorFx("shock", pr.x, pr.z, 1.2, 3.0, true);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 10);
+          } else if (pr.kind === "spear_bolt") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x38bdf8, 12, 1.6);
+          } else if (pr.kind === "octo_bullet" || pr.kind === "fish_bullet" || pr.kind === "magnum_bullet") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 8);
+            state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "red", 5);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (pr.bounced) {

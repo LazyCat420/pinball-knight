@@ -1142,5 +1142,140 @@ export const SPINNING_TOP_COOLDOWN = 3.5; // Seconds cooldown between slam charg
 export const SPINNING_TOP_RATIO = 14;
 export const SPINNING_TOP_FROM_LEVEL = 7;
 
+// ── Aquatic & Mafia Monsters Expansion ──────────────────────────
+// 1. Shark Trapper (Hook & Reel)
+export const SHARK_TRAPPER_HP = 24;
+export const SHARK_TRAPPER_R = 0.50;
+export const SHARK_TRAPPER_SPEED_FACTOR = 0.85;
+export const SHARK_TRAPPER_HOOK_RANGE = 6.0;
+export const SHARK_TRAPPER_HOOK_SPEED = 5.2;
+export const SHARK_TRAPPER_HOOK_DAMAGE = 1;
+export const SHARK_TRAPPER_PULL_SPEED = 5.5;
+export const SHARK_TRAPPER_PULL_DURATION = 1.2;
+export const SHARK_TRAPPER_BITE_DAMAGE = 3;
+export const SHARK_TRAPPER_WINDUP = 0.4;
+export const SHARK_TRAPPER_COOLDOWN = 2.8;
+export const SHARK_TRAPPER_RATIO = 12;
+export const SHARK_TRAPPER_FROM_LEVEL = 4;
 
+// 2. Dolphin Brawler (Rushdown Boxer)
+export const DOLPHIN_BRAWLER_HP = 20;
+export const DOLPHIN_BRAWLER_R = 0.45;
+export const DOLPHIN_BRAWLER_SPEED_FACTOR = 1.35;
+export const DOLPHIN_BRAWLER_CONTACT_RANGE = 0.85;
+export const DOLPHIN_BRAWLER_DAMAGE = 1;
+export const DOLPHIN_BRAWLER_UPPERCUT_DAMAGE = 2;
+export const DOLPHIN_BRAWLER_UPPERCUT_LAUNCH = 6.0;
+export const DOLPHIN_BRAWLER_WINDUP = 0.2;
+export const DOLPHIN_BRAWLER_COOLDOWN = 1.4;
+export const DOLPHIN_BRAWLER_RATIO = 14;
+export const DOLPHIN_BRAWLER_FROM_LEVEL = 3;
 
+// 3. Octopus Mob Boss (Bullet Hell & Ink)
+export const OCTOPUS_GUNNER_HP = 30;
+export const OCTOPUS_GUNNER_R = 0.55;
+export const OCTOPUS_GUNNER_SPEED_FACTOR = 0.70;
+export const OCTOPUS_GUNNER_FIRE_RANGE = 6.5;
+export const OCTOPUS_GUNNER_BULLET_SPEED = 4.2;
+export const OCTOPUS_GUNNER_DAMAGE = 1;
+export const OCTOPUS_GUNNER_INK_RADIUS = 2.2;
+export const OCTOPUS_GUNNER_INK_DURATION = 4.0;
+export const OCTOPUS_GUNNER_WINDUP = 0.5;
+export const OCTOPUS_GUNNER_COOLDOWN = 3.2;
+export const OCTOPUS_GUNNER_RATIO = 10;
+export const OCTOPUS_GUNNER_FROM_LEVEL = 5;
+
+// 4. Clownfish Mobster (Burst Tommy Gun)
+export const CLOWNFISH_MOB_HP = 14;
+export const CLOWNFISH_MOB_R = 0.38;
+export const CLOWNFISH_MOB_SPEED_FACTOR = 1.05;
+export const CLOWNFISH_MOB_FIRE_RANGE = 5.5;
+export const CLOWNFISH_MOB_BULLET_SPEED = 6.0;
+export const CLOWNFISH_MOB_DAMAGE = 1;
+export const CLOWNFISH_MOB_BURST_COUNT = 4;
+export const CLOWNFISH_MOB_BURST_INTERVAL = 0.09;
+export const CLOWNFISH_MOB_WINDUP = 0.35;
+export const CLOWNFISH_MOB_COOLDOWN = 2.2;
+export const CLOWNFISH_MOB_RATIO = 15;
+export const CLOWNFISH_MOB_FROM_LEVEL = 3;
+
+// 5. Lionfish Mob Enforcer (Spine Shotgun & Poison)
+export const LIONFISH_MOB_HP = 18;
+export const LIONFISH_MOB_R = 0.42;
+export const LIONFISH_MOB_SPEED_FACTOR = 0.90;
+export const LIONFISH_MOB_FIRE_RANGE = 4.5;
+export const LIONFISH_MOB_SPINE_SPEED = 5.0;
+export const LIONFISH_MOB_DAMAGE = 1;
+export const LIONFISH_MOB_POISON_DURATION = 2.5;
+export const LIONFISH_MOB_WINDUP = 0.4;
+export const LIONFISH_MOB_COOLDOWN = 2.5;
+export const LIONFISH_MOB_RATIO = 14;
+export const LIONFISH_MOB_FROM_LEVEL = 4;
+
+// 6. Anglerfish Hitman (Lure Stun Flash & Sniper)
+export const ANGLERFISH_MOB_HP = 16;
+export const ANGLERFISH_MOB_R = 0.40;
+export const ANGLERFISH_MOB_SPEED_FACTOR = 0.80;
+export const ANGLERFISH_MOB_FIRE_RANGE = 7.5;
+export const ANGLERFISH_MOB_SNIPER_SPEED = 9.0;
+export const ANGLERFISH_MOB_DAMAGE = 2;
+export const ANGLERFISH_MOB_FLASH_RANGE = 4.0;
+export const ANGLERFISH_MOB_FLASH_DURATION = 0.6;
+export const ANGLERFISH_MOB_WINDUP = 0.6;
+export const ANGLERFISH_MOB_COOLDOWN = 3.0;
+export const ANGLERFISH_MOB_RATIO = 12;
+export const ANGLERFISH_MOB_FROM_LEVEL = 5;
+
+// 7. Pufferfish Capo (Blunderbuss & Spike Nova)
+export const PUFFERFISH_MOB_HP = 26;
+export const PUFFERFISH_MOB_R = 0.50;
+export const PUFFERFISH_MOB_SPEED_FACTOR = 0.75;
+export const PUFFERFISH_MOB_FIRE_RANGE = 5.0;
+export const PUFFERFISH_MOB_SLUG_SPEED = 4.5;
+export const PUFFERFISH_MOB_DAMAGE = 2;
+export const PUFFERFISH_MOB_SPIKE_SPEED = 4.0;
+export const PUFFERFISH_MOB_SPIKE_DAMAGE = 1;
+export const PUFFERFISH_MOB_WINDUP = 0.5;
+export const PUFFERFISH_MOB_COOLDOWN = 2.8;
+export const PUFFERFISH_MOB_RATIO = 12;
+export const PUFFERFISH_MOB_FROM_LEVEL = 4;
+
+// 8. Swordfish Mobster (Speargun Bolt & Lunge)
+export const SWORDFISH_MOB_HP = 18;
+export const SWORDFISH_MOB_R = 0.42;
+export const SWORDFISH_MOB_SPEED_FACTOR = 1.15;
+export const SWORDFISH_MOB_HARPOON_RANGE = 6.5;
+export const SWORDFISH_MOB_HARPOON_SPEED = 7.5;
+export const SWORDFISH_MOB_HARPOON_DAMAGE = 2;
+export const SWORDFISH_MOB_LUNGE_RANGE = 3.0;
+export const SWORDFISH_MOB_LUNGE_SPEED = 3.5;
+export const SWORDFISH_MOB_LUNGE_DAMAGE = 2;
+export const SWORDFISH_MOB_WINDUP = 0.35;
+export const SWORDFISH_MOB_COOLDOWN = 2.0;
+export const SWORDFISH_MOB_RATIO = 14;
+export const SWORDFISH_MOB_FROM_LEVEL = 4;
+
+// 9. Moray Eel Mobster (Shock Orbs & Electric Hazard)
+export const MORAY_MOB_HP = 17;
+export const MORAY_MOB_R = 0.40;
+export const MORAY_MOB_SPEED_FACTOR = 1.00;
+export const MORAY_MOB_FIRE_RANGE = 5.5;
+export const MORAY_MOB_ORB_SPEED = 4.8;
+export const MORAY_MOB_DAMAGE = 1;
+export const MORAY_MOB_SHOCK_DURATION = 3.0;
+export const MORAY_MOB_WINDUP = 0.4;
+export const MORAY_MOB_COOLDOWN = 2.4;
+export const MORAY_MOB_RATIO = 13;
+export const MORAY_MOB_FROM_LEVEL = 3;
+
+// 10. Seahorse Mobster (Water Mortar Lob)
+export const SEAHORSE_MOB_HP = 15;
+export const SEAHORSE_MOB_R = 0.36;
+export const SEAHORSE_MOB_SPEED_FACTOR = 0.95;
+export const SEAHORSE_MOB_FIRE_RANGE = 6.5;
+export const SEAHORSE_MOB_MORTAR_SPEED = 4.0;
+export const SEAHORSE_MOB_DAMAGE = 2;
+export const SEAHORSE_MOB_WINDUP = 0.45;
+export const SEAHORSE_MOB_COOLDOWN = 2.6;
+export const SEAHORSE_MOB_RATIO = 14;
+export const SEAHORSE_MOB_FROM_LEVEL = 3;

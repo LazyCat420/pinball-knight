@@ -78,6 +78,18 @@ import { makeCrabPaints } from "./monsters/crab";
 import { makeMedusaPaints } from "./monsters/medusa";
 import { makeDraculaPaints } from "./monsters/dracula";
 import { makeSpinningTopPaints } from "./monsters/spinning-top";
+import {
+  makeSharkTrapperPaints,
+  makeDolphinBrawlerPaints,
+  makeOctopusGunnerPaints,
+  makeClownfishMobPaints,
+  makeLionfishMobPaints,
+  makeAnglerfishHitmanPaints,
+  makePufferfishMobPaints,
+  makeSwordfishMobPaints,
+  makeMorayMobPaints,
+  makeSeahorseMobPaints,
+} from "./monsters/aquatic-painters";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -149,6 +161,16 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   dracula: { paints: makeDraculaPaints },
   dracula_bat: { paints: makeBatPaints },
   spinning_top: { paints: makeSpinningTopPaints },
+  shark_trapper: { paints: makeSharkTrapperPaints },
+  dolphin_brawler: { paints: makeDolphinBrawlerPaints },
+  octopus_gunner: { paints: makeOctopusGunnerPaints },
+  clownfish_mob: { paints: makeClownfishMobPaints },
+  lionfish_mob: { paints: makeLionfishMobPaints },
+  anglerfish_mob: { paints: makeAnglerfishHitmanPaints },
+  pufferfish_mob: { paints: makePufferfishMobPaints },
+  swordfish_mob: { paints: makeSwordfishMobPaints },
+  moray_mob: { paints: makeMorayMobPaints },
+  seahorse_mob: { paints: makeSeahorseMobPaints },
 };
 
 /**

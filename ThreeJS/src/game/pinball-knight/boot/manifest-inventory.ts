@@ -67,6 +67,16 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   medusa: ["S"],
   dracula: ["S"],
   spinning_top: ["S"],
+  shark_trapper: ["S"],
+  dolphin_brawler: ["S"],
+  octopus_gunner: ["S"],
+  clownfish_mob: ["S"],
+  lionfish_mob: ["S"],
+  anglerfish_mob: ["S"],
+  pufferfish_mob: ["S"],
+  swordfish_mob: ["S"],
+  moray_mob: ["S"],
+  seahorse_mob: ["S"],
   zombie: ["E"],
 };
 

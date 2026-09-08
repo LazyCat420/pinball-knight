@@ -101,6 +101,8 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   fissure: PALETTE_HEX[2], // stone dark — ground smash fracture cracks
   coffee: PALETTE_HEX[26], // dark roast espresso with golden crema foam rim
   rot: PALETTE_HEX[6], // rot green sludge
+  ink: 0x0f172a, // deep dark black octopus ink
+  shock: 0x38bdf8, // crackling electric cyan
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -1007,7 +1009,7 @@ export function updateFloorFx(dt: number): void {
 
     // ── Player harm ── a HOSTILE fire or boiling coffee always burns you; your OWN
     // fire only bites under the self-harm toggle — or under the CINDER WAKE keystone.
-    if ((fx.kind === "fire" || fx.kind === "coffee" || fx.kind === "rot") && ticked && (fx.hostile || state.dbgMaterialSelfHarm || skillAgg().cinderWake) && p && p.hp > 0 && p.iframes <= 0) {
+    if ((fx.kind === "fire" || fx.kind === "coffee" || fx.kind === "rot" || fx.kind === "shock") && ticked && (fx.hostile || state.dbgMaterialSelfHarm || skillAgg().cinderWake) && p && p.hp > 0 && p.iframes <= 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;
@@ -1016,7 +1018,19 @@ export function updateFloorFx(dt: number): void {
         if (fx.kind === "rot") {
           webPlayer();
           state.vfx?.burst(p.x, 0.25, p.z, 0x4d7c0f, 6, 1.0);
-        } else if (fx.kind === "coffee") state.vfx?.steam?.(p.x, 0.25, p.z, 2, 1.2);
+        } else if (fx.kind === "coffee") {
+          state.vfx?.steam?.(p.x, 0.25, p.z, 2, 1.2);
+        } else if (fx.kind === "shock") {
+          state.vfx?.sparks?.(p.x, 0.25, p.z, 0, 0, 6);
+        }
+      }
+    }
+    if (fx.kind === "ink" && fx.hostile && p && p.hp > 0) {
+      const dx = p.x - fx.x;
+      const dz = p.z - fx.z;
+      const rr = fx.radius + PLAYER_R;
+      if (dx * dx + dz * dz <= rr * rr) {
+        webPlayer();
       }
     }
   }
