@@ -1,16 +1,15 @@
-/** Permanent progression rewards; equipped launches grant their authored speed and coasting bonuses. */
-import { loadUnlockedDepth } from './unlocked-depths';
+/** All three launches are available immediately, with their authored speed and coasting bonuses. */
 export const CLOCKWORK_EMOTES = [
-  { id: 'bowling', icon: '🎳', label: 'Bowling', floor: 1 },
-  { id: 'football', icon: '🏈', label: 'Football', floor: 2 },
-  { id: 'baseball', icon: '⚾', label: 'Baseball', floor: 3 },
+  { id: 'bowling', icon: '🎳', label: 'Bowling' },
+  { id: 'football', icon: '🏈', label: 'Football' },
+  { id: 'baseball', icon: '⚾', label: 'Baseball' },
 ] as const;
 export type ClockworkEmote = typeof CLOCKWORK_EMOTES[number]['id'];
 const KEY = 'pinball-knight-clockwork-emote';
 let session: ClockworkEmote | undefined;
 export function emoteUnlocked(id: ClockworkEmote): boolean {
   const def = CLOCKWORK_EMOTES.find(e => e.id === id);
-  return !!def && loadUnlockedDepth() >= def.floor;
+  return !!def;
 }
 export function activeClockworkEmote(): ClockworkEmote {
   let saved: unknown = session;
