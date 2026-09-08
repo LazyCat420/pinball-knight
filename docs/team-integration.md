@@ -156,3 +156,26 @@ project-local lock did not protect against a later release from an older branch.
   the guard is installed and active on this deployment host. The Pinball Knight
   main push succeeded. Other hosts must install the updated shared kit; the new
   game wrapper fails closed if the guard is missing.
+
+## Selective scenery pixel filter — ready for integration (2026-09-07)
+
+- Branch: `feat/selective-pixel-filter`.
+- Worktree: `.worktrees/wt-selective-pixel`.
+- Implementation commit: `7c8c45b0` (based on `2feac021`).
+- Adds Off / Subtle / Chunky at Esc → Options → Pixel look → Scenery pixels.
+  Subtle is the default, applies live, and persists across reloads.
+- Extends the existing TSL pass with a depth-tested, alpha-blended protection
+  attachment. Dungeon architecture and the tavern room opt in; actors,
+  transparent effects, cutouts and UI keep their original samples. Camera
+  framing and sprite resolution are unchanged. No new scene draw is added.
+- Validation: 77 focused tests passed; production Vite build passed. Real WebGPU
+  readback at 1280×720, 1366×768 and 800×600 found zero changes to protected
+  pixels or opaque UI in both modes, correct wall occlusion, and exact recovery
+  of Off. Loaded dungeon captures at all three settings had no script, GPU
+  validation or HTTP errors. See `docs/selective-pixel-filter.md` for the fixture.
+- TypeScript baseline comparison used the original tracked source in an
+  in-memory compiler host: 55 diagnostics before, the same 55 after, zero new
+  diagnostics. Repository-wide typecheck is not green.
+- Status: committed batch ready for the integration owner; not merged or
+  deployed. The current release hold remains in effect. Other worktrees and
+  the shared main checkout were not edited.
