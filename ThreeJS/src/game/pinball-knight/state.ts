@@ -384,7 +384,9 @@ export type EnemyKind =
   | "cerberus" // BOSS — three-headed hellhound that grabs in jaws, thrashes, and drops/flings
   | "clam" // DEFLECTOR / SNIPER — old bivalve with sunglasses & mustache that spits bouncy trajectory-deflecting pearls
   | "crab" // SLASHER / FLANKER — dapper gentleman crab with top hat & monocle that scissor-slashes with knife arms
-  | "medusa"; // PETRIFIER — serpentine gorgon with living snake hair whose scanned gaze turns looking knights to solid stone
+  | "medusa" // PETRIFIER — serpentine gorgon with living snake hair whose scanned gaze turns looking knights to solid stone
+  | "dracula" // VAMPIRE LORD — siphons vital blood from the knight and heals; bursts into a bat upon death
+  | "dracula_bat"; // FINAL FORM — empowered vampire bat with agile sine-wave wobble flight and dive attacks
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -494,6 +496,9 @@ export interface Zombie extends Actor {
   /** MEDUSA: gaze cadence / active scan timer and beam state. */
   medusaGazeT?: number;
   medusaGazeActive?: boolean;
+  /** DRACULA: blood siphon channeling timer and active siphon state. */
+  draculaDrainT?: number;
+  draculaDrainActive?: boolean;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */

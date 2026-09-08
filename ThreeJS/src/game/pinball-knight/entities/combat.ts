@@ -310,6 +310,10 @@ let onSlimeSplit: ((x: number, z: number, speed: number) => void) | null = null;
 export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) => void): void {
   onSlimeSplit = fn;
 }
+let onDraculaTransform: ((x: number, z: number, speed: number) => void) | null = null;
+export function setDraculaTransformHandler(fn: (x: number, z: number, speed: number) => void): void {
+  onDraculaTransform = fn;
+}
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../sfx";
 import { showToast, showPickupNote, updateFpsStreak } from "../ui";
 import { faceOnDamage } from "../hud-face";
@@ -968,6 +972,8 @@ export function killZombie(z: Zombie): void {
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
+  // DRACULA: upon humanoid death, bursts into a dark vortex and transforms into his Bat Final Form.
+  if (z.kind === "dracula") onDraculaTransform?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
   if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
   // An ESPRESSO cup shatters and spills boiling coffee that burns anyone nearby.
@@ -1016,6 +1022,12 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.4, z.z, 0x00ccff, 14, 3);
     state.vfx?.burst(z.x, 0.5, z.z, 0xffaa00, 14, 3);
     state.vfx?.smoke(z.x, 0.4, z.z, 0.8, 10);
+  } else if (z.kind === "dracula") {
+    state.vfx?.burst(z.x, 0.5, z.z, 0x880033, 20, 2.5);
+    state.vfx?.smoke(z.x, 0.4, z.z, 1.2, 12);
+  } else if (z.kind === "dracula_bat") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0xff2244, 16, 2.0);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.8, 8);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1045,7 +1057,9 @@ export function killZombie(z: Zombie): void {
   // A zombie SUB-TYPE weights its own loot: a hulk is worth more than a midget.
   const dropMult = z.ztype ? typeDropMult(z.ztype) : 1;
   onCardRoll?.(z.x, z.z, !!z.boss, z.kind, dropMult, z.ztype); // roll a modifier-card drop
-  onReagentDrop?.(z.x, z.z, z.kind, !!z.boss, dropMult); // roll themed alchemy reagents
+  if (z.kind !== "dracula") {
+    onReagentDrop?.(z.x, z.z, z.kind, !!z.boss, dropMult); // roll themed alchemy reagents
+  }
   // Every kill DROPS coins on the floor (magnet-collected) rather than silently
   // crediting the purse — a visible payout. Falls back to an instant credit if
   // no drop handler is wired (e.g. a headless test harness). Greed Draught
@@ -1188,6 +1202,9 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   cerberus: 2,
   clam: 1,
   crab: 2,
+  medusa: 2,
+  dracula: 2,
+  dracula_bat: 2,
 };
 
 /**

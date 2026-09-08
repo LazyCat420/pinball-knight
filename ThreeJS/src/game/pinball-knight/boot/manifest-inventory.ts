@@ -65,6 +65,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   crab: ["S"],
   pinball_boss: ["S"],
   medusa: ["S"],
+  dracula: ["S"],
   zombie: ["E"],
 };
 

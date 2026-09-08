@@ -37,6 +37,7 @@ import { onPeerArrive } from "../../../net/presence";
 import {
   setBossDefeatedHandler,
   setSlimeSplitHandler,
+  setDraculaTransformHandler,
   setCardRollHandler,
   setCoinDropHandler,
   setReagentDropHandler,
@@ -53,7 +54,7 @@ import {
 } from "../entities/combat";
 import { setSummonHandler } from "../entities/zombie";
 import { setMerchantCaughtHandler } from "../entities/npc";
-import { queueMini, queueSummon, makeZombie, bumpZombieNid } from "../spawn/factory";
+import { queueDraculaBat, queueMini, queueSummon, makeZombie, bumpZombieNid } from "../spawn/factory";
 import { dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "../economy/loot";
 import { spawnCoin } from "../economy/coins";
 import { openVaultOnBossDefeat } from "../lamp-puzzle";
@@ -229,6 +230,8 @@ export function installGameplayWiring(deps: WiringDeps): void {
   });
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler(queueMini);
+  // Slain Dracula transforms into his final Bat form, queued after combat resolution.
+  setDraculaTransformHandler(queueDraculaBat);
   setCardRollHandler(dropCardMaybe);
   // Every kill drops magnet-collected coins on the floor.
   setCoinDropHandler(spawnCoin);

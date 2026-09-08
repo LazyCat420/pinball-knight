@@ -158,8 +158,10 @@ import {
   ZIPPO_R, ZIPPO_FIRE_RANGE, ZIPPO_WINDUP, ZIPPO_COOLDOWN,
   CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN,
   CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN,
-  MEDUSA_R, MEDUSA_WINDUP, MEDUSA_COOLDOWN } from "../constants";
+  MEDUSA_R, MEDUSA_WINDUP, MEDUSA_COOLDOWN,
+  DRACULA_R, DRACULA_DRAIN_RANGE, DRACULA_DRAIN_COOLDOWN, DRACULA_BAT_R } from "../constants";
 import { updateMedusaGaze } from "./medusa";
+import { updateDraculaSiphon } from "./dracula";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -239,6 +241,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   clam: { bodyR: CLAM_R, contactRange: CLAM_FIRE_RANGE, windup: CLAM_WINDUP, cooldown: CLAM_COOLDOWN, ranged: true },
   crab: { bodyR: CRAB_R, contactRange: CRAB_SLASH_RANGE, windup: CRAB_WINDUP, cooldown: CRAB_COOLDOWN, ranged: false },
   medusa: { bodyR: MEDUSA_R, contactRange: 5.5, windup: MEDUSA_WINDUP, cooldown: MEDUSA_COOLDOWN, ranged: true },
+  dracula: { bodyR: DRACULA_R, contactRange: DRACULA_DRAIN_RANGE, windup: 0.5, cooldown: DRACULA_DRAIN_COOLDOWN, ranged: true },
+  dracula_bat: { bodyR: DRACULA_BAT_R, contactRange: 0.6, windup: 0.2, cooldown: 0.8, ranged: false },
 };
 
 /**
@@ -1056,6 +1060,11 @@ export function updateZombies(dt: number): void {
       updateMedusaGaze(z, p, dt);
     }
 
+    // ── COUNT DRACULA (THE VAMPIRE LORD) ──
+    if (z.kind === "dracula") {
+      updateDraculaSiphon(z, p, dt);
+    }
+
     // ── BUMPER GOBLIN ── it never bites: contact POPS the knight away like a
     // bumper (combo tick and all), and the goblin recoils the other way. The
     // annoyance is the point; momentum is the answer.
@@ -1379,7 +1388,7 @@ export function updateZombies(dt: number): void {
     // ── OIL skid ── a greased foe can't steer: its travelled heading only
     // BLENDS toward where it wants to go, so it slides past turns (and past
     // you) until the grease wears off. Bats fly above the pool — unaffected.
-    if (z.oiledT && z.oiledT > 0 && z.kind !== "bat") {
+    if (z.oiledT && z.oiledT > 0 && z.kind !== "bat" && z.kind !== "dracula_bat") {
       z.oiledT = Math.max(0, z.oiledT - dt);
       if (vx !== 0 || vz !== 0) {
         const hx = z.oilHX ?? vx;
@@ -1402,7 +1411,7 @@ export function updateZombies(dt: number): void {
     // ── BAT wobble ── a sine weave ACROSS the flight line so it's hard to
     // line up a swing on: perturb the steer direction with a perpendicular
     // oscillation (still wall-bound via moveCircle — it flies the corridors).
-    if (z.kind === "bat" && (vx !== 0 || vz !== 0)) {
+    if ((z.kind === "bat" || z.kind === "dracula_bat") && (vx !== 0 || vz !== 0)) {
       z.bobT = (z.bobT ?? 0) + dt;
       const w = Math.sin(z.bobT * BAT_WOBBLE_FREQ) * BAT_WOBBLE_AMP;
       const px = -vz * w;
@@ -1457,7 +1466,7 @@ export function updateZombies(dt: number): void {
 
     syncActorMesh(z);
     // A bat FLIES: lift its billboard off the floor with a quick flutter-bob.
-    if (z.kind === "bat") {
+    if (z.kind === "bat" || z.kind === "dracula_bat") {
       z.sprite.mesh.position.y = BAT_HOVER_Y + Math.sin((z.bobT ?? 0) * 9) * 0.06;
     }
     // So does a ROTORTAIL, higher and slower — a rotor holds a heavy body on a

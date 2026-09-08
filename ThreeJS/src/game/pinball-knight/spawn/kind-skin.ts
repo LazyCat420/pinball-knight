@@ -99,6 +99,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   clam: { scale: 1.1 },
   crab: { scale: 1.1 },
   medusa: { scale: 1.15 },
+  dracula: { scale: 1.15 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //
@@ -107,6 +108,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   // texel-exempt on those grounds, and all seven are provisional: the moment
   // one of these gets a bespoke painter (as hound did) its scale should go to
   // 1.0 and the exemption should be deleted, not carried over.
+  dracula_bat: { sheetKey: "bat", tint: 0xff2244, scale: 1.35 },
   wisp: { sheetKey: "ghost", tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp — texel-exempt: distorted borrowed ghost
   sapper: { sheetKey: "magnet", tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief — texel-exempt: distorted borrowed magnet
 };

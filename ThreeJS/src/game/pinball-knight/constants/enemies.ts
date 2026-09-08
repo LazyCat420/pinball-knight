@@ -1107,4 +1107,25 @@ export const MEDUSA_COOLDOWN = 3.5; // Cadence between scan beam activations
 export const MEDUSA_RATIO = 16;
 export const MEDUSA_FROM_LEVEL = 12;
 
+// ── Count Dracula (Vampire Lord & Bat Final Form) ─────────────
+export const DRACULA_HP = 22;
+export const DRACULA_R = 0.45;
+export const DRACULA_SPEED_FACTOR = 0.95;
+export const DRACULA_DRAIN_RANGE = 1.8; // Maximum tether range for blood siphon (tiles)
+export const DRACULA_DRAIN_TICK = 0.4; // Seconds between siphon damage/heal pulses
+export const DRACULA_DRAIN_DURATION = 1.6; // Total duration of blood drain channel
+export const DRACULA_DRAIN_DAMAGE = 1; // Player HP drained per tick
+export const DRACULA_DRAIN_HEAL = 1; // Dracula HP restored per tick
+export const DRACULA_DRAIN_COOLDOWN = 3.2; // Seconds between siphon channel attempts
+export const DRACULA_RATIO = 12;
+export const DRACULA_FROM_LEVEL = 8;
+
+export const DRACULA_BAT_HP = 12;
+export const DRACULA_BAT_R = 0.35;
+export const DRACULA_BAT_SPEED_FACTOR = 1.45;
+export const DRACULA_BAT_DAMAGE = 2;
+export const DRACULA_BAT_SCALE = 1.35;
+export const DRACULA_BAT_TINT = 0xff2244;
+
+
 

@@ -41,7 +41,7 @@ import { onPlayerDeath } from "../run/death";
 import { descend } from "../run/descend";
 import { updateSecretDoors } from "../secrets";
 import { playerMaxHp } from "../skill-runtime";
-import { drainPendingMinis, drainPendingSummons } from "../spawn/factory";
+import { drainPendingDraculaBats, drainPendingMinis, drainPendingSummons } from "../spawn/factory";
 import { spawnReaper } from "../spawn/reaper";
 import { reapCorpses, tickTide } from "../spawn/tide";
 import { showToast } from "../ui";
@@ -158,6 +158,7 @@ export function simulate(dt: number): void {
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
   drainPendingSummons(); // necromancer adds, same deferral
+  drainPendingDraculaBats(); // Dracula bat final form, deferred past combat resolution
   tickTide(dt); // THE TIDE: reinforcements walk in, ramping toward the Dealer
   reapCorpses(); // …and the oldest bodies are cleared to pay for them
   if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death
