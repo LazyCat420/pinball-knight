@@ -179,3 +179,33 @@ project-local lock did not protect against a later release from an older branch.
 - Status: committed batch ready for the integration owner; not merged or
   deployed. The current release hold remains in effect. Other worktrees and
   the shared main checkout were not edited.
+
+## Sharper contours, intro-skip selection, and immediate emotes (2026-09-07)
+
+Follow-up batch on `feat/selective-pixel-filter`, worktree
+`.worktrees/wt-selective-pixel`; builds on the unmerged filter handoff above.
+
+- `25bd6ffc`: UI no longer treats OS key-repeat as a fresh press when a screen
+  first acquires input. Reproduced the reported character-select skip by holding
+  Escape or Enter through the intro fade: the repeated key closed/confirmed the
+  selector. Both held-key browser cases now leave character selection open;
+  release and a fresh press still work. Single-click skip and `?no-intro=1`
+  already preserve selection and were checked too.
+- `f06dbd95`: Bowling, Football and Baseball are all available immediately, as
+  explicitly requested. Removed floor locks and labels; existing saved choices
+  and the Basketball→Football migration remain supported. A fresh browser
+  profile selected Football and Baseball through keyboard navigation, confirmed
+  Clockwork, and restored Baseball on reload with no unlocked-depth record.
+- `5785987e`: Subtle keeps its 2×2 colour sampling but outlines geometry at the
+  original resolution. Geometric normals fit in the protection attachment's
+  spare channels; changes in face angle and depth breaks create one-pixel
+  contours, with planar depth slopes excluded. Texture grain does not create
+  normal edges. Actor/UI protection is preserved.
+- Validation: 19 files / 123 tests passed; production Vite build passed.
+  TypeScript remains at the same 55 baseline diagnostics, with none introduced.
+  Real WebGPU readback passed at 1280×720, 1366×768 and 800×600, with zero changed
+  protected/UI pixels and a continuous one-pixel normal crease in every case.
+  Final stable dungeon capture had zero script, GPU-validation or HTTP errors.
+- Status: committed and ready for the integration owner; not merged or deployed.
+  The current release hold remains in effect. Dedicated muted test processes
+  are stopped after validation; unrelated browsers/worktrees are untouched.
