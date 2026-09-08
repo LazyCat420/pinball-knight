@@ -120,6 +120,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   medusa: 0.35,
   dracula: 0.30,
   dracula_bat: 0.20,
+  spinning_top: 0.25,
 };
 
 /**

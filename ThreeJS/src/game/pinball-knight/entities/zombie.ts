@@ -159,9 +159,11 @@ import {
   CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN,
   CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN,
   MEDUSA_R, MEDUSA_WINDUP, MEDUSA_COOLDOWN,
-  DRACULA_R, DRACULA_DRAIN_RANGE, DRACULA_DRAIN_COOLDOWN, DRACULA_BAT_R } from "../constants";
+  DRACULA_R, DRACULA_DRAIN_RANGE, DRACULA_DRAIN_COOLDOWN, DRACULA_BAT_R,
+  SPINNING_TOP_R, SPINNING_TOP_CHARGE_RANGE, SPINNING_TOP_WINDUP, SPINNING_TOP_COOLDOWN } from "../constants";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
+import { updateSpinningTop } from "./spinning-top";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -243,6 +245,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   medusa: { bodyR: MEDUSA_R, contactRange: 5.5, windup: MEDUSA_WINDUP, cooldown: MEDUSA_COOLDOWN, ranged: true },
   dracula: { bodyR: DRACULA_R, contactRange: DRACULA_DRAIN_RANGE, windup: 0.5, cooldown: DRACULA_DRAIN_COOLDOWN, ranged: true },
   dracula_bat: { bodyR: DRACULA_BAT_R, contactRange: 0.6, windup: 0.2, cooldown: 0.8, ranged: false },
+  spinning_top: { bodyR: SPINNING_TOP_R, contactRange: SPINNING_TOP_CHARGE_RANGE, windup: SPINNING_TOP_WINDUP, cooldown: SPINNING_TOP_COOLDOWN, ranged: false },
 };
 
 /**
@@ -1063,6 +1066,14 @@ export function updateZombies(dt: number): void {
     // ── COUNT DRACULA (THE VAMPIRE LORD) ──
     if (z.kind === "dracula") {
       updateDraculaSiphon(z, p, dt);
+    }
+
+    // ── WHIRLIGIG SPINNING TOP ──
+    if (z.kind === "spinning_top") {
+      updateSpinningTop(z, p, dt);
+      if (z.topState === "windup" || z.topState === "slam") {
+        continue;
+      }
     }
 
     // ── BUMPER GOBLIN ── it never bites: contact POPS the knight away like a

@@ -163,6 +163,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   medusa: "Medusa",
   dracula: "Dracula",
   dracula_bat: "DracBat",
+  spinning_top: "SpinTop",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

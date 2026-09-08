@@ -100,6 +100,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   crab: { scale: 1.1 },
   medusa: { scale: 1.15 },
   dracula: { scale: 1.15 },
+  spinning_top: { scale: 1.1 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

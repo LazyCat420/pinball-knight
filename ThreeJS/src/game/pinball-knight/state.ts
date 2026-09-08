@@ -386,7 +386,8 @@ export type EnemyKind =
   | "crab" // SLASHER / FLANKER — dapper gentleman crab with top hat & monocle that scissor-slashes with knife arms
   | "medusa" // PETRIFIER — serpentine gorgon with living snake hair whose scanned gaze turns looking knights to solid stone
   | "dracula" // VAMPIRE LORD — siphons vital blood from the knight and heals; bursts into a bat upon death
-  | "dracula_bat"; // FINAL FORM — empowered vampire bat with agile sine-wave wobble flight and dive attacks
+  | "dracula_bat" // FINAL FORM — empowered vampire bat with agile sine-wave wobble flight and dive attacks
+  | "spinning_top"; // WHIRLIGIG TOP — armored gyroscopic battle top that revs into blinding spin charges and slams into knights
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -499,6 +500,12 @@ export interface Zombie extends Actor {
   /** DRACULA: blood siphon channeling timer and active siphon state. */
   draculaDrainT?: number;
   draculaDrainActive?: boolean;
+  /** SPINNING TOP: gyroscopic state (cruise, windup, slam, wobble) and dash trajectory. */
+  topState?: "cruise" | "windup" | "slam" | "wobble";
+  topTimer?: number;
+  topDashDirX?: number;
+  topDashDirZ?: number;
+  topRicochets?: number;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
