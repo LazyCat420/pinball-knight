@@ -209,3 +209,27 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - Status: committed and ready for the integration owner; not merged or deployed.
   The current release hold remains in effect. Dedicated muted test processes
   are stopped after validation; unrelated browsers/worktrees are untouched.
+
+### UI resize, wall springs and directional seesaws — 2026-09-08
+
+- Branch/worktree: `feat/selective-pixel-filter`, `.worktrees/wt-selective-pixel`.
+- Batch: `faac7f87`, based on the prior selective-pixel handoff at `48c0458d`.
+- UI canvas dimension changes now dispose only the GPU backing resource and
+  bump the existing texture's version. The installed three r185 CanvasTexture
+  update path does not resize an existing allocation. Verified actual WebGPU
+  texture dimensions at 1000×700, 1600×900 and back to 1280×720, with the HUD
+  still visible after all transitions. This fixes a concrete resize path; the
+  user's intermittent gameplay report was not independently reproduced.
+- Seesaws require movement toward the grounded end's exit direction (within
+  45 degrees); rolling uses actual momentum, walking uses current input. Tilt
+  still alternates. Idle, sideways and reverse contacts do not launch.
+- Wall springs reuse the original fixed-destination seesaw hop with no approach
+  gate. They have their own `wallSprings` placement count, default 2 where safe
+  spots exist, and survive the part-budget clamp. Ordinary lane springs retain
+  their existing behavior. The existing coil mesh supplies their visuals.
+- Validation: 18 files / 288 tests passed, including directional collision and
+  a 20-seed fixed-landing placement test; production Vite build passed. TypeScript
+  remains at 55 existing diagnostics, none introduced. Browser check had no
+  script or GPU-validation errors; only the existing missing favicon 404.
+- Status: ready for integration owner; not merged or deployed. Existing release
+  hold remains in force. Dedicated muted browser and Vite server stopped.
