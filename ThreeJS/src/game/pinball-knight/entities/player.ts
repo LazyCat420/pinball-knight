@@ -2084,7 +2084,7 @@ function checkWallCrunch(p: Player): void {
   // nothing would ever round him out again.
   const [sqx, sqy] = squashScale();
   const isFlat = (p.flattenT ?? 0) > 0;
-  p.sprite.mesh.scale.set(sqx * (isFlat ? 1.45 : 1.0), sqy * (isFlat ? 0.28 : 1.0), 1);
+  p.sprite?.mesh?.scale?.set?.(sqx * (isFlat ? 1.45 : 1.0), sqy * (isFlat ? 0.28 : 1.0), 1);
   state.vfx?.dust(p.x, 0.05, p.z);
 
   // Exit only when the momentum has genuinely bled off. (Overcharge no longer
@@ -2253,12 +2253,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.webbedT = Math.max(0, p.webbedT - dt);
   if ((p.flattenT ?? 0) > 0) {
     p.flattenT = Math.max(0, (p.flattenT ?? 0) - dt);
-    p.sprite.mesh.scale.set(1.45, 0.28, 1);
+    p.sprite?.mesh?.scale?.set?.(1.45, 0.28, 1);
     if (Math.random() < dt * 6) {
       state.vfx?.dust(p.x, 0.05, p.z);
     }
-  } else if (p.sprite.mesh.scale.y < 0.9 && p.momSpeed <= 0 && p.squashT <= 0) {
-    p.sprite.mesh.scale.set(1, 1, 1);
+  } else if ((p.sprite?.mesh?.scale?.y ?? 1) < 0.9 && p.momSpeed <= 0 && p.squashT <= 0) {
+    p.sprite?.mesh?.scale?.set?.(1, 1, 1);
   }
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile

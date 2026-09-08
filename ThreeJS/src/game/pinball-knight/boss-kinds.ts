@@ -804,7 +804,7 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         slam: {
           interval: 3.2,
           telegraph: 0.65,
-          radius: 3.2,
+          radius: 2.8,
           damage: 3,
           launch: 26,
           color: 0xff0000,
