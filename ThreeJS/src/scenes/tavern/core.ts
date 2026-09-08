@@ -7,6 +7,7 @@
  * maths, the sprite pipeline, the palette) is shared, which is what keeps the
  * two scenes looking like one game.
  */
+import { getSettings } from "../../game/pinball-knight/settings-save";
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend, createGPURenderer } from "../../render/backend";
@@ -656,6 +657,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   }
 
   pixelPass = createPixelPass(renderer, {
+    pixelFilter: getSettings().pixelFilter,
     quantize: QUANTIZE_DEFAULT,
     dither: DITHER_DEFAULT,
     scanline: SCANLINE_DEFAULT,
@@ -672,6 +674,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     const pass = pixelPass;
     pixelPass.render = (scene3, camera3) => {
       drawUiFrame(pass);
+      pass.setPixelFilter(getSettings().pixelFilter);
       renderScene(scene3, camera3);
     };
     const presentUiOnly = pixelPass.presentUi.bind(pixelPass);

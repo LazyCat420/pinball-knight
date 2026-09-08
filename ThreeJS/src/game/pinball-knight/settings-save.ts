@@ -7,6 +7,7 @@
  * toggles (which are deliberately session-only). The menu's Settings tab is
  * the only writer; core applies them once at launch.
  */
+import { isPixelFilter, type PixelFilter } from "./engine/render/selective-pixel";
 import {
   QUANTIZE_DEFAULT,
   DITHER_DEFAULT,
@@ -59,6 +60,8 @@ export interface DungeonSettings {
    * static palette snap is not.
    */
   heatShimmer: boolean;
+  /** Scenery pixel size; actors and UI retain their original pixels. */
+  pixelFilter: PixelFilter;
   /**
    * RETIRED (2026-08-03). The screen-space pixel filters — palette quantize,
    * dither, scanlines, depth-edge ink — are permanently off: the sprites are
@@ -91,6 +94,7 @@ export function defaultSettings(): DungeonSettings {
     muted: false,
     volume: 1,
     heatShimmer: true,
+    pixelFilter: "subtle",
     quantize: QUANTIZE_DEFAULT,
     dither: DITHER_DEFAULT,
     scanline: SCANLINE_DEFAULT,
@@ -112,6 +116,7 @@ export function getSettings(): DungeonSettings {
       const p = JSON.parse(raw) as Partial<DungeonSettings>;
       // Shape-validate field by field — a stale or hand-edited blob must not
       // be able to poison the pixel pass with a non-boolean.
+      if (isPixelFilter(p.pixelFilter)) d.pixelFilter = p.pixelFilter;
       if (typeof p.muted === "boolean") d.muted = p.muted;
       if (typeof p.heatShimmer === "boolean") d.heatShimmer = p.heatShimmer;
       // RANGE-checked and snapped, not just typeof — this one ends up as a

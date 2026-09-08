@@ -32,6 +32,7 @@ export interface BuiltRoom {
 
 export function buildRoom(scene: THREE.Scene): BuiltRoom {
   const group = new THREE.Group();
+  group.userData.pixelEnvironment = true;
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
 
