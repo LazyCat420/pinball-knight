@@ -159,6 +159,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   crawling_hand: "Hand",
   sumo_ninja: "Sumo",
   zippo: "Zippo",
+  crab: "Crab",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];
