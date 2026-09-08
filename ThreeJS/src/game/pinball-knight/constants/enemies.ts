@@ -1127,5 +1127,20 @@ export const DRACULA_BAT_DAMAGE = 2;
 export const DRACULA_BAT_SCALE = 1.35;
 export const DRACULA_BAT_TINT = 0xff2244;
 
+// ── Whirligig Spinning Top ──────────────────────────────────
+export const SPINNING_TOP_HP = 16;
+export const SPINNING_TOP_R = 0.42;
+export const SPINNING_TOP_CRUISE_SPEED = 0.9; // Baseline patrol speed factor
+export const SPINNING_TOP_SLAM_SPEED = 2.4; // High-velocity slam charge speed factor
+export const SPINNING_TOP_CHARGE_RANGE = 4.8; // Range to initiate rev-up and slam
+export const SPINNING_TOP_WINDUP = 0.6; // Seconds spent stationary revving rotation before launching
+export const SPINNING_TOP_SLAM_DURATION = 1.1; // Maximum duration of locked slam charge
+export const SPINNING_TOP_WOBBLE_DURATION = 1.8; // Duration of unstable dizzy wobble recovery
+export const SPINNING_TOP_SLAM_DAMAGE = 2; // Damage dealt to knight on slam impact
+export const SPINNING_TOP_SLAM_DEFLECT = 6.5; // Pinball bumper rebound impulse imparted to knight (u/s)
+export const SPINNING_TOP_COOLDOWN = 3.5; // Seconds cooldown between slam charge attempts
+export const SPINNING_TOP_RATIO = 14;
+export const SPINNING_TOP_FROM_LEVEL = 7;
+
 
 

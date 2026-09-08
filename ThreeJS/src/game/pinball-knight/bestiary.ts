@@ -79,6 +79,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   medusa: { label: "Gorgon Medusa", icon: "🐍", blurb: "serpentine Gorgon Queen with living snake hair that scans the floor with her petrifying gaze — look away to avoid turning to solid stone" },
   dracula: { label: "Count Dracula", icon: "🧛", blurb: "gothic vampire lord who leashes you in crimson blood siphon beams that drain your life to heal his wounds — morphs into an agile bat upon defeat" },
   dracula_bat: { label: "Dracula Bat", icon: "🦇", blurb: "Dracula's swift flying final form with erratic sine-wave flight wobble and rapid dive attacks" },
+  spinning_top: { label: "Whirligig Top", icon: "🪀", blurb: "mechanized armored gyroscopic battle top that revs into blinding spin charges and slams knights with massive kinetic deflection" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

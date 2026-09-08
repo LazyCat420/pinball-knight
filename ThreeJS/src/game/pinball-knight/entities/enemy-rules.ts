@@ -89,6 +89,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   medusa: "kite",
   dracula: "chase",
   dracula_bat: "kite",
+  spinning_top: "chase",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
@@ -181,5 +182,12 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     soft: 0.35,
     gatesDamage: true,
     text: "Hardened Carapace: its heavy aristocratic shell deflects incoming hits unless struck at high momentum or caught during its scissor-slash windup.",
+  },
+  spinning_top: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: 0.35,
+    gatesDamage: true,
+    text: "Gyroscopic Armor: centrifugal spinning deflects low-speed blows down to 35% damage. Strike with pinball momentum or hit during its post-slam wobble to knock it off balance.",
   },
 };

@@ -1028,6 +1028,11 @@ export function killZombie(z: Zombie): void {
   } else if (z.kind === "dracula_bat") {
     state.vfx?.burst(z.x, 0.45, z.z, 0xff2244, 16, 2.0);
     state.vfx?.smoke(z.x, 0.3, z.z, 0.8, 8);
+  } else if (z.kind === "spinning_top") {
+    state.vfx?.burst(z.x, 0.35, z.z, 0xd4a359, 16, 2.5); // brass gear burst
+    state.vfx?.burst(z.x, 0.4, z.z, 0x666666, 12, 2.0);  // iron fragments
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.9, 10);
+    state.vfx?.sparks(z.x, 0.35, z.z, 0, 0.5, 12);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1152,7 +1157,7 @@ export function killZombie(z: Zombie): void {
  *
  * Hoisted to module scope: it was being reallocated on every single player hit.
  */
-const DMG_BY_KIND: Record<EnemyKind, number> = {
+export const DMG_BY_KIND: Record<EnemyKind, number> = {
   zombie: ZOMBIE_DAMAGE,
   spider: SPIDER_DAMAGE,
   brute: BRUTE_DAMAGE,
@@ -1205,6 +1210,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   medusa: 2,
   dracula: 2,
   dracula_bat: 2,
+  spinning_top: 2,
 };
 
 /**
