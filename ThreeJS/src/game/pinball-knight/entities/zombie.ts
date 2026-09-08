@@ -156,7 +156,8 @@ import {
   CRAWLING_HAND_R, CRAWLING_HAND_CONTACT_RANGE, CRAWLING_HAND_WINDUP, CRAWLING_HAND_COOLDOWN,
   SUMO_NINJA_R, SUMO_NINJA_FIRE_RANGE, SUMO_NINJA_WINDUP, SUMO_NINJA_COOLDOWN,
   ZIPPO_R, ZIPPO_FIRE_RANGE, ZIPPO_WINDUP, ZIPPO_COOLDOWN,
-  CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN } from "../constants";
+  CLAM_R, CLAM_FIRE_RANGE, CLAM_WINDUP, CLAM_COOLDOWN,
+  CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -234,6 +235,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   zippo: { bodyR: ZIPPO_R, contactRange: ZIPPO_FIRE_RANGE, windup: ZIPPO_WINDUP, cooldown: ZIPPO_COOLDOWN, ranged: true },
   cerberus: { bodyR: 0.88, contactRange: 3.0, windup: 0.75, cooldown: 5.5, ranged: true },
   clam: { bodyR: CLAM_R, contactRange: CLAM_FIRE_RANGE, windup: CLAM_WINDUP, cooldown: CLAM_COOLDOWN, ranged: true },
+  crab: { bodyR: CRAB_R, contactRange: CRAB_SLASH_RANGE, windup: CRAB_WINDUP, cooldown: CRAB_COOLDOWN, ranged: false },
 };
 
 /**
@@ -1279,6 +1281,11 @@ export function updateZombies(dt: number): void {
             }
           } else if (pdist <= contactRange * 1.3) {
             hitPlayer(z);
+            if (z.kind === "crab") {
+              p.momSpeed = (p.momSpeed || 0) * 0.5;
+              state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 8);
+              state.shakeT = Math.max(state.shakeT, 0.15);
+            }
           }
         }
       }

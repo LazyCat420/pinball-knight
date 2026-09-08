@@ -1083,3 +1083,14 @@ export const CLAM_PEARL_BOUNCES = 2;
 export const CLAM_RATIO = 16;
 export const CLAM_FROM_LEVEL = 2;
 
+// ── Dapper Knife Crab (Melee Slasher / Flanker) ────────────────
+export const CRAB_HP = 10;
+export const CRAB_R = 0.42;
+export const CRAB_SPEED_FACTOR = 1.1;
+export const CRAB_SLASH_RANGE = 1.35;
+export const CRAB_WINDUP = 0.50;
+export const CRAB_COOLDOWN = 2.4;
+export const CRAB_SLASH_DAMAGE = 2;
+export const CRAB_RATIO = 18;
+export const CRAB_FROM_LEVEL = 2;
+

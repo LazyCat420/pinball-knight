@@ -75,6 +75,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   zippo: { label: "Pyro Zippo", icon: "🔥", blurb: "1960s cartoon flip-top lighter with a dancing flame face. Chugs alcohol from a bottle to fuel expanding cones of scorching fire breath" },
   cerberus: { label: "Cerberus", icon: "🐕", blurb: "three-headed hellhound that lunges, grabs you in its iron jaws, and thrashes you until you spam free" },
   clam: { label: "Old Clam", icon: "🦪", blurb: "weathered geriatric bivalve with dark sunglasses and a walrus mustache that spits trajectory-deflecting bouncy pearls" },
+  crab: { label: "Sir Pinch-a-Lot", icon: "🦀", blurb: "Victorian gentleman crab wearing a tilted top hat and monocle, slashing with dual chef knife blade arms that hobble your momentum" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];
