@@ -19,7 +19,10 @@ The existing TSL pipeline writes an alpha-blended protection mask in a third
 RGBA8 attachment during its normal scene draw. Both the original pixel and the
 proposed block sample must be unprotected before sampling moves. This prevents
 actors from expanding into adjacent blocks and retains the existing depth
-occlusion. A subtle depth edge darkens scenery only; the UI is composited later.
+occlusion. Geometric normals share the mask’s spare G/B channels. Depth breaks and changes
+in surface angle produce a one-pixel contour at the original scene resolution,
+independent of the colour block size. Only one side of each crease is inked. A
+depth-curvature check avoids outlining flat slopes. The UI is composited later.
 Global palette quantization, dithering and the retired outline switch remain off.
 
 This is a visual setting, not a low-resolution performance mode. It retains the
@@ -29,7 +32,7 @@ so toggling modes does not compile or reallocate rendering resources.
 
 ## Validation
 
-- 77 focused unit/regression tests covering settings, keyboard/controller
+- 123 focused unit/regression tests covering intro transitions, emotes, settings, keyboard/controller
   activation, menu reachability, material protection, render sizing, engine
   boundaries, MRT coverage, heat, and scene/UI warmup.
 - Production Vite build passes.

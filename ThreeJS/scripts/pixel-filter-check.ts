@@ -46,6 +46,21 @@ async function checkPixelFilter() {
   wall.userData.pixelEnvironment = true;
   scene.add(wall);
 
+  // Equal-depth, equal-colour faces with a normal crease: only normal-based
+  // ink can reveal the join. It must occupy one original pixel, not a block.
+  const creaseMaterial = new THREE.MeshStandardMaterial({ color: 0, emissive: 0x999999, metalness: 1 });
+  for (const side of [-1, 1]) {
+    const geometry = new THREE.PlaneGeometry(2, 1);
+    if (side > 0) {
+      const normals = geometry.getAttribute("normal");
+      for (let i = 0; i < normals.count; i++) normals.setXYZ(i, 0.8, 0, 0.6);
+    }
+    const face = new THREE.Mesh(geometry, creaseMaterial);
+    face.position.set(side, 3, 4);
+    face.userData.pixelEnvironment = true;
+    scene.add(face);
+  }
+
   const uiCanvas = document.createElement("canvas");
   uiCanvas.width = innerWidth; uiCanvas.height = innerHeight;
   const ui = uiCanvas.getContext("2d")!;
@@ -91,7 +106,19 @@ async function checkPixelFilter() {
       if (!protectedCount || protectedChanged || uiChanged || sceneryChanged < 1000 || wallMask !== 0) {
         throw Error(JSON.stringify({mode, protectedCount, protectedChanged, sceneryChanged, uiChanged, wallMask}));
       }
-      stats.push({mode, protectedCount, protectedChanged, sceneryChanged, uiChanged, wallMask});
+      const creaseY = Math.round(h/2 - 3 * engineConfig.camera.ppu);
+      let creaseWidth = 0, creaseRows = 0;
+      for (let y = creaseY - 10; y <= creaseY + 10; y++) {
+        let changedColumns = 0;
+        for (let x = Math.floor(w/2) - 3; x <= Math.floor(w/2) + 3; x++) {
+          const i = y * stride + x * 4;
+          if (frame[i] !== off[i] || frame[i+1] !== off[i+1] || frame[i+2] !== off[i+2]) changedColumns++;
+        }
+        creaseWidth = Math.max(creaseWidth, changedColumns);
+        if (changedColumns) creaseRows++;
+      }
+      if (creaseWidth !== 1 || creaseRows !== 21) throw Error(JSON.stringify({mode, creaseWidth, creaseRows}));
+      stats.push({mode, protectedCount, protectedChanged, sceneryChanged, uiChanged, wallMask, creaseWidth, creaseRows});
     }
     const restored = await readFrame("off");
     if (restored.some((value, i) => value !== off[i])) throw Error("Off does not restore the original frame");

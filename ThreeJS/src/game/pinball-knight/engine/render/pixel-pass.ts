@@ -38,7 +38,7 @@
  * fractional-upscale scheme got wrong.
  */
 import * as THREE from "three";
-import { pixelBlockSize, pixelProtection, selectivePixelSample, type PixelFilter } from "./selective-pixel";
+import { encodeGeometryNormal, pixelBlockSize, pixelProtection, selectivePixelSample, type PixelFilter } from "./selective-pixel";
 import type { WebGPURenderer } from "three/webgpu";
 import { BlendMode, NodeMaterial } from "three/webgpu";
 import {
@@ -53,6 +53,7 @@ import {
   mix,
   mod,
   mrt,
+  normalViewGeometry,
   mx_fractal_noise_float,
   output,
   pow,
@@ -1587,7 +1588,7 @@ export function createPixelPass(
   const sceneMrt = mrt({
     output,
     albedo: diffuseColor,
-    protection: vec4(protection, 0, 0, diffuseColor.a),
+    protection: vec4(protection, encodeGeometryNormal(normalViewGeometry), diffuseColor.a),
   }).setBlendMode("albedo", new BlendMode(THREE.MaterialBlending))
     .setBlendMode("protection", new BlendMode(THREE.MaterialBlending));
 
