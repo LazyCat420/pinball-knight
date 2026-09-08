@@ -1658,6 +1658,18 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
   }
 
+function checkWallCrunch(p: Player): void {
+  if ((p.pinballWallCrunchDamage ?? 0) > 0 && p.momSpeed > 5) {
+    const crunchDmg = p.pinballWallCrunchDamage!;
+    p.pinballWallCrunchDamage = 0;
+    hitPlayerRanged(crunchDmg, p.x, p.z);
+    requestShake(0.45);
+    requestHitstop(0.08);
+    state.vfx?.burst(p.x, 0.4, p.z, 0xff0044, 25, 7);
+    showPickupNote("💥 CRUNCH! SMASHED INTO THE WALL!");
+  }
+}
+
   pocketT = Math.max(0, pocketT - dt);
 
   // RAIL contact for THIS frame, filled by the collision block below. Declared
@@ -1773,6 +1785,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest + surf.bounceAdd);
         applySurfaceCombo(p, surf);
         notePocketBounce(p);
+        checkWallCrunch(p);
         state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
         requestShake(0.1 + Math.min(0.12, p.bounceCombo * 0.02));
         requestHitstop(0.02);
@@ -1851,6 +1864,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
     applySurfaceCombo(p, surf);
     notePocketBounce(p);
+    checkWallCrunch(p);
     // Bounce juice scales with the combo — a corner hit throws a bigger burst.
     const n = currentWallNormal();
     const sx = n ? n.nx : -p.momX;
@@ -2069,7 +2083,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // mid-squash would drop the knight back on his feet still flattened, and
   // nothing would ever round him out again.
   const [sqx, sqy] = squashScale();
-  p.sprite.mesh.scale.set(sqx, sqy, 1);
+  const isFlat = (p.flattenT ?? 0) > 0;
+  p.sprite.mesh.scale.set(sqx * (isFlat ? 1.45 : 1.0), sqy * (isFlat ? 0.28 : 1.0), 1);
   state.vfx?.dust(p.x, 0.05, p.z);
 
   // Exit only when the momentum has genuinely bled off. (Overcharge no longer
@@ -2078,6 +2093,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // the BALL-form gate now.)
   if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) {
     p.momSpeed = 0;
+    p.pinballWallCrunchDamage = 0;
     resetLaunchMomentum(p);
     p.grabT = 0; // never leave a grab hanging when the ride ends
     p.bounceCombo = 0;
@@ -2235,6 +2251,15 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.iframes = Math.max(0, p.iframes - dt);
   p.oilT = Math.max(0, p.oilT - dt);
   p.webbedT = Math.max(0, p.webbedT - dt);
+  if ((p.flattenT ?? 0) > 0) {
+    p.flattenT = Math.max(0, (p.flattenT ?? 0) - dt);
+    p.sprite.mesh.scale.set(1.45, 0.28, 1);
+    if (Math.random() < dt * 6) {
+      state.vfx?.dust(p.x, 0.05, p.z);
+    }
+  } else if (p.sprite.mesh.scale.y < 0.9 && p.momSpeed <= 0 && p.squashT <= 0) {
+    p.sprite.mesh.scale.set(1, 1, 1);
+  }
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
 
@@ -2592,6 +2617,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
   if (p.turboT > 0) targetSpeed *= TURBO_WALK_MULT; // turbo: quicker feet too
   if (p.webbedT > 0) targetSpeed *= WEB_SLOW_MULT; // webbed: wading through silk
+  if ((p.flattenT ?? 0) > 0) targetSpeed *= 0.55; // pancake flat: dragging along the stones
   if (p.magBootsT <= 0 && overMagStrip()) targetSpeed *= MAGSTRIP_WALK_MULT; // magnet strip drags
   targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;

@@ -37,7 +37,7 @@
 import type { SheetKey } from "./boot/sheets";
 import { passFor, themeFor } from "./maze/prefabs";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus" | "pinball_boss";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -215,6 +215,22 @@ export interface ThrashGrabSpec {
   color: number;
 }
 
+/** A high-velocity pinball roll charge with randomized timing, flattening, and wall ricochet. */
+export interface PinballChargeSpec {
+  intervalMin: number;
+  intervalMax: number;
+  telegraphMin: number;
+  telegraphMax: number;
+  speed: number;
+  damage: number;
+  distance: number;
+  launch: number;
+  flattenDuration: number;
+  wallCrunchDamage: number;
+  maxBounces?: number;
+  color: number;
+}
+
 export interface BossMoves {
   orbit?: OrbitSpec;
   barrage?: BarrageSpec;
@@ -227,6 +243,7 @@ export interface BossMoves {
   daggerVolley?: DaggerVolleySpec;
   mouthFire?: MouthFireSpec;
   thrashGrab?: ThrashGrabSpec;
+  pinballCharge?: PinballChargeSpec;
 }
 
 export interface BossSpec {
@@ -720,6 +737,78 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           shotCount: 12,
           color: 0xff2200,
           spread: 0.55,
+        },
+      },
+    },
+  },
+
+  // ══ THE ROTTING WARREN, SECOND PASS — rolling steel titan ═══════════════
+  //
+  // Tilt Titan: A giant spherical chrome steel pinball boss with an evil
+  // mechanical grin and glowing red eyes. Rolls around the floor, boosts
+  // forward with unpredictable randomized timing, flattens the knight like
+  // a pancake, smashes them into arena walls, and ricochets like a real pinball!
+  pinball_boss: {
+    kind: "pinball_boss",
+    name: "Tilt Titan",
+    biome: "warren",
+    title: "⚪ TILT TITAN ⚪",
+    tagline: "giant chrome sphere, boosted flattening smash, seismic ricochet",
+    label: "TILT TITAN",
+    art: { sheetKey: "pinball_boss", tint: null, scale: 2.20 },
+    hpMult: 1.35,
+    speedMult: 1.05,
+    moves: {
+      pinballCharge: {
+        intervalMin: 2.6,
+        intervalMax: 4.8,
+        telegraphMin: 0.65,
+        telegraphMax: 1.15,
+        speed: 25,
+        damage: 3,
+        distance: 14,
+        launch: 28,
+        flattenDuration: 1.5,
+        wallCrunchDamage: 2,
+        maxBounces: 1,
+        color: 0x00ffff,
+      },
+      slam: {
+        interval: 4.5,
+        telegraph: 0.85,
+        radius: 2.8,
+        damage: 2,
+        launch: 22,
+        color: 0xff0044,
+      },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🚨 TILT TITAN ENRAGES: SUPERCHARGED MULTIBALL 🚨",
+      speedMult: 1.35,
+      moves: {
+        pinballCharge: {
+          intervalMin: 1.8,
+          intervalMax: 3.2,
+          telegraphMin: 0.45,
+          telegraphMax: 0.80,
+          speed: 29,
+          damage: 4,
+          distance: 18,
+          launch: 32,
+          flattenDuration: 2.0,
+          wallCrunchDamage: 3,
+          maxBounces: 2,
+          color: 0xff2200,
+        },
+        slam: {
+          interval: 3.2,
+          telegraph: 0.65,
+          radius: 3.2,
+          damage: 3,
+          launch: 26,
+          color: 0xff0000,
+          echo: { delay: 0.4, radius: 3.0, damage: 2 },
         },
       },
     },

@@ -131,6 +131,10 @@ export interface Player extends Actor {
   cerberusGrabEscape?: number;
   cerberusGrabHost?: Zombie | null;
   cerberusThrashTimer?: number;
+  /** Tilt Titan flatten: while > 0 player is squashed flat like a pancake, moving at reduced speed. */
+  flattenT?: number;
+  /** Wall crunch damage to apply if player collides with a wall while launched from pinball charge. */
+  pinballWallCrunchDamage?: number;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -1476,6 +1480,8 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     fuseT: 0,
     materialEmitT: 0,
     squashT: 0,
+    flattenT: 0,
+    pinballWallCrunchDamage: 0,
     squashAmp: 0,
     squashHx: 0,
     squashHy: 0,

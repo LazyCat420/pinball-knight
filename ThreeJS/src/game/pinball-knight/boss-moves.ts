@@ -28,7 +28,7 @@
  * with the boss about who it is aiming at.
  */
 import * as THREE from "three";
-import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, SlamSpec, SummonSpec, TeleportFireSpec, ThrashGrabSpec } from "./boss-kinds";
+import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, PinballChargeSpec, SlamSpec, SummonSpec, TeleportFireSpec, ThrashGrabSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
 import { moveCircle } from "./engine/collision";
@@ -52,6 +52,7 @@ export interface MoveCtx {
   playAnim?(clip: string, opts?: { force?: boolean }): void;
   setFacing?(dir: "N" | "S" | "E" | "W"): void;
   grabPlayer?(grabDuration: number, escapeCount: number, damage: number): boolean;
+  flattenPlayer?(damage: number, launch: number, flattenDuration: number, wallCrunchDamage: number, dx: number, dz: number): boolean;
 }
 
 function add(mesh: THREE.Mesh): THREE.Mesh {
@@ -1440,5 +1441,162 @@ export function disposeThrashGrab(rt: ThrashGrabRt | null): void {
     rt.lane = null;
   }
 }
+
+// ── PINBALL CHARGE ─────────────────────────────────────────────────────────
+// A high-velocity pinball roll charge with randomized timing, flattening, and wall ricochet.
+
+export interface PinballChargeRt {
+  t: number;
+  phase: "idle" | "telegraph" | "running";
+  dx: number;
+  dz: number;
+  left: number;
+  bounces: number;
+  hasHitPlayer: boolean;
+  lane: THREE.Mesh | null;
+  telegraphDur: number;
+}
+
+export function freshPinballCharge(spec: PinballChargeSpec): PinballChargeRt {
+  const dur = spec.intervalMin + Math.random() * (spec.intervalMax - spec.intervalMin);
+  return {
+    t: dur,
+    phase: "idle",
+    dx: 0,
+    dz: 0,
+    left: 0,
+    bounces: 0,
+    hasHitPlayer: false,
+    lane: null,
+    telegraphDur: spec.telegraphMin + Math.random() * (spec.telegraphMax - spec.telegraphMin),
+  };
+}
+
+export function pinballChargeHoldsMovement(rt: PinballChargeRt): boolean {
+  return rt.phase === "running" || rt.phase === "telegraph";
+}
+
+export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec, ctx: MoveCtx): void {
+  if (rt.phase === "running") {
+    ctx.playAnim?.("attack");
+    const step = spec.speed * ctx.dt;
+    const nx = ctx.x + rt.dx * step;
+    const nz = ctx.z + rt.dz * step;
+
+    if (ctx.grid) {
+      const res = moveCircle(ctx.grid, ctx.x, ctx.z, ctx.bodyR, rt.dx * step, rt.dz * step);
+      const moved = Math.hypot(res.x - ctx.x, res.z - ctx.z);
+      ctx.moveTo(res.x, res.z);
+
+      // Check wall collision for ricochet bounce
+      if (moved < step * 0.4) {
+        const maxB = spec.maxBounces ?? 1;
+        if (rt.bounces < maxB) {
+          rt.bounces++;
+          const tx1 = worldToTile(ctx.grid, ctx.x + rt.dx * 0.8, ctx.z);
+          const tz1 = worldToTile(ctx.grid, ctx.x, ctx.z + rt.dz * 0.8);
+          const blockedX = !isWalkable(ctx.grid, tx1);
+          const blockedZ = !isWalkable(ctx.grid, tz1);
+          if (blockedX) rt.dx = -rt.dx;
+          if (blockedZ) rt.dz = -rt.dz;
+          if (!blockedX && !blockedZ) {
+            rt.dx = -rt.dx;
+            rt.dz = -rt.dz;
+          }
+          state.shakeT = Math.max(state.shakeT, 0.35);
+          state.vfx?.burst(ctx.x, 0.4, ctx.z, 0xffffff, 20, 6);
+          if (Math.abs(rt.dx) > Math.abs(rt.dz)) {
+            ctx.setFacing?.(rt.dx > 0 ? "E" : "W");
+          } else {
+            ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
+          }
+        } else {
+          rt.left = 0;
+        }
+      }
+    } else {
+      ctx.moveTo(nx, nz);
+    }
+
+    if (!rt.hasHitPlayer && ctx.flattenPlayer) {
+      if (ctx.flattenPlayer(spec.damage, spec.launch, spec.flattenDuration, spec.wallCrunchDamage, rt.dx, rt.dz)) {
+        rt.hasHitPlayer = true;
+      }
+    } else if (!rt.hasHitPlayer) {
+      if (ctx.hitAt(ctx.x, ctx.z, ctx.bodyR + 0.5, spec.damage, spec.launch)) {
+        rt.hasHitPlayer = true;
+      }
+    }
+
+    if (Math.random() < ctx.dt * 24) {
+      state.vfx?.sparks(ctx.x, 0.1, ctx.z, -rt.dx, -rt.dz, 4);
+    }
+
+    rt.left -= step;
+    if (rt.left <= 0) {
+      state.shakeT = Math.max(state.shakeT, 0.28);
+      rt.phase = "idle";
+      rt.t = spec.intervalMin + Math.random() * (spec.intervalMax - spec.intervalMin);
+      rt.telegraphDur = spec.telegraphMin + Math.random() * (spec.telegraphMax - spec.telegraphMin);
+      rt.bounces = 0;
+      rt.hasHitPlayer = false;
+      ctx.playAnim?.("idle");
+    }
+    return;
+  }
+
+  rt.t -= ctx.dt;
+  if (rt.phase === "idle" && rt.t <= rt.telegraphDur) {
+    rt.phase = "telegraph";
+    const dx = ctx.target.x - ctx.x;
+    const dz = ctx.target.z - ctx.z;
+    const len = Math.hypot(dx, dz) || 1;
+    rt.dx = dx / len;
+    rt.dz = dz / len;
+    rt.bounces = 0;
+    rt.hasHitPlayer = false;
+
+    const geo = new THREE.PlaneGeometry(1.6, spec.distance);
+    const mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
+    const lane = new THREE.Mesh(geo, mat);
+    lane.rotation.x = -Math.PI / 2;
+    lane.rotation.z = -Math.atan2(rt.dz, rt.dx) + Math.PI / 2;
+    lane.position.set(ctx.x + rt.dx * spec.distance * 0.5, 0.045, ctx.z + rt.dz * spec.distance * 0.5);
+    lane.renderOrder = 5;
+    rt.lane = add(lane);
+
+    if (Math.abs(rt.dx) > Math.abs(rt.dz)) {
+      ctx.setFacing?.(rt.dx > 0 ? "E" : "W");
+    } else {
+      ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
+    }
+    ctx.playAnim?.("walk");
+    state.vfx?.burst(ctx.x, 0.2, ctx.z, spec.color, 12, 3);
+  }
+
+  if (rt.phase === "telegraph") {
+    pulse(rt.lane, rt.t);
+    if (Math.random() < ctx.dt * 15) {
+      state.vfx?.sparks(ctx.x, 0.2, ctx.z, rt.dx, rt.dz, 2);
+    }
+    if (rt.t <= 0) {
+      disposeMesh(rt.lane);
+      rt.lane = null;
+      rt.phase = "running";
+      rt.left = spec.distance;
+      state.shakeT = Math.max(state.shakeT, 0.25);
+      state.vfx?.burst(ctx.x, 0.5, ctx.z, spec.color, 24, 7);
+    }
+  }
+}
+
+export function disposePinballCharge(rt: PinballChargeRt | null): void {
+  if (!rt) return;
+  if (rt.lane) {
+    disposeMesh(rt.lane);
+    rt.lane = null;
+  }
+}
+
 
 

@@ -58,6 +58,7 @@ import {
   disposeDaggerVolley,
   disposeFanBoomerang,
   disposeMouthFire,
+  disposePinballCharge,
   disposeThrashGrab,
   freshBarrage,
   freshCharge,
@@ -65,12 +66,14 @@ import {
   freshFanBoomerang,
   freshMouthFire,
   freshNova,
+  freshPinballCharge,
   freshSlam,
   freshSummon,
   freshTeleportFire,
   freshThrashGrab,
   makeOrbiter,
   mouthFireHoldsMovement,
+  pinballChargeHoldsMovement,
   syncOrbit,
   teleportFireHoldsMovement,
   thrashGrabHoldsMovement,
@@ -80,6 +83,7 @@ import {
   updateFanBoomerang,
   updateMouthFire,
   updateNova,
+  updatePinballCharge,
   updateShots,
   updateSlam,
   updateSummon,
@@ -94,6 +98,7 @@ import {
   type MouthFireRt,
   type NovaRt,
   type Orbiter,
+  type PinballChargeRt,
   type SlamRt,
   type SummonRt,
   type TeleportFireRt,
@@ -269,6 +274,7 @@ interface BossState {
   daggerVolley: DaggerVolleyRt | null;
   mouthFire: MouthFireRt | null;
   thrashGrab: ThrashGrabRt | null;
+  pinballCharge: PinballChargeRt | null;
 
   /** Adds this boss has produced, so the cap can be enforced against reality. */
   adds: Zombie[];
@@ -374,6 +380,7 @@ export function spawnBoss(
     daggerVolley: null,
     mouthFire: null,
     thrashGrab: null,
+    pinballCharge: null,
     adds: [],
     spawnAdd,
     portal: null,
@@ -517,7 +524,7 @@ export function updateBoss(dt: number): void {
   // this he would simply stand wherever the leash tripped — which is worse than
   // chasing, because the exit ends up unguarded AND he is loitering in a
   // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
-  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire)) && !(boss.mouthFire && mouthFireHoldsMovement(boss.mouthFire)) && !(boss.thrashGrab && thrashGrabHoldsMovement(boss.thrashGrab))) {
+  if (!boss.engaged && homeD > KING_HOME_TILES && g && !(boss.charge && chargeHoldsMovement(boss.charge)) && !(boss.pinballCharge && pinballChargeHoldsMovement(boss.pinballCharge)) && !(boss.teleportFire && teleportFireHoldsMovement(boss.teleportFire)) && !(boss.mouthFire && mouthFireHoldsMovement(boss.mouthFire)) && !(boss.thrashGrab && thrashGrabHoldsMovement(boss.thrashGrab))) {
     const step = boss.z.speed * KING_RETURN_SPEED * dt;
     const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
     boss.z.x = res.x;
@@ -554,6 +561,7 @@ export function updateBoss(dt: number): void {
     if (p2.moves.barrage) boss.barrage = freshBarrage(p2.moves.barrage);
     if (p2.moves.slam) boss.slam = freshSlam(p2.moves.slam);
     if (p2.moves.charge) boss.charge = freshCharge(p2.moves.charge);
+    if (p2.moves.pinballCharge) boss.pinballCharge = freshPinballCharge(p2.moves.pinballCharge);
     if (p2.moves.summon) {
       const alive = boss.summon?.alive ?? 0;
       boss.summon = freshSummon(p2.moves.summon);
@@ -635,6 +643,11 @@ export function updateBoss(dt: number): void {
     updateThrashGrab(boss.thrashGrab, moves.thrashGrab, ctx);
   }
 
+  if (moves.pinballCharge) {
+    boss.pinballCharge ??= freshPinballCharge(moves.pinballCharge);
+    updatePinballCharge(boss.pinballCharge, moves.pinballCharge, ctx);
+  }
+
   // ── The ring wheels (after moves so teleports track orbiters instantly) ──
   if (moves.orbit) {
     boss.orbitT += dt * moves.orbit.speed;
@@ -706,6 +719,25 @@ function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
       state.shakeT = Math.max(state.shakeT, 0.35);
       return true;
     },
+    flattenPlayer(damage, launch, flattenDuration, wallCrunchDamage, dx, dz) {
+      const p = state.player;
+      if (!p || p.hp <= 0 || state.godMode || p.shieldT > 0) return false;
+      if (Math.hypot(p.x - b.z.x, p.z - b.z.z) > (b.z.bodyR ?? KING_BODY_R) + 0.6) return false;
+      hitPlayerRanged(damage, b.z.x, b.z.z);
+      p.flattenT = Math.max(p.flattenT ?? 0, flattenDuration);
+      p.pinballWallCrunchDamage = wallCrunchDamage;
+      if (launch > 0) {
+        const len = Math.hypot(dx, dz) || 1;
+        p.momX = dx / len;
+        p.momZ = dz / len;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, launch));
+        p.iframes = Math.max(p.iframes, 0.35);
+      }
+      showToast("🥞 FLATTENED!", "Steamrolled by the Titan!");
+      state.shakeT = Math.max(state.shakeT, 0.4);
+      state.vfx?.burst(p.x, 0.4, p.z, 0x00ffff, 20, 6);
+      return true;
+    },
   };
 }
 
@@ -723,6 +755,10 @@ function clearTelegraphs(): void {
   if (boss.charge?.lane) {
     disposeMesh(boss.charge.lane);
     boss.charge.lane = null;
+  }
+  if (boss.pinballCharge) {
+    disposePinballCharge(boss.pinballCharge);
+    boss.pinballCharge = null;
   }
   if (boss.summon?.ring) {
     disposeMesh(boss.summon.ring);
@@ -759,6 +795,10 @@ function openPortal(): void {
   if (!boss || boss.opened) return;
   boss.opened = true;
   state.exitLocked = false;
+  if (boss.pinballCharge) {
+    disposePinballCharge(boss.pinballCharge);
+    boss.pinballCharge = null;
+  }
   if (boss.fanBoomerang) {
     disposeFanBoomerang(boss.fanBoomerang);
     boss.fanBoomerang = null;
@@ -857,7 +897,8 @@ export function bossNetState(): BossAux | null {
   if (boss.summon && boss.summon.phase === "telegraph") {
     rings.push({ x: boss.z.x, z: boss.z.z, r: 1.8, t: boss.summon.t, kind: "summon" });
   }
-  const charging = boss.charge && boss.charge.phase === "telegraph" && moves.charge;
+  const chargingLane = (boss.charge && boss.charge.phase === "telegraph" && moves.charge) ? { dx: boss.charge.dx, dz: boss.charge.dz, len: moves.charge.distance } :
+    (boss.pinballCharge && boss.pinballCharge.phase === "telegraph" && moves.pinballCharge) ? { dx: boss.pinballCharge.dx, dz: boss.pinballCharge.dz, len: moves.pinballCharge.distance } : null;
   const netShots = boss.shots.map((b) => ({ x: Math.round(b.x * 50) / 50, z: Math.round(b.z * 50) / 50 }));
   if (boss.fanBoomerang) {
     for (const f of boss.fanBoomerang.fans) {
@@ -875,7 +916,7 @@ export function bossNetState(): BossAux | null {
     kind: boss.spec.kind,
     shots: netShots,
     rings,
-    lane: charging ? { x: boss.z.x, z: boss.z.z, dx: boss.charge!.dx, dz: boss.charge!.dz, len: moves.charge!.distance } : null,
+    lane: chargingLane ? { x: boss.z.x, z: boss.z.z, dx: chargingLane.dx, dz: chargingLane.dz, len: chargingLane.len } : null,
     portal: boss.portal ? { x: boss.portal.position.x, z: boss.portal.position.z } : null,
     alive: !boss.opened,
     phase: boss.phase,
@@ -1099,6 +1140,7 @@ export function adoptBoss(z: Zombie, spec: BossSpec = BOSSES.reaper_king): void 
     daggerVolley: null,
     mouthFire: null,
     thrashGrab: null,
+    pinballCharge: null,
     adds: [],
     // Adds cannot be adopted: the previous authority's brood is in
     // `state.zombies` as ordinary monsters and stays that way.
