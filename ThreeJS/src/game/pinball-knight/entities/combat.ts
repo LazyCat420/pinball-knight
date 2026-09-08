@@ -91,6 +91,7 @@ import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 import { recordDeathTrace } from "../dev/death-debug";
+import { burstPufferSpikes } from "./projectiles";
 
 /**
  * Player's outgoing damage: the base weapon damage run through the active
@@ -980,6 +981,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "espresso") onEspressoSpill?.(z.x, z.z);
   // A BURGER decomposes and leaves a rotting mold puddle hazard.
   if (z.kind === "burger") onBurgerRot?.(z.x, z.z);
+  // PUFFERFISH explodes into a 360-degree spike ring on death!
+  if (z.kind === "pufferfish_mob") burstPufferSpikes(z.x, z.z);
   // FRY SENTINEL deflates and scatters crispy fry crumbs upon death.
   if (z.kind === "fries") state.vfx?.burst(z.x, 0.4, z.z, 0xfacc15, 12, 1.4);
   // MILKSHAKE crumples and splashes a burst of toxic green shake upon death.
@@ -1211,6 +1214,16 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   dracula: 2,
   dracula_bat: 2,
   spinning_top: 2,
+  shark_trapper: 3,
+  dolphin_brawler: 1,
+  octopus_gunner: 1,
+  clownfish_mob: 1,
+  lionfish_mob: 1,
+  anglerfish_mob: 2,
+  pufferfish_mob: 2,
+  swordfish_mob: 2,
+  moray_mob: 1,
+  seahorse_mob: 2,
 };
 
 /**

@@ -80,6 +80,16 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   dracula: { label: "Count Dracula", icon: "🧛", blurb: "gothic vampire lord who leashes you in crimson blood siphon beams that drain your life to heal his wounds — morphs into an agile bat upon defeat" },
   dracula_bat: { label: "Dracula Bat", icon: "🦇", blurb: "Dracula's swift flying final form with erratic sine-wave flight wobble and rapid dive attacks" },
   spinning_top: { label: "Whirligig Top", icon: "🪀", blurb: "mechanized armored gyroscopic battle top that revs into blinding spin charges and slams knights with massive kinetic deflection" },
+  shark_trapper: { label: "Shark Trapper", icon: "🦈", blurb: "great white shark in yellow overalls with a deep-sea casting rod that launches a hook and reels you directly into its jaws" },
+  dolphin_brawler: { label: "Dolphin Brawler", icon: "🐬", blurb: "bipedal 90s dolphin rocking denim jeans, sneakers, and sunglasses, delivering a furious 3-hit boxing combo topped off with an uppercut launch" },
+  octopus_gunner: { label: "Octopus Boss", icon: "🐙", blurb: "Don Tentacolo in a fedora and pinstripe coat whose 8 tentacles unleash a radial revolver bullet barrage and blinding ink smokescreens" },
+  clownfish_mob: { label: "Clownfish Mob", icon: "🐠", blurb: "cigar-chomping tropical clownfish mobster in a tailored pinstripe suit who strafes laterally while firing rapid 4-round tommy-gun bursts" },
+  lionfish_mob: { label: "Lionfish Enforcer", icon: "🐡", blurb: "spiky lionfish hitman in a mob waistcoat whose wide 5-way venom spine shotgun blast poisons and slows your movement" },
+  anglerfish_mob: { label: "Anglerfish Hitman", icon: "🐟", blurb: "deep-sea assassin in a trenchcoat who blinds you with an intense bioluminescent lure flash before firing a high-velocity magnum sniper slug" },
+  pufferfish_mob: { label: "Pufferfish Capo", icon: "🐡", blurb: "rotund mob capo in a tight suit firing explosive blunderbuss slugs who inflates and detonates into a 360-degree spike nova on death" },
+  swordfish_mob: { label: "Swordfish Mob", icon: "🗡️", blurb: "sharp-suited swordfish mobster wielding a two-handed harpoon speargun who alternates between sniper bolts and sudden rapier bill lunges" },
+  moray_mob: { label: "Moray Extortionist", icon: "⚡", blurb: "slithering green moray eel in a zoot suit firing twin crackling electric shock orbs that leave persistent shock hazard pools on the floor" },
+  seahorse_mob: { label: "Seahorse Gunner", icon: "🐴", blurb: "armored seahorse in a fedora and vest wielding a brass water mortar that lobs high-angle water shells over dungeon walls" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

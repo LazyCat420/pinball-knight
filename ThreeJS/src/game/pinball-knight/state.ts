@@ -387,7 +387,17 @@ export type EnemyKind =
   | "medusa" // PETRIFIER — serpentine gorgon with living snake hair whose scanned gaze turns looking knights to solid stone
   | "dracula" // VAMPIRE LORD — siphons vital blood from the knight and heals; bursts into a bat upon death
   | "dracula_bat" // FINAL FORM — empowered vampire bat with agile sine-wave wobble flight and dive attacks
-  | "spinning_top"; // WHIRLIGIG TOP — armored gyroscopic battle top that revs into blinding spin charges and slams into knights
+  | "spinning_top" // WHIRLIGIG TOP — armored gyroscopic battle top that revs into blinding spin charges and slams into knights
+  | "shark_trapper" // HOOK TRAPPER — casts fishing rod, hooks knight and reels them in
+  | "dolphin_brawler" // BOXER — 90s bipedal dolphin in jeans & sunglasses with 3-hit combo & uppercut
+  | "octopus_gunner" // MOB BOSS — 8-tentacle revolver barrage and ink cloud
+  | "clownfish_mob" // BURST SKIRMISHER — clownfish mobster with tommy gun burst
+  | "lionfish_mob" // SHOTGUN ENFORCER — venom spine shotgun spread with poison slow
+  | "anglerfish_mob" // HITMAN — glowing lure stun flashbang and magnum sniper
+  | "pufferfish_mob" // CAPO — blunderbuss slug and 360-degree death spike nova
+  | "swordfish_mob" // DUELIST — harpoon speargun bolt and piercing lunge
+  | "moray_mob" // SHOCK EXTORTIONIST — electric shock orbs leaving hazard pools
+  | "seahorse_mob"; // ARTILLERY — high-angle water mortar lobbed over walls
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -546,6 +556,25 @@ export interface Zombie extends Actor {
    *
    * Counters, not rolls, so a co-op peer and a replay agree by construction.
    */
+  // ── Aquatic Mafia expansion fields ──
+  /** SHARK_TRAPPER: tether state when hook connects to player */
+  hookTetherT?: number;
+  hookPullSpeed?: number;
+  /** DOLPHIN_BRAWLER: combo hit step (0: none, 1: jab, 2: cross, 3: uppercut) */
+  dolphinComboStep?: number;
+  dolphinComboT?: number;
+  /** CLOWNFISH_MOB: tommy gun burst counter & timer */
+  clownBurstCount?: number;
+  clownBurstT?: number;
+  clownAimX?: number;
+  clownAimZ?: number;
+  /** ANGLERFISH_MOB: lure charge/flash timer */
+  anglerFlashT?: number;
+  /** SWORDFISH_MOB: harpoon aim/shot & rapier lunge state */
+  swordLungeT?: number;
+  swordLungeDirX?: number;
+  swordLungeDirZ?: number;
+
   painEntropy?: number;
   staggerT?: number;
   dodgeEntropy?: number;
@@ -871,13 +900,20 @@ export interface Projectile {
   bounces?: number;
   /** True once it has bounced off at least one wall. */
   bounced?: boolean;
+  /** Owning zombie NID (e.g. Shark Trapper line tether). */
+  ownerNid?: string;
+  /** Ballistic trajectory start and target coordinates (e.g. Seahorse water mortar). */
+  startX?: number;
+  startZ?: number;
+  targetX?: number;
+  targetZ?: number;
   mesh: THREE.Mesh;
   dispose(): void;
 }
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee" | "rot";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee" | "rot" | "ink" | "shock";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;

@@ -101,6 +101,16 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   medusa: { scale: 1.15 },
   dracula: { scale: 1.15 },
   spinning_top: { scale: 1.1 },
+  shark_trapper: { scale: 1.15 },
+  dolphin_brawler: { scale: 1.1 },
+  octopus_gunner: { scale: 1.2 },
+  clownfish_mob: { scale: 1.0 },
+  lionfish_mob: { scale: 1.1 },
+  anglerfish_mob: { scale: 1.05 },
+  pufferfish_mob: { scale: 1.15 },
+  swordfish_mob: { scale: 1.1 },
+  moray_mob: { scale: 1.05 },
+  seahorse_mob: { scale: 1.0 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

@@ -164,6 +164,16 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   dracula: "Dracula",
   dracula_bat: "DracBat",
   spinning_top: "SpinTop",
+  shark_trapper: "Shark",
+  dolphin_brawler: "Dolphin",
+  octopus_gunner: "Octopus",
+  clownfish_mob: "ClownMob",
+  lionfish_mob: "LionMob",
+  anglerfish_mob: "Angler",
+  pufferfish_mob: "Puffer",
+  swordfish_mob: "SwordMob",
+  moray_mob: "Moray",
+  seahorse_mob: "Seahorse",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

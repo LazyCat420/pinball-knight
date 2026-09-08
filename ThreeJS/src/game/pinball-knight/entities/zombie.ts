@@ -160,10 +160,21 @@ import {
   CRAB_R, CRAB_SLASH_RANGE, CRAB_WINDUP, CRAB_COOLDOWN,
   MEDUSA_R, MEDUSA_WINDUP, MEDUSA_COOLDOWN,
   DRACULA_R, DRACULA_DRAIN_RANGE, DRACULA_DRAIN_COOLDOWN, DRACULA_BAT_R,
-  SPINNING_TOP_R, SPINNING_TOP_CHARGE_RANGE, SPINNING_TOP_WINDUP, SPINNING_TOP_COOLDOWN } from "../constants";
+  SPINNING_TOP_R, SPINNING_TOP_CHARGE_RANGE, SPINNING_TOP_WINDUP, SPINNING_TOP_COOLDOWN,
+  SHARK_TRAPPER_R, SHARK_TRAPPER_HOOK_RANGE, SHARK_TRAPPER_WINDUP, SHARK_TRAPPER_COOLDOWN,
+  DOLPHIN_BRAWLER_R, DOLPHIN_BRAWLER_CONTACT_RANGE, DOLPHIN_BRAWLER_WINDUP, DOLPHIN_BRAWLER_COOLDOWN,
+  OCTOPUS_GUNNER_R, OCTOPUS_GUNNER_FIRE_RANGE, OCTOPUS_GUNNER_WINDUP, OCTOPUS_GUNNER_COOLDOWN,
+  CLOWNFISH_MOB_R, CLOWNFISH_MOB_FIRE_RANGE, CLOWNFISH_MOB_WINDUP, CLOWNFISH_MOB_COOLDOWN,
+  LIONFISH_MOB_R, LIONFISH_MOB_FIRE_RANGE, LIONFISH_MOB_WINDUP, LIONFISH_MOB_COOLDOWN,
+  ANGLERFISH_MOB_R, ANGLERFISH_MOB_FIRE_RANGE, ANGLERFISH_MOB_WINDUP, ANGLERFISH_MOB_COOLDOWN,
+  PUFFERFISH_MOB_R, PUFFERFISH_MOB_FIRE_RANGE, PUFFERFISH_MOB_WINDUP, PUFFERFISH_MOB_COOLDOWN,
+  SWORDFISH_MOB_R, SWORDFISH_MOB_HARPOON_RANGE, SWORDFISH_MOB_WINDUP, SWORDFISH_MOB_COOLDOWN,
+  MORAY_MOB_R, MORAY_MOB_FIRE_RANGE, MORAY_MOB_WINDUP, MORAY_MOB_COOLDOWN,
+  SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN } from "../constants";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
+import { isAquaticMonster, updateAquaticMonster } from "./aquatic-monsters";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { clipForSteer } from "../render/tell-clips";
@@ -246,6 +257,16 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   dracula: { bodyR: DRACULA_R, contactRange: DRACULA_DRAIN_RANGE, windup: 0.5, cooldown: DRACULA_DRAIN_COOLDOWN, ranged: true },
   dracula_bat: { bodyR: DRACULA_BAT_R, contactRange: 0.6, windup: 0.2, cooldown: 0.8, ranged: false },
   spinning_top: { bodyR: SPINNING_TOP_R, contactRange: SPINNING_TOP_CHARGE_RANGE, windup: SPINNING_TOP_WINDUP, cooldown: SPINNING_TOP_COOLDOWN, ranged: false },
+  shark_trapper: { bodyR: SHARK_TRAPPER_R, contactRange: SHARK_TRAPPER_HOOK_RANGE, windup: SHARK_TRAPPER_WINDUP, cooldown: SHARK_TRAPPER_COOLDOWN, ranged: true },
+  dolphin_brawler: { bodyR: DOLPHIN_BRAWLER_R, contactRange: DOLPHIN_BRAWLER_CONTACT_RANGE, windup: DOLPHIN_BRAWLER_WINDUP, cooldown: DOLPHIN_BRAWLER_COOLDOWN, ranged: false },
+  octopus_gunner: { bodyR: OCTOPUS_GUNNER_R, contactRange: OCTOPUS_GUNNER_FIRE_RANGE, windup: OCTOPUS_GUNNER_WINDUP, cooldown: OCTOPUS_GUNNER_COOLDOWN, ranged: true },
+  clownfish_mob: { bodyR: CLOWNFISH_MOB_R, contactRange: CLOWNFISH_MOB_FIRE_RANGE, windup: CLOWNFISH_MOB_WINDUP, cooldown: CLOWNFISH_MOB_COOLDOWN, ranged: true },
+  lionfish_mob: { bodyR: LIONFISH_MOB_R, contactRange: LIONFISH_MOB_FIRE_RANGE, windup: LIONFISH_MOB_WINDUP, cooldown: LIONFISH_MOB_COOLDOWN, ranged: true },
+  anglerfish_mob: { bodyR: ANGLERFISH_MOB_R, contactRange: ANGLERFISH_MOB_FIRE_RANGE, windup: ANGLERFISH_MOB_WINDUP, cooldown: ANGLERFISH_MOB_COOLDOWN, ranged: true },
+  pufferfish_mob: { bodyR: PUFFERFISH_MOB_R, contactRange: PUFFERFISH_MOB_FIRE_RANGE, windup: PUFFERFISH_MOB_WINDUP, cooldown: PUFFERFISH_MOB_COOLDOWN, ranged: true },
+  swordfish_mob: { bodyR: SWORDFISH_MOB_R, contactRange: SWORDFISH_MOB_HARPOON_RANGE, windup: SWORDFISH_MOB_WINDUP, cooldown: SWORDFISH_MOB_COOLDOWN, ranged: true },
+  moray_mob: { bodyR: MORAY_MOB_R, contactRange: MORAY_MOB_FIRE_RANGE, windup: MORAY_MOB_WINDUP, cooldown: MORAY_MOB_COOLDOWN, ranged: true },
+  seahorse_mob: { bodyR: SEAHORSE_MOB_R, contactRange: SEAHORSE_MOB_FIRE_RANGE, windup: SEAHORSE_MOB_WINDUP, cooldown: SEAHORSE_MOB_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1072,6 +1093,13 @@ export function updateZombies(dt: number): void {
     if (z.kind === "spinning_top") {
       updateSpinningTop(z, p, dt);
       if (z.topState === "windup" || z.topState === "slam") {
+        continue;
+      }
+    }
+
+    // ── AQUATIC & MAFIA MONSTERS ──
+    if (isAquaticMonster(z.kind)) {
+      if (updateAquaticMonster(z, p, dt, g)) {
         continue;
       }
     }

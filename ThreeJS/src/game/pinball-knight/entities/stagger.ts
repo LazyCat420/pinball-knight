@@ -121,6 +121,16 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   dracula: 0.30,
   dracula_bat: 0.20,
   spinning_top: 0.25,
+  shark_trapper: 0.35,
+  dolphin_brawler: 0.40,
+  octopus_gunner: 0.25,
+  clownfish_mob: 0.50,
+  lionfish_mob: 0.40,
+  anglerfish_mob: 0.45,
+  pufferfish_mob: 0.30,
+  swordfish_mob: 0.35,
+  moray_mob: 0.45,
+  seahorse_mob: 0.50,
 };
 
 /**

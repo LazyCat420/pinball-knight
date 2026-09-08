@@ -134,6 +134,16 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   dracula: [{ id: "fang", chance: 0.35 }, { id: "grimbone", chance: 0.25 }],
   dracula_bat: [{ id: "batwing", chance: 0.40 }, { id: "fang", chance: 0.30 }, { id: "grimbone", chance: 0.20 }],
   spinning_top: [{ id: "steelpin", chance: 0.35 }, { id: "ironshard", chance: 0.30 }, { id: "lodestone", chance: 0.20 }],
+  shark_trapper: [{ id: "fang", chance: 0.35 }, { id: "hide", chance: 0.25 }, { id: "steelpin", chance: 0.20 }],
+  dolphin_brawler: [{ id: "hide", chance: 0.30 }, { id: "glass", chance: 0.20 }],
+  octopus_gunner: [{ id: "slimegel", chance: 0.35 }, { id: "ironshard", chance: 0.25 }, { id: "lodestone", chance: 0.20 }],
+  clownfish_mob: [{ id: "ironshard", chance: 0.30 }, { id: "glass", chance: 0.20 }],
+  lionfish_mob: [{ id: "venomsac", chance: 0.35 }, { id: "fang", chance: 0.25 }],
+  anglerfish_mob: [{ id: "glass", chance: 0.35 }, { id: "fang", chance: 0.25 }, { id: "ironshard", chance: 0.20 }],
+  pufferfish_mob: [{ id: "venomsac", chance: 0.30 }, { id: "rotflesh", chance: 0.25 }, { id: "steelpin", chance: 0.20 }],
+  swordfish_mob: [{ id: "steelpin", chance: 0.35 }, { id: "ironshard", chance: 0.25 }, { id: "glass", chance: 0.15 }],
+  moray_mob: [{ id: "lodestone", chance: 0.35 }, { id: "slimegel", chance: 0.25 }],
+  seahorse_mob: [{ id: "glass", chance: 0.30 }, { id: "ironshard", chance: 0.25 }],
 };
 
 /**

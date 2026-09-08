@@ -72,6 +72,18 @@ import { makePinballBossPaints } from "./monsters/pinball-boss";
 import { makeMedusaPaints } from "./monsters/medusa";
 import { makeDraculaPaints } from "./monsters/dracula";
 import { makeSpinningTopPaints } from "./monsters/spinning-top";
+import {
+  makeSharkTrapperPaints,
+  makeDolphinBrawlerPaints,
+  makeOctopusGunnerPaints,
+  makeClownfishMobPaints,
+  makeLionfishMobPaints,
+  makeAnglerfishHitmanPaints,
+  makePufferfishMobPaints,
+  makeSwordfishMobPaints,
+  makeMorayMobPaints,
+  makeSeahorseMobPaints,
+} from "./monsters/aquatic-painters";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -134,6 +146,33 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   medusa: makeMedusaPaints,
   dracula: makeDraculaPaints,
   spinning_top: makeSpinningTopPaints,
+  shark_trapper: makeSharkTrapperPaints,
+  dolphin_brawler: makeDolphinBrawlerPaints,
+  octopus_gunner: makeOctopusGunnerPaints,
+  clownfish_mob: makeClownfishMobPaints,
+  lionfish_mob: makeLionfishMobPaints,
+  anglerfish_mob: makeAnglerfishHitmanPaints,
+  pufferfish_mob: makePufferfishMobPaints,
+  swordfish_mob: makeSwordfishMobPaints,
+  moray_mob: makeMorayMobPaints,
+  seahorse_mob: makeSeahorseMobPaints,
 };
 
-export { makeClamPaints, makeCrabPaints, makePinballBossPaints, makeMedusaPaints, makeDraculaPaints, makeSpinningTopPaints };
+export {
+  makeClamPaints,
+  makeCrabPaints,
+  makePinballBossPaints,
+  makeMedusaPaints,
+  makeDraculaPaints,
+  makeSpinningTopPaints,
+  makeSharkTrapperPaints,
+  makeDolphinBrawlerPaints,
+  makeOctopusGunnerPaints,
+  makeClownfishMobPaints,
+  makeLionfishMobPaints,
+  makeAnglerfishHitmanPaints,
+  makePufferfishMobPaints,
+  makeSwordfishMobPaints,
+  makeMorayMobPaints,
+  makeSeahorseMobPaints,
+};

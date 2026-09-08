@@ -90,6 +90,16 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   dracula: "chase",
   dracula_bat: "kite",
   spinning_top: "chase",
+  shark_trapper: "kite",
+  dolphin_brawler: "chase",
+  octopus_gunner: "kite",
+  clownfish_mob: "kite",
+  lionfish_mob: "kite",
+  anglerfish_mob: "kite",
+  pufferfish_mob: "chase",
+  swordfish_mob: "flanker",
+  moray_mob: "kite",
+  seahorse_mob: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
