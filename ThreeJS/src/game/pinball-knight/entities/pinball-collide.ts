@@ -410,11 +410,24 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     }
   },
 
-  spring: ({ part, p, d2 }) => {
+  spring: ({ part, p, d2, deps }) => {
     if (d2 > 0.42 * 0.42) return;
     p.momX = part.dirX;
     p.momZ = part.dirZ;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
+    // Wall springs reuse the original seesaw's fixed-destination pop. Ordinary
+    // lane springs retain their ground launch and machine-chain behavior.
+    if (part.span && part.span > 0) {
+      deps.setSteerLock(SEESAW_STEER_LOCK);
+      if (deps.startSeesawHop) {
+        deps.startSeesawHop(
+          part.x + part.dirX * part.span, part.z + part.dirZ * part.span,
+          part.dirX, part.dirZ, p.momSpeed,
+        );
+      } else {
+        deps.startRampHop(part.dirX, part.dirZ, p.momSpeed);
+      }
+    }
     onPartTrigger();
     // A spring is step 2 of RAMP_RETURN and step 0 of KICKER_LANE. Without this
     // the machine holds a step it can never be given.
@@ -1127,7 +1140,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     deps.startDrop(part.x, part.z);
   },
 
-  seesaw: ({ part, p, deps }) => {
+  seesaw: ({ part, p, deps, inMomentum, curSpeed }) => {
     // ── THE SEESAW — a pivoting shortcut plank across wall bands.
     //
     // Two ends: Side A (part.x, part.z) and Side B (span ahead along dir).
@@ -1142,6 +1155,14 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     const bz = part.z + part.dirZ * span;
     const r2 = SEESAW_RADIUS * SEESAW_RADIUS;
     const currentTilt = part.tilt ?? -1;
+    // Enter along the grounded plank, never sideways, backwards, or at rest.
+    const travel = inMomentum ? { x: p.momX, z: p.momZ } : deps.aimHint();
+    const speed = inMomentum ? p.momSpeed : curSpeed;
+    if (!travel || speed <= 0) return;
+    const sign = currentTilt === -1 ? 1 : -1;
+    const length = Math.hypot(travel.x, travel.z);
+    if (length === 0 || (travel.x * part.dirX + travel.z * part.dirZ) * sign / length < 0.7) return;
+
 
     if (currentTilt === -1) {
       // Side A is down
