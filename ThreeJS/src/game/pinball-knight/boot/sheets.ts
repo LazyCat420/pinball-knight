@@ -157,7 +157,8 @@ export type SheetKey =
   | "necromancer" | "crystalback" | "mimic" | "bloater" | "platypus" | "espresso" | "gnome" | "cigarette" | "toucan"
   | "reaper" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "burger" | "fries" | "milkshake" | "crawling_hand" | "sumo_ninja" | "six_armed_god" | "zippo" | "cerberus" | "clam" | "crab" | "pinball_boss" | "medusa" | "dracula" | "spinning_top"
   | "shark_trapper" | "dolphin_brawler" | "octopus_gunner" | "clownfish_mob" | "lionfish_mob" | "anglerfish_mob" | "pufferfish_mob" | "swordfish_mob" | "moray_mob" | "seahorse_mob"
-  | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail";
+  | "dragon_snake_head" | "dragon_snake_body" | "dragon_snake_tail"
+  | "christmas_tree";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -169,6 +170,7 @@ export const SHEET_KEYS = new Set<string>([
   "necromancer", "crystalback", "mimic", "bloater", "platypus", "espresso", "gnome", "cigarette", "toucan", "reaper", "broodmother", "overlord", "archivist", "dragon", "trex", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "six_armed_god", "zippo", "cerberus", "clam", "crab", "pinball_boss", "medusa", "dracula", "spinning_top",
   "shark_trapper", "dolphin_brawler", "octopus_gunner", "clownfish_mob", "lionfish_mob", "anglerfish_mob", "pufferfish_mob", "swordfish_mob", "moray_mob", "seahorse_mob",
   "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail",
+  "christmas_tree",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -568,7 +570,7 @@ export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", guardianFor(level).art.sheetKey];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand", "zippo", "clam", "crab");
-  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob");
+  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob", "christmas_tree");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja", "shark_trapper", "lionfish_mob", "pufferfish_mob", "swordfish_mob");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "six_armed_god", "cerberus", "pinball_boss", "medusa", "dracula", "spinning_top", "octopus_gunner", "anglerfish_mob", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");
   return [...new Set(keys)];

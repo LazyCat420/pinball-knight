@@ -98,6 +98,10 @@ import {
   SEAHORSE_MOB_FIRE_RANGE,
   SEAHORSE_MOB_MORTAR_SPEED,
   SEAHORSE_MOB_DAMAGE,
+  CHRISTMAS_TREE_FIRE_RANGE,
+  ORNAMENT_SPEED,
+  ORNAMENT_DAMAGE,
+  ORNAMENT_BOUNCES,
 } from "../constants";
 import { spawnFloorFx } from "./floor-fx";
 import { PALETTE_HEX } from "../render/palette";
@@ -375,7 +379,16 @@ export function waterMortarAssets(): { geo: THREE.SphereGeometry; mat: THREE.Mes
   return { geo: _waterMortarGeo, mat: _waterMortarMat };
 }
 
+let _ornamentGeo: THREE.SphereGeometry | null = null;
+let _ornamentMat: THREE.MeshBasicMaterial | null = null;
+export function ornamentAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _ornamentGeo ??= new THREE.SphereGeometry(0.20, 10, 8);
+  _ornamentMat ??= new THREE.MeshBasicMaterial({ color: 0xef4444 });
+  return { geo: _ornamentGeo, mat: _ornamentMat };
+}
+
 export function disposeProjectileAssets(): void {
+  _ornamentGeo?.dispose(); _ornamentGeo = null; _ornamentMat?.dispose(); _ornamentMat = null;
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
   _copBulletGeo?.dispose();
@@ -1325,6 +1338,33 @@ export function launchWaterMortar(x: number, z: number, targetX: number, targetZ
   });
 }
 
+/** Christmas Tree thrown festive ornament projectile */
+export function launchOrnament(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = ornamentAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y + 0.1, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "ornament",
+    x: sx,
+    z: sz,
+    vx: dx * ORNAMENT_SPEED,
+    vz: dz * ORNAMENT_SPEED,
+    life: (CHRISTMAS_TREE_FIRE_RANGE / ORNAMENT_SPEED) * 2.0,
+    maxLife: (CHRISTMAS_TREE_FIRE_RANGE / ORNAMENT_SPEED) * 2.0,
+    damage: ORNAMENT_DAMAGE,
+    hostile: true,
+    bounces: ORNAMENT_BOUNCES,
+    mesh,
+    dispose: () => {},
+  });
+  state.vfx?.sparks(sx, PROJECTILE_Y + 0.1, sz, dx, dz, 4);
+}
+
+
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
  * until their fuse runs out, hurting any zombie they clip — the golem's death
@@ -1629,8 +1669,8 @@ export function updateProjectiles(dt: number): void {
     if (pr.hostile) {
       // Bouncing bullets (Warden cop shot): initial direct shot always misses
       // and only damages the player AFTER bouncing off a wall.
-      // Pearls can hit directly or after ricocheting off walls.
-      const canHitPlayer = pr.kind === "pearl" || pr.bounces === undefined || pr.bounced;
+      // Pearls and ornaments can hit directly or after ricocheting off walls.
+      const canHitPlayer = pr.kind === "pearl" || pr.kind === "ornament" || pr.bounces === undefined || pr.bounced;
       const p = state.player;
       if (canHitPlayer && p && p.hp > 0) {
         const dx = p.x - pr.x;
@@ -1666,6 +1706,11 @@ export function updateProjectiles(dt: number): void {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xff6600, 14, 1.6);
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
+          } else if (pr.kind === "ornament") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xef4444, 16, 2.0);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 10);
+            sfxTarget();
           } else if (pr.kind === "pearl") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             // Deflect player momentum: bounce off pearl normal

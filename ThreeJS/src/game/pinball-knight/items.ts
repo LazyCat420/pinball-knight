@@ -24,7 +24,7 @@ export type WeaponId =
   | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
-export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard" | "disc" | "timber" | "beam" | "bomb" | "burger_tomato" | "burger_lettuce" | "burger_sauce" | "fry_dart" | "shake_spray" | "shuriken" | "zippo_flame" | "pearl" | "fishing_hook" | "octo_bullet" | "fish_bullet" | "lion_spine" | "magnum_bullet" | "puffer_slug" | "puffer_spike" | "spear_bolt" | "electric_bullet" | "water_mortar";
+export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard" | "disc" | "timber" | "beam" | "bomb" | "burger_tomato" | "burger_lettuce" | "burger_sauce" | "fry_dart" | "shake_spray" | "shuriken" | "zippo_flame" | "pearl" | "fishing_hook" | "octo_bullet" | "fish_bullet" | "lion_spine" | "magnum_bullet" | "puffer_slug" | "puffer_spike" | "spear_bolt" | "electric_bullet" | "water_mortar" | "ornament";
 
 export interface WeaponDef {
   id: WeaponId;

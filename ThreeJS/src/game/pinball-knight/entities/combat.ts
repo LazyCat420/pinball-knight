@@ -73,6 +73,7 @@ import {
   CRAWLING_HAND_GRAB_DURATION,
   SUMO_NINJA_DAMAGE,
   ZIPPO_DAMAGE,
+  CHRISTMAS_TREE_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -883,6 +884,15 @@ export function triggerBurgerRot(x: number, z: number): void {
   onBurgerRot?.(x, z);
 }
 
+/** CHRISTMAS TREE death → a roaring fire puddle. */
+let onChristmasTreeDeath: ((x: number, z: number) => void) | null = null;
+export function setChristmasTreeDeathHandler(fn: (x: number, z: number) => void): void {
+  onChristmasTreeDeath = fn;
+}
+export function triggerChristmasTreeDeath(x: number, z: number): void {
+  onChristmasTreeDeath?.(x, z);
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -998,6 +1008,8 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
   if (z.kind === "sporeling") onSporelingBurst?.(z.x, z.z);
+  // CHRISTMAS TREE: bursts into roaring bonfire and persistent fire puddle on death!
+  if (z.kind === "christmas_tree") onChristmasTreeDeath?.(z.x, z.z);
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1224,6 +1236,8 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   swordfish_mob: 2,
   moray_mob: 1,
   seahorse_mob: 2,
+  pinball_boss: 3,
+  christmas_tree: CHRISTMAS_TREE_DAMAGE,
 };
 
 /**

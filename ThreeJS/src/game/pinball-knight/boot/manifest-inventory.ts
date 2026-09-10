@@ -60,6 +60,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   trex: ["S"],
   toucan: ["S"],
   zippo: ["S"],
+  christmas_tree: ["S"],
   cerberus: ["S"],
   clam: ["S"],
   crab: ["S"],

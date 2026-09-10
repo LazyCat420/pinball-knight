@@ -398,7 +398,8 @@ export type EnemyKind =
   | "swordfish_mob" // DUELIST — harpoon speargun bolt and piercing lunge
   | "moray_mob" // SHOCK EXTORTIONIST — electric shock orbs leaving hazard pools
   | "seahorse_mob" // ARTILLERY — high-angle water mortar lobbed over walls
-  | "pinball_boss"; // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
+  | "pinball_boss" // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
+  | "christmas_tree"; // PYRO PINE — festive conifer that hops on its stump, throws ornaments, and bursts into flames on death
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

@@ -1279,3 +1279,18 @@ export const SEAHORSE_MOB_WINDUP = 0.45;
 export const SEAHORSE_MOB_COOLDOWN = 2.6;
 export const SEAHORSE_MOB_RATIO = 14;
 export const SEAHORSE_MOB_FROM_LEVEL = 3;
+
+// Christmas Tree (Stump Hopper, Ornament Toss & Fire Death)
+export const CHRISTMAS_TREE_HP = 18;
+export const CHRISTMAS_TREE_R = 0.45;
+export const CHRISTMAS_TREE_SPEED_FACTOR = 0.75;
+export const CHRISTMAS_TREE_FROM_LEVEL = 3;
+export const CHRISTMAS_TREE_RATIO = 12;
+export const CHRISTMAS_TREE_DAMAGE = 1;
+export const CHRISTMAS_TREE_FIRE_RANGE = 6.5;
+export const CHRISTMAS_TREE_WINDUP = 0.45;
+export const CHRISTMAS_TREE_COOLDOWN = 2.8;
+export const ORNAMENT_SPEED = 4.5;
+export const ORNAMENT_DAMAGE = 1;
+export const ORNAMENT_BOUNCES = 1;
+

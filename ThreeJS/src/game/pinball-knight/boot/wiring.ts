@@ -46,6 +46,7 @@ import {
   setSporelingBurstHandler,
   setEspressoSpillHandler,
   setBurgerRotHandler,
+  setChristmasTreeDeathHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -397,6 +398,18 @@ export function installGameplayWiring(deps: WiringDeps): void {
         state.vfx?.burst(px, 0.25, pz, 0x4d7c0f, 6, 1.0);
       }
     }
+  });
+  // A CHRISTMAS TREE bursts into roaring bonfire flames and a persistent fire hazard puddle on death.
+  setChristmasTreeDeathHandler((x, z) => {
+    // 1. Spawns persistent fire puddle on floor
+    spawnFloorFx("fire", x, z, 1.4, 5.0, true);
+    // 2. Fiery explosive combustion VFX
+    state.vfx?.burst(x, 0.45, z, 0xff4400, 28, 2.6);
+    state.vfx?.smoke(x, 0.4, z, 14, 1.0);
+    state.vfx?.sparks(x, 0.5, z, 0, 0, 20);
+    // 3. Audio & screen shake
+    sfxFlame();
+    state.shakeT = Math.max(state.shakeT, 0.22);
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

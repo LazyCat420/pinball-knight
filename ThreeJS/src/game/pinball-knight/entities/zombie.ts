@@ -170,7 +170,8 @@ import {
   PUFFERFISH_MOB_R, PUFFERFISH_MOB_FIRE_RANGE, PUFFERFISH_MOB_WINDUP, PUFFERFISH_MOB_COOLDOWN,
   SWORDFISH_MOB_R, SWORDFISH_MOB_HARPOON_RANGE, SWORDFISH_MOB_WINDUP, SWORDFISH_MOB_COOLDOWN,
   MORAY_MOB_R, MORAY_MOB_FIRE_RANGE, MORAY_MOB_WINDUP, MORAY_MOB_COOLDOWN,
-  SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN } from "../constants";
+  SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN,
+  CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN } from "../constants";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -187,7 +188,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -267,6 +268,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   swordfish_mob: { bodyR: SWORDFISH_MOB_R, contactRange: SWORDFISH_MOB_HARPOON_RANGE, windup: SWORDFISH_MOB_WINDUP, cooldown: SWORDFISH_MOB_COOLDOWN, ranged: true },
   moray_mob: { bodyR: MORAY_MOB_R, contactRange: MORAY_MOB_FIRE_RANGE, windup: MORAY_MOB_WINDUP, cooldown: MORAY_MOB_COOLDOWN, ranged: true },
   seahorse_mob: { bodyR: SEAHORSE_MOB_R, contactRange: SEAHORSE_MOB_FIRE_RANGE, windup: SEAHORSE_MOB_WINDUP, cooldown: SEAHORSE_MOB_COOLDOWN, ranged: true },
+  christmas_tree: { bodyR: CHRISTMAS_TREE_R, contactRange: CHRISTMAS_TREE_FIRE_RANGE, windup: CHRISTMAS_TREE_WINDUP, cooldown: CHRISTMAS_TREE_COOLDOWN, ranged: true },
+  pinball_boss: { bodyR: 1.1, contactRange: 1.6, windup: 0.6, cooldown: 2.0, ranged: false },
 };
 
 /**
@@ -1324,6 +1327,9 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "zippo") {
                 // 1960s cartoon lighter chugs alcohol and exhales flame breath
                 launchZippoFlameBreath(z.x, z.z, ux, uz);
+              } else if (z.kind === "christmas_tree") {
+                // Festive holiday tree tosses bouncing ornaments at the knight
+                launchOrnament(z.x, z.z, ux, uz);
               } else if (z.kind === "clam") {
                 // Old Clam spits a bouncy trajectory-deflecting pearl
                 spitPearl(z.x, z.z, ux, uz);
@@ -1515,6 +1521,12 @@ export function updateZombies(dt: number): void {
     if (z.kind === "rotortail") {
       z.bobT = (z.bobT ?? 0) + dt;
       z.sprite.mesh.position.y = ROTORTAIL_HOVER_Y + Math.sin(z.bobT * 2.6) * 0.1;
+    }
+    // Festive Christmas Tree: hops energetically on its trunk/stump to walk around
+    if (z.kind === "christmas_tree") {
+      z.bobT = (z.bobT ?? 0) + dt * (moving ? 10 : 2);
+      const hop = moving ? Math.abs(Math.sin((z.bobT ?? 0) * 8)) * 0.18 : 0;
+      z.sprite.mesh.position.y = z.sprite.mesh.position.y + hop;
     }
   }
 }

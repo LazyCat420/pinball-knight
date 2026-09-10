@@ -91,6 +91,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   moray_mob: { label: "Moray Extortionist", icon: "⚡", blurb: "slithering green moray eel in a zoot suit firing twin crackling electric shock orbs that leave persistent shock hazard pools on the floor" },
   seahorse_mob: { label: "Seahorse Gunner", icon: "🐴", blurb: "armored seahorse in a fedora and vest wielding a brass water mortar that lobs high-angle water shells over dungeon walls" },
   pinball_boss: { label: "Tilt Titan", icon: "⚪", blurb: "giant rolling chrome steel pinball titan that boosts into flattening smashes, ricochets off walls, and triggers multiball" },
+  christmas_tree: { label: "Holiday Tree", icon: "🎄", blurb: "hops energetically on its wooden stump while hurling bouncing glass bauble ornaments at the knight — bursts into an inferno on death" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];
