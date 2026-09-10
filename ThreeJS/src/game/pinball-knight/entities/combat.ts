@@ -75,6 +75,8 @@ import {
   ZIPPO_DAMAGE,
   CHRISTMAS_TREE_DAMAGE,
   GAS_CAN_DAMAGE,
+  HAMSTER_BALL_DAMAGE,
+  HAMSTER_BALL_DEFLECT_SPEED,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -446,6 +448,36 @@ function springOffJester(z: Zombie): void {
   p.iframes = Math.max(p.iframes, 0.25);
   state.vfx?.sparks(z.x, 0.7, z.z, nx, nz, 12);
   state.shakeT = Math.max(state.shakeT, 0.16);
+}
+
+/**
+ * HAMSTER BALL kinetic deflection:
+ * When the player in pinball mode collides with the hamster in an exercise ball,
+ * the sphere acts as a high-energy kinetic deflector / bumper, kicking the
+ * pinball away into a wild deflected trajectory with amplified momentum!
+ */
+export function deflectOffHamsterBall(z: Zombie): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+  const dx = p.x - z.x;
+  const dz = p.z - z.z;
+  const d = Math.hypot(dx, dz);
+  // Reflective / kinetic scatter angle (±0.35 rad)
+  const angleScatter = (Math.random() - 0.5) * 0.7;
+  const baseAngle = d > 1e-4 ? Math.atan2(dz, dx) : Math.atan2(p.momZ || 0, p.momX || 1);
+  const finalAngle = baseAngle + angleScatter;
+  const nx = Math.cos(finalAngle);
+  const nz = Math.sin(finalAngle);
+  p.momX = nx;
+  p.momZ = nz;
+  p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * 1.15, HAMSTER_BALL_DEFLECT_SPEED));
+  p.bounceCombo += 1;
+  p.bounceComboT = comboWindow(p.bounceCombo);
+  p.iframes = Math.max(p.iframes, 0.25);
+  state.vfx?.sparks(z.x, 0.65, z.z, nx, nz, 14);
+  state.shakeT = Math.max(state.shakeT, 0.18);
+  showToast("🐹 HAMSTER BALL DEFLECTION!");
 }
 
 export function damageZombie(
@@ -903,6 +935,16 @@ export function triggerGasCanDeath(x: number, z: number): void {
   onGasCanDeath?.(x, z);
 }
 
+/** HAMSTER BALL death → plastic sphere fractures and shatters. */
+let onHamsterBallDeath: ((x: number, z: number) => void) | null = null;
+export function setHamsterBallDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onHamsterBallDeath = fn;
+}
+export function triggerHamsterBallDeath(x: number, z: number): void {
+  onHamsterBallDeath?.(x, z);
+}
+
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -1044,6 +1086,12 @@ export function killZombie(z: Zombie): void {
       buddy.anim.play("walk");
       state.vfx?.burst(buddy.x, 0.4, buddy.z, 0xff7700, 8, 0.8);
     }
+  }
+  // HAMSTER BALL: plastic sphere fractures and shatters into ricocheting shards!
+  if (z.kind === "hamster_ball") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x38bdf8, 20, 2.5); // Cyan plastic shards
+    state.vfx?.burst(z.x, 0.5, z.z, 0xffffff, 12, 2.0); // Bright white specular sparkles
+    onHamsterBallDeath?.(z.x, z.z);
   }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
@@ -1274,6 +1322,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   pinball_boss: 3,
   christmas_tree: CHRISTMAS_TREE_DAMAGE,
   gas_can: GAS_CAN_DAMAGE,
+  hamster_ball: HAMSTER_BALL_DAMAGE,
 };
 
 /**

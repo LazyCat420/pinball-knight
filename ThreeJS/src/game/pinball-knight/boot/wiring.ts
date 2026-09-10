@@ -48,12 +48,14 @@ import {
   setBurgerRotHandler,
   setChristmasTreeDeathHandler,
   setGasCanDeathHandler,
+  setHamsterBallDeathHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
   hitPlayerRanged,
   resetCombatJuice,
 } from "../entities/combat";
+import { sfxBreak } from "../sfx";
 import { setSummonHandler } from "../entities/zombie";
 import { setMerchantCaughtHandler } from "../entities/npc";
 import { queueDraculaBat, queueMini, queueSummon, makeZombie, bumpZombieNid } from "../spawn/factory";
@@ -423,6 +425,14 @@ export function installGameplayWiring(deps: WiringDeps): void {
     state.vfx?.sparks(x, 0.4, z, 0, 0, 10);
     // 3. Audio & screen shake
     state.shakeT = Math.max(state.shakeT, 0.12);
+  });
+  // HAMSTER IN EXERCISE BALL shatters into fractured plastic shards upon death!
+  setHamsterBallDeathHandler((x, z) => {
+    state.vfx?.burst(x, 0.45, z, 0x38bdf8, 24, 2.5); // Cyan plastic shards
+    state.vfx?.burst(x, 0.5, z, 0xffffff, 14, 2.0); // Bright white specular sparkles
+    state.vfx?.sparks(x, 0.45, z, 0, 0, 16);
+    sfxBreak();
+    state.shakeT = Math.max(state.shakeT, 0.16);
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

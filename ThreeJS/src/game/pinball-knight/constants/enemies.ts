@@ -1305,3 +1305,14 @@ export const GAS_CAN_WINDUP = 0.40;
 export const GAS_CAN_COOLDOWN = 2.4;
 export const GAS_CAN_SPILL_RADIUS = 2.6;
 export const GAS_CAN_SPILL_LIFE = 20.0;
+
+// Hamster in Exercise Ball Monster (Dual-mode bumper deflector / ram damage; shatters on death)
+export const HAMSTER_BALL_HP = 16;
+export const HAMSTER_BALL_R = 0.46;
+export const HAMSTER_BALL_SPEED_FACTOR = 1.15;
+export const HAMSTER_BALL_FROM_LEVEL = 2;
+export const HAMSTER_BALL_RATIO = 14;
+export const HAMSTER_BALL_DAMAGE = 1;
+export const HAMSTER_BALL_WINDUP = 0.35;
+export const HAMSTER_BALL_COOLDOWN = 2.2;
+export const HAMSTER_BALL_DEFLECT_SPEED = 14.0;

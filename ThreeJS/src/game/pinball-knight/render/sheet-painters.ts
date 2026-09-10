@@ -86,6 +86,7 @@ import {
 } from "./monsters/aquatic-painters";
 import { makeChristmasTreePaints } from "./monsters/christmas-tree";
 import { makeGasCanPaints } from "./monsters/gas-can";
+import { makeHamsterBallPaints } from "./monsters/hamster-ball";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -160,6 +161,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   seahorse_mob: makeSeahorseMobPaints,
   christmas_tree: makeChristmasTreePaints,
   gas_can: makeGasCanPaints,
+  hamster_ball: makeHamsterBallPaints,
 };
 
 export {
@@ -174,4 +176,5 @@ export {
   makeSeahorseMobPaints,
   makeChristmasTreePaints,
   makeGasCanPaints,
+  makeHamsterBallPaints,
 };

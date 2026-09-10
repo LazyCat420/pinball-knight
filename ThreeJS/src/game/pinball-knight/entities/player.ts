@@ -177,7 +177,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../engine/camera";
 import { InputHandle } from "../engine/input";
 import { WEAPONS } from "../items";
-import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit, hitPlayerRanged } from "./combat";
+import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit, hitPlayerRanged, deflectOffHamsterBall } from "./combat";
 import { carveGroove, meltFloor } from "./floor-fx";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
@@ -2021,6 +2021,9 @@ function checkWallCrunch(p: Player): void {
       // enemies you cannot corner are answered by BECOMING one.
       damageZombie(z, playerDamage(dmg * shadowSlayerMult(z.kind)), p.momX, p.momZ, ramKb, false, "bounce");
       applyCardOnHit(z);
+      if (z.kind === "hamster_ball") {
+        deflectOffHamsterBall(z);
+      }
       shadowVampire(); // …and shadow feeds on what it touches (cooldowned)
       if (cutting) {
         // The slice itself: a thin bright arc across the foe, along the line of

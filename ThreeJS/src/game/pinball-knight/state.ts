@@ -400,7 +400,8 @@ export type EnemyKind =
   | "seahorse_mob" // ARTILLERY — high-angle water mortar lobbed over walls
   | "pinball_boss" // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
   | "christmas_tree" // PYRO PINE — festive conifer that hops on its stump, throws ornaments, and bursts into flames on death
-  | "gas_can"; // 1950s TOON GAS CAN — vintage cartoon gas canister paired with Zippo; spills oil on death
+  | "gas_can" // 1950s TOON GAS CAN — vintage cartoon gas canister paired with Zippo; spills oil on death
+  | "hamster_ball"; // HAMSTER BALL — manic hamster in an exercise ball; pinball kinetic deflector and normal mode hazard; shatters on death
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

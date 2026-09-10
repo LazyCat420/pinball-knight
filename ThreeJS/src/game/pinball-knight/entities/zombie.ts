@@ -172,7 +172,8 @@ import {
   MORAY_MOB_R, MORAY_MOB_FIRE_RANGE, MORAY_MOB_WINDUP, MORAY_MOB_COOLDOWN,
   SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN,
   CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN,
-  GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN } from "../constants";
+  GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN,
+  HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN } from "../constants";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -188,7 +189,7 @@ import { worldToTile, tileCenter, idx, isWalkable, isLowWall, type Grid } from "
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
-import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
+import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
 import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
@@ -272,6 +273,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   christmas_tree: { bodyR: CHRISTMAS_TREE_R, contactRange: CHRISTMAS_TREE_FIRE_RANGE, windup: CHRISTMAS_TREE_WINDUP, cooldown: CHRISTMAS_TREE_COOLDOWN, ranged: true },
   pinball_boss: { bodyR: 1.1, contactRange: 1.6, windup: 0.6, cooldown: 2.0, ranged: false },
   gas_can: { bodyR: GAS_CAN_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: GAS_CAN_WINDUP, cooldown: GAS_CAN_COOLDOWN, ranged: false },
+  hamster_ball: { bodyR: HAMSTER_BALL_R, contactRange: 0.85, windup: HAMSTER_BALL_WINDUP, cooldown: HAMSTER_BALL_COOLDOWN, ranged: false },
 };
 
 /**
@@ -1376,7 +1378,11 @@ export function updateZombies(dt: number): void {
               }
             }
           } else if (pdist <= contactRange * 1.3) {
-            hitPlayer(z);
+            if (z.kind === "hamster_ball" && (p.momSpeed || 0) > 0) {
+              deflectOffHamsterBall(z);
+            } else {
+              hitPlayer(z);
+            }
             if (z.kind === "crab") {
               p.momSpeed = (p.momSpeed || 0) * 0.5;
               state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 8);
