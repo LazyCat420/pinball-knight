@@ -175,6 +175,9 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   moray_mob: "Moray",
   seahorse_mob: "Seahorse",
   pinball_boss: "Pinball",
+  christmas_tree: "XmasTree",
+  gas_can: "GasCan",
+  hamster_ball: "Hamster",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];
