@@ -600,6 +600,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   seahorse_mob: "chitin",
   pinball_boss: "iron",
   christmas_tree: "bone",
+  gas_can: "iron",
 };
 
 /**

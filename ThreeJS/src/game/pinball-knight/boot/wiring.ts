@@ -47,6 +47,7 @@ import {
   setEspressoSpillHandler,
   setBurgerRotHandler,
   setChristmasTreeDeathHandler,
+  setGasCanDeathHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -77,6 +78,8 @@ import {
   BURGER_ROT_RADIUS,
   BURGER_ROT_LIFE,
   BURGER_ROT_DAMAGE,
+  GAS_CAN_SPILL_RADIUS,
+  GAS_CAN_SPILL_LIFE,
   CARD_BURN_TICK,
   BOSS_GOLD,
   GOLD_PER_KILL,
@@ -410,6 +413,16 @@ export function installGameplayWiring(deps: WiringDeps): void {
     // 3. Audio & screen shake
     sfxFlame();
     state.shakeT = Math.max(state.shakeT, 0.22);
+  });
+  // 1950s TOON GAS CAN spills a wide oil slick puddle on death that easily catches fire!
+  setGasCanDeathHandler((x, z) => {
+    // 1. Spawns oil puddle on floor
+    spawnFloorFx("oil", x, z, GAS_CAN_SPILL_RADIUS, GAS_CAN_SPILL_LIFE);
+    // 2. Oil splashing droplet VFX
+    state.vfx?.burst(x, 0.35, z, 0x1c1917, 20, 1.8);
+    state.vfx?.sparks(x, 0.4, z, 0, 0, 10);
+    // 3. Audio & screen shake
+    state.shakeT = Math.max(state.shakeT, 0.12);
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

@@ -74,6 +74,7 @@ import {
   SUMO_NINJA_DAMAGE,
   ZIPPO_DAMAGE,
   CHRISTMAS_TREE_DAMAGE,
+  GAS_CAN_DAMAGE,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -893,6 +894,15 @@ export function triggerChristmasTreeDeath(x: number, z: number): void {
   onChristmasTreeDeath?.(x, z);
 }
 
+/** 1950s TOON GAS CAN death → spills slick oil pool. */
+let onGasCanDeath: ((x: number, z: number) => void) | null = null;
+export function setGasCanDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onGasCanDeath = fn;
+}
+export function triggerGasCanDeath(x: number, z: number): void {
+  onGasCanDeath?.(x, z);
+}
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -1010,6 +1020,31 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "sporeling") onSporelingBurst?.(z.x, z.z);
   // CHRISTMAS TREE: bursts into roaring bonfire and persistent fire puddle on death!
   if (z.kind === "christmas_tree") onChristmasTreeDeath?.(z.x, z.z);
+  // 1950s TOON GAS CAN: spills slippery oil pool on death, and triggers panic in its paired lighter!
+  if (z.kind === "gas_can") {
+    onGasCanDeath?.(z.x, z.z);
+    let buddy: Zombie | undefined = undefined;
+    if (z.pairedBuddyNid) {
+      buddy = state.zombies.find((other) => other.nid === z.pairedBuddyNid && other.mode !== "dead");
+    }
+    if (!buddy) {
+      let minDist = 8.0;
+      for (const other of state.zombies) {
+        if (other.kind === "zippo" && other.mode !== "dead") {
+          const d = Math.hypot(other.x - z.x, other.z - z.z);
+          if (d < minDist) {
+            minDist = d;
+            buddy = other;
+          }
+        }
+      }
+    }
+    if (buddy) {
+      buddy.panicT = 1.35;
+      buddy.anim.play("walk");
+      state.vfx?.burst(buddy.x, 0.4, buddy.z, 0xff7700, 8, 0.8);
+    }
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1238,6 +1273,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   seahorse_mob: 2,
   pinball_boss: 3,
   christmas_tree: CHRISTMAS_TREE_DAMAGE,
+  gas_can: GAS_CAN_DAMAGE,
 };
 
 /**

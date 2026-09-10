@@ -92,6 +92,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   seahorse_mob: { label: "Seahorse Gunner", icon: "🐴", blurb: "armored seahorse in a fedora and vest wielding a brass water mortar that lobs high-angle water shells over dungeon walls" },
   pinball_boss: { label: "Tilt Titan", icon: "⚪", blurb: "giant rolling chrome steel pinball titan that boosts into flattening smashes, ricochets off walls, and triggers multiball" },
   christmas_tree: { label: "Holiday Tree", icon: "🎄", blurb: "hops energetically on its wooden stump while hurling bouncing glass bauble ornaments at the knight — bursts into an inferno on death" },
+  gas_can: { label: "Toon Gas Can", icon: "⛽", blurb: "1950s rubber-hose cartoon gas can walking in pairs with Pyro Zippo — spills slippery oil on death, triggering fire pandemonium" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

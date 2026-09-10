@@ -1294,3 +1294,14 @@ export const ORNAMENT_SPEED = 4.5;
 export const ORNAMENT_DAMAGE = 1;
 export const ORNAMENT_BOUNCES = 1;
 
+// 1950s Toon Gas Can Monster (Paired with Pyro Zippo; spills oil slick on death)
+export const GAS_CAN_HP = 14;
+export const GAS_CAN_R = 0.42;
+export const GAS_CAN_SPEED_FACTOR = 0.85;
+export const GAS_CAN_FROM_LEVEL = 2;
+export const GAS_CAN_RATIO = 14;
+export const GAS_CAN_DAMAGE = 1;
+export const GAS_CAN_WINDUP = 0.40;
+export const GAS_CAN_COOLDOWN = 2.4;
+export const GAS_CAN_SPILL_RADIUS = 2.6;
+export const GAS_CAN_SPILL_LIFE = 20.0;

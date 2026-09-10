@@ -171,7 +171,8 @@ import {
   SWORDFISH_MOB_R, SWORDFISH_MOB_HARPOON_RANGE, SWORDFISH_MOB_WINDUP, SWORDFISH_MOB_COOLDOWN,
   MORAY_MOB_R, MORAY_MOB_FIRE_RANGE, MORAY_MOB_WINDUP, MORAY_MOB_COOLDOWN,
   SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN,
-  CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN } from "../constants";
+  CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN,
+  GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN } from "../constants";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -270,6 +271,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   seahorse_mob: { bodyR: SEAHORSE_MOB_R, contactRange: SEAHORSE_MOB_FIRE_RANGE, windup: SEAHORSE_MOB_WINDUP, cooldown: SEAHORSE_MOB_COOLDOWN, ranged: true },
   christmas_tree: { bodyR: CHRISTMAS_TREE_R, contactRange: CHRISTMAS_TREE_FIRE_RANGE, windup: CHRISTMAS_TREE_WINDUP, cooldown: CHRISTMAS_TREE_COOLDOWN, ranged: true },
   pinball_boss: { bodyR: 1.1, contactRange: 1.6, windup: 0.6, cooldown: 2.0, ranged: false },
+  gas_can: { bodyR: GAS_CAN_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: GAS_CAN_WINDUP, cooldown: GAS_CAN_COOLDOWN, ranged: false },
 };
 
 /**
@@ -917,6 +919,38 @@ export function updateZombies(dt: number): void {
         z.castT = 0.35 + Math.random() * 0.3;
         state.vfx?.smoke?.(z.x, 0.75, z.z, 0.25, 1);
       }
+    }
+
+    // ── PANIC (e.g. Pyro Zippo freaks out when gas can buddy dies) ──
+    if (z.panicT && z.panicT > 0) {
+      z.panicT -= dt;
+      z.bobT = (z.bobT ?? 0) + dt;
+      // Waving arms frantically, erratic zigzag sprint
+      const panicAngle = (z.bobT ?? 0) * 16 + (z.nid ? parseInt(z.nid.slice(-2), 16) || 0 : 0);
+      const vx = Math.cos(panicAngle) * z.speed * 1.5;
+      const vz = Math.sin(panicAngle) * z.speed * 1.5;
+      const sres = moveCircle(g, z.x, z.z, bodyR, vx * dt, vz * dt);
+      z.x = sres.x;
+      z.z = sres.z;
+      z.anim.play("walk");
+      z.anim.setFacing(facingFromWorld(vx, vz, "S"));
+      if (Math.random() < 0.25) {
+        state.vfx?.sparks(z.x, 0.45, z.z, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, 4);
+      }
+      if (z.panicT <= 0) {
+        z.panicT = 0;
+        // Trip, fall over, and ignite the ground!
+        z.mode = "dead";
+        z.corpseT = 0;
+        z.deathFacing = z.anim.getFacing?.() ?? "S";
+        z.anim.play("death");
+        spawnFloorFx("fire", z.x, z.z, 0.85, 4.5, true);
+        state.vfx?.burst(z.x, 0.4, z.z, 0xff4400, 22, 2.0);
+        state.vfx?.smoke(z.x, 0.4, z.z, 8, 0.9);
+        state.shakeT = Math.max(state.shakeT, 0.18);
+      }
+      syncActorMesh(z);
+      continue;
     }
 
     // ── WATER SLICK ── stepped on a marble-water scar: lost its footing and

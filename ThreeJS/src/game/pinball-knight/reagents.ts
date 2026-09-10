@@ -146,6 +146,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   seahorse_mob: [{ id: "glass", chance: 0.30 }, { id: "ironshard", chance: 0.25 }],
   pinball_boss: [{ id: "steelpin", chance: 0.5 }, { id: "ironshard", chance: 0.35 }, { id: "lodestone", chance: 0.25 }],
   christmas_tree: [{ id: "glass", chance: 0.40 }, { id: "lodestone", chance: 0.25 }],
+  gas_can: [{ id: "ironshard", chance: 0.35 }, { id: "slimegel", chance: 0.25 }],
 };
 
 /**
