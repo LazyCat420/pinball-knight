@@ -797,6 +797,12 @@ export function updateZombies(dt: number): void {
     // different movement rules in two different places in this function.
     const move = movementOf(z);
 
+    // ── HELD MOVEMENT (e.g. boss spin-in-place rev-up or charge) ──
+    if (z.holdMove) {
+      syncActorMesh(z);
+      continue;
+    }
+
     // ── FREEZE RAY ── the whole machine holds its breath. Enemies stop
     // mid-stride, iced blue; timers don't tick, so nobody bites out of a thaw.
     if (state.freezeT > 0) {

@@ -50,108 +50,109 @@ function gasCanFrame(dir: Dir, phase: number, opts: PoseOpts = {}): FramePaint {
     if (dead || deathT > 0) {
       // Toppled over gas canister leaking oil on the floor
       const t = Math.min(1, Math.max(0, deathT));
-      const collapseY = GROUND - 4 + t * 2;
+      const collapseY = GROUND - 8 + t * 4;
 
       // Spilled oil puddle expanding on ground
-      const oilR = 10 + t * 14;
-      ellShaded(ctx, CX + 2, collapseY + 2, oilR, 4 + t * 2, R_OIL, 0.1);
+      const oilR = 18 + t * 24;
+      ellShaded(ctx, CX + 2, collapseY + 4, oilR, 8 + t * 4, R_OIL);
 
       // Canister lying on side
-      groundShadow(ctx, CX, GROUND, 14);
-      ellShaded(ctx, CX + t * 3, collapseY, 12, 7, R_CAN_RED, 0.75 + t * 0.4);
+      groundShadow(ctx, CX, GROUND, 24);
+      ellShaded(ctx, CX + t * 4, collapseY, 24, 14, R_CAN_RED, 0.75 + t * 0.4);
 
       // Detached spout & lid
-      ellShaded(ctx, CX + 14 + t * 4, collapseY - 2, 5, 3, R_SPOUT, 0.3);
+      ellShaded(ctx, CX + 26 + t * 6, collapseY - 4, 10, 6, R_SPOUT, 0.3);
 
       // Dizzy 'X' eyes on fallen can
-      figGlow(ctx, CX + t * 3 - 3, collapseY - 1, 1.5, 18, 20);
-      figGlow(ctx, CX + t * 3 + 3, collapseY - 1, 1.5, 18, 20);
+      ellShaded(ctx, CX + t * 4 - 6, collapseY - 2, 5, 4, R_GLOVE, 0);
+      ellShaded(ctx, CX + t * 4 + 6, collapseY - 2, 5, 4, R_GLOVE, 0);
       return;
     }
 
     const yOff = bob;
-    const bodyY = GROUND - 18 + yOff;
+    const bodyY = GROUND - 32 + yOff;
 
     // Ground shadow pulses with bounce
-    groundShadow(ctx, CX, GROUND, Math.max(6, 13 - Math.abs(yOff) * 1.5));
+    groundShadow(ctx, CX, GROUND, Math.max(12, 24 - Math.abs(yOff) * 2));
 
     // ── Noodle Legs & Shoes ──
-    const leftLegSwing = Math.sin(legPhase) * 6;
-    const rightLegSwing = -Math.sin(legPhase) * 6;
+    const leftLegSwing = Math.sin(legPhase) * 8;
+    const rightLegSwing = -Math.sin(legPhase) * 8;
 
-    const leftFootY = GROUND - 2 + Math.max(0, -leftLegSwing * 0.5);
-    const rightFootY = GROUND - 2 + Math.max(0, -rightLegSwing * 0.5);
+    const leftFootY = GROUND - 4 + Math.max(0, -leftLegSwing * 0.5);
+    const rightFootY = GROUND - 4 + Math.max(0, -rightLegSwing * 0.5);
 
     // Left leg
-    limbShaded(ctx, [CX - 6, bodyY + 10], [CX - 7 + leftLegSwing, leftFootY], 3, R_LIMB);
+    limbShaded(ctx, [CX - 10, bodyY + 18], [CX - 12 + leftLegSwing, leftFootY], 4.5, R_LIMB);
     // Right leg
-    limbShaded(ctx, [CX + 6, bodyY + 10], [CX + 7 + rightLegSwing, rightFootY], 3, R_LIMB);
+    limbShaded(ctx, [CX + 10, bodyY + 18], [CX + 12 + rightLegSwing, rightFootY], 4.5, R_LIMB);
 
     // Cartoon Shoes
-    ellShaded(ctx, CX - 7 + leftLegSwing + (dir === "E" ? 2 : dir === "S" ? -1 : 0), leftFootY, 5, 3, R_SHOE);
-    ellShaded(ctx, CX + 7 + rightLegSwing + (dir === "E" ? 2 : dir === "S" ? 1 : 0), rightFootY, 5, 3, R_SHOE);
+    ellShaded(ctx, CX - 12 + leftLegSwing + (dir === "E" ? 3 : dir === "S" ? -2 : 0), leftFootY, 10, 6, R_SHOE);
+    ellShaded(ctx, CX + 12 + rightLegSwing + (dir === "E" ? 3 : dir === "S" ? 2 : 0), rightFootY, 10, 6, R_SHOE);
 
     // ── Main Gasoline Canister Body ──
     // Slightly trapezoidal vintage red can (squash & stretch)
     const stretch = 1 + (yOff > 0 ? 0.05 : -0.05);
     const squish = 1 / stretch;
 
-    ellShaded(ctx, CX, bodyY + 2, 11 * squish, 12 * stretch, R_CAN_RED, dir === "E" ? 0.08 : 0);
+    ellShaded(ctx, CX, bodyY + 4, 22 * squish, 24 * stretch, R_CAN_RED, dir === "E" ? 0.08 : 0);
 
     // Top metal handle
-    ellShaded(ctx, CX, bodyY - 11, 7, 3, R_HANDLE, 0);
+    ellShaded(ctx, CX, bodyY - 18, 14, 6, R_HANDLE, 0);
+    ellShaded(ctx, CX, bodyY - 18, 8, 3, R_CAN_RED, 0);
 
     // Yellow Spout angled out the side
-    const spoutX = dir === "E" ? CX + 10 : dir === "S" ? CX + 9 : CX - 9;
-    const spoutY = bodyY - 8;
-    ellShaded(ctx, spoutX, spoutY, 5, 3, R_SPOUT, dir === "E" ? 0.6 : dir === "S" ? 0.45 : -0.45);
+    const spoutX = dir === "E" ? CX + 18 : dir === "S" ? CX + 16 : CX - 16;
+    const spoutY = bodyY - 14;
+    ellShaded(ctx, spoutX, spoutY, 10, 6, R_SPOUT, dir === "E" ? 0.6 : dir === "S" ? 0.45 : -0.45);
 
     // Splashing fuel stream during attack
     if (splashing) {
-      const splashEndX = spoutX + (dir === "E" ? 12 : dir === "S" ? 8 : -8);
-      const splashEndY = spoutY + 6;
-      limbShaded(ctx, [spoutX, spoutY], [splashEndX, splashEndY], 3, R_OIL);
-      ellShaded(ctx, splashEndX, splashEndY + 2, 4, 2, R_OIL, 0);
+      const splashEndX = spoutX + (dir === "E" ? 22 : dir === "S" ? 16 : -16);
+      const splashEndY = spoutY + 12;
+      limbShaded(ctx, [spoutX, spoutY], [splashEndX, splashEndY], 6, R_OIL);
+      ellShaded(ctx, splashEndX, splashEndY + 4, 8, 5, R_OIL, 0);
     }
 
     // ── 1950s Toon Face (if facing South or East) ──
     if (dir === "S" || dir === "E") {
-      const faceOffX = dir === "E" ? 3 : 0;
-      const eyeY = bodyY - 1;
+      const faceOffX = dir === "E" ? 5 : 0;
+      const eyeY = bodyY - 2;
 
       // Big white oval cartoon eye background
-      ellShaded(ctx, CX - 4 + faceOffX, eyeY, 3.5, 5, R_GLOVE, -0.05);
-      ellShaded(ctx, CX + 4 + faceOffX, eyeY, 3.5, 5, R_GLOVE, 0.05);
+      ellShaded(ctx, CX - 7 + faceOffX, eyeY, 7.0, 10.0, R_GLOVE, -0.05);
+      ellShaded(ctx, CX + 7 + faceOffX, eyeY, 7.0, 10.0, R_GLOVE, 0.05);
 
-      // Classic pie-cut black pupils (small glow dots)
-      figGlow(ctx, CX - 3.5 + faceOffX, eyeY, 1.8, 17, 1);
-      figGlow(ctx, CX + 3.5 + faceOffX, eyeY, 1.8, 17, 1);
+      // Classic pie-cut black pupils
+      ellShaded(ctx, CX - 6 + faceOffX, eyeY, 4.0, 5.0, R_LIMB, 0);
+      ellShaded(ctx, CX + 6 + faceOffX, eyeY, 4.0, 5.0, R_LIMB, 0);
 
       // Huge cartoon smile grin with cheek curves
-      const smileY = bodyY + 6;
-      ellShaded(ctx, CX + faceOffX, smileY, 6, 3, R_CAN_RED, 0);
-      figGlow(ctx, CX + faceOffX, smileY + 1, 1.5, 11, 12);
+      const smileY = bodyY + 12;
+      ellShaded(ctx, CX + faceOffX, smileY, 13.0, 7.0, R_CAN_RED, 0);
+      ellShaded(ctx, CX + faceOffX, smileY + 2, 9.0, 4.0, R_LIMB, 0);
     } else {
       // Back of canister seams
-      figDetail(ctx, [[CX, bodyY - 4], [CX, bodyY + 6]], 1.5, 17);
+      ellShaded(ctx, CX, bodyY + 2, 5, 20, R_CAN_RED, 0);
     }
 
     // ── Rubber-Hose Arms & White Gloves ──
-    const armSwing = Math.cos(legPhase) * 6;
-    const armY = bodyY - 2;
+    const armSwing = Math.cos(legPhase) * 10;
+    const armY = bodyY - 4;
 
     if (splashing) {
       // Wind-up: arms throwing forward
-      limbShaded(ctx, [CX - 9, armY], [CX - 13, armY - 4], 2.5, R_LIMB);
-      limbShaded(ctx, [CX + 9, armY], [CX + 14, armY + 2], 2.5, R_LIMB);
-      ellShaded(ctx, CX - 13, armY - 4, 3.5, 3.5, R_GLOVE);
-      ellShaded(ctx, CX + 14, armY + 2, 3.5, 3.5, R_GLOVE);
+      limbShaded(ctx, [CX - 18, armY], [CX - 24, armY - 8], 5.0, R_LIMB);
+      limbShaded(ctx, [CX + 18, armY], [CX + 26, armY + 4], 5.0, R_LIMB);
+      ellShaded(ctx, CX - 24, armY - 8, 8.0, 8.0, R_GLOVE);
+      ellShaded(ctx, CX + 26, armY + 4, 8.0, 8.0, R_GLOVE);
     } else {
       // Cheery 50s bouncy arm swing
-      limbShaded(ctx, [CX - 10, armY], [CX - 12 + armSwing, armY + 6], 2.5, R_LIMB);
-      limbShaded(ctx, [CX + 10, armY], [CX + 12 - armSwing, armY + 6], 2.5, R_LIMB);
-      ellShaded(ctx, CX - 12 + armSwing, armY + 6, 3.5, 3.5, R_GLOVE);
-      ellShaded(ctx, CX + 12 - armSwing, armY + 6, 3.5, 3.5, R_GLOVE);
+      limbShaded(ctx, [CX - 18, armY], [CX - 22 + armSwing, armY + 12], 5.0, R_LIMB);
+      limbShaded(ctx, [CX + 18, armY], [CX + 22 - armSwing, armY + 12], 5.0, R_LIMB);
+      ellShaded(ctx, CX - 22 + armSwing, armY + 12, 8.0, 8.0, R_GLOVE);
+      ellShaded(ctx, CX + 22 - armSwing, armY + 12, 8.0, 8.0, R_GLOVE);
     }
   };
 }

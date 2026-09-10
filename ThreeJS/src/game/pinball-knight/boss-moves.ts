@@ -51,6 +51,8 @@ export interface MoveCtx {
   moveTo(x: number, z: number): void;
   playAnim?(clip: string, opts?: { force?: boolean }): void;
   setFacing?(dir: "N" | "S" | "E" | "W"): void;
+  rotateSprite?(angle: number): void;
+  setHoldMovement?(hold: boolean): void;
   grabPlayer?(grabDuration: number, escapeCount: number, damage: number): boolean;
   flattenPlayer?(damage: number, launch: number, flattenDuration: number, wallCrunchDamage: number, dx: number, dz: number): boolean;
 }
@@ -1455,6 +1457,8 @@ export interface PinballChargeRt {
   hasHitPlayer: boolean;
   lane: THREE.Mesh | null;
   telegraphDur: number;
+  spinAngle: number;
+  spinSpeed: number;
 }
 
 export function freshPinballCharge(spec: PinballChargeSpec): PinballChargeRt {
@@ -1469,6 +1473,8 @@ export function freshPinballCharge(spec: PinballChargeSpec): PinballChargeRt {
     hasHitPlayer: false,
     lane: null,
     telegraphDur: spec.telegraphMin + Math.random() * (spec.telegraphMax - spec.telegraphMin),
+    spinAngle: 0,
+    spinSpeed: 0,
   };
 }
 
@@ -1478,7 +1484,13 @@ export function pinballChargeHoldsMovement(rt: PinballChargeRt): boolean {
 
 export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec, ctx: MoveCtx): void {
   if (rt.phase === "running") {
+    ctx.setHoldMovement?.(true);
     ctx.playAnim?.("attack");
+
+    // Continuous spin in direction of roll
+    rt.spinAngle = (rt.spinAngle + 38 * ctx.dt) % (Math.PI * 2);
+    ctx.rotateSprite?.(rt.spinAngle);
+
     const step = spec.speed * ctx.dt;
     const nx = ctx.x + rt.dx * step;
     const nz = ctx.z + rt.dz * step;
@@ -1495,8 +1507,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
           rt.bounces++;
           const tx1 = worldToTile(ctx.grid, ctx.x + rt.dx * 0.8, ctx.z);
           const tz1 = worldToTile(ctx.grid, ctx.x, ctx.z + rt.dz * 0.8);
-          const blockedX = !isWalkable(ctx.grid, tx1);
-          const blockedZ = !isWalkable(ctx.grid, tz1);
+          const blockedX = !isWalkable(ctx.grid, tx1.i, tx1.j);
+          const blockedZ = !isWalkable(ctx.grid, tz1.i, tz1.j);
           if (blockedX) rt.dx = -rt.dx;
           if (blockedZ) rt.dz = -rt.dz;
           if (!blockedX && !blockedZ) {
@@ -1540,6 +1552,10 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.telegraphDur = spec.telegraphMin + Math.random() * (spec.telegraphMax - spec.telegraphMin);
       rt.bounces = 0;
       rt.hasHitPlayer = false;
+      rt.spinAngle = 0;
+      rt.spinSpeed = 0;
+      ctx.rotateSprite?.(0);
+      ctx.setHoldMovement?.(false);
       ctx.playAnim?.("idle");
     }
     return;
@@ -1548,6 +1564,7 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
   rt.t -= ctx.dt;
   if (rt.phase === "idle" && rt.t <= rt.telegraphDur) {
     rt.phase = "telegraph";
+    ctx.setHoldMovement?.(true); // Lock position immediately upon entering rev-up telegraph
     const dx = ctx.target.x - ctx.x;
     const dz = ctx.target.z - ctx.z;
     const len = Math.hypot(dx, dz) || 1;
@@ -1555,6 +1572,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     rt.dz = dz / len;
     rt.bounces = 0;
     rt.hasHitPlayer = false;
+    rt.spinAngle = 0;
+    rt.spinSpeed = 6;
 
     const geo = new THREE.PlaneGeometry(1.6, spec.distance);
     const mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
@@ -1570,32 +1589,57 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     } else {
       ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
     }
-    ctx.playAnim?.("walk");
+    ctx.playAnim?.("attack");
     state.vfx?.burst(ctx.x, 0.2, ctx.z, spec.color, 12, 3);
   }
 
   if (rt.phase === "telegraph") {
+    // Strictly lock position in place during charge up
+    ctx.setHoldMovement?.(true);
+    ctx.moveTo(ctx.x, ctx.z);
+
+    // Calculate rev-up acceleration progress (0 -> 1)
+    const progress = Math.min(1.0, Math.max(0.0, 1.0 - (rt.t / Math.max(rt.telegraphDur, 0.01))));
+    // Angular velocity revs up from 6 rad/s to 45 rad/s as RPM builds to release
+    rt.spinSpeed = 6 + 39 * (progress * progress);
+    rt.spinAngle = (rt.spinAngle + rt.spinSpeed * ctx.dt) % (Math.PI * 2);
+    ctx.rotateSprite?.(rt.spinAngle);
+    ctx.playAnim?.("attack");
+
     pulse(rt.lane, rt.t);
-    if (Math.random() < ctx.dt * 15) {
-      state.vfx?.sparks(ctx.x, 0.2, ctx.z, rt.dx, rt.dz, 2);
+
+    // Floor friction sparks spraying tangentially behind/under the spinning sphere
+    if (Math.random() < ctx.dt * (18 + progress * 36)) {
+      state.vfx?.sparks(ctx.x, 0.08, ctx.z, -rt.dx + (Math.random() - 0.5) * 0.6, -rt.dz + (Math.random() - 0.5) * 0.6, 3 + Math.floor(progress * 6));
     }
+    // Friction smoke puffs expanding at the floor contact
+    if (Math.random() < ctx.dt * (4 + progress * 16)) {
+      state.vfx?.smoke?.(ctx.x, 0.2, ctx.z, 2, 0.35);
+    }
+    // Escalating screen rumble as RPM peaks
+    state.shakeT = Math.max(state.shakeT, 0.03 + progress * 0.25);
+
     if (rt.t <= 0) {
+      // Maximum RPM reached — release and blast forward!
       disposeMesh(rt.lane);
       rt.lane = null;
       rt.phase = "running";
       rt.left = spec.distance;
-      state.shakeT = Math.max(state.shakeT, 0.25);
+      state.shakeT = Math.max(state.shakeT, 0.38);
       state.vfx?.burst(ctx.x, 0.5, ctx.z, spec.color, 24, 7);
+      state.vfx?.sparks(ctx.x, 0.2, ctx.z, rt.dx, rt.dz, 14);
     }
   }
 }
 
-export function disposePinballCharge(rt: PinballChargeRt | null): void {
+export function disposePinballCharge(rt: PinballChargeRt | null, ctx?: MoveCtx): void {
   if (!rt) return;
   if (rt.lane) {
     disposeMesh(rt.lane);
     rt.lane = null;
   }
+  ctx?.rotateSprite?.(0);
+  ctx?.setHoldMovement?.(false);
 }
 
 

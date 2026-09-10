@@ -434,6 +434,8 @@ export interface Zombie extends Actor {
    * a sprite mesh must set this too, or it will drift the same way.
    */
   bodyR?: number;
+  /** When true, entity pursuit movement and steering are held stationary (e.g. boss charging/winding up) */
+  holdMove?: boolean;
   /**
    * Behavioural SUB-TYPE, only meaningful for `kind: "zombie"` (zombie-types.ts).
    * Runner/lurcher/hulk/midget/crawler/flailer/hobbler are multiplier bundles
