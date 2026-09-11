@@ -142,6 +142,9 @@ export function runPinballIntro(onDone: () => void): void {
       aim(tx + 2 * (1 - u), 7 + (distance - 7) * u, tz + 8 + (distance * .55 - 8) * u, tx, 0, tz);
       if (t >= 23) finish();
     }
+    film.fill.position.copy(camera.position);
+    film.fill.target.position.copy(knight.visible ? knight.position : film.rolling.root.position);
+    film.fill.target.position.y += knight.visible ? 1.6 : .4;
     renderer!.setRenderTarget(null); characterPixels.render(renderer!, scene, camera);
     raf = requestAnimationFrame(tick); state.animFrameId = raf;
   }

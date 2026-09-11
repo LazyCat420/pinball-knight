@@ -18,7 +18,7 @@ beforeEach(() => {
   const scene = new THREE.Scene();
   const actor = () => ({ root: new THREE.Group(), head: new THREE.Group(), pose: vi.fn() });
   const hero = actor();
-  film = { scene, camera: new THREE.PerspectiveCamera(), hero, knight: hero.root, rolling: actor(), town: new THREE.Group(), arcade: new THREE.Group(), title: new THREE.Group(), shadow: new THREE.Group(), portal: new THREE.Group(), trail: [], layout: { spawn: { x: 0, z: 0 }, grid: { w: 3, h: 3, t: new Uint8Array(9).fill(1), shapes: new Uint8Array(9) } }, dispose: vi.fn() };
+  film = { scene, fill: new THREE.DirectionalLight(), camera: new THREE.PerspectiveCamera(), hero, knight: hero.root, rolling: actor(), town: new THREE.Group(), arcade: new THREE.Group(), title: new THREE.Group(), shadow: new THREE.Group(), portal: new THREE.Group(), trail: [], layout: { spawn: { x: 0, z: 0 }, grid: { w: 3, h: 3, t: new Uint8Array(9).fill(1), shapes: new Uint8Array(9) } }, dispose: vi.fn() };
   scene.add(film.town, film.arcade, film.title);
   const renderer = { autoClear: true, getDrawingBufferSize: (v: THREE.Vector2) => v.set(1200, 800), getRenderTarget: () => null, getClearColor: (c: THREE.Color) => c.set(0), getClearAlpha: () => 1, setClearColor: vi.fn(), domElement: { clientWidth: 1200, clientHeight: 800 }, getPixelRatio: () => 1, setPixelRatio: vi.fn(), init: vi.fn(async () => {}), compileAsync: vi.fn(async () => {}), setRenderTarget: vi.fn(), render: vi.fn() };
   Object.assign(testState, { renderer, active: true, player: null, animFrameId: null });

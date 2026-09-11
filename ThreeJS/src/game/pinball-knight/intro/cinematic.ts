@@ -44,6 +44,9 @@ export function createCinematic() {
     const mesh = new THREE.Mesh(geo, material); mesh.position.set(x, y, z); parent.add(mesh);
   }
   scene.add(new THREE.HemisphereLight('#bce3ff', '#67517b', 2.2));
+  // A camera-side softbox keeps turned-away steel readable at every shot angle.
+  const fill = new THREE.DirectionalLight('#dce8ff', 4.5);
+  scene.add(fill, fill.target);
   const sun = new THREE.DirectionalLight('#ffe0ab', 3.2); sun.position.set(-10, 18, 12); scene.add(sun);
   const rim = new THREE.DirectionalLight('#86f8ff', .65); rim.position.set(10, 7, -8); scene.add(rim);
   const town = new THREE.Group(); scene.add(town);
@@ -147,5 +150,5 @@ export function createCinematic() {
     geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
     walls.dispose(); caps.dispose(); stones.dispose(); tiles.dispose(); scene.clear();
   }
-  return { scene, camera, town, arcade, knight, shadow, portal, title, trail, layout, hero, rolling, dispose };
+  return { scene, camera, fill, town, arcade, knight, shadow, portal, title, trail, layout, hero, rolling, dispose };
 }
