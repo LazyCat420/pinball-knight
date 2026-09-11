@@ -54,6 +54,13 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
   // Kick the loads off once, at construction. `paint` runs every frame and must
   // stay synchronous — starting a fetch from inside it would open one per frame.
   for (const c of [...PLAYABLE, {sheet:"clockwork_knight_football"}, {sheet:"clockwork_knight_baseball"}]) {
+    if (c.sheet === DEFAULT_PLAYER_SHEET && typeof Image !== "undefined") {
+      const image = new Image();
+      image.onload = () => previews.set(c.sheet, { image, cell: [0, 0, image.width, image.height], mirror: false, roll: [] });
+      image.onerror = () => previews.set(c.sheet, null);
+      image.src = "./sprites/armored-knight-portrait.png";
+      continue;
+    }
     void loadImportedSheet(c.sheet, "S").then((s) => {
       const idle = s?.manifest.rows.find((r) => r.clip === "idle");
       previews.set(

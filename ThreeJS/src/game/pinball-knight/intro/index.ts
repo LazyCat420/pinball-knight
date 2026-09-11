@@ -1,3 +1,4 @@
+import { createCharacterPixelPass } from '../render/character-pixel-pass';
 /** Town → lift off head → bowl into arcade → enchanted cabinet → the original PINBALL / KNIGHT maze. */
 import * as THREE from 'three';
 import { state } from '../state';
@@ -22,6 +23,7 @@ export function runPinballIntro(onDone: () => void): void {
   played = true;
   const film = createCinematic();
   const { scene, camera, knight, layout } = film;
+  const characterPixels = createCharacterPixelPass([film.knight, film.rolling.root]);
   const overlay = document.getElementById('dungeon-game-overlay') ?? document.body;
   const hidden = Array.from(overlay.children).filter(el => el !== renderer.domElement).map(el => ({ el: el as HTMLElement, visibility: (el as HTMLElement).style.visibility }));
   hidden.forEach(({ el }) => el.style.visibility = 'hidden');
@@ -51,7 +53,7 @@ export function runPinballIntro(onDone: () => void): void {
     if (state.animFrameId === raf) state.animFrameId = null;
     window.removeEventListener('keydown', key, true);
     hud.remove(); hidden.forEach(({ el, visibility }) => el.style.visibility = visibility);
-    renderer!.setPixelRatio(ratio); film.dispose(); diagnostics.__dungeonIntroPhase = null;
+    renderer!.setPixelRatio(ratio); characterPixels.dispose(); film.dispose(); diagnostics.__dungeonIntroPhase = null;
   }
   function finish() {
     if (finishing || disposed) return;
@@ -140,7 +142,10 @@ export function runPinballIntro(onDone: () => void): void {
       aim(tx + 2 * (1 - u), 7 + (distance - 7) * u, tz + 8 + (distance * .55 - 8) * u, tx, 0, tz);
       if (t >= 23) finish();
     }
-    renderer!.setRenderTarget(null); renderer!.render(scene, camera);
+    film.fill.position.copy(camera.position);
+    film.fill.target.position.copy(knight.visible ? knight.position : film.rolling.root.position);
+    film.fill.target.position.y += knight.visible ? 1.6 : .4;
+    renderer!.setRenderTarget(null); characterPixels.render(renderer!, scene, camera);
     raf = requestAnimationFrame(tick); state.animFrameId = raf;
   }
   void renderer.init().then(async () => {
