@@ -20,7 +20,7 @@ import { exploredFraction } from "../../fog";
 import { UI, GRID, ROW_H } from "../theme";
 import { fillRect, rect, strokeRect, text, type UiFrame } from "../im";
 import { close, type UiScreen } from "../stack";
-import { screenZoom } from "../root";
+import { presentationZoom } from "../root";
 import { DESIGN as HUD_DESIGN, PANEL_H as HUD_PANEL_H } from "./hud";
 
 /** Legend rows: colour + what it means. Order matches drawing priority. */
@@ -58,7 +58,7 @@ export function floorMapScreen(): UiScreen {
       // HUD takes the 2x design zoom, so its 76 UI pixels are `PANEL_H *
       // hudZoom` here. Hardcoding 108 was already only correct at one zoom, and
       // silently wrong the moment either screen moved.
-      const HUD_CLEAR = HUD_PANEL_H * screenZoom(HUD_DESIGN, f.w, f.h) + GRID * 2;
+      const HUD_CLEAR = HUD_PANEL_H * presentationZoom(HUD_DESIGN, f.w * f.scale, f.h * f.scale) / f.scale + GRID * 2;
       const avail = rect(pad, pad + ROW_H, f.w - pad * 2, f.h - pad - ROW_H - HUD_CLEAR);
       const scale = fitScale(g, avail.w, avail.h);
       const mapW = g.w * scale;

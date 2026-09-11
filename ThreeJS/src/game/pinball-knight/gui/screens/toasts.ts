@@ -34,14 +34,18 @@ const FADE_MS = 260;
 interface Toast {
   text: string;
   card?: CardId;
+  key?: string;
   until: number;
 }
 
 const queue: Toast[] = [];
 
 /** A plain line of text — pickups, weapon swaps, notes. */
-export function pushToast(msg: string): void {
-  queue.push({ text: msg, until: performance.now() + HOLD_MS });
+export function pushToast(msg: string, key?: string): void {
+  // Fast chains update one notice instead of stacking four large reward cards.
+  const previous = key ? queue.findIndex(t => t.key === key) : -1;
+  if (previous >= 0) queue.splice(previous, 1);
+  queue.push({ text: msg, key, until: performance.now() + HOLD_MS });
   if (queue.length > MAX_ROWS) queue.splice(0, queue.length - MAX_ROWS);
 }
 
@@ -77,7 +81,7 @@ interface Floater {
   born: number;
 }
 const floaters: Floater[] = [];
-const FLOAT_MS = 900;
+const FLOAT_MS = 650;
 
 /**
  * `sx`/`sy` arrive in WINDOW pixels — `worldToScreenPx` projects through the
@@ -100,7 +104,7 @@ export function pushFloatingCombo(combo: number, sx: number, sy: number): void {
   floaters.push({ text: `x${combo}`, x: p.x, y: p.y, born: performance.now() });
   // Bounded: a long chain can raise these faster than they expire, and an
   // unbounded array here would grow for the whole run.
-  if (floaters.length > 24) floaters.splice(0, floaters.length - 24);
+  if (floaters.length > 3) floaters.splice(0, floaters.length - 3);
 }
 
 export function clearFloatingCombos(): void {
@@ -109,6 +113,8 @@ export function clearFloatingCombos(): void {
 
 const TOAST_W = 260;
 const ROW_H = 30;
+const COMBO_TOAST_W = 168;
+const COMBO_TOAST_H = 20;
 const CARD_TOAST_H = 54;
 
 export function toastScreen(): UiScreen {
@@ -124,9 +130,8 @@ export function toastScreen(): UiScreen {
     design: { w: 600, h: 338, max: 2 },
     paint(f) {
       const now = performance.now();
-      // Expire from the front; the array is in raise order so the oldest is
-      // always index 0 and one splice clears every lapsed row.
-      while (queue.length && queue[0].until < now) queue.shift();
+      // Cards hold longer than plain notices; expire each independently.
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i].until < now) queue.splice(i, 1);
 
       // Clear of the HUD panel, in this screen's own units — the two share a
       // design box, so one number is right for both.
@@ -139,9 +144,11 @@ export function toastScreen(): UiScreen {
         // snap honest — a faded gold is still on the gold ramp.
         const a = Math.max(0, Math.min(1, left / FADE_MS));
         f.g.globalAlpha = a;
-        const h = t.card ? CARD_TOAST_H : ROW_H;
+        const compact = t.key === "style-kill";
+        const h = t.card ? CARD_TOAST_H : compact ? COMBO_TOAST_H : ROW_H;
+        const width = Math.min(compact ? COMBO_TOAST_W : TOAST_W, f.w - GRID * 2);
         y -= h + 4;
-        const r = rect(f.w - TOAST_W - GRID, y, TOAST_W, h);
+        const r = rect(f.w - width - GRID, y, width, h);
         fillRect(f, r, UI.well);
         strokeRect(f, r, t.card ? UI.gold : UI.sheetEdge);
         if (t.card) {
@@ -155,7 +162,7 @@ export function toastScreen(): UiScreen {
         f.g.globalAlpha = 1;
       }
 
-      // Floating combos: rise 30px over their life and fade out.
+      // Floating combos are stored in grid pixels: undo screen zoom before painting.
       for (let i = floaters.length - 1; i >= 0; i--) {
         const fl = floaters[i];
         const age = (now - fl.born) / FLOAT_MS;
@@ -164,7 +171,7 @@ export function toastScreen(): UiScreen {
           continue;
         }
         f.g.globalAlpha = 1 - age;
-        text(f, fl.text, fl.x, fl.y - age * 30, { size: 16, colour: UI.gold, align: "center" });
+        text(f, fl.text, fl.x / f.scale, fl.y / f.scale - age * 18, { size: 8, colour: UI.gold, align: "center" });
         f.g.globalAlpha = 1;
       }
 
@@ -173,9 +180,9 @@ export function toastScreen(): UiScreen {
         if (left <= 0) banner = null;
         else {
           f.g.globalAlpha = Math.max(0, Math.min(1, left / 400));
-          text(f, banner.title, f.w / 2, f.h * 0.3, { size: 32, colour: UI.gold, align: "center" });
+          text(f, banner.title, f.w / 2, f.h * 0.3, { size: 24, colour: UI.gold, align: "center" });
           if (banner.sub) {
-            text(f, banner.sub, f.w / 2, f.h * 0.3 + 44, { size: 8, colour: UI.textDim, align: "center" });
+            text(f, banner.sub, f.w / 2, f.h * 0.3 + 32, { size: 8, colour: UI.textDim, align: "center" });
           }
           f.g.globalAlpha = 1;
         }

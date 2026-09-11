@@ -55,6 +55,26 @@ describe("VFX Enhancements", () => {
     } as any;
   });
 
+  it("takes speed trails from the live character mesh and preserves its world transform", () => {
+    const oldMap=new THREE.Texture(),liveMap=new THREE.Texture();
+    const oldGeometry=new THREE.PlaneGeometry(1,1),liveGeometry=new THREE.PlaneGeometry(.9,1.5);
+    const source=new THREE.Mesh(oldGeometry,new THREE.MeshBasicMaterial({map:oldMap}));
+    const live=new THREE.Mesh(liveGeometry,new THREE.MeshBasicMaterial({map:liveMap}));
+    source.position.set(2,0,3);source.rotation.y=.7;source.scale.set(1.2,.8,1);live.position.set(0,.3,.01);
+    source.add(live);source.userData.liveCharacterMesh=live;scene.add(source);
+    try {
+      state.vfx!.ghost(source,0xffffff);
+      const ghost=scene.children.find(o=>o instanceof THREE.Mesh && o.renderOrder===9) as THREE.Mesh;
+      expect(ghost.geometry).toBe(liveGeometry);
+      expect((ghost.material as THREE.MeshBasicMaterial).map).toBe(liveMap);
+      expect(ghost.position.distanceTo(live.getWorldPosition(new THREE.Vector3()))).toBeLessThan(.00001);
+      expect(ghost.quaternion.angleTo(live.getWorldQuaternion(new THREE.Quaternion()))).toBeLessThan(.00001);
+      live.visible=false;state.vfx!.ghost(source,0xffffff);
+      const ghosts=scene.children.filter(o=>o instanceof THREE.Mesh && o.renderOrder===9) as THREE.Mesh[];
+      expect((ghosts[ghosts.length-1].material as THREE.MeshBasicMaterial).map).toBe(oldMap);
+    } finally {state.vfx!.dispose();source.removeFromParent();oldGeometry.dispose();liveGeometry.dispose();source.material.dispose();live.material.dispose();oldMap.dispose();liveMap.dispose();}
+  });
+
   it("provides vfx.heal() with rising motes and expanding ring", () => {
     expect(() => {
       state.vfx?.heal(5, 0.6, 5);

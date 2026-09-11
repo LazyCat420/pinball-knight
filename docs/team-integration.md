@@ -253,3 +253,24 @@ project-local lock did not protect against a later release from an older branch.
 - Awaiting user authorization to act as integration owner for this completed
   release. Current verified NAS remains `1e8971f7`; other developers' worktrees
   and the shared main checkout were not edited. Test browsers and Vite stopped.
+
+## Compact HUD and automatic chrome pinball — completed batch (2026-09-11)
+
+- Branch `fix/compact-hud-chrome-ball`, isolated worktree
+  `.worktrees/wt-compact-hud-chrome-ball`, ready for integration.
+- UI presentation and pointer coordinates share a 0.9 density factor. HUD/text
+  are 10% smaller; floor-map clearance uses the actual scaled HUD footprint.
+- Style kills update one 168×20 notice instead of stacking four 260×30 cards.
+  Floating combos are smaller, capped at three and correctly converted from
+  projected grid coordinates into the zoomed UI. Center banners are smaller.
+- Full pinball `ball` mode now blends into polished chrome without a potion;
+  the slower `roll` keeps the articulated body tumble. Studio reflections make
+  the sphere read as metal. Speed ghosts sample the live 3D layer and inherit
+  its world transform, eliminating old sprite frames in the trail.
+- 186 focused UI/rig/VFX tests passed; production Vite build passed. No changed-
+  file TypeScript diagnostics. Muted browser verified compact HUD, menu open/
+  close, automatic ball mode, and every sampled ghost using the live texture;
+  zero script errors.
+- NAS advanced to `c9bd868b` during development (animated tavern keepers and maze
+  merchant). Integrate this committed batch onto that verified release before
+  running the full deploy gate; preserve all its content.
