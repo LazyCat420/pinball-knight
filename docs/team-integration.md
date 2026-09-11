@@ -286,3 +286,10 @@ project-local lock did not protect against a later release from an older branch.
 
 - Branch `fix/camera-pullback-20`: reduce every saved camera rung to the nearest even PPU to old PPU / 1.2; default 56 -> 46 shows 21.7% more corridor. HUD scaling stays independent. Engine fallback matches the default.
 - Validation: 48 tests passed across sprite scale, render sizing, engine config mirror and atlas sizing; diff check passed. Ready for release integration with the deployed HUD/chrome fixes.
+
+### Camera pullback deployed — 2026-09-11
+
+- Feature `a5ed5a0c`; integrated release `a6626512` includes deployed Doppelganger boss `a02c784f` and all earlier HUD/chrome/NPC/performance changes.
+- Full release gate passed: 4,194 tests, 12 skipped; 361 test files passed, 5 skipped. Existing deploy wrapper completed image build, NAS transfer and restart. NAS `git.sha=a6626512`, healthy.
+- Public and NAS HTTP responses match SHA-256 `1333a3247a10cf9615ab6588771b3a55f43dc418b622c6427446a99264895eaa`.
+- Muted browser visual validation: 1280x944 shows 27.83 tiles across at PPU 46 (previously 22.86 at 56); HUD zoom remains 1.8; no JavaScript exceptions. Test-owned browser and loopback preview stopped.
