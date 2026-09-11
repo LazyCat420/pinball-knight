@@ -37,10 +37,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const loadArt = vi.fn<(...args: unknown[]) => Promise<void>>();
-const startBackfill = vi.fn();
+const buildSheets = vi.fn();
 vi.mock("../boot/sheets", () => ({
   loadMonsterSheetsForFloor: (...args: unknown[]) => loadArt(...args),
-  startSheetBackfill: () => startBackfill(),
+  buildFloorSheets: (...args: unknown[]) => buildSheets(...args),
 }));
 
 const presentUiFrame = vi.fn(() => true);
@@ -68,7 +68,7 @@ async function flushFrame(): Promise<void> {
 beforeEach(() => {
   presentUiFrame.mockClear();
   loadArt.mockReset().mockResolvedValue(undefined);
-  startBackfill.mockClear();
+  buildSheets.mockReset().mockResolvedValue([]);
   state.active = true;
   openFloorLoading.mockClear();
   pending = [];
@@ -126,7 +126,7 @@ describe("armFloorLoading", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(then).toHaveBeenCalledTimes(1);
-    expect(startBackfill).toHaveBeenCalledTimes(1);
+    expect(buildSheets).toHaveBeenCalledTimes(1);
   });
 
   it("does not start an abandoned floor when a late art load finishes", async () => {
@@ -141,7 +141,7 @@ describe("armFloorLoading", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(then).not.toHaveBeenCalled();
-    expect(startBackfill).not.toHaveBeenCalled();
+    expect(buildSheets).not.toHaveBeenCalled();
   });
 
   it("raises the hold and the screen synchronously, before any frame elapses", () => {

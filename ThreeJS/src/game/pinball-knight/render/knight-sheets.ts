@@ -22,7 +22,10 @@ import { loadImportedSheet, importedPaints, sheetPalette } from "./imported-pain
 import type { ActorPaints } from "../engine/render/paint-types";
 
 /** Enough for a whole run's weapon/gear churn without rebuild thrash. */
-const CACHE_CAP = 10;
+// 16, not 10: the descent hold warms both slots and every weapon and look
+// one pickup away (boot/sheets.ts warmKnightSheets); a cap that evicted them
+// before the pickup would make the warm-up theatre.
+const CACHE_CAP = 16;
 
 export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
