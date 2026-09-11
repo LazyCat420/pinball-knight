@@ -34,8 +34,8 @@ export function showToast(text: string, subtext = ""): void {
 }
 
 /** A small corner note — pickups, weapon swaps. */
-export function showPickupNote(text: string): void {
-  pushToast(text);
+export function showPickupNote(text: string, key?: string): void {
+  pushToast(text, key);
 }
 
 /** Rising combo number at a screen position. */

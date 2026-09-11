@@ -435,7 +435,9 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     },
     ghost(src, tint, life = 0.32, opacity = 0.4) {
       if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
-      const srcMat = src.material as THREE.MeshBasicMaterial;
+      const live = src.children.find(child => child instanceof THREE.Mesh && child.userData.liveCharacter && child.visible) as THREE.Mesh | undefined;
+      const source = live?.visible ? live : src;
+      const srcMat = source.material as THREE.MeshBasicMaterial;
       const mat = new THREE.MeshBasicMaterial({
         map: srcMat.map, // SHARED texture — offset updates keep the ghost on the live frame
         transparent: true,
@@ -445,10 +447,9 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
         side: THREE.DoubleSide,
         color: tint,
       });
-      const mesh = new THREE.Mesh(src.geometry, mat); // shared geometry — never disposed here
-      mesh.position.copy(src.position);
-      mesh.quaternion.copy(src.quaternion);
-      mesh.scale.copy(src.scale);
+      const mesh = new THREE.Mesh(source.geometry, mat); // shared geometry — never disposed here
+      source.updateWorldMatrix(true, false);
+      source.matrixWorld.decompose(mesh.position, mesh.quaternion, mesh.scale);
       mesh.renderOrder = 9; // just under the live actor
       scene.add(mesh);
       ghosts.push({ mesh, mat, t: 0, life, o0: opacity });

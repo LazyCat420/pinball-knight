@@ -50,6 +50,8 @@ export const uiStats = { frames: 0, painted: 0 };
  * layer (see the note on `UiScreen.design`).
  */
 export const MAX_UI_ZOOM = 4;
+/** User-requested 10% reduction, shared by geometry, text and pointer mapping. */
+export const UI_SCALE = .9;
 
 export function screenZoom(
   design: { w: number; h: number; max?: number } | undefined,
@@ -60,6 +62,11 @@ export function screenZoom(
   const fit = Math.min(Math.floor(gridW / design.w), Math.floor(gridH / design.h));
   const ceiling = Math.max(1, Math.min(MAX_UI_ZOOM, design.max ?? MAX_UI_ZOOM));
   return Math.max(1, Math.min(ceiling, fit));
+}
+
+/** Apply density after selecting the established responsive design zoom. */
+export function presentationZoom(design: { w: number; h: number; max?: number } | undefined, gridW: number, gridH: number): number {
+  return screenZoom(design, gridW, gridH) * UI_SCALE;
 }
 
 /**
@@ -111,7 +118,7 @@ export function drawUiFrame(pass: PixelPass): void {
     // is a property of the data rather than a cascade of `if (el)` checks that
     // has to be maintained by hand (see input/keymap.ts's warning about order).
     const isTop = s === active;
-    const zoom = screenZoom(s.design, w, h);
+    const zoom = presentationZoom(s.design, w, h);
     const f: UiFrame = beginUi(
       g,
       Math.floor(w / zoom),

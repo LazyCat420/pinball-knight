@@ -72,7 +72,7 @@ describe('rigged rolling and ball transitions', () => {
     const rig=createArmoredKnight(),hip=new THREE.Vector3(),knee=new THREE.Vector3(),ankle=new THREE.Vector3();
     try {
       for(let i=0;i<=24;i++) {
-        rig.applyPose(sampleKnightPose('armored-ball',i/24*Math.PI*2));
+        rig.applyPose(sampleKnightPose('tumble',i/24*Math.PI*2));
         expect(rig.body.visible).toBe(true); expect(rig.head.visible).toBe(true);
         for(const leg of rig.joints.legs){leg.hip.getWorldPosition(hip);leg.knee.getWorldPosition(knee);leg.ankle.getWorldPosition(ankle);expect(hip.distanceTo(knee)).toBeCloseTo(.58,5);expect(knee.distanceTo(ankle)).toBeCloseTo(.58,5);}
         const bounds=new THREE.Box3().setFromObject(rig.body);
@@ -106,6 +106,10 @@ describe('rigged rolling and ball transitions', () => {
     const after=animation.update(frame).tumbleAngle;
     expect(after).toBeGreaterThanOrEqual(before);
     expect(after-before).toBeLessThan(.1);
+  });
+  it('closes the knight into chrome in full pinball mode without a potion', () => {
+    expect(sampleKnightPose('tumble',0).shellWeight).toBe(0);
+    expect(sampleKnightPose('armored-ball',0).shellWeight).toBe(1);
   });
   it('blends the chrome potion shell and restores the articulated knight afterward', () => {
     const animation=new KnightAnimation();
