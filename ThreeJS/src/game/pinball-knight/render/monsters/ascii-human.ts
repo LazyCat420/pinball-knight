@@ -94,23 +94,13 @@ function asciiHumanFrame(dir: Dir, phase: number, opts: PoseOpts = {}): FramePai
       limbShaded(ctx, [CX + 8, torsoY - 2], [CX + 10 - legSwing * 0.5, torsoY + 8], 4, R_BODY_BASE);
     }
 
-    // Binary matrix code texture overlay (0s and 1s drawn in bright green)
-    ctx.fillStyle = "#33FF33";
-    ctx.font = "bold 8px monospace";
-    ctx.fillText("1", CX - 4, headY + 3);
-    ctx.fillText("0", CX + 1, headY + 3);
-
-    const f1 = (Math.floor(phase * 10) % 2 === 0) ? "1" : "0";
-    const f2 = (f1 === "1") ? "0" : "1";
-    ctx.fillText(f1, CX - 7, torsoY + 1);
-    ctx.fillText(f2, CX - 1, torsoY + 1);
-    ctx.fillText(f1, CX + 4, torsoY + 1);
-
-    ctx.fillText(f2, CX - 5, torsoY + 9);
-    ctx.fillText(f1, CX + 2, torsoY + 9);
-
-    // Digital highlights / sparkles
-    figDetail(ctx, [[CX - 1, torsoY - 1], [CX + 2, torsoY - 1]], 2, R_HIGHLIGHT);
+    // Binary matrix code dashes / segments (clean run length, no isolated micro-texels)
+    figDetail(ctx, [[CX - 4, headY], [CX + 3, headY]], 2, R_HIGHLIGHT);
+    figDetail(ctx, [[CX - 6, torsoY - 2], [CX - 2, torsoY - 2]], 2, R_GREEN_GLOW);
+    figDetail(ctx, [[CX + 1, torsoY - 2], [CX + 5, torsoY - 2]], 2, R_HIGHLIGHT);
+    figDetail(ctx, [[CX - 5, torsoY + 4], [CX - 1, torsoY + 4]], 2, R_HIGHLIGHT);
+    figDetail(ctx, [[CX + 2, torsoY + 4], [CX + 6, torsoY + 4]], 2, R_GREEN_GLOW);
+    figDetail(ctx, [[CX - 4, torsoY + 9], [CX + 3, torsoY + 9]], 2, R_HIGHLIGHT);
   };
 }
 
