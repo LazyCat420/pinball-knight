@@ -274,3 +274,10 @@ project-local lock did not protect against a later release from an older branch.
 - NAS advanced to `c9bd868b` during development (animated tavern keepers and maze
   merchant). Integrate this committed batch onto that verified release before
   running the full deploy gate; preserve all its content.
+
+### Compact HUD / chrome pinball deployed — 2026-09-11
+
+- Feature handoff: `a0f4c793`, `8b4dc061`; release `49503fd2` on `release/compact-hud-chrome-ball`. Preserves deployed NPC release `c9bd868b` and maze atlas performance fix `77b61be4`.
+- Full release gate: 4,188 tests passed, 12 skipped; 360 test files passed, 5 skipped. Docker build, transfer, restart and release guard succeeded through the existing deploy wrapper.
+- NAS container verified `49503fd2`, healthy. NAS and public HTML SHA-256 both `48556dde4a1df97681985c1aeb68fd2bd7ce2e7524407ba9c89b1e67df530ea0`.
+- Muted browser checks: compact single style-combo card, HUD scale 1.8, Escape menu, automatic ball and live-character trail; final chrome workshop and public gameplay reported no JavaScript errors.
