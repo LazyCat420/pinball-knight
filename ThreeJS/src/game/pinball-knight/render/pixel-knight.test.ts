@@ -33,6 +33,12 @@ describe('live pixel knight integration', () => {
       expect(f.silhouette.geometry).toBe(model.geometry);
       expect(f.silhouette.material.map).toBe(model.material.map);
       f.update('ball');
+      expect(model.visible).toBe(true);
+      expect(f.mesh.material.visible).toBe(false);
+      f.update('roll');
+      expect(model.visible).toBe(true);
+      expect(f.mesh.material.visible).toBe(false);
+      f.update('lavaball');
       expect(model.visible).toBe(false);
       expect(f.mesh.material.visible).toBe(true);
       expect(f.silhouette.geometry).toBe(f.mesh.geometry);

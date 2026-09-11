@@ -201,3 +201,32 @@ project-local lock did not protect against a later release from an older branch.
   errors. Recorded slow-motion walking/running and three sword variants.
 - Integrate this committed batch onto verified NAS release `035a23b6`, preserving
   the newer Fry Sentinel changes; run the project release gate before publishing.
+
+### Fluid knight release verification
+
+- Completed feature commit `af2d4861`; merged onto verified NAS `035a23b6` in
+  dedicated branch `release/fluid-knight-animation`, release commit `1e8971f7`.
+- Project deploy-kit wrapper with release lock and ancestry guard passed:
+  355 test files passed, 5 skipped; 4,160 tests passed, 12 skipped; zero failures.
+  Production image build, transfer and NAS restart succeeded.
+- NAS `1e8971f7` reports healthy. Public and container `/health` return healthy.
+  Public and NAS HTML SHA-256 match:
+  `5ed6426ca6da58941ae87478c0d5cf65d3cb9b533163ea7827c343108d4dcf85`.
+- Future releases must preserve `1e8971f7`. Shared main and other developers'
+  branches were not changed by this task.
+
+## Forged armor and full-body rolling — completed batch (2026-09-11)
+
+- Branch `feat/forged-knight-roll`, worktree `.worktrees/wt-forged-knight-roll`,
+  based on the verified fluid-knight release and its documentation `12c9be32`.
+- Ready for integration: six-view generated armor reference and prompt; custom
+  curved plate geometry, articulated armor details, updated selection portrait;
+  live full-body tuck/tumble/ball and chrome-ball transformations with recovery.
+- `roll`, `ball`, and `steelball` now stay on the live 3D layer. Distinct magical
+  marble and ricochet artwork, gameplay physics and damage timing are preserved.
+- Validation: 38 focused tests passed; no changed-file TypeScript diagnostics
+  (existing unrelated repository diagnostics remain). Muted browser confirmed
+  all three gameplay roll/ball clips hide the old sprite, recovery stays live,
+  and all seven intro phases return to tavern, with zero script errors.
+- Workshop recording includes the new armor, walking, tuck, continuous tumble,
+  chrome transformation and recovery. Full project release gate remains required.

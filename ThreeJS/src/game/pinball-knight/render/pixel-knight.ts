@@ -7,7 +7,7 @@ import { SPRITE_UNITS } from '../constants';
 import type { WeaponId } from '../items';
 import { playerSheetName, DEFAULT_PLAYER_SHEET } from './knight-sheets';
 import { createArmoredKnight } from './armored-knight';
-import type { ClockworkPose } from './clockwork-knight';
+import type { KnightClip } from './knight-motion';
 import { KnightAnimation } from './knight-animation';
 import { worldDirToScreen } from '../engine/camera';
 
@@ -64,7 +64,7 @@ export function createPixelKnightLayer() {
       let lastTime = NaN, lastX = NaN, lastZ = NaN, lastHp = NaN, lastHeading = NaN;
       draw = (r, name, direction, time, held, motion) => {
         if (released) return;
-        const supported = ['idle', 'walk', 'run', 'attack', 'death'].includes(name);
+        const supported = ['idle', 'walk', 'run', 'attack', 'death', 'roll', 'ball', 'steelball'].includes(name);
         syncSilhouette(supported);
         plane.visible = supported; source.visible = supported ? false : originalVisible;
         const dt = motion?.dt ?? (Number.isFinite(lastTime) ? Math.max(0, Math.min(.1, time - lastTime)) : 0);
@@ -78,13 +78,13 @@ export function createPixelKnightLayer() {
         if (motion) { lastX = motion.x; lastZ = motion.z; lastHp = motion.hp ?? NaN; }
         if (!supported) return;
         material.color.copy((sprite.mesh.material as THREE.MeshBasicMaterial).color);
-        const moving = name === 'walk' || name === 'run';
+        const moving = name === 'walk' || name === 'run' || name === 'roll' || name === 'ball' || name === 'steelball';
         const heading = moving && velocity ? Math.atan2(velocity.x, velocity.z)
           : name === 'idle' && Number.isFinite(lastHeading) ? lastHeading
           : { S: 0, N: Math.PI, E: Math.PI / 2, W: -Math.PI / 2 }[direction];
         lastHeading = heading;
         rig.setWeapon(held);
-        const pose = animation.update({ dt, clip: name as ClockworkPose, heading, distance,
+        const pose = animation.update({ dt, clip: (name === 'roll' ? 'tumble' : name === 'ball' ? 'armored-ball' : name === 'steelball' ? 'steel-ball' : name) as KnightClip, heading, distance,
           speed: dt > 0 ? distance / dt : 0, worldScale: SPRITE_UNITS / 4, weapon: held,
           attackTime: motion?.attackTime ?? (name === 'attack' ? time * .48 : 0), timing: motion?.timing,
           variant: motion?.variant, charge: motion?.charge, hurt });
