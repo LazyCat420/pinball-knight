@@ -252,20 +252,22 @@ export function buildNpcs(scene: THREE.Scene): BuiltNpcs {
         k.attention = approach(k.attention, attentive ? 1 : 0, 3, dt);
         k.greet = Math.max(0, k.greet - dt * 1.7);
 
-        // Turn to face you, or back to the work. The art is a billboard, so the
-        // only honest "turn" available is a mirror — eased THROUGH zero, which
-        // is what makes it read as pivoting rather than as a texture swap.
+        // Turn to face you, or back to the work.
+        // Rather than linearly squashing scale.x through zero (which collapses
+        // the character into a paper-thin line edge-on), we snap the horizontal
+        // facing with an energetic hop that maintains full character volume.
         const want = attentive ? (playerX >= k.x ? 1 : -1) : k.home;
-        k.face = approach(k.face, want, 7, dt);
-        // Never let the scale actually reach 0: a zero-determinant matrix makes
-        // THREE's normal maths NaN out and the sprite vanishes for good.
-        k.mesh.scale.x = Math.abs(k.face) < 0.06 ? 0.06 * (want >= 0 ? 1 : -1) : k.face;
+        if (k.face !== want) {
+          k.face = want;
+          k.greet = Math.max(k.greet, 0.45); // cute hop on turn
+        }
+        k.mesh.scale.x = want;
 
         // A single dip of the head on the frame you walk up, and a small lean
         // held while you stand there. Both scaled small on purpose — these are
         // background characters, and a keeper who lunges at you is worse than
         // one who ignores you.
-        const greetHop = Math.sin((1 - k.greet) * Math.PI) * 0.075;
+        const greetHop = Math.sin((1 - k.greet) * Math.PI) * 0.085;
         let rz = k.attention * 0.05 * (playerX >= k.x ? -1 : 1);
         let y = k.baseY + greetHop;
         let x = k.x;
@@ -342,48 +344,66 @@ export function buildNpcs(scene: THREE.Scene): BuiltNpcs {
             // Idle / work loop
             switch (k.idle) {
               case "hammer": {
+                // Smith: alternates between anvil striking work (row 1) and blade quench / steam inspect (row 2)
                 const p = phase01(t, HAMMER_PERIOD);
-                let col = 0;
-                if (p < 0.65) {
-                  col = p < 0.35 ? 0 : 1; // Windup
-                } else if (p < 0.85) {
-                  col = 2; // Anvil impact strike
+                const subCycle = Math.floor(t / (HAMMER_PERIOD * 3)) % 2;
+                if (subCycle === 0) {
+                  let col = 0;
+                  if (p < 0.65) {
+                    col = p < 0.35 ? 0 : 1; // Windup
+                  } else if (p < 0.85) {
+                    col = 2; // Anvil impact strike
+                  } else {
+                    col = 3; // Follow-through / recover
+                  }
+                  k.actorSprite.setFrame(4 + col);
                 } else {
-                  col = 3; // Follow-through / recover
+                  const col = Math.floor((p * 4) % 4);
+                  k.actorSprite.setFrame(8 + col);
                 }
-                k.actorSprite.setFrame(4 + col);
                 break;
               }
               case "dart": {
+                // Gambler: alternates between dart throw cycle (row 1) and rolling dice / fist pump (row 2)
                 const p = phase01(t, DART_PERIOD);
-                let col = 0;
-                if (p < 0.55) {
-                  col = p < 0.28 ? 0 : 1; // Aiming dart
-                } else if (p < 0.8) {
-                  col = 2; // Throwing
+                const subCycle = Math.floor(t / (DART_PERIOD * 2)) % 2;
+                if (subCycle === 0) {
+                  let col = 0;
+                  if (p < 0.55) {
+                    col = p < 0.28 ? 0 : 1; // Aiming dart
+                  } else if (p < 0.8) {
+                    col = 2; // Throwing
+                  } else {
+                    col = 3; // Release follow-through
+                  }
+                  k.actorSprite.setFrame(4 + col);
                 } else {
-                  col = 3; // Release follow-through
+                  const col = Math.floor((p * 4) % 4);
+                  k.actorSprite.setFrame(8 + col);
                 }
-                k.actorSprite.setFrame(4 + col);
                 break;
               }
               case "polish": {
-                // Alchemist shaking & brewing potion
+                // Alchemist: alternates between shaking potion (row 1) and violent bubble pop / smoke (row 2)
+                const subCycle = Math.floor(t / 4) % 2;
                 const frame = Math.floor((t * 3.5) % 4);
-                k.actorSprite.setFrame(4 + frame);
+                const row = subCycle === 0 ? 1 : 2;
+                k.actorSprite.setFrame(row * 4 + frame);
                 break;
               }
               case "deal": {
-                // Card dealer cascade bridge shuffle
+                // Card dealer: alternates between waterfall bridge shuffle (row 1) and glowing card fan flourish (row 2)
+                const subCycle = Math.floor(t / 4) % 2;
                 const frame = Math.floor((t * 4) % 4);
-                k.actorSprite.setFrame(4 + frame);
+                const row = subCycle === 0 ? 1 : 2;
+                k.actorSprite.setFrame(row * 4 + frame);
                 break;
               }
               case "bob": {
-                // Armorer: alternate between visor clank/nudge (row 0) and shield buffing (row 1)
-                const subCycle = Math.floor(t / 3) % 2;
+                // Armorer: alternates between heavy plate stance (row 0), shield dent hammering (row 1), and armor inspect (row 2)
+                const subCycle = Math.floor(t / 3.5) % 3;
                 const frame = Math.floor((t * 3) % 4);
-                const row = subCycle === 0 ? 0 : 1;
+                const row = subCycle === 0 ? 0 : (subCycle === 1 ? 1 : 2);
                 k.actorSprite.setFrame(row * 4 + frame);
                 break;
               }
