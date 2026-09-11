@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { beginUi, emptyUiInput } from "../im";
 import { depthSelectScreen } from "./depth-select";
 import { saveUnlockedDepth, clearUnlockedDepths } from "../../unlocked-depths";
+import { paintFrame } from "./scroll-probe";
 
 function stubStorage(initial?: Record<string, string>): void {
   const store = new Map(Object.entries(initial ?? {}));
@@ -95,4 +96,51 @@ describe("depthSelectScreen", () => {
 
     expect(onSelect).toHaveBeenCalledWith(4);
   });
+
+  it("scrolls down when mouse wheel is rolled inside the scroll region", () => {
+    saveUnlockedDepth(8);
+    const screen = depthSelectScreen({ onSelect: vi.fn(), initialFloor: 1 });
+    const ctx = mockCtx();
+
+    // Initial frame at top
+    const f1 = beginUi(ctx, 580, 360, emptyUiInput(), screen.focus, true, 1);
+    screen.paint(f1, screen);
+    expect(screen.scroll).toBe(0);
+
+    // Roll wheel down
+    const wheelInput = {
+      ...emptyUiInput(),
+      scroll: 60,
+      pointer: { x: 200, y: 150, inside: true, down: false, pressed: false, released: false, moved: false },
+    };
+    const f2 = beginUi(ctx, 580, 360, wheelInput, screen.focus, true, 1);
+    screen.paint(f2, screen);
+    expect(screen.scroll).toBeGreaterThan(0);
+  });
+
+  it("follows focus when navigating down through floors with arrow keys", () => {
+    saveUnlockedDepth(9);
+    const screen = depthSelectScreen({ onSelect: vi.fn(), initialFloor: 1 });
+    const size = { w: 580, h: 360 };
+
+    paintFrame(screen, size);
+
+    // Step down to floor 8
+    for (let i = 0; i < 8; i++) {
+      const down = emptyUiInput();
+      down.down = 1;
+      paintFrame(screen, size, down);
+      paintFrame(screen, size);
+      paintFrame(screen, size);
+    }
+    expect(screen.scroll).toBeGreaterThan(0);
+  });
+
+  it("pre-scrolls and sets initial focus when resume floor is below the fold", () => {
+    saveUnlockedDepth(8);
+    const screen = depthSelectScreen({ onSelect: vi.fn(), initialFloor: 7 });
+    expect(screen.focus).toBe(6); // Floor 7 is index 6
+    expect(screen.scroll).toBeGreaterThan(0);
+  });
 });
+

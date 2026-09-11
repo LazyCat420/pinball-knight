@@ -50,11 +50,22 @@ export function depthSelectScreen(opts: DepthSelectOptions): UiScreen {
     ? Math.min(maxUnlocked, Math.max(1, opts.initialFloor))
     : resumeFloor;
 
+  const rowHeight = 36;
+  const rowStep = rowHeight + 4;
+  // Estimate visible scroll height (~258px) to pre-scroll if resume floor is below the fold
+  const estScrollH = 258;
+  const targetY = (selected - 1) * rowStep;
+  const initialScroll = targetY + rowHeight > estScrollH
+    ? Math.max(0, targetY + rowHeight - estScrollH + ROW_H)
+    : 0;
+
+  let lastFocus = -1;
+
   return {
     id: "depth-select",
     pauses: true,
-    focus: 0,
-    scroll: 0,
+    focus: selected - 1,
+    scroll: initialScroll,
     design: { w: 580, h: 360, max: 2 },
     onCancel: () => {
       pop();
@@ -88,34 +99,11 @@ export function depthSelectScreen(opts: DepthSelectOptions): UiScreen {
       const footerY = b.y + b.h - footerH;
       const btnW = Math.floor((b.w - 16) / 3);
 
-      // Button 1: Start at Floor 1
-      if (button(f, rect(b.x, footerY + 4, btnW, ROW_H), "FLOOR 1", { good: selected === 1 })) {
-        pop();
-        opts.onSelect(1);
-        return;
-      }
-
-      // Button 2: Descend to selected floor
-      const descendLabel = `DESCEND (F${selected})`;
-      if (button(f, rect(b.x + btnW + 8, footerY + 4, btnW, ROW_H), descendLabel, { good: true })) {
-        pop();
-        opts.onSelect(selected);
-        return;
-      }
-
-      // Button 3: Cancel
-      if (button(f, rect(b.x + (btnW + 8) * 2, footerY + 4, btnW, ROW_H), "BACK", { danger: true })) {
-        pop();
-        opts.onCancel?.();
-        return;
-      }
-
       // ── Scrollable list of unlocked depths (fills space between header and footer) ──
       const scrollH = footerY - b.y - 6;
       const region = rect(b.x, b.y, b.w, scrollH);
-      const rowHeight = 36;
-      const totalContentHeight = maxUnlocked * (rowHeight + 4);
-      const sc = beginScroll(f, region, self.scroll, totalContentHeight);
+      const totalContentHeight = maxUnlocked * rowStep;
+      const sc = beginScroll(f, region, totalContentHeight, self.scroll);
       self.scroll = sc.offset;
 
       let currentY = region.y;
@@ -183,12 +171,50 @@ export function depthSelectScreen(opts: DepthSelectOptions): UiScreen {
           text(f, "RESUME", statusX, r.y + 12, { size: 8, colour: UI.good, align: "right" });
         }
 
-        currentY += rowHeight + 4;
+        currentY += rowStep;
       }
 
       endScroll(f, region, totalContentHeight, sc.offset);
-      self.scroll = followFocus(f, region, sc.offset);
-      self.focus = clampFocus(self.focus, f.count);
+
+      // Only adjust scroll offset to follow cursor when focus actually moved or was uninitialized.
+      // If the player scrolled with the mouse wheel, preserve the wheel offset.
+      const focusMoved = f.focus !== lastFocus;
+      lastFocus = f.focus;
+
+      if (f.input.scroll !== 0) {
+        self.scroll = sc.offset;
+      } else if (focusMoved) {
+        self.scroll = followFocus(f, region, sc.offset);
+      } else {
+        self.scroll = sc.offset;
+      }
+
+      // ── Footer buttons (rendered after scroll region for natural tab order) ──
+      // Button 1: Start at Floor 1
+      if (button(f, rect(b.x, footerY + 4, btnW, ROW_H), "FLOOR 1", { good: selected === 1 })) {
+        pop();
+        opts.onSelect(1);
+        return;
+      }
+
+      // Button 2: Descend to selected floor
+      const descendLabel = `DESCEND (F${selected})`;
+      if (button(f, rect(b.x + btnW + 8, footerY + 4, btnW, ROW_H), descendLabel, { good: true })) {
+        pop();
+        opts.onSelect(selected);
+        return;
+      }
+
+      // Button 3: Cancel
+      if (button(f, rect(b.x + (btnW + 8) * 2, footerY + 4, btnW, ROW_H), "BACK", { danger: true })) {
+        pop();
+        opts.onCancel?.();
+        return;
+      }
+
+      self.focus = f.focus;
     },
   };
 }
+
+

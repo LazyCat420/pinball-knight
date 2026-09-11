@@ -107,7 +107,22 @@ const CASES: Case[] = [
         onClose: () => {},
       }),
   },
+  {
+    name: "depth-select",
+    make: async () => {
+      const store = new Map<string, string>([["pinball-knight-unlocked-depth", "10"]]);
+      (globalThis as { localStorage?: unknown }).localStorage = {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+        removeItem: (k: string) => void store.delete(k),
+      };
+      const { depthSelectScreen } = await import("./depth-select");
+      return depthSelectScreen({ onSelect: () => {}, initialFloor: 1 });
+    },
+  },
 ];
+
+
 
 /**
  * Walk the cursor over every widget and check the focused row is visible.
