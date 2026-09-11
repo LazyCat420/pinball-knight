@@ -95,7 +95,6 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   dumpster_dan: ["S"],
   toaster_gremlin: ["S"],
   lip_flapper: ["S"],
-  hydrant_hound: ["S"],
   blaster_frank: ["S"],
 };
 
