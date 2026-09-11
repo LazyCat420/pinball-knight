@@ -96,6 +96,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   hamster_ball: { label: "Hamster Ball", icon: "🐹", blurb: "manic hamster sprinting inside a plastic exercise ball — in pinball mode it acts as a kinetic deflector, on foot it tramples you, and shatters on death" },
   ascii_human: { label: "Binary Human", icon: "👤", blurb: "digitized human silhouette of glowing 0s and 1s that swarms the player, punches, and infects other monsters into ASCII clones" },
   computer_screen: { label: "CRT Terminal", icon: "🖥️", blurb: "glitching retro computer monitor that manifests ASCII binary humans on Level 4 until smashed by the player" },
+  giant_ascii_human: { label: "ASCII Titan", icon: "👾", blurb: "towering colossus of cascading matrix code formed when binary humans merge — smashes the ground with its massive dual fists" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

@@ -137,6 +137,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   hamster_ball: 0.35,
   ascii_human: 0.35,
   computer_screen: 0.10,
+  giant_ascii_human: 0.10,
 };
 
 /**

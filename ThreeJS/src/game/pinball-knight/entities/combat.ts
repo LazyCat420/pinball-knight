@@ -77,6 +77,7 @@ import {
   GAS_CAN_DAMAGE,
   HAMSTER_BALL_DAMAGE,
   ASCII_HUMAN_DAMAGE,
+  GIANT_ASCII_DAMAGE,
   HAMSTER_BALL_DEFLECT_SPEED,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
@@ -1105,6 +1106,13 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.45, z.z, 0x00ff66, 16, 2.0); // Bright green matrix digits
     state.vfx?.burst(z.x, 0.5, z.z, 0x16a34a, 12, 1.4);
   }
+  // GIANT ASCII TITAN: massive green matrix explosion and heavy screen rumble
+  if (z.kind === "giant_ascii_human") {
+    state.vfx?.burst(z.x, 0.8, z.z, 0x00ff66, 36, 4.0);
+    state.vfx?.burst(z.x, 0.5, z.z, 0x22c55e, 24, 2.8);
+    state.vfx?.sparks(z.x, 0.6, z.z, 0, 1.5, 20);
+    state.shakeT = Math.max(state.shakeT, 0.45);
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1337,6 +1345,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   hamster_ball: HAMSTER_BALL_DAMAGE,
   ascii_human: ASCII_HUMAN_DAMAGE,
   computer_screen: 0,
+  giant_ascii_human: GIANT_ASCII_DAMAGE,
 };
 
 /**

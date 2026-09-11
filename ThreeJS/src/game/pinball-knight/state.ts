@@ -403,7 +403,8 @@ export type EnemyKind =
   | "gas_can" // 1950s TOON GAS CAN — vintage cartoon gas canister paired with Zippo; spills oil on death
   | "hamster_ball" // HAMSTER BALL — manic hamster in an exercise ball; pinball kinetic deflector and normal mode hazard; shatters on death
   | "ascii_human" // BINARY HUMAN — silhouette of glowing 0s and 1s; swarms, punches, and infects other monsters
-  | "computer_screen"; // CRT TERMINAL — glitching computer monitor that spawns ASCII humans until destroyed
+  | "computer_screen" // CRT TERMINAL — glitching computer monitor that spawns ASCII humans until destroyed
+  | "giant_ascii_human"; // GIANT ASCII TITAN — massive colossus formed when ASCII humans merge; smashes ground with dual fists
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -419,6 +420,10 @@ export interface Zombie extends Actor {
   maxHp?: number;
   /** True for the stairs-guarding mini-boss: health bar + reward on death. */
   boss?: boolean;
+  /** True when currently converging / merging into a giant */
+  merging?: boolean;
+  /** Target position while merging */
+  mergeTarget?: { x: number; z: number };
   /**
    * WHICH boss, when `boss` is set. Carried on the actor rather than asked of
    * `boss.ts` because `entities/combat.ts` credits the kill and importing the

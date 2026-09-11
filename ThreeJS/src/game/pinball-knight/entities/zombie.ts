@@ -175,11 +175,12 @@ import {
   GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN,
   HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN,
   ASCII_HUMAN_R, ASCII_HUMAN_HP, ASCII_HUMAN_SPEED_FACTOR, ASCII_HUMAN_WINDUP, ASCII_HUMAN_COOLDOWN,
-  COMPUTER_SCREEN_HP, COMPUTER_SCREEN_R, COMPUTER_SCREEN_COOLDOWN, COMPUTER_SCREEN_MAX_CHILDREN } from "../constants";
+  COMPUTER_SCREEN_HP, COMPUTER_SCREEN_R, COMPUTER_SCREEN_COOLDOWN, COMPUTER_SCREEN_MAX_CHILDREN,
+  ASCII_MERGE_THRESHOLD, ASCII_MERGE_RADIUS, GIANT_ASCII_HP, GIANT_ASCII_R, GIANT_ASCII_SPEED_FACTOR, GIANT_ASCII_DAMAGE, GIANT_ASCII_SLAM_RADIUS, GIANT_ASCII_WINDUP, GIANT_ASCII_COOLDOWN } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
-import { queueAsciiHuman } from "../spawn/factory";
+import { queueAsciiHuman, spawnGiantAsciiHuman } from "../spawn/factory";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -282,6 +283,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   hamster_ball: { bodyR: HAMSTER_BALL_R, contactRange: 0.85, windup: HAMSTER_BALL_WINDUP, cooldown: HAMSTER_BALL_COOLDOWN, ranged: false },
   ascii_human: { bodyR: ASCII_HUMAN_R, contactRange: 0.9, windup: ASCII_HUMAN_WINDUP, cooldown: ASCII_HUMAN_COOLDOWN, ranged: false },
   computer_screen: { bodyR: COMPUTER_SCREEN_R, contactRange: 0, windup: 0, cooldown: COMPUTER_SCREEN_COOLDOWN, ranged: false },
+  giant_ascii_human: { bodyR: GIANT_ASCII_R, contactRange: 1.4, windup: GIANT_ASCII_WINDUP, cooldown: GIANT_ASCII_COOLDOWN, ranged: false },
 };
 
 /**
@@ -743,6 +745,7 @@ export function convertMonsterToAsciiHuman(target: Zombie): boolean {
   if (
     target.kind === "ascii_human" ||
     target.kind === "computer_screen" ||
+    target.kind === "giant_ascii_human" ||
     target.kind === "pin" ||
     target.boss ||
     target.dormant ||
@@ -815,6 +818,7 @@ function asciiHumanPunch(z: Zombie, pdist: number, contactRange: number): void {
     if (
       other.kind === "ascii_human" ||
       other.kind === "computer_screen" ||
+      other.kind === "giant_ascii_human" ||
       other.kind === "pin" ||
       other.boss ||
       other.mode === "dead" ||
@@ -832,10 +836,201 @@ function asciiHumanPunch(z: Zombie, pdist: number, contactRange: number): void {
   }
 }
 
+/**
+ * GIANT ASCII TITAN: Dual-fist ground smash attack.
+ * Smashes both massive glowing binary fists into the floor, producing
+ * deep fissure decals, expanding neon green shockwave rings, screen shake,
+ * and radial AoE knockback and damage!
+ */
+export function giantAsciiGroundSmash(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (!p || p.hp <= 0) return;
+
+  sfxHeavy();
+  state.shakeT = Math.max(state.shakeT, 0.45);
+  state.hitstopT = Math.max(state.hitstopT, 0.08);
+  z.anim.play("attack", { force: true });
+
+  const impactX = z.x;
+  const impactZ = z.z;
+
+  // 1. Dual expanding green shockwave rings
+  state.vfx?.ring(impactX, impactZ, 0x00ff66, GIANT_ASCII_SLAM_RADIUS * 1.15, 0.35, { thin: true });
+  state.vfx?.ring(impactX, impactZ, 0x22ff88, GIANT_ASCII_SLAM_RADIUS * 1.35, 0.5, { delay: 0.05, opacity: 0.7 });
+
+  // 2. Branching ground fissure decals:
+  // Central deep shattered crater
+  spawnFloorFx("fissure", impactX, impactZ, GIANT_ASCII_SLAM_RADIUS * 0.95, 4.0);
+  // Radiating crack spur fractures (6 directions)
+  const rayCount = 6;
+  for (let i = 0; i < rayCount; i++) {
+    const angle = (i / rayCount) * Math.PI * 2 + (i % 2) * 0.2;
+    const crackDist = 1.0 + (i % 2) * 0.6;
+    const cx = impactX + Math.cos(angle) * crackDist;
+    const cz = impactZ + Math.sin(angle) * crackDist;
+    spawnFloorFx("fissure", cx, cz, 0.7, 3.2);
+  }
+
+  // 3. Impact sparks, binary particle bursts, and dust
+  state.vfx?.sparks?.(impactX, 0.35, impactZ, 0, 1.2, 28);
+  state.vfx?.burst?.(impactX, 0.25, impactZ, 0x00ff66, 24, 4.5);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    state.vfx?.dust?.(impactX + Math.cos(a) * 1.0, 0.08, impactZ + Math.sin(a) * 1.0);
+  }
+
+  // 4. AoE damage and radial knockback to the knight
+  const g = state.grid;
+  const dx = p.x - impactX;
+  const dz = p.z - impactZ;
+  const d = Math.hypot(dx, dz);
+  if (d <= GIANT_ASCII_SLAM_RADIUS) {
+    hitPlayer(z);
+    state.shakeT = Math.max(state.shakeT, 0.45);
+    const nx = d > 1e-3 ? dx / d : 0;
+    const nz = d > 1e-3 ? dz / d : 1;
+    if (p.momSpeed > 0) {
+      p.momX = nx;
+      p.momZ = nz;
+      p.momSpeed = Math.max(p.momSpeed, 14);
+    } else if (g) {
+      const res = moveCircle(g, p.x, p.z, PLAYER_R, nx * 0.7, nz * 0.7);
+      p.x = res.x;
+      p.z = res.z;
+    }
+  }
+
+  // 5. Friendly fire shockwave stagger to nearby lower-tier monsters
+  for (const other of state.zombies) {
+    if (other === z || other.hp <= 0 || (other.mode as string) === "dead") continue;
+    const odx = other.x - impactX;
+    const odz = other.z - impactZ;
+    const odistSq = odx * odx + odz * odz;
+    if (odistSq <= (GIANT_ASCII_SLAM_RADIUS * 0.85) * (GIANT_ASCII_SLAM_RADIUS * 0.85)) {
+      const odist = Math.sqrt(odistSq) || 1;
+      damageZombie(other, 1, odx / odist, odz / odist, 1.8);
+    }
+  }
+}
+
+/**
+ * Handles ASCII Binary Human swarm merging into the Giant ASCII Titan:
+ * 1. Steers merging ASCII humans towards their common centroid.
+ * 2. When close, collapses them into a binary matrix vortex, despawns them, and spawns Giant ASCII Titan.
+ * 3. If no merge is active and no Giant ASCII Titan is currently alive, checks for a cluster of >= ASCII_MERGE_THRESHOLD.
+ */
+export function updateAsciiMerge(dt: number): void {
+  // Check if any ASCII human is currently in "merging" mode
+  const mergingHumans = state.zombies.filter(
+    (z) => z.kind === "ascii_human" && z.mode === ("merging" as any) && z.hp > 0
+  );
+
+  if (mergingHumans.length > 0) {
+    // Find target centroid from first merging human
+    const target = mergingHumans[0].mergeTarget;
+    if (!target) return;
+
+    let allArrived = true;
+    for (const z of mergingHumans) {
+      const dx = target.x - z.x;
+      const dz = target.z - z.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist > 0.35) {
+        allArrived = false;
+        const step = Math.min(dist, z.speed * 2.2 * dt);
+        z.x += (dx / dist) * step;
+        z.z += (dz / dist) * step;
+        z.anim.play("walk");
+        if (Math.random() < 0.3) {
+          state.vfx?.sparks(z.x, 0.3, z.z, 0, 0.6, 2);
+        }
+        if (z.sprite?.mesh) syncActorMesh(z);
+      }
+    }
+
+    if (allArrived) {
+      // Climax of merge: remove merging humans cleanly and spawn Giant ASCII Titan
+      for (const z of mergingHumans) {
+        if (z.sprite?.mesh?.parent) {
+          z.sprite.mesh.parent.remove(z.sprite.mesh);
+        } else if (state.scene && z.sprite?.mesh) {
+          state.scene.remove(z.sprite.mesh);
+        }
+        z.sprite?.dispose?.();
+        z.hp = 0;
+        z.mode = "dead";
+      }
+
+      // Filter dead humans from state.zombies
+      state.zombies = state.zombies.filter((z) => !(z.kind === "ascii_human" && z.mode === ("dead" as any) && mergingHumans.includes(z)));
+
+      // Spawn Giant ASCII Titan at centroid
+      spawnGiantAsciiHuman(target.x, target.z);
+    }
+    return;
+  }
+
+  // If a Giant ASCII Titan is already alive, do not initiate another merge
+  const titanAlive = state.zombies.some((z) => z.kind === "giant_ascii_human" && z.mode !== "dead" && z.hp > 0);
+  if (titanAlive) return;
+
+  // Check living non-merging ASCII humans
+  const candidates = state.zombies.filter(
+    (z) => z.kind === "ascii_human" && z.mode !== "dead" && z.hp > 0 && !z.dormant && !z.merging
+  );
+
+  if (candidates.length >= ASCII_MERGE_THRESHOLD) {
+    // Check if at least ASCII_MERGE_THRESHOLD candidates are within ASCII_MERGE_RADIUS of each other
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      const cluster = [c];
+      for (let j = 0; j < candidates.length; j++) {
+        if (i === j) continue;
+        const other = candidates[j];
+        const dist = Math.hypot(other.x - c.x, other.z - c.z);
+        if (dist <= ASCII_MERGE_RADIUS) {
+          cluster.push(other);
+        }
+      }
+
+      if (cluster.length >= ASCII_MERGE_THRESHOLD) {
+        // Take the first ASCII_MERGE_THRESHOLD members
+        const group = cluster.slice(0, ASCII_MERGE_THRESHOLD);
+        let sumX = 0;
+        let sumZ = 0;
+        for (const m of group) {
+          sumX += m.x;
+          sumZ += m.z;
+        }
+        const cx = sumX / group.length;
+        const cz = sumZ / group.length;
+
+        // Initiate merge on group
+        for (const m of group) {
+          m.mode = "merging" as any;
+          m.merging = true;
+          m.mergeTarget = { x: cx, z: cz };
+          m.cooldown = 999;
+          m.windupT = 0;
+        }
+
+        // Swirling green binary vortex telegraph at centroid
+        state.vfx?.burst(cx, 0.4, cz, 0x00ff66, 20, 2.5);
+        state.vfx?.ring(cx, cz, 0x00ff66, 2.0, 0.45, { thin: true });
+        state.shakeT = Math.max(state.shakeT, 0.2);
+        break;
+      }
+    }
+  }
+}
+
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
   if (!g) return;
+
+  updateAsciiMerge(dt);
 
   for (let i = state.zombies.length - 1; i >= 0; i--) {
     const z = state.zombies[i];
@@ -1487,6 +1682,8 @@ export function updateZombies(dt: number): void {
             toucanBarrelRollAttack(z, pdist, contactRange); // corkscrew barrel roll dive
           } else if (z.kind === "ascii_human") {
             asciiHumanPunch(z, pdist, contactRange); // binary martial arts punch & infection
+          } else if (z.kind === "giant_ascii_human") {
+            giantAsciiGroundSmash(z, pdist, contactRange); // double-fist ground smash
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {

@@ -1337,3 +1337,16 @@ export const COMPUTER_SCREEN_DAMAGE = 0;
 export const COMPUTER_SCREEN_WINDUP = 0.5;
 export const COMPUTER_SCREEN_COOLDOWN = 3.5;
 export const COMPUTER_SCREEN_MAX_CHILDREN = 5;
+
+// ASCII Zombie Merge & Giant ASCII Titan (Formed when ASCII Humans merge; smashes ground with dual fists)
+export const ASCII_MERGE_THRESHOLD = 4;
+export const ASCII_MERGE_RADIUS = 6.0;
+export const GIANT_ASCII_HP = 120;
+export const GIANT_ASCII_R = 0.95;
+export const GIANT_ASCII_SPEED_FACTOR = 0.75;
+export const GIANT_ASCII_FROM_LEVEL = 4;
+export const GIANT_ASCII_DAMAGE = 3;
+export const GIANT_ASCII_SLAM_RADIUS = 2.8;
+export const GIANT_ASCII_WINDUP = 0.85;
+export const GIANT_ASCII_COOLDOWN = 2.4;
+

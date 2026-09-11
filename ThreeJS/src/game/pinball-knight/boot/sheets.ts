@@ -162,7 +162,8 @@ export type SheetKey =
   | "gas_can"
   | "hamster_ball"
   | "ascii_human"
-  | "computer_screen";
+  | "computer_screen"
+  | "giant_ascii_human";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -179,6 +180,7 @@ export const SHEET_KEYS = new Set<string>([
   "hamster_ball",
   "ascii_human",
   "computer_screen",
+  "giant_ascii_human",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -472,6 +474,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   hamster_ball: "hamster_ball",
   ascii_human: "ascii_human",
   computer_screen: "computer_screen",
+  giant_ascii_human: "giant_ascii_human",
 };
 
 
@@ -586,7 +589,7 @@ export function keysForFloor(level: number): SheetKey[] {
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand", "zippo", "clam", "crab", "gas_can", "hamster_ball");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob", "christmas_tree");
-  if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja", "shark_trapper", "lionfish_mob", "pufferfish_mob", "swordfish_mob", "ascii_human", "computer_screen");
+  if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja", "shark_trapper", "lionfish_mob", "pufferfish_mob", "swordfish_mob", "ascii_human", "computer_screen", "giant_ascii_human");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "six_armed_god", "cerberus", "pinball_boss", "medusa", "dracula", "spinning_top", "octopus_gunner", "anglerfish_mob", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail");
   return [...new Set(keys)];
 }
