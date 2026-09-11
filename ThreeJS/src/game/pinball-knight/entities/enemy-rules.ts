@@ -112,6 +112,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   toaster_gremlin: "kite",
   lip_flapper: "kite",
   hydrant_hound: "chase",
+  blaster_frank: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the

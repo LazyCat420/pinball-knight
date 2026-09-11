@@ -413,7 +413,8 @@ export type EnemyKind =
   | "dumpster_dan" // WEIRD — living green trashbag in baseball cap, hotdog club, banana peel slip traps
   | "toaster_gremlin" // WEIRD — purple goblin with chrome toaster head, launching flaming toast rockets
   | "lip_flapper" // WEIRD — accordion stalk with braced cartoon red lips, suction pull and control-reversing kiss
-  | "hydrant_hound"; // WEIRD — fire hydrant bulldog with glove ears, twin water cannons and geyser death
+  | "hydrant_hound" // WEIRD — fire hydrant bulldog with glove ears, twin water cannons and geyser death
+  | "blaster_frank"; // DANNY DEVITO — short stout rogue with round specs, shooting revolver into the air with random misfires
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -516,6 +517,8 @@ export interface Zombie extends Actor {
   spawnTimer?: number;
   /** Panic timer — freaks out, waves arms wildly, runs erratically before toppling over. */
   panicT?: number;
+  /** BLASTER FRANK: random trigger misfire cooldown timer. */
+  misfireT?: number;
   /** CROAKER hop: seconds of airtime left (>0 = airborne), and the locked
    *  heading. Separate from chargeT because a hop and a charge differ in the
    *  one way that matters — a charge ENDS on a wall, a hop bounces off it. */

@@ -100,6 +100,7 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   toaster_gremlin: 18,
   lip_flapper: 16,
   hydrant_hound: 32,
+  blaster_frank: 24,
 };
 
 export { skinSheet };
@@ -476,6 +477,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return makeSkinned("lip_flapper", x, z, baseSpeed * 1.05);
     case "hydrant_hound":
       return makeSkinned("hydrant_hound", x, z, baseSpeed * 0.9);
+    case "blaster_frank":
+      return makeSkinned("blaster_frank", x, z, baseSpeed * 0.95);
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

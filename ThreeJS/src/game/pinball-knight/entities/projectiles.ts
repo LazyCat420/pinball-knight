@@ -1364,6 +1364,65 @@ export function launchOrnament(x: number, z: number, dx: number, dz: number): vo
   state.vfx?.sparks(sx, PROJECTILE_Y + 0.1, sz, dx, dz, 4);
 }
 
+/**
+ * BLASTER FRANK — Shoots revolver straight up into the ceiling/sky!
+ * Launches an arc of falling bullets that crash down around target coordinates,
+ * kicking up warning dust, dealing splash damage to players, and collateral damage to foes.
+ */
+export function launchSkyVolley(x: number, z: number, targetX: number, targetZ: number): void {
+  if (!state.scene) return;
+
+  // Overhead muzzle flash and loud gunshot
+  sfxGun();
+  state.vfx?.burst(x, PROJECTILE_Y + 0.8, z, 0xf59e0b, 12, 2.5);
+  state.vfx?.sparks(x, PROJECTILE_Y + 0.8, z, 0, 1.5, 6);
+  state.vfx?.smoke(x, PROJECTILE_Y + 0.8, z, 1.0, 0.4);
+
+  const bulletCount = 3;
+  for (let b = 0; b < bulletCount; b++) {
+    const spreadAngle = (b / bulletCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+    const spreadDist = 0.3 + Math.random() * 1.2;
+    const tx = targetX + Math.cos(spreadAngle) * spreadDist;
+    const tz = targetZ + Math.sin(spreadAngle) * spreadDist;
+
+    const { geo, mat } = copBulletAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, PROJECTILE_Y + 0.5, z);
+    state.scene.add(mesh);
+
+    const flightTime = 0.75 + b * 0.15;
+    const dx = tx - x;
+    const dz = tz - z;
+
+    state.projectiles.push({
+      kind: "sky_bullet",
+      x,
+      z,
+      startX: x,
+      startZ: z,
+      targetX: tx,
+      targetZ: tz,
+      vx: dx / flightTime,
+      vz: dz / flightTime,
+      life: flightTime,
+      maxLife: flightTime,
+      damage: 2,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
+/**
+ * BLASTER FRANK — Random trigger misfire that fires a wild stray ricocheting bullet!
+ */
+export function fireWildBullet(x: number, z: number, angle: number): void {
+  const dx = Math.cos(angle);
+  const dz = Math.sin(angle);
+  fireCopBullet(x, z, dx, dz);
+}
+
 
 /**
  * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
@@ -1576,20 +1635,46 @@ export function updateProjectiles(dt: number): void {
       pr.z += pr.vz * dt;
 
       // ── Walls ──
-      if (pr.kind === "water_mortar") {
+      if (pr.kind === "water_mortar" || pr.kind === "sky_bullet") {
         const u = 1 - pr.life / pr.maxLife;
-        const h = 4 * 2.2 * u * (1 - u);
+        const peakH = pr.kind === "sky_bullet" ? 4.5 : 2.2;
+        const h = 4 * peakH * u * (1 - u);
         pr.mesh.position.y = PROJECTILE_Y + h;
+        pr.mesh.position.x = pr.x;
+        pr.mesh.position.z = pr.z;
+
+        if (pr.kind === "sky_bullet" && pr.targetX !== undefined && pr.targetZ !== undefined && u > 0.35) {
+          state.vfx?.dust(pr.targetX, 0.05, pr.targetZ);
+        }
+
         if (pr.life <= dt) {
-          state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x0284c7, 16, 2.0);
-          spawnFloorFx("slick", pr.x, pr.z, 1.2, 4.0, true);
-          const p = state.player;
-          if (p && Math.hypot(p.x - pr.x, p.z - pr.z) < 1.4) {
-            hitPlayerRanged(pr.damage, pr.x, pr.z);
+          if (pr.kind === "sky_bullet") {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf59e0b, 14, 2.0);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 1.5, 8);
+            state.vfx?.smoke(pr.x, PROJECTILE_Y, pr.z, 0.6, 0.2);
+            state.shakeT = Math.max(state.shakeT, 0.12);
+            const p = state.player;
+            if (p && Math.hypot(p.x - pr.x, p.z - pr.z) < 1.2) {
+              hitPlayerRanged(pr.damage, pr.x, pr.z);
+            }
+            for (const foe of state.zombies) {
+              if (foe.mode === "dead") continue;
+              if (Math.hypot(foe.x - pr.x, foe.z - pr.z) < 1.1) {
+                damageZombie(foe, 3, 0, 0, 0.3, false, "ranged");
+              }
+            }
+          } else {
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x0284c7, 16, 2.0);
+            spawnFloorFx("slick", pr.x, pr.z, 1.2, 4.0, true);
+            const p = state.player;
+            if (p && Math.hypot(p.x - pr.x, p.z - pr.z) < 1.4) {
+              hitPlayerRanged(pr.damage, pr.x, pr.z);
+            }
           }
           despawn(i);
           continue;
         }
+        continue;
       } else {
         const t = worldToTile(g, pr.x, pr.z);
         if (!isWalkable(g, t.i, t.j)) {

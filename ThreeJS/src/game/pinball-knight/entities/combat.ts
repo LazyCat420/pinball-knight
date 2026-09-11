@@ -321,7 +321,7 @@ let onDraculaTransform: ((x: number, z: number, speed: number) => void) | null =
 export function setDraculaTransformHandler(fn: (x: number, z: number, speed: number) => void): void {
   onDraculaTransform = fn;
 }
-import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../sfx";
+import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak, sfxGun } from "../sfx";
 import { showToast, showPickupNote, updateFpsStreak } from "../ui";
 import { faceOnDamage } from "../hud-face";
 
@@ -1135,6 +1135,12 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.5, z.z, 0x0284c7, 16, 1.8);
     state.shakeT = Math.max(state.shakeT, 0.25);
   }
+  if (z.kind === "blaster_frank") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xf59e0b, 18, 2.0);
+    state.vfx?.sparks(z.x, 0.5, z.z, 0, 1.2, 10);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.8);
+    sfxGun();
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1373,6 +1379,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   toaster_gremlin: 1,
   lip_flapper: 1,
   hydrant_hound: 2,
+  blaster_frank: 2,
 };
 
 /**
@@ -1504,7 +1511,7 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   state.levelHitsTaken += 1; // flawless-floor tally (see hitPlayer)
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
-  p.sprite.setTint(0x8fc46b); // acid-green flash, not the usual red bite
+  p.sprite?.setTint(0x8fc46b); // acid-green flash, not the usual red bite
   if (absorbed.hpDamage > 0) {
     state.vfx?.blood(p.x, 0.6, p.z, "green", 8);
     state.vfx?.damage(p.x, 1.15, p.z, absorbed.hpDamage, "in");

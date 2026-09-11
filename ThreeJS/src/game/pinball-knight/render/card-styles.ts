@@ -610,6 +610,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   toaster_gremlin: "iron",
   lip_flapper: "bone",
   hydrant_hound: "iron",
+  blaster_frank: "iron",
 };
 
 /**

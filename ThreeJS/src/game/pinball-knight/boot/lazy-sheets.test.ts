@@ -51,7 +51,7 @@ const ALL_KEYS: SheetKey[] = [
   "necromancer", "crystalback", "mimic", "reaper", "bloater", "platypus",
   "espresso", "gnome", "cigarette", "toucan", "jade_buddha", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "six_armed_god", "zippo", "cerberus", "clam", "crab", "medusa", "dracula", "spinning_top",
   "shark_trapper", "dolphin_brawler", "octopus_gunner", "clownfish_mob", "lionfish_mob", "anglerfish_mob", "pufferfish_mob", "swordfish_mob", "moray_mob", "seahorse_mob", "pinball_boss", "christmas_tree", "gas_can", "hamster_ball", "ascii_human", "computer_screen", "giant_ascii_human",
-  "pit_peeper", "dumpster_dan", "toaster_gremlin", "lip_flapper", "hydrant_hound",
+  "pit_peeper", "dumpster_dan", "toaster_gremlin", "lip_flapper", "hydrant_hound", "blaster_frank",
 ];
 
 /**

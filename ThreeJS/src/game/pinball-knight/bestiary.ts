@@ -102,6 +102,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   toaster_gremlin: { label: "Toaster Gremlin", icon: "🍞", blurb: "twitchy purple goblin with a glowing dual-slot toaster head that launches homing flaming toast rockets" },
   lip_flapper: { label: "Lip Flapper", icon: "💋", blurb: "striped accordion stalk with giant red cartoon lips and a fedora that sucks you in and confuses your controls with a lipstick kiss" },
   hydrant_hound: { label: "Hydrant Hound", icon: "🚒", blurb: "heavy red cast-iron municipal fire hydrant bulldog blasting high-pressure water cannon geysers that send knights flying" },
+  blaster_frank: { label: "Blaster Frank", icon: "🔫", blurb: "stout, balding rogue in a rumpled trenchcoat with round spectacles clutching a snub-nosed revolver; claims he 'started blasting', shoots wild volleys into the air and suffers random misfires" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

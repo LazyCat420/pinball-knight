@@ -197,7 +197,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -289,6 +289,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   toaster_gremlin: { bodyR: 0.45, contactRange: 5.5, windup: 0.5, cooldown: 2.2, ranged: true },
   lip_flapper: { bodyR: 0.45, contactRange: 4.5, windup: 0.6, cooldown: 2.5, ranged: true },
   hydrant_hound: { bodyR: 0.6, contactRange: 1.1, windup: 0.35, cooldown: 1.8, ranged: false },
+  blaster_frank: { bodyR: 0.42, contactRange: 6.0, windup: 0.50, cooldown: 2.8, ranged: true },
 };
 
 /**
@@ -1351,6 +1352,21 @@ export function updateZombies(dt: number): void {
     // whole point — stagger is CROWD CONTROL, and a control effect that leaves
     // the wind-up running controls nothing. Placed before the aggro gate and
     // before the phase branch so ghosts freeze mid-drift too.
+    // BLASTER FRANK: autonomous random trigger misfire countdown
+    if (z.kind === "blaster_frank") {
+      if (z.misfireT === undefined) {
+        z.misfireT = 3.0 + Math.random() * 3.5;
+      } else {
+        z.misfireT -= dt;
+        if (z.misfireT <= 0) {
+          z.misfireT = 3.0 + Math.random() * 4.0;
+          fireWildBullet(z.x, z.z, Math.random() * Math.PI * 2);
+          state.vfx?.burst(z.x, 0.4, z.z, 0xf59e0b, 8, 1.5);
+          state.vfx?.smoke(z.x, 0.4, z.z, 0.4);
+        }
+      }
+    }
+
     if ((z.staggerT ?? 0) > 0) {
       z.staggerT = Math.max(0, (z.staggerT ?? 0) - dt);
       if (z.mode === "windup" || z.mode === "charge") {
@@ -1757,6 +1773,8 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "lip_flapper") {
                 spitGlob(z.x, z.z, ux, uz);
                 state.vfx?.burst(z.x, 0.4, z.z, 0xef4444, 8, 1.2);
+              } else if (z.kind === "blaster_frank") {
+                launchSkyVolley(z.x, z.z, p.x, p.z);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
@@ -1770,6 +1788,9 @@ export function updateZombies(dt: number): void {
               deflectOffHamsterBall(z);
             } else {
               hitPlayer(z);
+            }
+            if (z.kind === "blaster_frank") {
+              fireWildBullet(z.x, z.z, Math.random() * Math.PI * 2);
             }
             if (z.kind === "crab") {
               p.momSpeed = (p.momSpeed || 0) * 0.5;

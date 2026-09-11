@@ -156,6 +156,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   toaster_gremlin: [{ id: "ironshard", chance: 0.35 }, { id: "lodestone", chance: 0.25 }],
   lip_flapper: [{ id: "hide", chance: 0.30 }, { id: "slimegel", chance: 0.25 }],
   hydrant_hound: [{ id: "ironshard", chance: 0.40 }, { id: "steelpin", chance: 0.30 }],
+  blaster_frank: [{ id: "ironshard", chance: 0.35 }, { id: "steelpin", chance: 0.30 }],
 };
 
 /**
