@@ -200,16 +200,25 @@ export function createSlime() {
   const sphere = new THREE.SphereGeometry(1, 20, 14); geometries.add(sphere);
   const gloss = new THREE.Mesh(sphere, glossMat); gloss.name = 'Gloss'; body.add(gloss);
   gloss.scale.set(0.32, 0.13, 0.2);
-  // Three trapped bubbles, as in every frame of the sheet. Each is a lighter
-  // disc with a pale rim, sitting just under the skin so it survives the crush.
+  // Trapped bubbles, as in every frame of the sheet. Three sit on the front
+  // face; the generated side and back references (docs/art/slime) show the
+  // bubbles continuing round the body, so two more ride each flank and one
+  // the back — every facing reads two or three. Each is a lighter disc with
+  // a pale rim, just under the skin so it survives the crush.
   const bubbles: THREE.Mesh[] = [];
-  const BUBBLE_AT: [number, number, number, number][] = [
-    [-0.32, 0.62, 0.86, 0.11],
-    [0.38, 0.72, 0.82, 0.085],
-    [0.1, 0.34, 0.97, 0.07],
+  /** [azimuth around y (π/2 = +z, toward the S camera), rest height, radius]. */
+  const BUBBLE_AT: [number, number, number][] = [
+    [1.95, 0.62, 0.11],
+    [1.15, 0.72, 0.085],
+    [1.45, 0.34, 0.07],
+    [2.8, 0.45, 0.08],
+    [3.7, 0.82, 0.07],
+    [5.9, 0.55, 0.075],
+    [0.55, 0.32, 0.06],
+    [4.9, 0.75, 0.08],
   ];
-  for (const [x, y, z, r] of BUBBLE_AT) {
-    const b = new THREE.Mesh(sphere, bubbleMat); b.position.set(x, y, z); b.scale.setScalar(r); body.add(b);
+  for (const [, , r] of BUBBLE_AT) {
+    const b = new THREE.Mesh(sphere, bubbleMat); b.scale.setScalar(r); body.add(b);
     const rim = new THREE.Mesh(sphere, bubbleRim); rim.scale.setScalar(1.25); b.add(rim);
     bubbles.push(b);
   }
@@ -249,13 +258,16 @@ export function createSlime() {
     deform(v.set(-0.42, 0.84, 0.62), shape, p); gloss.position.copy(p).addScaledVector(n.set(-0.45, 0.7, 0.55).normalize(), 0.02);
     gloss.visible = shape.melt < 0.95;
     gloss.scale.set(0.32 * (1 - 0.5 * shape.melt), 0.13 * (1 - 0.6 * shape.melt), 0.2);
-    // Bubbles drift up through the gel and wrap back to the base.
+    // Bubbles drift up through the gel and wrap back to the base. Each sits
+    // ON the rest sphere (radius 1 about y=0.18) at its azimuth, then rides
+    // the deform, so a flank bubble stays at the skin instead of inside it.
     bubbles.forEach((b, i) => {
-      const [x, y, z, r] = BUBBLE_AT[i];
+      const [az, y, r] = BUBBLE_AT[i];
       const rise = ((shape.bubblePhase + i * 0.37) % 1);
       const by = 0.12 + ((y - 0.12 + rise * 0.55) % 0.85);
-      deform(v.set(x, by, z), shape, p);
-      b.position.copy(p).multiplyScalar(0.94);
+      const R = Math.sqrt(Math.max(0.05, 1 - (by - 0.18) * (by - 0.18)));
+      deform(v.set(Math.cos(az) * R, by, Math.sin(az) * R), shape, p);
+      b.position.copy(p).multiplyScalar(0.975);
       b.scale.setScalar(r * (1 - 0.5 * shape.melt));
       b.visible = shape.melt < 0.85;
     });
