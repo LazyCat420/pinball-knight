@@ -299,3 +299,9 @@ project-local lock did not protect against a later release from an older branch.
 - Branch `feat/live-camera-zoom`: Options camera row has bounded Zoom Out / Zoom In buttons, applies immediately, persists the existing cameraZoom setting, and adds Panorama / Overview (PPU 32 / 24).
 - Live camera multiplier is selected PPU / boot PPU; projection and camera snapping honor zoom, while atlases remain intact. New cameras reapply the preference; reload bakes the saved PPU with the same framing. Live resampling prioritizes immediate framing over rebuilding atlases mid-run.
 - Validation: camera projection and new-camera restoration tests plus Options reachability passed (8); existing render sizing, sprite scale, atlas and config checks passed (50, including the two new zoom rungs). Ready for integrated release validation.
+
+### Live camera controls deployed — 2026-09-11
+
+- NAS release `736f0ac7` on `release/live-camera-zoom`, verified healthy. Full gate: 4,204 tests passed, 12 skipped; 362 test files passed, 5 skipped. Existing deploy wrapper completed build, transfer and restart.
+- Public and NAS HTML SHA-256 match: `60186f17f7aaee8e7f52ec37dbd5c6184966cdfcd60827166bfe63af6d662496`.
+- Muted browser clicks verified Esc / Options, all three wider steps, bounded Overview, Zoom In, unchanged player HP, saved Panorama, and reload preserving effective PPU 32. No JavaScript errors. Browser and loopback preview shut down.
