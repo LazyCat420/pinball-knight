@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { state, type Zombie } from "../state";
 import { installGameplayWiring } from "../boot/wiring";
 import { damageZombie, setReagentDropHandler, setCoinDropHandler } from "./combat";
@@ -9,9 +9,13 @@ import { KIND_SKIN } from "../spawn/kind-skin";
 import { SHEET_PAINTERS } from "../render/sheet-painters";
 import { KIND_PAINTS } from "../render/monster-portrait";
 import { T_FLOOR } from "../engine/grid";
+import { installSpriteTestDom } from "../testkit/atlas-census";
 
 describe("Bloater Garbage Monster & Molten Explosion", () => {
+  let restoreDom: () => void;
+
   beforeEach(() => {
+    restoreDom = installSpriteTestDom();
     state.scene = { add() {}, remove() {} } as any;
     state.dbgMaterialFloorFx = true;
     state.grid = {
@@ -41,6 +45,10 @@ describe("Bloater Garbage Monster & Molten Explosion", () => {
       trail: () => {},
       damage: () => {},
     } as any;
+  });
+
+  afterEach(() => {
+    restoreDom?.();
   });
 
   it("registers bloater as a first-class native sprite sheet", () => {

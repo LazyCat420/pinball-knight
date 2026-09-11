@@ -1767,6 +1767,14 @@ function staticTexture(paint: FramePaint): THREE.CanvasTexture {
   const hit = staticTexCache.get(paint);
   if (hit) return hit;
 
+  if (typeof document === "undefined") {
+    const canvas = { width: SPRITE_PX, height: SPRITE_PX } as unknown as HTMLCanvasElement;
+    const tex = new THREE.CanvasTexture(canvas);
+    celFilters(tex);
+    staticTexCache.set(paint, tex);
+    return tex;
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
