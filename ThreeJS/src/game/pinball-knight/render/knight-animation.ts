@@ -44,7 +44,7 @@ export class KnightAnimation {
     const speedTarget = Number.isFinite(frame.speed) ? Math.max(0, frame.speed) : 0;
     this.speed += (speedTarget - this.speed) * (1 - Math.exp(-dt * 16));
     const rolling = frame.clip === 'tumble' || frame.clip === 'armored-ball' || frame.clip === 'steel-ball';
-    if(rolling && !this.wasRolling) this.rollAngle = 0;
+    if(rolling && !this.wasRolling) this.rollAngle = this.current.tumbleAngle;
     if(!rolling && this.wasRolling) this.rollExit = this.rollAngle;
     this.wasRolling = rolling;
     const wantsLocomotion = frame.clip === 'walk' || frame.clip === 'run';

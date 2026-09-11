@@ -97,6 +97,16 @@ describe('rigged rolling and ball transitions', () => {
     expect(animation.inspect().pose.pelvisPosition[1]).toBeGreaterThan(1.2);
     expect(animation.inspect().pose.weaponVisible).toBe(true);
   });
+  it('keeps orientation when a new roll interrupts getting back up', () => {
+    const animation=new KnightAnimation();
+    const frame={dt:1/60,clip:'tumble' as const,heading:0,speed:4,distance:4/60,worldScale:.375,weapon:'sword' as const};
+    for(let i=0;i<45;i++)animation.update(frame);
+    for(let i=0;i<5;i++)animation.update({...frame,clip:'idle',speed:0,distance:0});
+    const before=animation.inspect().pose.tumbleAngle;
+    const after=animation.update(frame).tumbleAngle;
+    expect(after).toBeGreaterThanOrEqual(before);
+    expect(after-before).toBeLessThan(.1);
+  });
   it('blends the chrome potion shell and restores the articulated knight afterward', () => {
     const animation=new KnightAnimation();
     const frame={dt:1/60,clip:'steel-ball' as const,heading:0,speed:0,distance:0,worldScale:.375,weapon:'sword' as const};
