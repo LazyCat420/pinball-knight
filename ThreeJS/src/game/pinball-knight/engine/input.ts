@@ -256,7 +256,8 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   };
 
   window.addEventListener("keydown", onKeyDown);
-  window.addEventListener("keyup", onKeyUp);
+  // Releases must reach held-state cleanup even when a modal captures input.
+  window.addEventListener("keyup", onKeyUp, true);
   window.addEventListener("blur", onBlur);
   attackSurface.addEventListener("mousedown", onMouseDown);
   window.addEventListener("mouseup", onMouseUp);
@@ -387,7 +388,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", onBlur);
       attackSurface.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);

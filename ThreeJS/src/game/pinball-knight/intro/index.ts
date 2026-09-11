@@ -59,7 +59,7 @@ export function runPinballIntro(onDone: () => void): void {
     finishTimer = setTimeout(() => { cleanup(); if (state.active && !state.player) { sfxLevelStart(); onDone(); } }, 260);
   }
   function key(e: KeyboardEvent) {
-    if (!['Escape', 'Enter', ' '].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.repeat || !['Escape', 'Enter', ' '].includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault(); e.stopImmediatePropagation(); finish();
   }
   window.addEventListener('keydown', key, true);
