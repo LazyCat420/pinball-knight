@@ -28,6 +28,7 @@ export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
 
 let loadedSource = "";
+let artRevision = 0;
 function sourceSheetName(): string {
   const name = playerSheetName(), emote = activeClockworkEmote();
   return name === CLOCKWORK_PLAYER_SHEET && emote !== "bowling" ? `${name}_${emote}` : name;
@@ -165,6 +166,9 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
     if (!sheets.length) return null;
     const paints = importedPaints(sheets);
     if (paints) {
+      // An older request must not overwrite a newer character selection.
+      if (name !== sourceSheetName()) return null;
+      artRevision++;
       loadedSource = name;
       importedKnightPaints = paints;
       importedKnightPalette = sheetPalette(sheets) ?? null;
@@ -225,7 +229,7 @@ function resolvePaints(weapon: WeaponId, look: KnightLook): ActorPaints {
  * `lookKey`, or the two will disagree about what is on screen.
  */
 export function playerArtKey(weapon: WeaponId, look: KnightLook): string {
-  return `${playerSheetName()}|${playerSheetName() === CLOCKWORK_PLAYER_SHEET ? activeClockworkEmote() + "|" : ""}${lookKey(weapon, look)}`;
+  return `${playerSheetName()}|${artRevision}|${playerSheetName() === CLOCKWORK_PLAYER_SHEET ? activeClockworkEmote() + "|" : ""}${lookKey(weapon, look)}`;
 }
 
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {

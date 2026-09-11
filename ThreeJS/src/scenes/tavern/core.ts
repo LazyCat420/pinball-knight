@@ -197,8 +197,6 @@ let lobbyHud: LobbyHud | null = null;
 let isLobby = false;
 /** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
 let moteT = 0;
-/** Last frame's overlay state — the frozen→free edge re-dresses the knight. */
-let wasFrozen = false;
 /** Live camera zoom, eased toward the wide/focused target every frame. */
 let camZoom = CAM_ZOOM_WIDE;
 /** What the diorama should show. Read once on entry — the run can't change here. */
@@ -359,12 +357,8 @@ function frame(now: number): void {
   last = now;
   tavern.time += dt;
 
-  const frozen = panelOpen();
-  // Any overlay can change the loadout (the menu swaps the active hand, the
-  // counters sell plate) — re-dress the knight the frame the screen comes back.
-  // Cheap when nothing changed: refreshTavernPlayerArt is a string-key compare.
-  if (wasFrozen && !frozen) refreshTavernPlayerArt();
-  wasFrozen = frozen;
+  // Async art can finish while a menu remains open or after it closes.
+  refreshTavernPlayerArt();
   // POLL THE PAD FIRST. The Gamepad API is pull-only — it never fires events for
   // stick movement — so without this call `input.axis()` only ever saw the
   // keyboard and a controller did nothing in the tavern while working fine in
@@ -387,6 +381,7 @@ function frame(now: number): void {
   // while frozen is deliberate — otherwise the tap you made to CLOSE a counter
   // fires again the moment it shuts.
   if (input?.consumeDodge()) interact();
+  const frozen = panelOpen();
   if (input) updateTavernPlayer(dt, input, frozen);
 
   const p = tavern.player;
@@ -579,7 +574,6 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   tavern.onDescend = opts.onDescend;
   tavern.onAbandon = opts.onAbandon ?? null;
   tavern.time = 0;
-  wasFrozen = false;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07090d);

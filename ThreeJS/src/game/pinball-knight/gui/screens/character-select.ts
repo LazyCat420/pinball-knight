@@ -68,7 +68,7 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
   return {
     id: "character-select",
     pauses: true,
-    focus: 0,
+    focus: Math.max(0, PLAYABLE.findIndex(c => c.sheet === chosen)),
     scroll: 0,
     design: { w: 600, h: 338, max: 2 },
     onClose: onDone,
@@ -159,6 +159,9 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
         const painted = c.sheet === DEFAULT_PLAYER_SHEET;
         const ready = painted || preview !== null; // undefined = still loading
 
+        // A click/tap can arrive without pointer movement. Keep its focus so
+        // the old focused card cannot overwrite the choice on the next frame.
+        if (st.activated && ready && !busy) f.focus = st.index;
         if ((st.focused || st.activated) && ready && !busy) chosen = c.sheet;
 
         // Instant-pick on direct activation (pressing A or clicking the card)

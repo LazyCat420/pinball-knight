@@ -52,6 +52,17 @@ describe('cinematic playback', () => {
     expect([...phases]).toEqual(expect.arrayContaining(['machine', 'sweep', 'title']));
   });
 
+  it('does not skip from a held launch key repeating into the intro', async () => {
+    const { runPinballIntro } = await import('./index');
+    const done = vi.fn(); runPinballIntro(done); await settle(); frame(0);
+    listeners.get('keydown')!({ key: 'Enter', repeat: true, preventDefault: vi.fn(), stopImmediatePropagation: vi.fn() });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(done).not.toHaveBeenCalled();
+    listeners.get('keydown')!({ key: 'Enter', repeat: false, preventDefault: vi.fn(), stopImmediatePropagation: vi.fn() });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores ordinary clicks and movement keys, while the Skip button still works', async () => {
     const { runPinballIntro } = await import('./index');
     const done = vi.fn(); runPinballIntro(done); await settle(); frame(0);

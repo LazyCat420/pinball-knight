@@ -23,6 +23,15 @@ describe('tavern directional response',()=>{
     const delta=worldDirToScreen(tavern.player!.x-x,tavern.player!.z-z);
     expect(delta.x).toBeLessThan(0);
   });
+  it('stops immediately when a panel opens and accepts the next direction on close',()=>{
+    for(let i=0;i<15;i++)updateTavernPlayer(1/60,input(1),false);
+    const {x,z}=tavern.player!;
+    updateTavernPlayer(1/60,input(1),true);
+    expect(tavern.player!.x).toBe(x); expect(tavern.player!.z).toBe(z);
+    expect(tavern.player!.speed).toBe(0);
+    updateTavernPlayer(1/60,input(-1),false);
+    expect(worldDirToScreen(tavern.player!.x-x,tavern.player!.z-z).x).toBeLessThan(0);
+  });
   it('does not block open floor beside the round player at a table corner',()=>{
     // Table corner is (1.15,0). Target is sqrt(.25²+.25²) away,
     // outside the player's .32 radius, though inside its old square padding.

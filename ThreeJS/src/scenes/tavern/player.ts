@@ -164,6 +164,9 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
   const p = tavern.player;
   if (!p || !animator) return;
 
+  // Panels stop movement immediately instead of retaining a braking slide.
+  if (frozen) { vx = 0; vz = 0; }
+
   let tx = 0;
   let tz = 0;
   if (!frozen && !oneShot) {
