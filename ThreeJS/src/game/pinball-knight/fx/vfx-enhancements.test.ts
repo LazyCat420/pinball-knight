@@ -61,7 +61,7 @@ describe("VFX Enhancements", () => {
     const source=new THREE.Mesh(oldGeometry,new THREE.MeshBasicMaterial({map:oldMap}));
     const live=new THREE.Mesh(liveGeometry,new THREE.MeshBasicMaterial({map:liveMap}));
     source.position.set(2,0,3);source.rotation.y=.7;source.scale.set(1.2,.8,1);live.position.set(0,.3,.01);
-    source.add(live);source.userData.liveCharacterMesh=live;scene.add(source);
+    source.add(live);live.userData.liveCharacter=true;scene.add(source);
     try {
       state.vfx!.ghost(source,0xffffff);
       const ghost=scene.children.find(o=>o instanceof THREE.Mesh && o.renderOrder===9) as THREE.Mesh;

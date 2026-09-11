@@ -49,14 +49,13 @@ export function createPixelKnightLayer() {
         if (silhouette.material.map !== map) { silhouette.material.map = map; silhouette.material.needsUpdate = true; }
       }
       sprite.mesh.add(plane);
-      sprite.mesh.userData.liveCharacterMesh = plane;
+      plane.userData.liveCharacter = true;
       const source = sprite.mesh.material as THREE.Material;
       const originalVisible = source.visible;
       const originalDispose = sprite.dispose;
       let released = false;
       release = () => {
         if (released) return; released = true;
-        delete sprite.mesh.userData.liveCharacterMesh;
         syncSilhouette(false); source.visible = originalVisible; plane.removeFromParent(); geometry.dispose(); material.dispose(); target.dispose(); rig.dispose();
         sprite.dispose = originalDispose;
       };

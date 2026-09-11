@@ -435,7 +435,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     },
     ghost(src, tint, life = 0.32, opacity = 0.4) {
       if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
-      const live = src.userData.liveCharacterMesh as THREE.Mesh | undefined;
+      const live = src.children.find(child => child instanceof THREE.Mesh && child.userData.liveCharacter && child.visible) as THREE.Mesh | undefined;
       const source = live?.visible ? live : src;
       const srcMat = source.material as THREE.MeshBasicMaterial;
       const mat = new THREE.MeshBasicMaterial({
