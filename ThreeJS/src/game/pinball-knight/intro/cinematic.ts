@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { buildTitleGrid } from './title-grid';
 import { T_WALL } from '../maze/generator';
-import { createClockworkKnight } from '../render/clockwork-knight';
+import { createArmoredKnight } from '../render/armored-knight';
 
 export function createCinematic() {
   const scene = new THREE.Scene();
@@ -43,8 +43,8 @@ export function createCinematic() {
     const geo = new THREE.PlaneGeometry(width, width * 192 / 1024); geometries.add(geo);
     const mesh = new THREE.Mesh(geo, material); mesh.position.set(x, y, z); parent.add(mesh);
   }
-  scene.add(new THREE.HemisphereLight('#bce3ff', '#67517b', 1.25));
-  const sun = new THREE.DirectionalLight('#ffe0ab', 1.8); sun.position.set(-10, 18, 12); scene.add(sun);
+  scene.add(new THREE.HemisphereLight('#bce3ff', '#67517b', 2.2));
+  const sun = new THREE.DirectionalLight('#ffe0ab', 3.2); sun.position.set(-10, 18, 12); scene.add(sun);
   const rim = new THREE.DirectionalLight('#86f8ff', .65); rim.position.set(10, 7, -8); scene.add(rim);
   const town = new THREE.Group(); scene.add(town);
   box(town, 0, -.3, 0, 40, .5, 19, '#46485e');
@@ -115,9 +115,9 @@ export function createCinematic() {
   const portalGeo = new THREE.TorusGeometry(.8, .065, 8, 48); geometries.add(portalGeo);
   const portal = new THREE.Mesh(portalGeo, mat('#bcffff', true)); portal.position.set(0, 2.6, -1.5); portal.visible = false; arcade.add(portal);
 
-  // Both actors use the same rig as the playable Clockwork Knight's sprite sheets.
-  const hero = createClockworkKnight(); const knight = hero.root; scene.add(knight);
-  const rolling = createClockworkKnight(); rolling.pose('ball', 0); rolling.root.visible = false; scene.add(rolling.root);
+  // The cinematic and playable knight share the same articulated armour.
+  const hero = createArmoredKnight(); const knight = hero.root; scene.add(knight);
+  const rolling = createArmoredKnight(); rolling.pose('ball', 0); rolling.root.visible = false; scene.add(rolling.root);
   // An illuminated return chute carries the detached head up onto the playfield.
   const ramp = box(arcade, 0, .96, .55, .88, .10, 3.2, '#586e88');
   ramp.rotation.x = .57;
