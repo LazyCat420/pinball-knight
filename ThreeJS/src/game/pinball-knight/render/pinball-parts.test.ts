@@ -116,4 +116,36 @@ describe("every kind actually renders", () => {
     }
     state.pinballParts = [];
   });
+
+  it("builds a seesaw with a spring coil on Side B and default tilt propping Side B up and Side A down", () => {
+    const mesh = PART_BUILDERS.seesaw({ dirX: 1, dirZ: 0, dir2X: 0, dir2Z: 1, span: 2 });
+    expect(mesh.userData.spring, "seesaw must have a spring coil attached").toBeDefined();
+    expect(mesh.userData.pivot, "seesaw must have a pivoting plank").toBeDefined();
+
+    const pivot = mesh.userData.pivot as THREE.Group;
+    // Default resting rotation tilts Side A down (positive Z rotation tilts local -X down to floor)
+    expect(pivot.rotation.z).toBeGreaterThan(0);
+  });
+
+  it("tilts Side A to the floor when tilt is -1, and Side B to the floor when tilt is 1", () => {
+    const mesh = PART_BUILDERS.seesaw({ dirX: 1, dirZ: 0, dir2X: 0, dir2Z: 1, span: 2 });
+    const part = makePart("seesaw", mesh);
+    part.span = 2;
+    part.tilt = -1; // Side A down
+
+    // Animate frames toward target
+    for (let f = 0; f < 30; f++) {
+      PART_ANIMATORS.seesaw(part, { dt: 0.1, frozen: false });
+    }
+
+    const pivot = mesh.userData.pivot as THREE.Group;
+    expect(pivot.rotation.z).toBeGreaterThan(0.15);
+
+    // Switch to tilt = 1 (Side B down)
+    part.tilt = 1;
+    for (let f = 0; f < 30; f++) {
+      PART_ANIMATORS.seesaw(part, { dt: 0.1, frozen: false });
+    }
+    expect(pivot.rotation.z).toBeLessThan(-0.15);
+  });
 });

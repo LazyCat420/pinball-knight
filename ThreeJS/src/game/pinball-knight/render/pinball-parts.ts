@@ -494,13 +494,42 @@ function buildSeeSaw(dirX: number, dirZ: number, span = 2): THREE.Group {
     plankPivot.add(chev);
   }
 
-  // Default tilt: Side A down (-SEESAW_TILT_ANGLE)
-  plankPivot.rotation.z = -SEESAW_TILT_ANGLE;
+  // Default tilt: Side A down (+SEESAW_TILT_ANGLE tilts local -X down to floor)
+  plankPivot.rotation.z = SEESAW_TILT_ANGLE;
   gp.add(plankPivot);
+
+  // 3. Spring Mechanism under Side B (the launch side that starts elevated)
+  // When resting (tilt = -1, Side A on ground), this heavy steel coil stands extended
+  // under Side B. Stepping on Side A pushes the lever against the fulcrum, squashing
+  // this spring, which recoils and catapults the knight forward.
+  const springGroup = new THREE.Group();
+  const springX = fulcrumX + (span / 2) * 0.75;
+  springGroup.position.set(springX, 0, 0);
+
+  // Steel anchor base plate on floor
+  const springBase = new THREE.Mesh(boxGeo(0.32, 0.04, 0.32), std(C_STEEL_DK));
+  springBase.position.y = 0.02;
+  springGroup.add(springBase);
+
+  // Heavy coiled compression rings (3-tier torus stack)
+  const coilGroup = new THREE.Group();
+  for (let k = 0; k < 3; k++) {
+    const ring = new THREE.Mesh(torusGeo(0.11, 0.026, 6, 12), std(C_STEEL, C_GOLD, 0.3));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.08 + k * 0.08;
+    coilGroup.add(ring);
+  }
+  // Gold bumper plate on top of spring
+  const springCap = new THREE.Mesh(cylGeo(0.14, 0.14, 0.04, 10), std(C_GOLD, C_ARCANE, 0.5));
+  springCap.position.y = 0.32;
+  coilGroup.add(springCap);
+  springGroup.add(coilGroup);
+  gp.add(springGroup);
 
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.plankPivot = plankPivot;
   gp.userData.pivot = plankPivot;
+  gp.userData.spring = coilGroup;
   gp.userData.runeMats = runeMats;
   gp.userData.chevs = runeMats;
   gp.userData.phase = Math.random() * Math.PI * 2;
@@ -1959,10 +1988,26 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   seesaw: (part, { dt }) => {
     const pivot = part.mesh.userData.pivot as THREE.Group | undefined;
     const chevs = part.mesh.userData.chevs as EmissiveSink[] | undefined;
-    const targetTilt = (part.tilt ?? -1) * SEESAW_TILT_ANGLE;
+    const spring = part.mesh.userData.spring as THREE.Group | undefined;
+    // Side A down when tilt === -1 (+SEESAW_TILT_ANGLE tilts local -X down to floor)
+    // Side B down when tilt === 1 (-SEESAW_TILT_ANGLE tilts local +X down to floor)
+    const targetTilt = -(part.tilt ?? -1) * SEESAW_TILT_ANGLE;
     if (pivot) {
       // Smoothly tilt toward the target resting angle
       pivot.rotation.z += (targetTilt - pivot.rotation.z) * Math.min(1, dt * 10);
+    }
+    if (spring) {
+      // Side B down (tilt === 1): spring is compressed (0.38)
+      // Side B up (tilt === -1): spring is extended (1.0)
+      const isDown = (part.tilt ?? -1) === 1;
+      let targetScale = isDown ? 0.38 : 1.0;
+      if (part.hitT >= 0 && part.hitT < 0.45) {
+        const t = part.hitT / 0.45;
+        // Dampened spring recoil oscillation
+        const bounce = Math.sin(t * Math.PI * 4) * Math.exp(-t * 3.2) * 0.35;
+        targetScale = Math.max(0.25, targetScale + bounce);
+      }
+      spring.scale.y += (targetScale - spring.scale.y) * Math.min(1, dt * 16);
     }
     const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
     if (chevs) {

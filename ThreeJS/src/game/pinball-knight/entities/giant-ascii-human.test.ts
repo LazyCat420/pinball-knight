@@ -145,7 +145,7 @@ describe("Giant ASCII Titan — Constants & Registrations", () => {
   it("is present in the debug panel spawnable roster", () => {
     const entry = SPAWNABLE.find((e) => e.kind === "giant_ascii_human");
     expect(entry).toBeDefined();
-    expect(entry?.label).toContain("AsciiTitan");
+    expect(entry?.label).toContain("Titan");
   });
 
   it("produces valid procedural cel-paints", () => {

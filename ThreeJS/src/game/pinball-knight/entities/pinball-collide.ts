@@ -1165,7 +1165,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
       state.vfx?.dust(p.x, 0.06, p.z);
       state.vfx?.sparks(part.x, 0.4, part.z, part.dirX, part.dirZ, 16);
       requestShake(0.14);
-      sfxSpin();
+      sfxSpring();
     } else {
       // Side B is down
       const dxB = p.x - bx;
@@ -1190,7 +1190,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
       state.vfx?.dust(p.x, 0.06, p.z);
       state.vfx?.sparks(bx, 0.4, bz, revX, revZ, 16);
       requestShake(0.14);
-      sfxSpin();
+      sfxSpring();
     }
   },
 
