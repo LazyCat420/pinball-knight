@@ -76,18 +76,18 @@ export function createFries() {
     cartonGeo.computeVertexNormals();
   }
   const CARTON_H = 1.55, CARTON_Y = 0.55;
-  const box = mesh(body, cartonGeo, carton, [0, CARTON_Y + CARTON_H / 2, 0], [1.25, CARTON_H, 0.85]);
+  const box = mesh(body, cartonGeo, carton, [0, CARTON_Y + CARTON_H / 2, 0], [1.25, CARTON_H, 1.0]);
   box.name = 'Carton box';
   // Everything that rides the carton's RIM lives in `top`, positioned at the
   // rim height, so the crumple can lower it with the box without scaling it.
   const TOP_Y = CARTON_Y + CARTON_H;
   const top = new THREE.Group(); top.name = 'Rim'; top.position.y = TOP_Y; body.add(top);
-  mesh(top, cube, cartonDark, [0, -0.03, 0], [1.58, 0.1, 1.1], true);
-  const lip = mesh(top, cube, cartonDark, [0, -0.02, 0], [1.4, 0.03, 0.9], false); lip.name = 'Lip';
+  mesh(top, cube, cartonDark, [0, -0.03, 0], [1.58, 0.1, 1.26], true);
+  const lip = mesh(top, cube, cartonDark, [0, -0.02, 0], [1.4, 0.03, 1.05], false); lip.name = 'Lip';
 
   // ── THE FACE, on the +z side of the carton. ──
   const face = new THREE.Group(); face.name = 'Face'; body.add(face);
-  const FACE_Z = 0.85 / 2 + 0.03;
+  const FACE_Z = 1.0 / 2 + 0.03;
   const eyes: THREE.Mesh[] = [], pupils: THREE.Mesh[] = [], brows: THREE.Mesh[] = [];
   for (const side of [-1, 1]) {
     const e = mesh(face, sphere, white, [side * 0.27, 1.62, FACE_Z * (1 + 0.22 * 0.7)], [0.17, 0.2, 0.06]); eyes.push(e);
@@ -99,9 +99,9 @@ export function createFries() {
 
   // ── THE AMULET: a chain round the rim and a gold disc with a mystic eye. ──
   const chainGeo = new THREE.TorusGeometry(0.64, 0.035, 6, 32); geometries.add(chainGeo);
-  const chain = mesh(body, chainGeo, gold, [0, 1.95, 0.05], [1, 0.55, 1], false); chain.rotation.x = Math.PI / 2 - 0.25; chain.name = 'Chain';
+  const chain = mesh(body, chainGeo, gold, [0, 1.25, 0.0], [1.15, 0.9, 1], false); chain.rotation.x = Math.PI / 2 - 0.18; chain.name = 'Chain';
   const discGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.05, 20); geometries.add(discGeo);
-  const amulet = mesh(body, discGeo, gold, [0.05, 1.05, FACE_Z * 1.1 + 0.03], [1, 1, 1]); amulet.rotation.x = Math.PI / 2; amulet.name = 'Amulet';
+  const amulet = mesh(body, discGeo, gold, [-0.2, 0.95, FACE_Z * 1.1 + 0.03], [1, 1, 1]); amulet.rotation.x = Math.PI / 2; amulet.name = 'Amulet';
   mesh(amulet, sphere, amuletMat, [0, 0.035, 0], [0.1, 0.02, 0.07], false);
   mesh(amulet, sphere, ink, [0, 0.05, 0], [0.045, 0.01, 0.045], false);
 
@@ -147,7 +147,7 @@ export function createFries() {
 
   function reset() {
     body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.scale.set(1, 1, 1);
-    box.scale.set(1.25, CARTON_H, 0.85); box.position.y = CARTON_Y + CARTON_H / 2; box.rotation.set(0, 0, 0);
+    box.scale.set(1.25, CARTON_H, 1.0); box.position.y = CARTON_Y + CARTON_H / 2; box.rotation.set(0, 0, 0);
     face.position.set(0, 0, 0); face.scale.set(1, 1, 1);
     eyes.forEach((e) => e.scale.set(0.17, 0.2, 0.06));
     pupils.forEach((p) => p.position.set(p.position.x < 0 ? -0.05 : 0.05, 0.02, 0.6));
@@ -159,7 +159,7 @@ export function createFries() {
     legs.forEach((l) => { l.position.y = CARTON_Y + 0.02; });
     legs.forEach((l) => l.rotation.set(0, 0, 0));
     darts.visible = false; spill.visible = false;
-    chain.visible = true; amulet.visible = true; chain.position.y = 1.95; chain.scale.set(1, 0.55, 1); amulet.position.y = 1.05;
+    chain.visible = true; amulet.visible = true; chain.position.y = 1.25; chain.scale.set(1.15, 0.9, 1); amulet.position.y = 0.95;
   }
 
   /** Pose the sentinel at `t` (0..1) through `clip`. */
@@ -206,7 +206,7 @@ export function createFries() {
       // with a sad face; the spilled fries stay scattered around it.
       const buckle = ease(t / 0.35), crumple = ease((t - 0.3) / 0.7);
       const flatten = 1 - 0.78 * crumple;
-      box.scale.set(1.25 * (1 + 0.3 * crumple), CARTON_H * flatten, 0.85 * (1 + 0.15 * crumple));
+      box.scale.set(1.25 * (1 + 0.3 * crumple), CARTON_H * flatten, 1.0 * (1 + 0.15 * crumple));
       box.position.y = CARTON_Y * (1 - crumple) + (CARTON_H * flatten) / 2 + 0.04;
       box.rotation.z = 0.18 * buckle * (1 - crumple) + 0.05 * crumple;
       box.rotation.x = -0.12 * buckle;
@@ -235,8 +235,8 @@ export function createFries() {
       });
       arms.forEach((a, i) => { a.rotation.z = (i === 0 ? 1 : -1) * (0.12 + 1.3 * crumple); a.rotation.x = 0.3 * buckle; a.position.y = 1.6 - drop * 0.9; });
       legs.forEach((l, i) => { l.rotation.z = (i === 0 ? 1 : -1) * 0.9 * crumple; l.rotation.x = -0.35 * crumple; l.position.y = CARTON_Y + 0.02 - CARTON_Y * crumple * 0.7; });
-      chain.position.y = 1.95 - drop * 0.95; chain.scale.y = 0.55 * Math.max(0.2, 1 - crumple); chain.visible = crumple < 0.6;
-      amulet.position.y = 1.05 - drop * 0.6;
+      chain.position.y = 1.25 - drop * 0.6; chain.scale.y = 0.9 * Math.max(0.2, 1 - crumple); chain.visible = crumple < 0.6;
+      amulet.position.y = 0.95 - drop * 0.5;
       body.position.y = 0;
     }
   }
