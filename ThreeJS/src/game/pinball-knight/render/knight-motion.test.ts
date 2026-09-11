@@ -66,3 +66,44 @@ describe('authored knight rig and motion', () => {
     expect(Math.abs(animation.heading - heading)).toBeLessThan(.05);
   });
 });
+
+describe('rigged rolling and ball transitions', () => {
+  it('keeps the knight assembled throughout a full tumble with rigid limb lengths', () => {
+    const rig=createArmoredKnight(),hip=new THREE.Vector3(),knee=new THREE.Vector3(),ankle=new THREE.Vector3();
+    try {
+      for(let i=0;i<=24;i++) {
+        rig.applyPose(sampleKnightPose('armored-ball',i/24*Math.PI*2));
+        expect(rig.body.visible).toBe(true); expect(rig.head.visible).toBe(true);
+        for(const leg of rig.joints.legs){leg.hip.getWorldPosition(hip);leg.knee.getWorldPosition(knee);leg.ankle.getWorldPosition(ankle);expect(hip.distanceTo(knee)).toBeCloseTo(.58,5);expect(knee.distanceTo(ankle)).toBeCloseTo(.58,5);}
+        const bounds=new THREE.Box3().setFromObject(rig.body);
+        expect(Number.isFinite(bounds.min.y)).toBe(true);
+      }
+    } finally {rig.dispose();}
+  });
+  it('spins from achieved travel, freezes during hitstop, and recovers without unwinding earlier turns', () => {
+    const animation=new KnightAnimation();
+    const frame={dt:1/60,clip:'armored-ball' as const,heading:0,speed:6,distance:.1,worldScale:.375,weapon:'sword' as const};
+    for(let i=0;i<180;i++)animation.update(frame);
+    const angle=animation.inspect().pose.tumbleAngle;
+    for(let i=0;i<20;i++)expect(animation.update({...frame,dt:0}).tumbleAngle).toBe(angle);
+    for(let i=0;i<20;i++)expect(animation.update({...frame,distance:0,speed:0}).tumbleAngle).toBe(angle);
+    let previous=angle;
+    for(let i=0;i<30;i++){
+      const p=animation.update({...frame,clip:'idle',distance:0,speed:0});
+      expect(Math.abs(p.tumbleAngle-previous)).toBeLessThan(.5); previous=p.tumbleAngle;
+    }
+    expect(Math.abs(previous-angle)).toBeLessThanOrEqual(Math.PI);
+    expect(Math.sin(previous)).toBeCloseTo(0,8);
+    expect(animation.inspect().pose.pelvisPosition[1]).toBeGreaterThan(1.2);
+    expect(animation.inspect().pose.weaponVisible).toBe(true);
+  });
+  it('blends the chrome potion shell and restores the articulated knight afterward', () => {
+    const animation=new KnightAnimation();
+    const frame={dt:1/60,clip:'steel-ball' as const,heading:0,speed:0,distance:0,worldScale:.375,weapon:'sword' as const};
+    const early=animation.update(frame);expect(early.shellWeight).toBeGreaterThan(0);expect(early.shellWeight).toBeLessThan(1);
+    for(let i=0;i<30;i++)animation.update(frame);
+    expect(animation.inspect().pose.shellWeight).toBe(1);
+    for(let i=0;i<30;i++)animation.update({...frame,clip:'idle'});
+    expect(animation.inspect().pose.shellWeight).toBe(0);
+  });
+});

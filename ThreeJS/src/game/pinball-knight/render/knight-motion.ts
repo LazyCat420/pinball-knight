@@ -3,7 +3,7 @@ import type { WeaponId } from '../items';
 import type { ClockworkPose } from './clockwork-knight';
 
 export type V3 = [number, number, number];
-export type KnightClip = ClockworkPose;
+export type KnightClip = ClockworkPose | 'tumble' | 'armored-ball' | 'steel-ball';
 export interface ArmPose { shoulder: V3; elbow: number; twist: number; wrist: V3 }
 export interface FootPose { position: V3; pitch: number; toe: number }
 export interface KnightPose {
@@ -11,7 +11,8 @@ export interface KnightPose {
   arms: [ArmPose, ArmPose]; feet: [FootPose, FootPose]; tassets: [number, number];
   headPosition: V3; headRotation: V3; detachedHead: boolean; bodyVisible: boolean;
   weaponRotation: V3; weaponVisible: boolean;
-  handTargets: [V3, V3] | null;
+  handTargets: [V3, V3] | null; handIKWeight: number;
+  tumbleAngle: number; tumbleHeight: number; shellWeight: number;
 }
 export interface MotionOptions { speed?: number; weapon?: WeaponId; variant?: number; charge?: number }
 const TAU = Math.PI * 2;
@@ -42,7 +43,7 @@ export function restKnightPose(): KnightPose {
     ],
     feet: [{ position: [-.225, .16, .06], pitch: 0, toe: 0 }, { position: [.225, .16, -.08], pitch: 0, toe: 0 }],
     tassets: [0, 0], headPosition: [0, 0, 0], headRotation: [0, 0, 0], detachedHead: false,
-    bodyVisible: true, weaponRotation: [1.15, 0, -.15], weaponVisible: true, handTargets: null,
+    bodyVisible: true, weaponRotation: [1.15, 0, -.15], weaponVisible: true, handTargets: null, handIKWeight: 0, tumbleAngle: 0, tumbleHeight: .80, shellWeight: 0,
   };
 }
 
@@ -158,6 +159,20 @@ export function sampleKnightPose(clip: KnightClip, time: number, options: Motion
       p.weaponRotation = [0, 0, 0];
       p.chest[0] = -.06 * Math.sin(t * Math.PI);
     }
+  } else if (clip === 'tumble' || clip === 'armored-ball' || clip === 'steel-ball') {
+    // Pelvis folds over the thighs; chin and forearms protect the chest.
+    // Foot targets stay inside the two-bone reach, so armour never stretches.
+    const compact = clip === 'tumble' ? .86 : 1;
+    p.shellWeight = clip === 'steel-ball' ? 1 : 0;
+    p.pelvisPosition = [0, .78, -.23];
+    p.pelvisRotation = [.52 * compact, 0, 0];
+    p.spine = [1.08 * compact, 0, 0]; p.chest = [.65 * compact, 0, 0];
+    p.neck = [.55, 0, 0];
+    p.feet = [-1,1].map(side => ({position:[side*.23,.72,.20],pitch:-1.75,toe:-.15})) as [FootPose,FootPose];
+    p.arms = [-1,1].map(side=>({shoulder:[-1.15,side*.25,side*.35],elbow:-2.15,twist:side*.3,wrist:[.3,0,side*.15]})) as [ArmPose,ArmPose];
+    p.handTargets = [[-.32,.58,.33],[.32,.58,.33]]; p.handIKWeight = 1;
+    p.tassets = [-.75,-.75]; p.weaponVisible = false;
+    p.tumbleAngle = time; p.tumbleHeight = .80;
   } else if (clip === 'remove' || clip === 'roll') {
     const t = clamp01(time), reach = ease(t / .28), lift = ease((t - .22) / .24), release = ease((t - .60) / .40);
     p.detachedHead = true;
@@ -166,7 +181,8 @@ export function sampleKnightPose(clip: KnightClip, time: number, options: Motion
     p.chest[0] = -.04 * reach + .20 * release;
     p.pelvisPosition[1] -= .035 * reach;
     p.weaponVisible = false;
-    p.handTargets = [-1, 1].map(side => [side * (.49 - .19 * reach), mix(1.5, 2.85 + lift * .32, reach) - release * 1.7, .10 + release * .85]) as [V3, V3];
+    p.handIKWeight = 1;
+    p.handTargets = [-1, 1].map(side => [side * (.49 - .23 * reach), mix(1.5, 2.85 + lift * .32, reach) - release * 1.7, .10 + release * .85]) as [V3, V3];
   } else if (clip === 'ball') {
     p.bodyVisible = false; p.detachedHead = true; p.headPosition = [0, .4, 0]; p.headRotation[0] = time * TAU;
   } else if (clip === 'return') {
@@ -187,6 +203,10 @@ export function sampleKnightPose(clip: KnightClip, time: number, options: Motion
 export function blendKnightPoses(a: KnightPose, b: KnightPose, t: number): KnightPose {
   const v = (x: V3, y: V3): V3 => [mix(x[0], y[0], t), mix(x[1], y[1], t), mix(x[2], y[2], t)];
   return { ...b,
+    handIKWeight: mix(a.handIKWeight,b.handIKWeight,t),
+    handTargets: a.handTargets && b.handTargets ? [v(a.handTargets[0],b.handTargets[0]),v(a.handTargets[1],b.handTargets[1])] : b.handTargets ?? a.handTargets,
+    shellWeight: mix(a.shellWeight,b.shellWeight,t),
+    tumbleAngle: mix(a.tumbleAngle,b.tumbleAngle,t), tumbleHeight: mix(a.tumbleHeight,b.tumbleHeight,t),
     pelvisPosition: v(a.pelvisPosition, b.pelvisPosition), pelvisRotation: v(a.pelvisRotation, b.pelvisRotation),
     spine: v(a.spine, b.spine), chest: v(a.chest, b.chest), neck: v(a.neck, b.neck),
     headPosition: v(a.headPosition, b.headPosition), headRotation: v(a.headRotation, b.headRotation),
