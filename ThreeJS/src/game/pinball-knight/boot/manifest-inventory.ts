@@ -50,7 +50,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   pinball_knight: ["E", "N", "S"],
   platypus: ["S"],
   reaper: ["S"],
-  slime: ["S"],
+  slime: ["E", "N", "S"],
   spider: ["S"],
   sporeling: ["S"],
   sumo_ninja: ["S"],
