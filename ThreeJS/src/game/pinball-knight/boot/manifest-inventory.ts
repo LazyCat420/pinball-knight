@@ -84,6 +84,12 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   moray_mob: ["S"],
   seahorse_mob: ["S"],
   zombie: ["E"],
+  maze_merchant: ["S"],
+  tavern_smith: ["S"],
+  tavern_alchemist: ["S"],
+  tavern_dealer: ["S"],
+  tavern_armorer: ["S"],
+  tavern_gambler: ["S"],
 };
 
 export function hasAuthoredFacing(name: string, dir: Dir): boolean {

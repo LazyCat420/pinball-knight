@@ -40,12 +40,47 @@ import {
 import { tileCenter, worldToTile, isWalkable, idx } from "../maze/generator";
 import { moveCircle } from "../engine/collision";
 import { bfsDistances, bfsDistancesOwned, flowStep, flowAway } from "../engine/flow-field";
-import { createStaticSprite } from "../engine/render/sprite";
+import * as THREE from "three";
+import { createStaticSprite, createActorSprite, type ActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";
 import { isOpen as uiIsOpen } from "../gui/stack";
 import { sfxCackle, sfxRibbit, sfxPickup, sfxCartBell } from "../sfx";
+
+let mazeMerchantSheet: SpriteSheet | null = null;
+
+function loadMazeMerchantSheet(): Promise<SpriteSheet | null> {
+  if (mazeMerchantSheet) return Promise.resolve(mazeMerchantSheet);
+  if (typeof Image === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      "/sprites/maze_merchant-S.png",
+      (texture) => {
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        mazeMerchantSheet = {
+          texture: texture as unknown as THREE.CanvasTexture,
+          clips: new Map([
+            ["S:idle", [0, 1, 2, 3]],
+            ["S:walk", [4, 5, 6, 7]],
+            ["S:attack", [8, 9, 10, 11]],
+            ["S:death", [12, 13, 14, 15]],
+          ]),
+          frameCount: 16,
+          cols: 4,
+          rows: 4,
+        };
+        resolve(mazeMerchantSheet);
+      },
+      undefined,
+      () => resolve(null),
+    );
+  });
+}
 
 /** Catching the merchant opens its shop — core registers the handler. */
 let onMerchantCaught: (() => void) | null = null;
@@ -95,6 +130,18 @@ export function spawnMerchant(i: number, j: number): void {
   m.vx = 0;
   m.vz = 0;
   state.npcs.push(m);
+
+  loadMazeMerchantSheet().then((sheet) => {
+    if (!sheet) return;
+    const actor = createActorSprite(sheet, false);
+    actor.mesh.position.copy(m.sprite.mesh.position);
+    state.scene?.remove(m.sprite.mesh);
+    m.sprite.dispose();
+    m.sprite = actor;
+    m.actorSprite = actor;
+    state.scene?.add(actor.mesh);
+    syncActorMesh(m as unknown as Parameters<typeof syncActorMesh>[0]);
+  });
 }
 
 /** The Speed Witch steps out of the smashed masonry (secrets.ts hook). */
@@ -342,8 +389,9 @@ function updateMerchant(n: Npc, dist: number, dt: number): void {
     n.cooldownT = 3; // don't re-open the instant you close it — step away first
     sfxCackle();
     poof(n.x, n.z, 8);
-    showToast("🎩 THE WIZARD MERCHANT", "he reaches into his top hat and pulls out his wares!");
+    showToast("🛒 THE ROAMING MERCHANT", "he swings open his mobile shop!");
     onMerchantCaught?.();
+    if (n.actorSprite) n.actorSprite.setFrame(12);
     return;
   }
 
@@ -396,6 +444,21 @@ function updateMerchant(n: Npc, dist: number, dt: number): void {
   }
   n.x = res.x;
   n.z = res.z;
+
+  if (n.actorSprite) {
+    if (n.shopped) {
+      const frame = Math.floor((state.elapsed * 4) % 4);
+      n.actorSprite.setFrame(12 + frame);
+    } else if (fleeing) {
+      const frame = Math.floor((state.elapsed * 8) % 4);
+      n.actorSprite.setFrame(4 + frame);
+      n.actorSprite.setFlipped((n.vx ?? 0) < 0);
+    } else {
+      const frame = Math.floor((state.elapsed * 3) % 4);
+      n.actorSprite.setFrame(frame);
+      n.actorSprite.setFlipped((n.vx ?? 0) < 0);
+    }
+  }
   syncActorMesh(n as unknown as Parameters<typeof syncActorMesh>[0]);
 }
 

@@ -19,7 +19,7 @@
  * Every keeper is now a distinct silhouette.
  */
 import * as THREE from "three";
-import { createStaticSprite } from "../../game/pinball-knight/engine/render/sprite";
+import { createStaticSprite, createActorSprite, type ActorSprite, type SpriteSheet } from "../../game/pinball-knight/engine/render/sprite";
 import { NPC_PAINTS } from "../../game/pinball-knight/render/cel-painter";
 import type { VfxSystem } from "../../game/pinball-knight/fx/system";
 import { KEEPER_SPOTS } from "./layout";
@@ -49,6 +49,7 @@ export type KeeperBeat =
 export interface KeeperSpec {
   id: string;
   paintKey: string;
+  sheetKey?: string;
   x: number;
   z: number;
   idle: Idle;
@@ -70,14 +71,14 @@ export interface KeeperSpec {
 
 /** Art + idle style per station. Positions come from the floor plan. */
 const KEEPER_ROLES: Record<string, Omit<KeeperSpec, "id" | "x" | "z">> = {
-  forge: { paintKey: "merchant", idle: "hammer", home: -1 }, // forge sits west of him
-  bar: { paintKey: "witch", idle: "polish", home: 1 }, // bar counter east
-  dealer: { paintKey: "magician", idle: "deal", home: 1 }, // card table east
-  armory: { paintKey: "frog", idle: "bob", home: -1 }, // bench west
+  forge: { paintKey: "merchant", sheetKey: "tavern_smith", idle: "hammer", home: -1 }, // forge sits west of him
+  bar: { paintKey: "witch", sheetKey: "tavern_alchemist", idle: "polish", home: 1 }, // bar counter east
+  dealer: { paintKey: "magician", sheetKey: "tavern_dealer", idle: "deal", home: 1 }, // card table east
+  armory: { paintKey: "frog", sheetKey: "tavern_armorer", idle: "bob", home: -1 }, // bench west
   // The tout at the casino cabinet, throwing darts at the wall board while he
   // waits for someone to take a bet. He has his OWN art now (see the header) —
   // the dart cocked in his raised hand is the one his idle loop throws.
-  gambler: { paintKey: "tout", idle: "dart", home: 1 },
+  gambler: { paintKey: "tout", sheetKey: "tavern_gambler", idle: "dart", home: 1 },
 };
 
 /**
@@ -94,6 +95,7 @@ export const KEEPERS: KeeperSpec[] = KEEPER_SPOTS.flatMap((spot) => {
 
 interface Keeper extends KeeperSpec {
   mesh: THREE.Mesh;
+  actorSprite?: ActorSprite;
   baseY: number;
   /** Phase offset so the keepers never move in lockstep. */
   phase: number;
@@ -107,6 +109,45 @@ interface Keeper extends KeeperSpec {
   greet: number;
   /** Latches the rising edge of focus so the greeting fires once per approach. */
   noticed: boolean;
+}
+
+const keeperSheetCache = new Map<string, SpriteSheet>();
+
+export function getKeeperSheet(sheetKey: string): SpriteSheet | null {
+  return keeperSheetCache.get(sheetKey) ?? null;
+}
+
+export function loadKeeperSheet(name: string): Promise<SpriteSheet | null> {
+  if (keeperSheetCache.has(name)) return Promise.resolve(keeperSheetCache.get(name)!);
+  if (typeof Image === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      `/sprites/${name}-S.png`,
+      (texture) => {
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const sheet: SpriteSheet = {
+          texture: texture as unknown as THREE.CanvasTexture,
+          clips: new Map([
+            ["S:idle", [0, 1, 2, 3]],
+            ["S:walk", [4, 5, 6, 7]],
+            ["S:attack", [8, 9, 10, 11]],
+            ["S:death", [12, 13, 14, 15]],
+          ]),
+          frameCount: 16,
+          cols: 4,
+          rows: 4,
+        };
+        keeperSheetCache.set(name, sheet);
+        resolve(sheet);
+      },
+      undefined,
+      () => resolve(null),
+    );
+  });
 }
 
 /** Everything the idle loops need from the frame. */
@@ -159,7 +200,7 @@ export function buildNpcs(scene: THREE.Scene): BuiltNpcs {
     sprite.mesh.scale.x = spec.home;
     group.add(sprite.mesh);
     disposers.push(sprite.dispose);
-    keepers.push({
+    const keeper: Keeper = {
       ...spec,
       mesh: sprite.mesh,
       baseY: 0,
@@ -169,7 +210,23 @@ export function buildNpcs(scene: THREE.Scene): BuiltNpcs {
       face: spec.home,
       greet: 0,
       noticed: false,
-    });
+    };
+    keepers.push(keeper);
+
+    if (spec.sheetKey) {
+      loadKeeperSheet(spec.sheetKey).then((sheet) => {
+        if (!sheet) return;
+        const actor = createActorSprite(sheet, false);
+        actor.mesh.position.copy(keeper.mesh.position);
+        actor.mesh.rotation.copy(keeper.mesh.rotation);
+        actor.mesh.scale.x = keeper.face;
+        group.remove(keeper.mesh);
+        group.add(actor.mesh);
+        keeper.mesh = actor.mesh;
+        keeper.actorSprite = actor;
+        disposers.push(actor.dispose);
+      });
+    }
   }
 
   scene.add(group);
@@ -272,6 +329,65 @@ export function buildNpcs(scene: THREE.Scene): BuiltNpcs {
               k.struck = false;
             }
             break;
+          }
+        }
+
+        // ── Frame Animation (Multi-frame Sprite Sheet) ─────────────────
+        if (k.actorSprite) {
+          if (k.attention > 0.35) {
+            // Player is interacting with this station: play Row 3 (react / offer / greet)
+            const frame = Math.floor((time * 4) % 4);
+            k.actorSprite.setFrame(12 + frame);
+          } else {
+            // Idle / work loop
+            switch (k.idle) {
+              case "hammer": {
+                const p = phase01(t, HAMMER_PERIOD);
+                let col = 0;
+                if (p < 0.65) {
+                  col = p < 0.35 ? 0 : 1; // Windup
+                } else if (p < 0.85) {
+                  col = 2; // Anvil impact strike
+                } else {
+                  col = 3; // Follow-through / recover
+                }
+                k.actorSprite.setFrame(4 + col);
+                break;
+              }
+              case "dart": {
+                const p = phase01(t, DART_PERIOD);
+                let col = 0;
+                if (p < 0.55) {
+                  col = p < 0.28 ? 0 : 1; // Aiming dart
+                } else if (p < 0.8) {
+                  col = 2; // Throwing
+                } else {
+                  col = 3; // Release follow-through
+                }
+                k.actorSprite.setFrame(4 + col);
+                break;
+              }
+              case "polish": {
+                // Alchemist shaking & brewing potion
+                const frame = Math.floor((t * 3.5) % 4);
+                k.actorSprite.setFrame(4 + frame);
+                break;
+              }
+              case "deal": {
+                // Card dealer cascade bridge shuffle
+                const frame = Math.floor((t * 4) % 4);
+                k.actorSprite.setFrame(4 + frame);
+                break;
+              }
+              case "bob": {
+                // Armorer: alternate between visor clank/nudge (row 0) and shield buffing (row 1)
+                const subCycle = Math.floor(t / 3) % 2;
+                const frame = Math.floor((t * 3) % 4);
+                const row = subCycle === 0 ? 0 : 1;
+                k.actorSprite.setFrame(row * 4 + frame);
+                break;
+              }
+            }
           }
         }
 

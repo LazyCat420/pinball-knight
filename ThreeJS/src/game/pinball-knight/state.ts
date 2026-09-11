@@ -611,6 +611,7 @@ export interface Npc {
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
+  actorSprite?: any;
   bobPhase: number;
   /** Seconds since spawn — drives the magician's bow → trick → vanish arc. */
   t: number;
