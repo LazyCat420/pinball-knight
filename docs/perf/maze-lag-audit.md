@@ -127,7 +127,7 @@ message; they are not comparable to the quiet-box table above.
 
 ## Reproducing
 
-Session scratchpad `scratchpad/lag/`: `lag-cdp.mjs` (raw-CDP port of
+`ThreeJS/scripts/lag/` (see its README): `lag-cdp.mjs` (raw-CDP port of
 braindeadbot-client/scripts/lag-profile.mjs), `readback-trace.mjs`,
 `redress-trace.mjs`, `backfill-probe.mjs`, `atlas-cost.mjs`,
 `raster-vs-readback.mjs`, `build-variants.mjs`. Each needs Vite serving the
