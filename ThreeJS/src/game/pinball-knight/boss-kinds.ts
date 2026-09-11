@@ -37,7 +37,7 @@
 import type { SheetKey } from "./boot/sheets";
 import { passFor, themeFor } from "./maze/prefabs";
 
-export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus" | "pinball_boss";
+export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus" | "pinball_boss" | "doppelganger";
 
 /** A ring of satellites wheeling around the boss — cosmetic, and the ammo. */
 export interface OrbitSpec {
@@ -809,6 +809,85 @@ export const BOSSES: Record<BossKind, BossSpec> = {
           launch: 26,
           color: 0xff0000,
           echo: { delay: 0.4, radius: 3.0, damage: 2 },
+        },
+      },
+    },
+  },
+  doppelganger: {
+    kind: "doppelganger",
+    name: "The Doppelgänger",
+    biome: "arcane",
+    title: "⚔️ THE DOPPELGÄNGER ⚔️",
+    tagline: "corrupted shadow reflection, dark pinball ricochet, void blade flurry",
+    label: "THE DOPPELGÄNGER",
+    art: { sheetKey: "doppelganger", tint: null, scale: 2.10 },
+    hpMult: 1.45,
+    speedMult: 1.15,
+    moves: {
+      pinballCharge: {
+        intervalMin: 1.4,
+        intervalMax: 2.2,
+        telegraphMin: 0.85,
+        telegraphMax: 1.2,
+        speed: 26,
+        damage: 3,
+        distance: 16,
+        launch: 28,
+        flattenDuration: 1.5,
+        wallCrunchDamage: 2,
+        maxBounces: 1,
+        color: 0x9900ff,
+      },
+      slam: {
+        interval: 4.2,
+        telegraph: 0.85,
+        radius: 2.8,
+        damage: 2,
+        launch: 24,
+        color: 0xaa00ff,
+      },
+      summon: {
+        interval: 8.0,
+        telegraph: 1.0,
+        count: 1,
+        maxAlive: 2,
+        color: 0x6600cc,
+      },
+    },
+    phase2: {
+      at: 0.5,
+      title: "🚨 ECLIPSE UNLEASHED: VOID MULTIBALL 🚨",
+      speedMult: 1.40,
+      moves: {
+        pinballCharge: {
+          intervalMin: 0.8,
+          intervalMax: 1.5,
+          telegraphMin: 0.55,
+          telegraphMax: 0.85,
+          speed: 32,
+          damage: 4,
+          distance: 20,
+          launch: 32,
+          flattenDuration: 2.0,
+          wallCrunchDamage: 3,
+          maxBounces: 2,
+          color: 0xbb00ff,
+        },
+        slam: {
+          interval: 3.0,
+          telegraph: 0.65,
+          radius: 2.8,
+          damage: 3,
+          launch: 28,
+          color: 0xdd00ff,
+          echo: { delay: 0.35, radius: 3.0, damage: 2 },
+        },
+        summon: {
+          interval: 6.0,
+          telegraph: 0.8,
+          count: 1,
+          maxAlive: 3,
+          color: 0x8800ff,
         },
       },
     },

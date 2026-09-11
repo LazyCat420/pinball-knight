@@ -90,6 +90,7 @@ import { makeHamsterBallPaints } from "./monsters/hamster-ball";
 import { makeAsciiHumanPaints } from "./monsters/ascii-human";
 import { makeComputerScreenPaints } from "./monsters/computer-screen";
 import { makeGiantAsciiHumanPaints } from "./monsters/giant-ascii-human";
+import { makeDoppelgangerPaints } from "./monsters/doppelganger";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -168,6 +169,7 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   ascii_human: makeAsciiHumanPaints,
   computer_screen: makeComputerScreenPaints,
   giant_ascii_human: makeGiantAsciiHumanPaints,
+  doppelganger: makeDoppelgangerPaints,
 };
 
 export {
@@ -186,4 +188,5 @@ export {
   makeAsciiHumanPaints,
   makeComputerScreenPaints,
   makeGiantAsciiHumanPaints,
+  makeDoppelgangerPaints,
 };

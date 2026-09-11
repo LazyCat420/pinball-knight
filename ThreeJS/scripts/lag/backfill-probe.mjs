@@ -1,0 +1,31 @@
+import WebSocket from 'ws';
+const cdpUrl='http://127.0.0.1:9353', origin='http://localhost:5183';
+const tab=await (await fetch(`${cdpUrl}/json/new?about:blank`,{method:'PUT'})).json();
+const ws=new WebSocket(tab.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.on('open',r);ws.on('error',j)});
+let id=0;const pending=new Map();
+ws.on('message',raw=>{const m=JSON.parse(raw);if(m.id){pending.get(m.id)?.(m);pending.delete(m.id)}});
+const send=(method,params={})=>new Promise((resolve,reject)=>{const call=++id;pending.set(call,m=>m.error?reject(new Error(JSON.stringify(m.error))):resolve(m.result));ws.send(JSON.stringify({id:call,method,params}));});
+const ev=async(expr)=>{const r=await send('Runtime.evaluate',{expression:expr,awaitPromise:true,returnByValue:true,timeout:170000});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails).slice(0,400));return r.result.value};
+const until=async(expr,ms=120000)=>{const t0=Date.now();while(Date.now()-t0<ms){if(await ev(expr).catch(()=>false))return;await new Promise(r=>setTimeout(r,500));}throw new Error('until timeout: '+expr)};
+await send('Runtime.enable');await send('Emulation.setDeviceMetricsOverride',{width:1920,height:1080,deviceScaleFactor:1,mobile:false});
+await send('Page.navigate',{url:origin+'/?playtest=1&mute=1&seed=42'});
+await until('typeof window.__dungeonStartRun==="function"');await new Promise(r=>setTimeout(r,3000));
+if(process.env.RUN){await ev('window.__dungeonStartRun()');await until('window.__dungeonPlayer?.()?.active===true');await new Promise(r=>setTimeout(r,8000));if(process.env.RUN==='bot'){await ev('window.__dungeonBot({mode:"mixed",seconds:60})');await new Promise(r=>setTimeout(r,3000));}console.log('game running, bot=',process.env.RUN==='bot');}
+console.log(String(await ev(`(async()=>{
+ const sh=await import('/src/game/pinball-knight/boot/sheets.ts');const eng=await import('/src/game/pinball-knight/engine/render/sprite.ts');const cp=await import('/src/game/pinball-knight/render/cel-painter.ts');
+ const P=CanvasRenderingContext2D.prototype, orig=P.getImageData;let rec=null;let cid=0;
+ P.getImageData=function(...a){const t=performance.now();const r=orig.apply(this,a);const ms=performance.now()-t;if(rec){const c=this.canvas;c.__id??=++cid;const k=c.width+'x'+c.height+(this.getContextAttributes?.().willReadFrequently?'H':'G');const e=rec[k]??={n:0,ms:0,max:0};e.n++;e.ms+=ms;e.max=Math.max(e.max,ms);}return r;};
+ const out=[];const sleep=ms=>new Promise(r=>setTimeout(r,ms));const st=(await import('/src/game/pinball-knight/state.ts')).state;
+ let lastRaf=performance.now();(function tick(t){lastRaf=t;requestAnimationFrame(tick)})(performance.now());
+ const slow=[];const origWrap=P.getImageData;P.getImageData=function(...a){const t=performance.now();const r=orig.apply(this,a);const ms=performance.now()-t;if(rec){const c=this.canvas;const k=c.width+'x'+c.height;const e=rec[k]??={n:0,ms:0,max:0};e.n++;e.ms+=ms;e.max=Math.max(e.max,ms);if(ms>3&&k==='168x168')slow.push({ms:+ms.toFixed(1),sinceRaf:+(t-lastRaf).toFixed(1),idle:!!window.__inIdle});}return r;};
+ const ric=window.requestIdleCallback;window.requestIdleCallback=(cb,o)=>ric(d=>{window.__inIdle=true;try{cb(d)}finally{window.__inIdle=false}},o);
+ window.__dungeonBot({mode:"mixed",seconds:90});await sleep(3000);
+ const keys=['warden','ghost','chomper','jester','brute','golem','magnet','spitter','webspinner','stiltneck'];
+ for(const k of keys)delete st.sheets[k];
+ rec={};const t0=performance.now();sh.stopSheetBackfill();sh.startSheetBackfill();
+ while(performance.now()-t0<25000&&keys.some(k=>!st.sheets[k]))await sleep(250);
+ const built=keys.filter(k=>st.sheets[k]).length;
+ out.push({label:'game backfill via requestIdleCallback',built,secs:+((performance.now()-t0)/1000).toFixed(1),reads:rec['168x168'],slowCount:slow.length,slowSample:slow.slice(0,12)});
+ window.__dungeonBotStop?.();
+ P.getImageData=orig;return JSON.stringify(out,null,0);})()`)).replace(/\},\{/g,"},\n{"));
+ws.close();await fetch(`${cdpUrl}/json/close/${tab.id}`);
