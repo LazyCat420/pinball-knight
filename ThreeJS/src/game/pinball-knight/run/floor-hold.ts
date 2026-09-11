@@ -19,7 +19,7 @@
 import { openFloorLoading, type FloorLoading } from "../floor-loading";
 import { presentUiFrame } from "../boot/renderer";
 import { state } from "../state";
-import { loadMonsterSheetsForFloor, startSheetBackfill } from "../boot/sheets";
+import { buildFloorSheets, loadMonsterSheetsForFloor } from "../boot/sheets";
 
 let floorLoad: FloorLoading | null = null;
 let held = false;
@@ -96,7 +96,7 @@ export function armFloorLoading(level: number, then: () => void): void {
     load.phase("PREPARING THE HORDE", 0.02);
     try {
       await loadMonsterSheetsForFloor(level, async (done, total) => {
-        load.phase("PREPARING THE HORDE", 0.02 + 0.25 * done / total);
+        load.phase("PREPARING THE HORDE", 0.02 + 0.13 * done / total);
         await present();
       }, active);
     } catch (error) {
@@ -104,7 +104,17 @@ export function armFloorLoading(level: number, then: () => void): void {
       console.warn("[dungeon] Floor art unavailable; using painted sprites", error);
     }
     if (!active()) return;
-    startSheetBackfill();
+    // Every atlas this floor can spawn is painted HERE, not during play — see
+    // buildFloorSheets for the hitches the in-play backfill used to cost.
+    try {
+      await buildFloorSheets(level, async (done, total) => {
+        load.phase("PAINTING THE HORDE", 0.15 + 0.13 * done / Math.max(1, total));
+        await present();
+      }, active);
+    } catch (error) {
+      console.warn("[dungeon] Floor atlases will build on first spawn instead", error);
+    }
+    if (!active()) return;
     then();
   })();
 }

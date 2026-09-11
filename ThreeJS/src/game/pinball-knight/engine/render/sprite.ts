@@ -1035,8 +1035,28 @@ function paintFrame(
   row: number,
   pal?: readonly (readonly number[])[],
 ): void {
+  // ── THE CRUSHED-CELL CACHE ──
+  // An imported cell's FramePaint is one stable function for the whole
+  // session (render/imported-paints.ts builds them once per sheet), and the
+  // crush of a given paint at a given palette is deterministic. So a frame we
+  // have crushed before is a drawImage of its cached cell — no paint, no
+  // readback. That is what makes a knight re-dress on a gear pickup cheap:
+  // the look changes the painter-drawn clips only, and the imported clips
+  // (most of the atlas) come straight from here. Painter closures are fresh
+  // per build and simply never hit; the WeakMap lets dropped paints go.
+  const byPal = _crushCache.get(paint);
+  const cached = byPal?.get(pal ?? NO_PAL);
+  if (cached) {
+    strip.drawImage(cached, col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
+    return;
+  }
   if (!_paintCanvas) {
-    _paintCanvas = document.createElement("canvas");
+    // An OffscreenCanvas keeps the paint box out of the document's compositor.
+    // Measured 2026-09-10 (docs/perf/maze-lag-audit.md): during play the
+    // readback of a document canvas cost 4-156 ms per frame; offscreen it is
+    // 4-36 ms — still not free, which is why the cache above and the descent
+    // hold (boot/sheets.ts buildFloorSheets) carry the rest.
+    _paintCanvas = (typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(SPRITE_PX, SPRITE_PX) : document.createElement("canvas")) as unknown as HTMLCanvasElement;
     _paintCanvas.width = SPRITE_PX;
     _paintCanvas.height = SPRITE_PX;
     // `willReadFrequently`: the crush now reads this canvas back with
@@ -1061,8 +1081,22 @@ function paintFrame(
   // its native size and is never scaled again between here and the screen.
   // Shared crush target: blitted on this line, never retained. See the warning
   // on crushToGridShared.
-  strip.drawImage(crushToGridShared(_paintCanvas, pal), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
+  const crushed = crushToGridShared(_paintCanvas, pal);
+  strip.drawImage(crushed, col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
+  // Keep a copy for next time. A drawImage, not a readback: the copy stays a
+  // blit, and nothing here reads it back.
+  const keep = document.createElement("canvas");
+  keep.width = SPRITE_PIXEL_GRID;
+  keep.height = SPRITE_PIXEL_GRID;
+  keep.getContext("2d")?.drawImage(crushed, 0, 0);
+  const map = byPal ?? new Map<object, HTMLCanvasElement>();
+  map.set(pal ?? NO_PAL, keep);
+  _crushCache.set(paint, map);
 }
+
+/** See paintFrame. Keyed by the paint function, then by the palette object. */
+const _crushCache = new WeakMap<FramePaint, Map<object, HTMLCanvasElement>>();
+const NO_PAL = {};
 
 /**
  * Build one atlas for an actor. Frames are packed in a stable order and the

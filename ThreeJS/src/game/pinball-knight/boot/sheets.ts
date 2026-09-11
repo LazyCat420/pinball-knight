@@ -11,7 +11,7 @@ import { guardianFor } from "../boss-kinds";
 import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
 import { ZOMBIE_VARIANTS, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
-import { lookFromGear } from "../render/knight-look";
+import { lookFromGear, lookKey, type KnightLook } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet, requestKnightSheet, loadImportedKnightArt, playerArtKey } from "../render/knight-sheets";
 import { bakeTintedSheet, buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOptions, type SpriteSheet } from "../engine/render/sprite";
@@ -746,6 +746,126 @@ export function startSheetBackfill(): void {
     backfillHandle = idle(step);
   };
   backfillHandle = idle(step);
+}
+
+/**
+ * BUILD EVERY ATLAS THE FLOOR CAN SPAWN, BEHIND THE DESCENT SCREEN.
+ *
+ * ── WHY THE IN-PLAY BACKFILL HAD TO GO ──────────────────────────────────────
+ *
+ * `startSheetBackfill` painted the deeper roster one idle slice at a time
+ * WHILE THE PLAYER WAS PLAYING. Measured on 2026-09-10 (host Chrome, RTX 3090
+ * Ti, `scripts/lag` probes — see docs/perf/maze-lag-audit.md): a single
+ * `paintFrame` costs 0.3 ms of readback when the page is quiet and 4–95 ms
+ * when the dungeon is rendering, so every idle slice that painted even ONE
+ * frame produced a 33–100 ms hitch, and a 30 s run carried 50–140 of them.
+ * The slice budget cannot help — it is checked AFTER the frame that already
+ * blew it — and no budget makes a 95 ms readback fit in a 16 ms frame.
+ *
+ * So the atlases are painted HERE, under the progress bar, where a slow
+ * readback costs the player nothing but a slightly longer descent. The set is
+ * `keysForFloor(level)`: everything the spawn tables can put on this floor.
+ * Anything outside it (a boss adopted mid-run) still builds synchronously on
+ * first `sheetFor`, exactly as before.
+ *
+ * `progress` is awaited between slices so the descent screen can present a
+ * frame; `HOLD_SLICE_MS` bounds each slice so the bar keeps moving.
+ */
+const HOLD_SLICE_MS = 12;
+
+export async function buildFloorSheets(
+  level: number,
+  progress: (done: number, total: number) => void | Promise<void> = () => {},
+  active: () => boolean = () => true,
+): Promise<SheetKey[]> {
+  const needed = keysForFloor(level).filter((key) => !state.sheets[key]);
+  const built: SheetKey[] = [];
+  for (let i = 0; i < needed.length; i++) {
+    if (!active()) break;
+    const key = needed[i];
+    if (state.sheets[key]) continue;
+    // A build the old backfill left half-painted is finished rather than restarted.
+    const build = inFlight.get(key) ?? startMonsterSheet(paintsFor(key), key);
+    inFlight.set(key, build);
+    while (!build.step(HOLD_SLICE_MS)) {
+      await progress(i, needed.length);
+      if (!active()) {
+        build.sheet.texture.dispose();
+        inFlight.delete(key);
+        return built;
+      }
+    }
+    state.sheets[key] = build.sheet;
+    inFlight.delete(key);
+    if (current?.key === key) current = null;
+    built.push(key);
+    await progress(i + 1, needed.length);
+  }
+  return built;
+}
+
+/**
+ * The knight's atlases for every weapon he could be holding on this floor —
+ * both slots and every weapon lying on the ground — painted while the
+ * descent screen is still up.
+ *
+ * `applyWeaponArt` paints a re-dress at 2 ms per frame inside the rAF loop,
+ * and each of those frames carries the same 4–95 ms readback as the monster
+ * backfill did (the 150–270 ms frames in the audit were exactly this, on a
+ * weapon pickup). Warming here turns a pickup into a cache hit. Runs after
+ * the floor is built, so the ground items are known. Returns the ids warmed.
+ */
+export function knightWarmIds(): WeaponId[] {
+  const ids = new Set<WeaponId>();
+  for (const w of state.weaponSlots) if (w) ids.add(w.id);
+  for (const g of state.groundItems) if (g.kind === "weapon") ids.add(g.id as WeaponId);
+  return [...ids];
+}
+
+/**
+ * The (weapon, look) pairs a pickup on this floor can put on the knight:
+ * every warm weapon at the current look, and the slot weapons at each look
+ * one piece of ground gear away (a helmet on the floor means "current look
+ * with a helmet" is one pickup from being live). Gear BREAKING is not
+ * anticipated — it is rare, and the crushed-cell cache in paintFrame makes
+ * that re-dress cheap anyway.
+ */
+export function knightWarmTargets(): Array<{ id: WeaponId; look: KnightLook }> {
+  const base = lookFromGear(state.gear);
+  const seen = new Set<string>();
+  const out: Array<{ id: WeaponId; look: KnightLook }> = [];
+  const add = (id: WeaponId, look: KnightLook) => {
+    const k = lookKey(id, look);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ id, look });
+  };
+  for (const id of knightWarmIds()) add(id, base);
+  const slots = state.weaponSlots.filter((w): w is NonNullable<typeof w> => !!w).map((w) => w.id);
+  for (const g of state.groundItems) {
+    if (g.kind !== "gear") continue;
+    const slot = g.id;
+    if (slot !== "helmet" && slot !== "armor" && slot !== "boots") continue;
+    if (base[slot]) continue;
+    for (const id of slots) add(id, { ...base, [slot]: true });
+  }
+  return out;
+}
+
+export async function warmKnightSheets(
+  yieldFrame: () => Promise<void>,
+  active: () => boolean = () => true,
+  budgetMs = HOLD_SLICE_MS,
+): Promise<string[]> {
+  const warmed: string[] = [];
+  for (const { id, look } of knightWarmTargets()) {
+    while (active() && !requestKnightSheet(id, look, "dungeon", budgetMs)) await yieldFrame();
+    if (!active()) break;
+    warmed.push(lookKey(id, look));
+  }
+  // Leave the consumer pinned to what is actually in hand, as applyWeaponArt would.
+  if (active()) requestKnightSheet(activeWeapon().id, lookFromGear(state.gear), "dungeon", 0);
+  return warmed;
 }
 
 /** Cancel a backfill in flight. Called from teardown. */

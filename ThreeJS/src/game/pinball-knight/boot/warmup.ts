@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { state } from "../state";
 import { warmFloorFxReveal } from "../entities/floor-fx";
 import { setShadowsThrottled } from "./lighting";
+import { warmKnightSheets } from "./sheets";
 import type { FloorLoading } from "../floor-loading";
 
 /**
@@ -193,6 +194,9 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
       // be re-established for each call rather than set once outside.
       await pixelPass.withSceneContext(() => renderer.compileAsync(children[i], camera, scene));
     }
+    // The knight's atlases for both slots and every weapon on this floor, so a
+    // pickup is a cache hit instead of a 2 ms-per-frame paint inside the loop.
+    await warmKnightSheets(() => new Promise((r) => requestAnimationFrame(() => r())));
     load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
     await warmFirstFrame();
   } catch {
