@@ -8,11 +8,21 @@
  * choices drive — the sfx gate and the pixel pass — and every one of its
  * callers is now something other than a menu (boot, the settings screen).
  */
+import { CAMERA_ZOOMS, PPU } from "../constants";
 import { state } from "../state";
 import { getSettings } from "../settings-save";
 import { setSfxMuted, setSfxVolume } from "../sfx";
 
+/** Match the selected field of view without rebuilding the boot-time atlases. */
+export function applyCameraZoom(): void {
+  const camera = state.camera;
+  if (!camera) return;
+  camera.zoom = CAMERA_ZOOMS[getSettings().cameraZoom] / PPU;
+  camera.updateProjectionMatrix();
+}
+
 export function applySettingsLive(): void {
+  applyCameraZoom();
   const s = getSettings();
   setSfxMuted(s.muted);
   // Independent of the mute, on purpose: un-muting restores the level the player

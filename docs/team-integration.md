@@ -293,3 +293,9 @@ project-local lock did not protect against a later release from an older branch.
 - Full release gate passed: 4,194 tests, 12 skipped; 361 test files passed, 5 skipped. Existing deploy wrapper completed image build, NAS transfer and restart. NAS `git.sha=a6626512`, healthy.
 - Public and NAS HTTP responses match SHA-256 `1333a3247a10cf9615ab6588771b3a55f43dc418b622c6427446a99264895eaa`.
 - Muted browser visual validation: 1280x944 shows 27.83 tiles across at PPU 46 (previously 22.86 at 56); HUD zoom remains 1.8; no JavaScript exceptions. Test-owned browser and loopback preview stopped.
+
+### Live player camera controls — 2026-09-11
+
+- Branch `feat/live-camera-zoom`: Options camera row has bounded Zoom Out / Zoom In buttons, applies immediately, persists the existing cameraZoom setting, and adds Panorama / Overview (PPU 32 / 24).
+- Live camera multiplier is selected PPU / boot PPU; projection and camera snapping honor zoom, while atlases remain intact. New cameras reapply the preference; reload bakes the saved PPU with the same framing. Live resampling prioritizes immediate framing over rebuilding atlases mid-run.
+- Validation: camera projection and new-camera restoration tests plus Options reachability passed (8); existing render sizing, sprite scale, atlas and config checks passed (50, including the two new zoom rungs). Ready for integrated release validation.

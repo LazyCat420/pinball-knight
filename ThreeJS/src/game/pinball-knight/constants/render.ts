@@ -176,12 +176,14 @@ export const MAX_RENDER_H = 1440;
  *     wide       54     81      31.7
  *     wider      46     69      37.2   ← default
  *     widest     40     60      42.8
+ *     panorama   32     48      53.5
+ *     overview   24     36      71.3
  *
  * DEFAULT IS `wider`. Playtested at speed: at `normal` the knight outruns what
  * is on screen, which is a control problem rather than a taste one — you cannot
  * steer around a wall you cannot see yet.
  */
-export type CameraZoom = "close" | "normal" | "wide" | "wider" | "widest";
+export type CameraZoom = "close" | "normal" | "wide" | "wider" | "widest" | "panorama" | "overview";
 
 export const CAMERA_ZOOMS: Record<CameraZoom, number> = {
   close: 66,
@@ -189,10 +191,12 @@ export const CAMERA_ZOOMS: Record<CameraZoom, number> = {
   wide: 54,
   wider: 46,
   widest: 40,
+  panorama: 32,
+  overview: 24,
 };
 
 /** Display order for the settings cycler — closest first. */
-export const CAMERA_ZOOM_ORDER: CameraZoom[] = ["close", "normal", "wide", "wider", "widest"];
+export const CAMERA_ZOOM_ORDER: CameraZoom[] = ["close", "normal", "wide", "wider", "widest", "panorama", "overview"];
 
 export const CAMERA_ZOOM_DEFAULT: CameraZoom = "wider";
 
@@ -211,14 +215,10 @@ export const SETTINGS_KEY = "pinball-knight-settings";
 /**
  * The saved zoom, read straight from storage at module load.
  *
- * ── WHY THIS CANNOT BE LIVE ──
- * `PPU` is destructured into module-level aliases all over the engine
- * (`pixel-pass.ts` does it at line ~100), and `SPRITE_PIXEL_GRID` sizes the
- * sprite ATLAS, which is rasterised once at boot. Changing either after load
- * would leave the frustum and the atlas disagreeing about how big a texel is.
- * So the setting is resolved exactly once, here, before any of that runs, and
- * the settings screen tells the player it applies on reload rather than lying
- * with a control that half-works.
+ * The atlas resolution is fixed at boot. Live changes use the orthographic
+ * camera's zoom relative to this boot PPU, so framing changes immediately
+ * without rebuilding atlases. On reload the atlas uses the saved rung and the
+ * camera multiplier returns to 1, preserving the chosen field of view.
  */
 function savedCameraZoom(): CameraZoom {
   if (typeof localStorage === "undefined") return CAMERA_ZOOM_DEFAULT;

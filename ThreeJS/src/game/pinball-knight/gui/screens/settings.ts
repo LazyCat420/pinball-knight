@@ -12,7 +12,7 @@
  * this live were retired 2026-08-03 — see settings-save.ts.)
  */
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
-import { CAMERA_ZOOM, CAMERA_ZOOMS, CAMERA_ZOOM_ORDER, VOLUME_STEPS, type CameraZoom } from "../../constants";
+import { CAMERA_ZOOM_ORDER, VOLUME_STEPS } from "../../constants";
 import { applySettingsLive } from "../apply-settings";
 import { UI, GRID, ROW_H, PAD } from "../theme";
 import {
@@ -109,51 +109,21 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
   }
 }
 
-/**
- * The camera row — a CYCLER, not a toggle, and the one control here that does
- * not take effect until the page reloads.
- *
- * Both of those are forced by what the setting actually is. `PPU` is the zoom
- * AND the denominator of the sprite grid, so it only has legal values every 8
- * apart (see `CAMERA_ZOOMS`) — a slider would imply a continuum that does not
- * exist and would land the art between texels. And it is resolved at module
- * load, because the sprite atlas is rasterised once from it; changing it live
- * would leave the frustum and the atlas disagreeing about the size of a texel.
- *
- * So the row says so, plainly, and offers the reload rather than leaving the
- * player to work out why the camera did not move. `CAMERA_ZOOM` is the value
- * the RUNNING game booted with; `s.cameraZoom` is the value that will be used
- * next time. Showing both is what makes "pending" legible instead of "broken".
- */
+/** Explicit, bounded directions: zooming out must never wrap back to close. */
 function cameraRow(f: UiFrame, r: Rect): void {
-  const s = getSettings();
-  const chosen = s.cameraZoom;
-  const pending = chosen !== CAMERA_ZOOM;
-
+  const chosen = getSettings().cameraZoom;
+  const index = CAMERA_ZOOM_ORDER.indexOf(chosen);
   well(f, r);
   const body = { x: r.x + GRID, y: r.y, w: r.w - GRID * 2, h: r.h };
-  const reload = cutRight(body, pending ? 66 : 0);
-  const knob = cutRight(body, 74);
-
+  const controls = cutRight(body, 198);
   text(f, "Camera distance", body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
-  text(
-    f,
-    pending ? `${chosen.toUpperCase()} — RELOAD TO APPLY` : `${CAMERA_ZOOMS[chosen]} px per tile · more zoom, fewer texels`,
-    body.x,
-    body.y + 17,
-    { size: 8, colour: pending ? UI.gold : UI.textDim, max: body.w - GRID },
-  );
-
-  if (button(f, { x: knob.x, y: knob.y + (knob.h - 18) / 2, w: 70, h: 18 }, chosen.toUpperCase())) {
-    const i = CAMERA_ZOOM_ORDER.indexOf(chosen);
-    const next: CameraZoom = CAMERA_ZOOM_ORDER[(i + 1) % CAMERA_ZOOM_ORDER.length];
-    saveSettings({ cameraZoom: next });
-  }
-  if (pending && button(f, { x: reload.x, y: reload.y + (reload.h - 18) / 2, w: 62, h: 18 }, "RELOAD", { good: true })) {
-    // The run is not lost: the resume-floor system puts the player back on the
-    // floor they were on. That is the only reason this is a button and not a
-    // warning to go and do it themselves.
-    if (typeof location !== "undefined") location.reload();
+  text(f, `${chosen.toUpperCase()} · saved automatically`, body.x, body.y + 17, { size: 8, colour: UI.textDim, max: body.w - GRID });
+  const y = controls.y + (controls.h - 18) / 2;
+  const out = button(f, { x: controls.x, y, w: 98, h: 18 }, "ZOOM OUT", { disabled: index === CAMERA_ZOOM_ORDER.length - 1 });
+  const into = button(f, { x: controls.x + 102, y, w: 96, h: 18 }, "ZOOM IN", { disabled: index === 0 });
+  if (out || into) {
+    saveSettings({ cameraZoom: CAMERA_ZOOM_ORDER[index + (out ? 1 : -1)] });
+    applySettingsLive();
   }
 }
 

@@ -11,6 +11,7 @@
  * and before the aim indicator is added to it.
  */
 import * as THREE from "three";
+import { applyCameraZoom } from "../gui/apply-settings";
 import { state } from "../state";
 import { createVfx } from "../fx/system";
 import { createAimIndicator } from "../render/aim-indicator";
@@ -45,6 +46,7 @@ export function installScene(): void {
 
   // ── Camera ──
   state.camera = createDungeonCamera();
+  applyCameraZoom();
   aimCamera(state.camera, 0, 0.5, 0);
 
   // ── Sprite sheets ── boot/sheets.ts builds every monster atlas.
