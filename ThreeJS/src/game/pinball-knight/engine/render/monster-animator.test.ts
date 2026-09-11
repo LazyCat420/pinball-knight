@@ -15,6 +15,7 @@ describe("MonsterAnimator Dedicated State Machine (TDD)", () => {
       S: {
         idle: [() => {}],
         walk: [() => {}, () => {}],
+        attack: [() => {}, () => {}, () => {}, () => {}],
         death: [() => {}, () => {}, () => {}, () => {}],
       },
       N: {},
@@ -185,5 +186,36 @@ describe("MonsterAnimator Dedicated State Machine (TDD)", () => {
       expect(anim.isFinished(), `${kind} isFinished`).toBe(true);
       expect(anim.getFrameIdx(), `${kind} terminal frame`).toBe(3);
     }
+  });
+
+  it("loops attack clip continuously when { loop: true } is explicitly provided", () => {
+    const sprite = makeMockSprite();
+    const anim = new MonsterAnimator(sprite);
+
+    // Normal attack stops at terminal frame and sets finished = true
+    anim.play("attack");
+    expect(anim.getClip()).toBe("attack");
+    for (let f = 0; f < 60; f++) {
+      anim.update(0.02);
+    }
+    expect(anim.isFinished()).toBe(true);
+    expect(anim.getFrameIdx()).toBe(3);
+
+    // Loop attack wraps around 0 -> 1 -> 2 -> 3 -> 0 and never marks finished
+    anim.play("attack", { loop: true, force: true });
+    expect(anim.getFrameIdx()).toBe(0);
+    expect(anim.isFinished()).toBe(false);
+
+    let wrappedCount = 0;
+    let prevIdx = 0;
+    for (let f = 0; f < 100; f++) {
+      anim.update(0.03);
+      if (anim.getFrameIdx() === 0 && prevIdx === 3) {
+        wrappedCount++;
+      }
+      prevIdx = anim.getFrameIdx();
+      expect(anim.isFinished()).toBe(false);
+    }
+    expect(wrappedCount).toBeGreaterThanOrEqual(1);
   });
 });

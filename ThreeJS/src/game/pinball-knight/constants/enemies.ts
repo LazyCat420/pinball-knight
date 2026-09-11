@@ -1279,3 +1279,61 @@ export const SEAHORSE_MOB_WINDUP = 0.45;
 export const SEAHORSE_MOB_COOLDOWN = 2.6;
 export const SEAHORSE_MOB_RATIO = 14;
 export const SEAHORSE_MOB_FROM_LEVEL = 3;
+
+// Christmas Tree (Stump Hopper, Ornament Toss & Fire Death)
+export const CHRISTMAS_TREE_HP = 18;
+export const CHRISTMAS_TREE_R = 0.45;
+export const CHRISTMAS_TREE_SPEED_FACTOR = 0.75;
+export const CHRISTMAS_TREE_FROM_LEVEL = 3;
+export const CHRISTMAS_TREE_RATIO = 12;
+export const CHRISTMAS_TREE_DAMAGE = 1;
+export const CHRISTMAS_TREE_FIRE_RANGE = 6.5;
+export const CHRISTMAS_TREE_WINDUP = 0.45;
+export const CHRISTMAS_TREE_COOLDOWN = 2.8;
+export const ORNAMENT_SPEED = 4.5;
+export const ORNAMENT_DAMAGE = 1;
+export const ORNAMENT_BOUNCES = 1;
+
+// 1950s Toon Gas Can Monster (Paired with Pyro Zippo; spills oil slick on death)
+export const GAS_CAN_HP = 14;
+export const GAS_CAN_R = 0.42;
+export const GAS_CAN_SPEED_FACTOR = 0.85;
+export const GAS_CAN_FROM_LEVEL = 2;
+export const GAS_CAN_RATIO = 14;
+export const GAS_CAN_DAMAGE = 1;
+export const GAS_CAN_WINDUP = 0.40;
+export const GAS_CAN_COOLDOWN = 2.4;
+export const GAS_CAN_SPILL_RADIUS = 2.6;
+export const GAS_CAN_SPILL_LIFE = 20.0;
+
+// Hamster in Exercise Ball Monster (Dual-mode bumper deflector / ram damage; shatters on death)
+export const HAMSTER_BALL_HP = 16;
+export const HAMSTER_BALL_R = 0.46;
+export const HAMSTER_BALL_SPEED_FACTOR = 1.15;
+export const HAMSTER_BALL_FROM_LEVEL = 2;
+export const HAMSTER_BALL_RATIO = 14;
+export const HAMSTER_BALL_DAMAGE = 1;
+export const HAMSTER_BALL_WINDUP = 0.35;
+export const HAMSTER_BALL_COOLDOWN = 2.2;
+export const HAMSTER_BALL_DEFLECT_SPEED = 14.0;
+
+// ASCII Binary Human (Glowing 0s and 1s silhouette; swarms, punches, and infects monsters)
+export const ASCII_HUMAN_HP = 20;
+export const ASCII_HUMAN_R = 0.44;
+export const ASCII_HUMAN_SPEED_FACTOR = 1.1;
+export const ASCII_HUMAN_FROM_LEVEL = 4;
+export const ASCII_HUMAN_RATIO = 12;
+export const ASCII_HUMAN_DAMAGE = 1;
+export const ASCII_HUMAN_WINDUP = 0.35;
+export const ASCII_HUMAN_COOLDOWN = 0.85;
+
+// Computer Screen Spawner (CRT monitor terminal; spawns ASCII humans on Level 4 until destroyed)
+export const COMPUTER_SCREEN_HP = 40;
+export const COMPUTER_SCREEN_R = 0.65;
+export const COMPUTER_SCREEN_SPEED_FACTOR = 0;
+export const COMPUTER_SCREEN_FROM_LEVEL = 4;
+export const COMPUTER_SCREEN_RATIO = 20;
+export const COMPUTER_SCREEN_DAMAGE = 0;
+export const COMPUTER_SCREEN_WINDUP = 0.5;
+export const COMPUTER_SCREEN_COOLDOWN = 3.5;
+export const COMPUTER_SCREEN_MAX_CHILDREN = 5;

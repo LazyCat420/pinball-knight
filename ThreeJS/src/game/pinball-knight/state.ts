@@ -398,7 +398,12 @@ export type EnemyKind =
   | "swordfish_mob" // DUELIST — harpoon speargun bolt and piercing lunge
   | "moray_mob" // SHOCK EXTORTIONIST — electric shock orbs leaving hazard pools
   | "seahorse_mob" // ARTILLERY — high-angle water mortar lobbed over walls
-  | "pinball_boss"; // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
+  | "pinball_boss" // BOSS — giant rolling chrome pinball titan that flattens knights and ricochets off walls
+  | "christmas_tree" // PYRO PINE — festive conifer that hops on its stump, throws ornaments, and bursts into flames on death
+  | "gas_can" // 1950s TOON GAS CAN — vintage cartoon gas canister paired with Zippo; spills oil on death
+  | "hamster_ball" // HAMSTER BALL — manic hamster in an exercise ball; pinball kinetic deflector and normal mode hazard; shatters on death
+  | "ascii_human" // BINARY HUMAN — silhouette of glowing 0s and 1s; swarms, punches, and infects other monsters
+  | "computer_screen"; // CRT TERMINAL — glitching computer monitor that spawns ASCII humans until destroyed
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -431,6 +436,8 @@ export interface Zombie extends Actor {
    * a sprite mesh must set this too, or it will drift the same way.
    */
   bodyR?: number;
+  /** When true, entity pursuit movement and steering are held stationary (e.g. boss charging/winding up) */
+  holdMove?: boolean;
   /**
    * Behavioural SUB-TYPE, only meaningful for `kind: "zombie"` (zombie-types.ts).
    * Runner/lurcher/hulk/midget/crawler/flailer/hobbler are multiplier bundles
@@ -487,6 +494,14 @@ export interface Zombie extends Actor {
   chargeT?: number;
   chargeDirX?: number;
   chargeDirZ?: number;
+  /** Paired monster buddy nid (e.g. gas_can paired with zippo). */
+  pairedBuddyNid?: string;
+  /** Spawner CRT terminal nid (for ASCII human children). */
+  spawnerNid?: string;
+  /** Spawner spawn cooldown timer (for computer_screen). */
+  spawnTimer?: number;
+  /** Panic timer — freaks out, waves arms wildly, runs erratically before toppling over. */
+  panicT?: number;
   /** CROAKER hop: seconds of airtime left (>0 = airborne), and the locked
    *  heading. Separate from chargeT because a hop and a charge differ in the
    *  one way that matters — a charge ENDS on a wall, a hop bounces off it. */

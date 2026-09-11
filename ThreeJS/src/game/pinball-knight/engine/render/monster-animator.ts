@@ -88,6 +88,7 @@ export class MonsterAnimator {
   private timer = 0;
   private rate = 1;
   private finished = false;
+  private loopOverride: boolean | null = null;
   private ticks = 0;
   private lastDt = 0;
   private onEnd: (() => void) | null = null;
@@ -142,17 +143,22 @@ export class MonsterAnimator {
    * Switch clip when alive.
    * If dying or dead, this is strictly a NO-OP.
    */
-  play(clip: ClipName, opts: { force?: boolean; onEnd?: () => void } = {}): void {
+  play(clip: ClipName, opts: { force?: boolean; onEnd?: () => void; loop?: boolean } = {}): void {
     if (this.state !== "alive") {
       return;
     }
     if (this.clip === clip && !opts.force) {
+      if (opts.loop !== undefined && this.loopOverride !== opts.loop) {
+        this.loopOverride = opts.loop;
+        this.finished = false;
+      }
       return;
     }
     this.clip = clip;
     this.frameIdx = 0;
     this.timer = 0;
     this.finished = false;
+    this.loopOverride = opts.loop ?? null;
     this.onEnd = opts.onEnd ?? null;
     this.apply();
   }
@@ -230,6 +236,8 @@ export class MonsterAnimator {
     const safeSmooth = Math.max(0.1, smooth);
     const step = 1 / (safeFps * safeRate * safeSmooth);
 
+    const isLooping = this.loopOverride !== null ? this.loopOverride : (LOOPS[played] ?? false);
+
     // Single-frame clip: hold for at least 1 step before marking finished
     if (indices.length === 1) {
       if (this.timer >= step) {
@@ -238,7 +246,7 @@ export class MonsterAnimator {
           this.state = "dead";
           this.onEnd?.();
           this.onEnd = null;
-        } else if (!LOOPS[played]) {
+        } else if (!isLooping) {
           this.finished = true;
           this.onEnd?.();
           this.onEnd = null;
@@ -260,7 +268,7 @@ export class MonsterAnimator {
           this.onEnd?.();
           this.onEnd = null;
           break;
-        } else if (!LOOPS[played]) {
+        } else if (!isLooping) {
           this.frameIdx = indices.length - 1;
           this.finished = true;
           this.onEnd?.();

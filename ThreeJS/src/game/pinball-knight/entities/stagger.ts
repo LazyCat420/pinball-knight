@@ -132,6 +132,11 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   moray_mob: 0.45,
   seahorse_mob: 0.50,
   pinball_boss: 0,
+  christmas_tree: 0.45,
+  gas_can: 0.40,
+  hamster_ball: 0.35,
+  ascii_human: 0.35,
+  computer_screen: 0.10,
 };
 
 /**
