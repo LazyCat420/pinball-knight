@@ -704,6 +704,9 @@ function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
     playAnim(clip, opts) {
       b.z.anim.play(clip as any, opts);
     },
+    setAnimRate(rate) {
+      b.z.anim.setRate?.(rate);
+    },
     setFacing(dir) {
       b.z.anim.setFacing(dir);
     },

@@ -49,7 +49,8 @@ export interface MoveCtx {
   hitAt(x: number, z: number, r: number, damage: number, launch: number): boolean;
   /** Move the boss. Used only by the charge and teleport. */
   moveTo(x: number, z: number): void;
-  playAnim?(clip: string, opts?: { force?: boolean }): void;
+  playAnim?(clip: string, opts?: { force?: boolean; loop?: boolean }): void;
+  setAnimRate?(rate: number): void;
   setFacing?(dir: "N" | "S" | "E" | "W"): void;
   rotateSprite?(angle: number): void;
   setHoldMovement?(hold: boolean): void;
@@ -1485,7 +1486,8 @@ export function pinballChargeHoldsMovement(rt: PinballChargeRt): boolean {
 export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec, ctx: MoveCtx): void {
   if (rt.phase === "running") {
     ctx.setHoldMovement?.(true);
-    ctx.playAnim?.("attack");
+    ctx.playAnim?.("attack", { loop: true });
+    ctx.setAnimRate?.(3.0);
 
     // Continuous spin in direction of roll
     rt.spinAngle = (rt.spinAngle + 38 * ctx.dt) % (Math.PI * 2);
@@ -1554,6 +1556,7 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.hasHitPlayer = false;
       rt.spinAngle = 0;
       rt.spinSpeed = 0;
+      ctx.setAnimRate?.(1.0);
       ctx.rotateSprite?.(0);
       ctx.setHoldMovement?.(false);
       ctx.playAnim?.("idle");
@@ -1589,7 +1592,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     } else {
       ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
     }
-    ctx.playAnim?.("attack");
+    ctx.playAnim?.("attack", { loop: true });
+    ctx.setAnimRate?.(1.0);
     state.vfx?.burst(ctx.x, 0.2, ctx.z, spec.color, 12, 3);
   }
 
@@ -1604,7 +1608,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     rt.spinSpeed = 6 + 39 * (progress * progress);
     rt.spinAngle = (rt.spinAngle + rt.spinSpeed * ctx.dt) % (Math.PI * 2);
     ctx.rotateSprite?.(rt.spinAngle);
-    ctx.playAnim?.("attack");
+    ctx.setAnimRate?.(1.0 + progress * 2.5); // Visually accelerate spin animation from 8fps to 28fps
+    ctx.playAnim?.("attack", { loop: true });
 
     pulse(rt.lane, rt.t);
 
@@ -1625,6 +1630,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.lane = null;
       rt.phase = "running";
       rt.left = spec.distance;
+      ctx.setAnimRate?.(3.0);
+      ctx.playAnim?.("attack", { loop: true });
       state.shakeT = Math.max(state.shakeT, 0.38);
       state.vfx?.burst(ctx.x, 0.5, ctx.z, spec.color, 24, 7);
       state.vfx?.sparks(ctx.x, 0.2, ctx.z, rt.dx, rt.dz, 14);
@@ -1639,6 +1646,7 @@ export function disposePinballCharge(rt: PinballChargeRt | null, ctx?: MoveCtx):
     rt.lane = null;
   }
   ctx?.rotateSprite?.(0);
+  ctx?.setAnimRate?.(1.0);
   ctx?.setHoldMovement?.(false);
 }
 

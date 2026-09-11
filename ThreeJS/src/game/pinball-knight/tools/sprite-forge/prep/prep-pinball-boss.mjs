@@ -11,13 +11,13 @@ const BASE = join(__dirname, "..");
 const INBOX = join(BASE, "inbox");
 const SOURCES = join(BASE, "sources");
 
-const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/878e1b68-7679-4a65-bf9d-283c58c7185a/pinball_boss_sheet_1788829817764.jpg";
+const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/20b39876-27c7-46c8-a982-0cf7dd782234/pinball_boss_spin_sheet_1789090186741.jpg";
 const BOSS_DIR = join(SOURCES, "pinball_boss-2026-09-07");
 const ALT_DIR = join(BOSS_DIR, "alt-takes");
-const MASTER_SRC = join(ALT_DIR, "pinball_boss_sheet_1788829817764.jpg");
+const MASTER_SRC = join(ALT_DIR, "pinball_boss_spin_sheet_1789090186741.jpg");
 
 async function run() {
-  console.log("⚪ Preparing Tilt Titan (Evil Pinball Boss) Sprite Sheet...");
+  console.log("⚪ Preparing Tilt Titan (Evil Pinball Boss) Sprite Sheet with 360° Spin...");
 
   mkdirSync(ALT_DIR, { recursive: true });
   mkdirSync(INBOX, { recursive: true });
@@ -32,17 +32,18 @@ async function run() {
     readme,
     `# Tilt Titan (Evil Pinball Boss) Sprite Sheet Archive
 
-- **Date**: 2026-09-07
-- **Subject**: Tilt Titan (\`pinball_boss\`), a giant spherical chrome steel pinball boss with an evil mechanical grin, glowing red robotic visor eyes, and electric turbine rev-up sparks.
+- **Date**: 2026-09-10
+- **Subject**: Tilt Titan (\`pinball_boss\`), a giant spherical chrome steel pinball boss with an evil mechanical grin, glowing red robotic visor eyes, and electric turbine rev-up sparks with true 360° horizontal rotational spin.
 - **Primary Source**: \`src/game/pinball-knight/tools/sprite-forge/sources/pinball_boss-2026-09-07/pinball_boss-S.png\`
 - **Layout**: 4 columns × 4 rows (16 frames, 1024×1024, 256×256 per cell)
   - Row 0 (0..3): \`idle\` (4 frames: heavy metallic hover and bobbing with moving chrome sheen reflections and red eye glow)
   - Row 1 (4..7): \`walk\` (4 frames: rolling forward across flagstones with rotating etched face and contact friction sparks)
-  - Row 2 (8..11): \`attack\` (4 frames: high-RPM spin rev-up with grinding blue/yellow friction sparks into a blazing rocket-boost dash)
+  - Row 2 (8..11): \`attack\` (4 frames: 360° rotational horizontal spin rev-up: 45° turn right -> 90° profile with centrifugal blur -> 180° rear shell with turbine coil -> 270° opposite profile with discharge sparks)
   - Row 3 (12..15): \`death\` (4 frames: steel shell fractures, glowing core breach, exploding outward into metal shrapnel and ball bearings)
 - **Chroma Background**: \`#00FF00\` bright green
 - **Takes Archive**:
-  - \`alt-takes/pinball_boss_sheet_1788829817764.jpg\` (Take 1 - Master: Evil Chrome Pinball Boss)
+  - \`alt-takes/pinball_boss_sheet_1788829817764.jpg\` (Take 1 - Static front-facing attack)
+  - \`alt-takes/pinball_boss_spin_sheet_1789090186741.jpg\` (Take 2 - Master: 360° Rotational Spin Attack)
 `,
   );
   console.log(`Saved README to ${readme}`);
