@@ -70,10 +70,18 @@ export interface SlimeShape {
   sprayY: number;
   /** Bubbles inside the gel rise with this phase. */
   bubblePhase: number;
+  /** A raised ring at the rim of a flattened body — the splash crown, 0..1. */
+  rim: number;
+  /** Irregular lobed outline for a puddle, 0..1. */
+  lobes: number;
+  /** Flattened splatter blobs on the floor around the body, 0..1 (spread and size). */
+  floorSplat: number;
+  /** A darker pool showing through the top of a puddle, 0..1. */
+  pool: number;
 }
 
 export function restShape(): SlimeShape {
-  return { squash: 0, lean: 0, curl: 0, crest: 0, melt: 0, lift: 0, wobble: 0, bulge: 0, spray: 0, sprayY: 0.6, bubblePhase: 0 };
+  return { squash: 0, lean: 0, curl: 0, crest: 0, melt: 0, lift: 0, wobble: 0, bulge: 0, spray: 0, sprayY: 0.6, bubblePhase: 0, rim: 0, lobes: 0, floorSplat: 0, pool: 0 };
 }
 
 /**
@@ -147,11 +155,25 @@ export function deform(v: THREE.Vector3, s: SlimeShape, out = new THREE.Vector3(
     x *= spread; z *= spread;
     y -= m * 0.05 * h * h;
   }
+  // A puddle is not a disc: lobes and tongues run out from the edge, and the
+  // same term gives the melting body its drips.
+  if (s.lobes > 0) {
+    const ang = Math.atan2(z, x);
+    const f = 1 + s.lobes * (0.17 * Math.sin(3 * ang + 1.3) + 0.1 * Math.sin(5 * ang + 0.4) + 0.05 * Math.sin(8 * ang)) * (1 - 0.5 * h);
+    x *= f; z *= f;
+  }
   // Jelly wobble: a low-order ripple around the body.
   if (s.wobble > 0) {
     const ang = Math.atan2(z, x);
     const r = 1 + s.wobble * 0.05 * Math.sin(ang * 3 + s.bubblePhase * 6) * Math.sin(h * Math.PI);
     x *= r; z *= r;
+  }
+  // The splash crown: the flattened body's rim is thrown up in a ring, with
+  // eight scallops so it reads as fingers of gel rather than a lip.
+  if (s.rim > 0) {
+    const rr = Math.hypot(x, z) / sxz, ang = Math.atan2(z, x);
+    const ring = Math.exp(-(rr - 0.96) * (rr - 0.96) * 40);
+    y += s.rim * ring * (0.3 + 0.12 * Math.sin(ang * 8 + 0.5));
   }
   // The death bulge: a bubble forcing its way out of the crown, off centre.
   if (s.bulge > 0) {
@@ -222,14 +244,29 @@ export function createSlime() {
     const rim = new THREE.Mesh(sphere, bubbleRim); rim.scale.setScalar(1.25); b.add(rim);
     bubbles.push(b);
   }
-  // Droplets for the splash and the pop.
+  // Droplets for the splash and the pop: each is a head with a smaller tail
+  // trailing it, so a frozen frame still reads as gel in flight.
   const drops = new THREE.Group(); drops.name = 'Droplets'; root.add(drops);
-  const DROPS = 9;
+  const DROPS = 16;
   for (let i = 0; i < DROPS; i++) {
-    const d = new THREE.Mesh(sphere, dropMat); d.scale.setScalar(0.09);
-    const edge = new THREE.Mesh(sphere, outline); edge.scale.setScalar(1.45); d.add(edge);
+    const d = new THREE.Mesh(sphere, dropMat); d.scale.setScalar(0.12);
+    const edge = new THREE.Mesh(sphere, outline); edge.scale.setScalar(1.35); d.add(edge);
+    const tail = new THREE.Mesh(sphere, dropMat); tail.name = 'tail'; tail.scale.setScalar(0.6); d.add(tail);
+    const tailEdge = new THREE.Mesh(sphere, outline); tailEdge.scale.setScalar(1.35); tail.add(tailEdge);
     drops.add(d);
   }
+  // Splatter on the floor: flattened blobs thrown out around the body when it
+  // slaps down (attack) or drips apart (death).
+  const splats = new THREE.Group(); splats.name = 'Floor splatter'; root.add(splats);
+  const SPLATS = 12;
+  for (let i = 0; i < SPLATS; i++) {
+    const b = new THREE.Mesh(sphere, gel); splats.add(b);
+    const edge = new THREE.Mesh(sphere, outline); edge.scale.set(1.12, 1.6, 1.12); b.add(edge);
+    const shine = new THREE.Mesh(sphere, glossMat); shine.position.set(-0.3, 0.5, 0.3); shine.scale.set(0.35, 0.3, 0.3); b.add(shine);
+  }
+  // The darker pool that shows through the top of a puddle, and a wet ring.
+  const pool = new THREE.Mesh(sphere, toon(SLIME_PALETTE.dark)); pool.name = 'Pool'; body.add(pool);
+  const poolShine = new THREE.Mesh(sphere, glossMat); poolShine.scale.set(0.4, 0.5, 0.25); poolShine.position.set(-0.35, 0.4, 0.4); pool.add(poolShine);
 
   const v = new THREE.Vector3(), p = new THREE.Vector3(), n = new THREE.Vector3();
   const shape = restShape();
@@ -272,15 +309,38 @@ export function createSlime() {
       b.visible = shape.melt < 0.85;
     });
     // Droplets: a fan thrown up and out from `sprayY`, falling as spray → 1.
+    // Sizes and launch angles vary per droplet; the tail trails the head
+    // along its own arc so the burst reads as motion in a single frame.
     drops.visible = shape.spray > 0;
     drops.children.forEach((d, i) => {
-      const a = (i / DROPS) * Math.PI * 2 + 0.4, t = shape.spray;
-      const rr = 0.55 + 0.9 * t + (i % 3) * 0.12;
-      const up = 0.35 + (i % 2) * 0.25;
-      d.position.set(Math.cos(a) * rr, shape.sprayY + up * Math.sin(t * Math.PI) * 2.2 - t * t * 0.4, Math.sin(a) * rr * 0.6 + 0.3);
-      d.position.y = Math.max(d.position.y, 0.08);
-      d.scale.setScalar((0.06 + 0.05 * ((i * 7) % 3)) * (1 - 0.4 * t) * Math.min(1, (1 - t) * 6));
+      const a = (i / DROPS) * Math.PI * 2 + 0.4 + (i % 3) * 0.15, t = shape.spray;
+      const size = 0.08 + 0.06 * ((i * 7) % 4);
+      const rr = 0.7 + (1.0 + (i % 3) * 0.35) * t;
+      const up = 0.45 + (i % 2) * 0.35 + ((i * 5) % 3) * 0.1;
+      const arc = (u: number) => new THREE.Vector3(Math.cos(a) * (0.7 + (rr - 0.7) * u / Math.max(t, 1e-3)), shape.sprayY + up * Math.sin(u * Math.PI) * 2.2 - u * u * 0.5, Math.sin(a) * (0.7 + (rr - 0.7) * u / Math.max(t, 1e-3)) * 0.6 + 0.3);
+      const head = arc(t), prev = arc(Math.max(0, t - 0.12));
+      head.y = Math.max(head.y, size * 0.6);
+      d.position.copy(head);
+      d.scale.setScalar(size * (1 - 0.3 * t) * Math.min(1, (1 - t) * 6));
+      const tail = d.children[1] as THREE.Mesh;
+      tail.position.copy(prev).sub(head).divideScalar(Math.max(d.scale.x, 1e-3)).multiplyScalar(0.55);
     });
+    // Floor splatter: blobs land in a ring that widens with `floorSplat`,
+    // each a different size and stretch, flat to the floor.
+    splats.visible = shape.floorSplat > 0;
+    splats.children.forEach((b, i) => {
+      const a = (i / SPLATS) * Math.PI * 2 + 0.9 + (i % 2) * 0.2, k = shape.floorSplat;
+      const rr = (1.35 + ((i * 5) % 4) * 0.22) * (0.6 + 0.4 * k);
+      const w = (0.1 + 0.05 * ((i * 3) % 3)) * (0.6 + 0.4 * k);
+      b.position.set(Math.cos(a) * rr, w * 0.35, Math.sin(a) * rr * 0.75);
+      b.scale.set(w * (1.3 + 0.4 * (i % 2)), w * 0.42, w);
+      b.rotation.y = a;
+    });
+    // The pool sits just above the flattened top, off centre like the gloss.
+    pool.visible = shape.pool > 0;
+    const top = deform(v.set(0, 1.2, 0), shape, p).y;
+    pool.position.set(-0.05, top * 0.55, 0.12);
+    pool.scale.set(0.9 * shape.pool * (1 + 0.4 * shape.melt), Math.max(0.02, top * 0.55), 0.62 * shape.pool * (1 + 0.4 * shape.melt));
   }
 
   /** Pose the slime at `t` (0..1) through `clip`. */
@@ -310,6 +370,9 @@ export function createSlime() {
       s.lean = 0.35 * rear;
       s.spray = t < 0.55 ? 0 : clamp01((t - 0.55) / 0.35);
       s.sprayY = 0.4;
+      s.rim = splash * ease((t - 0.55) / 0.06);
+      s.floorSplat = t < 0.58 ? 0 : clamp01((t - 0.58) / 0.12) * (1 - ease((t - 0.86) / 0.14));
+      s.lobes = 0.5 * splash;
       s.wobble = ease((t - 0.85) / 0.15) * 0.6;
     } else {
       // Row 4: shiver, a bubble swells out of the crown and bursts, then the
@@ -322,11 +385,14 @@ export function createSlime() {
       s.sprayY = 1.1;
       s.melt = ease((t - 0.45) / 0.5);
       s.squash += 0.6 * ease((t - 0.42) / 0.3);
+      s.lobes = s.melt;
+      s.floorSplat = t < 0.55 ? 0 : clamp01((t - 0.55) / 0.35);
+      s.pool = ease((t - 0.7) / 0.3);
     }
     apply(s);
   }
 
   function dispose() { geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); ramp.dispose(); root.removeFromParent(); }
   pose('idle', 0);
-  return { root, body, dome, drops, bubbles, shape, pose, apply, dispose };
+  return { root, body, dome, drops, splats, pool, bubbles, shape, pose, apply, dispose };
 }
