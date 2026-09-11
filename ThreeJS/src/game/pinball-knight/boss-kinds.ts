@@ -876,11 +876,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
         slam: {
           interval: 3.0,
           telegraph: 0.65,
-          radius: 3.0,
+          radius: 2.8,
           damage: 3,
           launch: 28,
           color: 0xdd00ff,
-          echo: { delay: 0.35, radius: 3.2, damage: 2 },
+          echo: { delay: 0.35, radius: 3.0, damage: 2 },
         },
         summon: {
           interval: 6.0,

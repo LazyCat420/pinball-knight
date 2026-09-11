@@ -9,7 +9,7 @@ import {
   depthMetadata,
 } from "./unlocked-depths";
 import { CYCLE_FLOORS, THEMES, themeFor } from "./maze/prefabs";
-import { BOSSES, BOSS_KINDS, guardianFor } from "./boss-kinds";
+import { BOSSES, BOSS_KINDS, guardianFor, guardiansOf } from "./boss-kinds";
 import { biomeFor } from "./boot/biomes";
 
 function stubStorage(initial?: Record<string, string>): void {
@@ -133,7 +133,8 @@ describe("the depth screen matches the floor the generator will build", () => {
   it("reaches every biome and every guardian across the depths it advertises", () => {
     // Set equality both ways against the generator's tables, so a band that
     // silently drops out of the schedule fails here too.
-    const deep = CYCLE_FLOORS * 2;
+    const passesNeeded = Math.max(...THEMES.map((t) => guardiansOf(t.name).length));
+    const deep = CYCLE_FLOORS * passesNeeded;
     const biomes = new Set<string>();
     const bosses = new Set<string>();
     for (let f = 1; f <= deep; f++) {
