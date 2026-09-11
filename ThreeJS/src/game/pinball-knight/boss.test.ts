@@ -16,7 +16,8 @@ import * as THREE from "three";
 import { spawnBoss, updateBoss, disposeBoss, bossActive } from "./boss";
 import { BOSSES } from "./boss-kinds";
 import { state } from "./state";
-import type { Grid } from "./maze/generator";
+import { T_FLOOR, type Grid } from "./maze/generator";
+import { circleCollides } from "./engine/collision";
 import type { Zombie } from "./state";
 
 function makeGrid(): Grid {
@@ -405,3 +406,43 @@ test("reaper_king executes teleport and fire spray special while retaining orbit
   expect(meshes.length).toBeGreaterThanOrEqual(5);
 });
 
+
+
+test("a blocked teleport leaves the boss reachable and killing it unlocks the exit", () => {
+  // A room wide enough for the boss, but no valid landing at teleport range.
+  for (let j = 2; j <= 4; j++) for (let i = 2; i <= 4; i++) state.grid!.t[j * 7 + i] = T_FLOOR;
+  state.flowField = flatField(1);
+  state.plungerArmed = false;
+  state.player!.shieldT = 100;
+  state.player!.x = 0;
+  state.player!.z = 0.5;
+  const king = spawnKing();
+  const start = { x: king.x, z: king.z };
+  for (let i = 0; i < 600; i++) updateBoss(1 / 60);
+  expect({ x: king.x, z: king.z }).toEqual(start);
+  expect(circleCollides(state.grid!, king.x, king.z, king.bodyR!)).toBe(false);
+  expect(state.exitLocked).toBe(true);
+  king.hp = 0;
+  updateBoss(1 / 60);
+  expect(state.exitLocked).toBe(false);
+  expect(bossActive()).toBe(false);
+});
+
+test("disengaging during teleport wind-up cancels the move and lets the boss return", () => {
+  state.grid = openHall();
+  state.flowField = flatField(1);
+  state.plungerArmed = false;
+  state.player!.shieldT = 100;
+  const king = spawnKing({ i: HALL / 2, j: HALL / 2 });
+  state.player!.x = king.x + 2;
+  state.player!.z = king.z;
+  // The 7.5 second teleport has a 0.9 second tell: stop inside its wind-up.
+  for (let i = 0; i < 405; i++) updateBoss(1 / 60);
+  king.x += 40;
+  const awayX = king.x;
+  state.flowField = flatField(120);
+  updateBoss(1 / 60);
+  for (let i = 0; i < 60; i++) updateBoss(1 / 60);
+  expect(king.aggro).toBe(false);
+  expect(king.x).toBeLessThan(awayX - 0.1);
+});

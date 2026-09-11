@@ -31,7 +31,7 @@ import * as THREE from "three";
 import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, PinballChargeSpec, SlamSpec, SummonSpec, TeleportFireSpec, ThrashGrabSpec } from "./boss-kinds";
 import { state } from "./state";
 import type { Grid } from "./maze/generator";
-import { moveCircle } from "./engine/collision";
+import { circleCollides, moveCircle } from "./engine/collision";
 import { isWalkable, worldToTile } from "./maze/generator";
 import { facingFromWorld } from "./entities/zombie";
 
@@ -553,8 +553,8 @@ export function findTeleportDestination(
   dist: number,
   grid: Grid | null,
   bodyR: number
-): { x: number; z: number } {
-  if (!grid) return { x: tx + dist, z: tz };
+): { x: number; z: number } | null {
+  if (!grid) return null;
   const angles = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4, Math.PI, -(3 * Math.PI) / 4, -Math.PI / 2, -Math.PI / 4];
   for (let i = 0; i < angles.length; i++) {
     const a = angles[i];
@@ -562,7 +562,7 @@ export function findTeleportDestination(
     const testZ = tz + Math.sin(a) * dist;
     const t = worldToTile(grid, testX, testZ);
     if (t.i >= 1 && t.i < grid.w - 1 && t.j >= 1 && t.j < grid.h - 1) {
-      if (isWalkable(grid, t.i, t.j)) {
+      if (isWalkable(grid, t.i, t.j) && !circleCollides(grid, testX, testZ, bodyR)) {
         const res = moveCircle(grid, tx, tz, bodyR, testX - tx, testZ - tz);
         if (Math.hypot(res.x - testX, res.z - testZ) < 0.5) {
           return { x: testX, z: testZ };
@@ -570,7 +570,18 @@ export function findTeleportDestination(
       }
     }
   }
-  return { x: tx + dist * 0.7, z: tz + dist * 0.7 };
+  // A missed attack is safe; an unchecked fallback can strand the guardian
+  // inside a wall while its living HP keeps the exit locked.
+  return null;
+}
+
+export function cancelTeleportFire(rt: TeleportFireRt, spec: TeleportFireSpec): void {
+  disposeMesh(rt.ring);
+  rt.ring = null;
+  rt.phase = "idle";
+  rt.t = spec.interval;
+  rt.sprayT = 0;
+  rt.shotsFired = 0;
 }
 
 export function fireMouthFlame(
@@ -635,8 +646,9 @@ export function updateTeleportFire(
 
   rt.t -= ctx.dt;
   if (rt.phase === "idle" && rt.t <= spec.telegraph) {
-    rt.phase = "telegraph";
     const dest = findTeleportDestination(ctx.target.x, ctx.target.z, spec.distance, ctx.grid, ctx.bodyR);
+    if (!dest) { cancelTeleportFire(rt, spec); return; }
+    rt.phase = "telegraph";
     rt.destX = dest.x;
     rt.destZ = dest.z;
     const ring = groundRing(1.8, 0x8822bb, 0.15); // dark purple necrotic tell
@@ -656,6 +668,11 @@ export function updateTeleportFire(
       state.vfx?.burst(ctx.x, 1.2, ctx.z, 0x220033, 24, 5);
       state.vfx?.burst(ctx.x, 1.2, ctx.z, 0xff4500, 16, 4);
 
+      // Gates or other geometry may have changed during the wind-up.
+      if (!ctx.grid || circleCollides(ctx.grid, rt.destX, rt.destZ, ctx.bodyR)) {
+        cancelTeleportFire(rt, spec);
+        return;
+      }
       // Relocate boss
       ctx.moveTo(rt.destX, rt.destZ);
 

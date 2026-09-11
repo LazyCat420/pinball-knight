@@ -70,6 +70,7 @@ import {
   freshSlam,
   freshSummon,
   freshTeleportFire,
+  cancelTeleportFire,
   freshThrashGrab,
   makeOrbiter,
   mouthFireHoldsMovement,
@@ -545,6 +546,10 @@ export function updateBoss(dt: number): void {
   // so re-entering his hall doesn't eat an instant slam from a countdown that
   // expired while you were away.
   if (!boss.engaged) {
+    const teleport = movesAt(boss.spec, hpFrac()).teleportFire;
+    if (boss.teleportFire && teleport && teleportFireHoldsMovement(boss.teleportFire)) {
+      cancelTeleportFire(boss.teleportFire, teleport);
+    }
     updateShots(boss.shots, ctx); // let anything already in flight land
     return;
   }
@@ -569,7 +574,10 @@ export function updateBoss(dt: number): void {
       boss.summon.alive = alive; // the brood does not vanish at the threshold
     }
     if (p2.moves.nova) boss.nova = freshNova(p2.moves.nova);
-    if (p2.moves.teleportFire) boss.teleportFire = freshTeleportFire(p2.moves.teleportFire);
+    if (p2.moves.teleportFire) {
+      if (boss.teleportFire) cancelTeleportFire(boss.teleportFire, p2.moves.teleportFire);
+      boss.teleportFire = freshTeleportFire(p2.moves.teleportFire);
+    }
     if (p2.moves.fanBoomerang) boss.fanBoomerang = freshFanBoomerang(p2.moves.fanBoomerang);
     if (p2.moves.daggerVolley) boss.daggerVolley = freshDaggerVolley(p2.moves.daggerVolley);
     if (p2.moves.mouthFire) boss.mouthFire = freshMouthFire(p2.moves.mouthFire);
