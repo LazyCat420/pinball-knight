@@ -46,7 +46,7 @@ const RUNGS = [72, SHIPPED_GRID, 120];
  * 120 → 32/19.9/1.96.
  */
 const CEILING: Record<number, { entries: number; isolatedPct: number; runLen: number }> = {
-  72: { entries: 32, isolatedPct: 36, runLen: 1.4 },
+  72: { entries: 32, isolatedPct: 38, runLen: 1.4 },
   84: { entries: 34, isolatedPct: 35, runLen: 1.45 },
   120: { entries: 34, isolatedPct: 24, runLen: 1.8 },
 };

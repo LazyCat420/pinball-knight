@@ -138,6 +138,11 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   ascii_human: 0.35,
   computer_screen: 0.10,
   giant_ascii_human: 0.10,
+  pit_peeper: 0.65,
+  dumpster_dan: 0.40,
+  toaster_gremlin: 0.60,
+  lip_flapper: 0.70,
+  hydrant_hound: 0.25,
 };
 
 /**

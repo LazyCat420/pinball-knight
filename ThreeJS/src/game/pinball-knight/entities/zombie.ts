@@ -284,6 +284,11 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   ascii_human: { bodyR: ASCII_HUMAN_R, contactRange: 0.9, windup: ASCII_HUMAN_WINDUP, cooldown: ASCII_HUMAN_COOLDOWN, ranged: false },
   computer_screen: { bodyR: COMPUTER_SCREEN_R, contactRange: 0, windup: 0, cooldown: COMPUTER_SCREEN_COOLDOWN, ranged: false },
   giant_ascii_human: { bodyR: GIANT_ASCII_R, contactRange: 1.4, windup: GIANT_ASCII_WINDUP, cooldown: GIANT_ASCII_COOLDOWN, ranged: false },
+  pit_peeper: { bodyR: 0.55, contactRange: 0.9, windup: 0.45, cooldown: 1.6, ranged: false },
+  dumpster_dan: { bodyR: 0.65, contactRange: 1.0, windup: 0.4, cooldown: 1.5, ranged: false },
+  toaster_gremlin: { bodyR: 0.45, contactRange: 5.5, windup: 0.5, cooldown: 2.2, ranged: true },
+  lip_flapper: { bodyR: 0.45, contactRange: 4.5, windup: 0.6, cooldown: 2.5, ranged: true },
+  hydrant_hound: { bodyR: 0.6, contactRange: 1.1, windup: 0.35, cooldown: 1.8, ranged: false },
 };
 
 /**
@@ -1746,6 +1751,12 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "clam") {
                 // Old Clam spits a bouncy trajectory-deflecting pearl
                 spitPearl(z.x, z.z, ux, uz);
+              } else if (z.kind === "toaster_gremlin") {
+                spitGlob(z.x, z.z, ux, uz);
+                state.vfx?.burst(z.x, 0.4, z.z, 0xf97316, 8, 1.2);
+              } else if (z.kind === "lip_flapper") {
+                spitGlob(z.x, z.z, ux, uz);
+                state.vfx?.burst(z.x, 0.4, z.z, 0xef4444, 8, 1.2);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
@@ -1764,6 +1775,23 @@ export function updateZombies(dt: number): void {
               p.momSpeed = (p.momSpeed || 0) * 0.5;
               state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 8);
               state.shakeT = Math.max(state.shakeT, 0.15);
+            } else if (z.kind === "pit_peeper") {
+              p.stinkSlowT = 2.5;
+              state.vfx?.burst(p.x, 0.4, p.z, 0x22c55e, 10, 1.2);
+            } else if (z.kind === "dumpster_dan") {
+              spawnFloorFx("oil", z.x, z.z, 1.2, 8.0);
+              state.vfx?.burst(p.x, 0.4, p.z, 0xfacc15, 8, 1.0);
+            } else if (z.kind === "lip_flapper") {
+              p.lipFlapConfusionT = 1.5;
+              state.vfx?.burst(p.x, 0.4, p.z, 0xef4444, 12, 1.5);
+            } else if (z.kind === "hydrant_hound") {
+              const kx = pdist > 1e-4 ? pdx / pdist : 0;
+              const kz = pdist > 1e-4 ? pdz / pdist : 1;
+              p.momX = kx;
+              p.momZ = kz;
+              p.momSpeed = 16;
+              state.vfx?.burst(p.x, 0.5, p.z, 0x38bdf8, 16, 2.0);
+              state.shakeT = Math.max(state.shakeT, 0.2);
             }
           }
         }
@@ -1954,6 +1982,18 @@ export function updateZombies(dt: number): void {
       z.bobT = (z.bobT ?? 0) + dt * (moving ? 10 : 2);
       const hop = moving ? Math.abs(Math.sin((z.bobT ?? 0) * 8)) * 0.18 : 0;
       z.sprite.mesh.position.y = z.sprite.mesh.position.y + hop;
+    }
+    // Lip Flapper suction vacuum pull toward maw
+    if (z.kind === "lip_flapper" && pdist > 0.5 && pdist < 5.5) {
+      const pull = 0.05 * dt * 60;
+      if (g) {
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, ((z.x - p.x) / pdist) * pull, ((z.z - p.z) / pdist) * pull);
+        p.x = res.x;
+        p.z = res.z;
+      } else {
+        p.x += ((z.x - p.x) / pdist) * pull;
+        p.z += ((z.z - p.z) / pdist) * pull;
+      }
     }
   }
 }

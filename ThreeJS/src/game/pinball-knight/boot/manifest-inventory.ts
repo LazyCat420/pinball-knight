@@ -91,6 +91,10 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   tavern_armorer: ["S"],
   tavern_gambler: ["S"],
   doppelganger: ["S"],
+  pit_peeper: ["S"],
+  dumpster_dan: ["S"],
+  toaster_gremlin: ["S"],
+  lip_flapper: ["S"],
 };
 
 export function hasAuthoredFacing(name: string, dir: Dir): boolean {

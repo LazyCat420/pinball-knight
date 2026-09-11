@@ -95,6 +95,11 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   ascii_human: ASCII_HUMAN_HP,
   computer_screen: COMPUTER_SCREEN_HP,
   giant_ascii_human: GIANT_ASCII_HP,
+  pit_peeper: 22,
+  dumpster_dan: 28,
+  toaster_gremlin: 18,
+  lip_flapper: 16,
+  hydrant_hound: 32,
 };
 
 export { skinSheet };
@@ -461,6 +466,16 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= COMPUTER_SCREEN_FROM_LEVEL ? makeSkinned("computer_screen", x, z, 0) : null;
     case "giant_ascii_human":
       return level >= GIANT_ASCII_FROM_LEVEL ? makeSkinned("giant_ascii_human", x, z, baseSpeed * GIANT_ASCII_SPEED_FACTOR) : null;
+    case "pit_peeper":
+      return makeSkinned("pit_peeper", x, z, baseSpeed * 0.95);
+    case "dumpster_dan":
+      return makeSkinned("dumpster_dan", x, z, baseSpeed * 0.85);
+    case "toaster_gremlin":
+      return makeSkinned("toaster_gremlin", x, z, baseSpeed * 1.1);
+    case "lip_flapper":
+      return makeSkinned("lip_flapper", x, z, baseSpeed * 1.05);
+    case "hydrant_hound":
+      return makeSkinned("hydrant_hound", x, z, baseSpeed * 0.9);
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

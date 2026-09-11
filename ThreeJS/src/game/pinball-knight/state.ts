@@ -137,6 +137,10 @@ export interface Player extends Actor {
   pinballWallCrunchDamage?: number;
   /** Medusa petrification: while > 0 player is turned into a granite statue, immobilized. */
   petrifiedT?: number;
+  /** Lip Flapper kiss confusion: while > 0 player controls are reversed. */
+  lipFlapConfusionT?: number;
+  /** Pit Peeper stink funk: while > 0 player movement is slowed. */
+  stinkSlowT?: number;
 
   // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
   /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
@@ -404,7 +408,12 @@ export type EnemyKind =
   | "hamster_ball" // HAMSTER BALL — manic hamster in an exercise ball; pinball kinetic deflector and normal mode hazard; shatters on death
   | "ascii_human" // BINARY HUMAN — silhouette of glowing 0s and 1s; swarms, punches, and infects other monsters
   | "computer_screen" // CRT TERMINAL — glitching computer monitor that spawns ASCII humans until destroyed
-  | "giant_ascii_human"; // GIANT ASCII TITAN — massive colossus formed when ASCII humans merge; smashes ground with dual fists
+  | "giant_ascii_human" // GIANT ASCII TITAN — massive colossus formed when ASCII humans merge; smashes ground with dual fists
+  | "pit_peeper" // WEIRD — orange sewer blob with armpit googly eyes, swinging tube socks, slow stink cloud
+  | "dumpster_dan" // WEIRD — living green trashbag in baseball cap, hotdog club, banana peel slip traps
+  | "toaster_gremlin" // WEIRD — purple goblin with chrome toaster head, launching flaming toast rockets
+  | "lip_flapper" // WEIRD — accordion stalk with braced cartoon red lips, suction pull and control-reversing kiss
+  | "hydrant_hound"; // WEIRD — fire hydrant bulldog with glove ears, twin water cannons and geyser death
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;

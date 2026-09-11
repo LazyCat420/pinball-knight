@@ -97,6 +97,11 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   ascii_human: { label: "Binary Human", icon: "👤", blurb: "digitized human silhouette of glowing 0s and 1s that swarms the player, punches, and infects other monsters into ASCII clones" },
   computer_screen: { label: "CRT Terminal", icon: "🖥️", blurb: "glitching retro computer monitor that manifests ASCII binary humans on Level 4 until smashed by the player" },
   giant_ascii_human: { label: "ASCII Titan", icon: "👾", blurb: "towering colossus of cascading matrix code formed when binary humans merge — smashes the ground with its massive dual fists" },
+  pit_peeper: { label: "Pit Peeper", icon: "👁️", blurb: "grotesque orange sewer blob with bloodshot googly eyes in its armpits swinging smelly socks and leaving noxious stink clouds" },
+  dumpster_dan: { label: "Dumpster Dan", icon: "🗑️", blurb: "grimy green trashbag gremlin in a backwards cap wielding a hotdog club and throwing slippery banana peel traps" },
+  toaster_gremlin: { label: "Toaster Gremlin", icon: "🍞", blurb: "twitchy purple goblin with a glowing dual-slot toaster head that launches homing flaming toast rockets" },
+  lip_flapper: { label: "Lip Flapper", icon: "💋", blurb: "striped accordion stalk with giant red cartoon lips and a fedora that sucks you in and confuses your controls with a lipstick kiss" },
+  hydrant_hound: { label: "Hydrant Hound", icon: "🚒", blurb: "heavy red cast-iron municipal fire hydrant bulldog blasting high-pressure water cannon geysers that send knights flying" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

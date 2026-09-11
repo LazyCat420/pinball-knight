@@ -181,6 +181,11 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   ascii_human: "AsciiMan",
   computer_screen: "Computer",
   giant_ascii_human: "Titan",
+  pit_peeper: "Peeper",
+  dumpster_dan: "Dumpster",
+  toaster_gremlin: "Toaster",
+  lip_flapper: "LipFlap",
+  hydrant_hound: "Hydrant",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

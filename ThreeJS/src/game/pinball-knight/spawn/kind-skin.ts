@@ -118,6 +118,11 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   ascii_human: { scale: 1.05 },
   computer_screen: { scale: 1.2 },
   giant_ascii_human: { scale: 2.4 },
+  pit_peeper: { scale: 1.05 },
+  dumpster_dan: { scale: 1.1 },
+  toaster_gremlin: { scale: 1.0 },
+  lip_flapper: { scale: 1.15 },
+  hydrant_hound: { scale: 1.1 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

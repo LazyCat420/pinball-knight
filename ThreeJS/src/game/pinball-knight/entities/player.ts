@@ -1463,13 +1463,15 @@ function aimDirection(input: InputHandle, px: number, pz: number): { x: number; 
  * arrow the game just drew.
  */
 function steerHeading(input: InputHandle, px: number, pz: number): { x: number; z: number } | null {
+  const confused = (state.player?.lipFlapConfusionT ?? 0) > 0;
   const aim = aimDirection(input, px, pz);
-  if (aim) return aim;
+  if (aim) return confused ? { x: -aim.x, z: -aim.z } : aim;
   const a = input.axis();
   if (a.x === 0 && a.z === 0) return null;
   const wd = screenDirToWorld(a.x, a.z);
   const wl = Math.hypot(wd.x, wd.z) || 1;
-  return { x: wd.x / wl, z: wd.z / wl };
+  const inv = confused ? -1 : 1;
+  return { x: (wd.x / wl) * inv, z: (wd.z / wl) * inv };
 }
 
 function notePocketBounce(p: Player): void {
@@ -2254,6 +2256,8 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.iframes = Math.max(0, p.iframes - dt);
   p.oilT = Math.max(0, p.oilT - dt);
   p.webbedT = Math.max(0, p.webbedT - dt);
+  if ((p.stinkSlowT ?? 0) > 0) p.stinkSlowT = Math.max(0, (p.stinkSlowT ?? 0) - dt);
+  if ((p.lipFlapConfusionT ?? 0) > 0) p.lipFlapConfusionT = Math.max(0, (p.lipFlapConfusionT ?? 0) - dt);
   if ((p.flattenT ?? 0) > 0) {
     p.flattenT = Math.max(0, (p.flattenT ?? 0) - dt);
     p.sprite?.mesh?.scale?.set?.(1.45, 0.28, 1);
@@ -2653,6 +2657,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   if (p.turboT > 0) targetSpeed *= TURBO_WALK_MULT; // turbo: quicker feet too
   if (p.webbedT > 0) targetSpeed *= WEB_SLOW_MULT; // webbed: wading through silk
   if ((p.flattenT ?? 0) > 0) targetSpeed *= 0.55; // pancake flat: dragging along the stones
+  if ((p.stinkSlowT ?? 0) > 0) targetSpeed *= 0.65; // noxious armpit stink cloud
   if (p.magBootsT <= 0 && overMagStrip()) targetSpeed *= MAGSTRIP_WALK_MULT; // magnet strip drags
   targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;
