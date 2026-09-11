@@ -29,7 +29,7 @@ export function createCharacterPixelPass(characters: THREE.Object3D[]) {
         renderer.setRenderTarget(oldTarget); renderer.autoClear = true; renderer.render(scene, camera);
         characters.forEach((root, i) => root.visible = visible[i]);
         scene.traverse(object => {
-          if (!(object instanceof THREE.Mesh) || characterMeshes.has(object)) return;
+          if (!(object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) || characterMeshes.has(object)) return;
           const materials = Array.isArray(object.material) ? object.material : [object.material];
           materials.forEach(material => { if (!writes.has(material)) writes.set(material, material.colorWrite); material.colorWrite = false; });
         });

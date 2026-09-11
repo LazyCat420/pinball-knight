@@ -184,3 +184,20 @@ project-local lock did not protect against a later release from an older branch.
   kept the Reaper King present through several attack cycles, then killed it via
   the normal damage hook. Exit reported `locked: false` and `haulShown: true`.
   Zero script errors. Future releases must preserve `b0b76e9f`.
+
+## Fluid armored knight — completed batch (2026-09-11)
+
+- Branch `feat/fluid-knight-animation`, worktree `.worktrees/wt-fluid-knight`.
+- Ready for integration: articulated rigid-armor bone hierarchy; two-bone leg
+  IK; distance-driven walking/running with heel/toe motion; continuous turning
+  and pose transitions; authored diagonal, reverse and heavy sword motions tied
+  to actual combat timing; breathing, recoil, and helmet-removal arm IK.
+- Dungeon and tavern supply achieved travel and the simulation clock. The intro
+  uses the same rig. Existing physics and attack hitboxes remain unchanged.
+- Added standalone `ThreeJS/scripts/knight-motion-preview.html` for motion review.
+- Validation: 46 focused tests passed, production build passed, no new TypeScript
+  diagnostics in changed files. Muted browser verified tavern and dungeon walking,
+  light attacks, all seven intro phases and return to tavern, with zero script
+  errors. Recorded slow-motion walking/running and three sword variants.
+- Integrate this committed batch onto verified NAS release `035a23b6`, preserving
+  the newer Fry Sentinel changes; run the project release gate before publishing.

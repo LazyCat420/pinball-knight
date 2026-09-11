@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Knight motion workshop</title>
+<style>body{margin:0;background:#111922;color:#e5ecef;font:14px system-ui}header{height:72px;box-sizing:border-box;padding:12px 24px;display:flex;gap:18px;align-items:center}strong{font-size:18px;margin-right:auto}label{display:flex;gap:6px;align-items:center}select,button{background:#26333f;color:#fff;border:1px solid #526574;border-radius:5px;padding:7px}main{display:flex;justify-content:center}section{position:relative}section span{position:absolute;left:18px;top:14px;letter-spacing:.12em;font-size:11px;color:#b8cbd5}canvas{display:block}footer{padding:10px 24px;color:#8fa9b7}input{accent-color:#afcfb8}</style>
+<header><strong>Knight motion workshop</strong><select id="clip"><option>walk</option><option>run</option><option>idle</option><option>attack</option><option>death</option><option>remove</option></select><label>Speed <input id="speed" type="range" min="0.5" max="6.9" step="0.1" value="1.1"></label><label>Slow motion <input id="slow" type="checkbox"></label><label>Rig <input id="bones" type="checkbox"></label><button id="view">Side view</button><button id="combo">Swing 1</button></header>
+<main><section id="smooth"><span>LIVE 3D RIG</span></section><section id="pixel"><span>AFTER PIXEL FILTER</span></section></main>
+<footer>Hand-authored gait and combat • planted feet • articulated knees and ankles • torso counter-rotation • blended transitions</footer>
+<script type="module">
+import * as THREE from 'three';
+import { WebGPURenderer } from 'three/webgpu';
+import { createArmoredKnight } from '/src/game/pinball-knight/render/armored-knight.ts';
+import { KnightAnimation } from '/src/game/pinball-knight/render/knight-animation.ts';
+import { createCharacterPixelPass } from '/src/game/pinball-knight/render/character-pixel-pass.ts';
+import { sampleKnightPose } from '/src/game/pinball-knight/render/knight-motion.ts';
+const scene=new THREE.Scene();scene.background=new THREE.Color('#202b35');
+scene.add(new THREE.HemisphereLight(0xd8ecff,0x473728,3));
+const key=new THREE.DirectionalLight(0xffedcf,4);key.position.set(-3,5,6);scene.add(key,key.target);
+const rim=new THREE.DirectionalLight(0x9bcfff,3);rim.position.set(4,3,-2);scene.add(rim,rim.target);
+const rig=createArmoredKnight();scene.add(rig.root);
+const grid=new THREE.GridHelper(200,200,0x657d85,0x344650);grid.position.y=.018;scene.add(grid);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:0x1c2630}));floor.rotation.x=-Math.PI/2;scene.add(floor);
+const skeleton=new THREE.SkeletonHelper(rig.root);skeleton.visible=false;skeleton.material.depthTest=false;skeleton.renderOrder=100;scene.add(skeleton);
+const camera=new THREE.PerspectiveCamera(34,640/640,.1,250);
+const a=new WebGPURenderer({forceWebGL:true,antialias:true}),b=new WebGPURenderer({forceWebGL:true,antialias:false});
+a.setSize(640,640);b.setSize(640,640);document.querySelector('#smooth').append(a.domElement);document.querySelector('#pixel').append(b.domElement);await a.init();await b.init();
+const pixels=createCharacterPixelPass([rig.root]);
+let animation=new KnightAnimation(),elapsed=0,attackTime=0,last=performance.now(),side=false,variant=0,manual=false,heading=0;
+const clipInput=document.querySelector('#clip'),speedInput=document.querySelector('#speed');
+const timings=[{windup:.1,active:.05,recovery:.12},{windup:.06,active:.05,recovery:.09},{windup:.24,active:.08,recovery:.28}];
+clipInput.onchange=()=>{elapsed=0;attackTime=0;if(clipInput.value==='run')speedInput.value='4.2';if(clipInput.value==='walk')speedInput.value='1.1';};
+document.querySelector('#view').onclick=()=>side=!side;
+document.querySelector('#combo').onclick=e=>{variant=(variant+1)%3;e.target.textContent='Swing '+(variant+1);};
+function render(dt){
+ const clip=clipInput.value; elapsed+=dt;
+ const walking=clip==='walk'||clip==='run',speed=walking?Number(speedInput.value):0;
+ const distance=speed*dt,scale=.375;
+ let play=clip;
+ const timing=timings[variant],duration=timing.windup+timing.active+timing.recovery;
+ if(clip==='attack'){attackTime=(attackTime+dt)%(duration+.28);if(attackTime>duration)play='idle';}else attackTime=0;
+ if(clip==='death'||clip==='remove')rig.applyPose(sampleKnightPose(clip,Math.min(1,elapsed/(clip==='death'?1.3:3))));
+ else {const pose=animation.update({dt,clip:play,heading,distance,speed,worldScale:scale,weapon:'sword',attackTime,timing,variant});rig.root.rotation.y=animation.heading;rig.applyPose(pose);}
+ rig.root.position.x+=Math.sin(animation.heading)*distance/scale;rig.root.position.z+=Math.cos(animation.heading)*distance/scale;if(rig.root.position.z>40)rig.root.position.z-=40;
+ skeleton.visible=document.querySelector('#bones').checked;
+ const z=rig.root.position.z,x=rig.root.position.x;
+ camera.position.set(x+(side?7:3.2),2.9,z+(side?2:7.8));camera.lookAt(x,1.55,z);
+ key.position.set(x-3,5,z+6);key.target.position.set(x,1.5,z);rim.position.set(x+4,3,z-2);rim.target.position.set(x,1.5,z);
+ a.render(scene,camera);pixels.render(b,scene,camera);
+}
+function tick(now){const dt=Math.min(.04,(now-last)/1000);last=now;if(!manual)render(dt*(document.querySelector('#slow').checked?.25:1));requestAnimationFrame(tick);}requestAnimationFrame(tick);
+window.knightWorkshop={rig,animation,scene,camera,a,b,pixels,render,setManual(value){manual=value;},setClip(clip,speed){clipInput.value=clip;if(speed!=null)speedInput.value=String(speed);elapsed=0;attackTime=0;},setSide(value){side=value;},setVariant(value){variant=value;attackTime=0;},setHeading(value){heading=value;},reset(){animation=new KnightAnimation();rig.root.position.set(0,0,0);elapsed=0;attackTime=0;heading=0;}};
+</script></html>

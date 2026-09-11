@@ -16,7 +16,7 @@ beforeEach(() => {
   vi.resetModules(); vi.useFakeTimers();
   elements = []; listeners = new Map(); frames = new Map(); next = 0;
   const scene = new THREE.Scene();
-  const actor = () => ({ root: new THREE.Group(), head: new THREE.Group(), pose: vi.fn() });
+  const actor = () => ({ root: new THREE.Group(), head: new THREE.Group(), pose: vi.fn(), applyPose: vi.fn() });
   const hero = actor();
   film = { scene, fill: new THREE.DirectionalLight(), camera: new THREE.PerspectiveCamera(), hero, knight: hero.root, rolling: actor(), town: new THREE.Group(), arcade: new THREE.Group(), title: new THREE.Group(), shadow: new THREE.Group(), portal: new THREE.Group(), trail: [], layout: { spawn: { x: 0, z: 0 }, grid: { w: 3, h: 3, t: new Uint8Array(9).fill(1), shapes: new Uint8Array(9) } }, dispose: vi.fn() };
   scene.add(film.town, film.arcade, film.title);
