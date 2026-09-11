@@ -184,3 +184,7 @@ project-local lock did not protect against a later release from an older branch.
   kept the Reaper King present through several attack cycles, then killed it via
   the normal damage hook. Exit reported `locked: false` and `haulShown: true`.
   Zero script errors. Future releases must preserve `b0b76e9f`.
+
+## 2026-09-10 — armored pixel knight release
+
+`release/armored-pixel-knight@06ba12cd` is deployed and healthy on the NAS. It contains the armored knight batches (`0526e1b6`, `78a262b0`, cherry-picked as `06986faf`, `e17e7ab6`) plus the verified live slime release `0e569b41`, preserving both updates. The feature worktree is `wt-armored-knight`; release integration is isolated in `wt-armored-knight-release`. Full release validation passed 4,145 tests with 12 skips. See [the armor rendering notes](art/armored-knight.md) for behavior and verification.
