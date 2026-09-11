@@ -79,9 +79,8 @@ export interface DungeonSettings {
   /**
    * How far back the camera sits — see `CAMERA_ZOOMS`.
    *
-   * The ONLY setting here that does not apply live, and the type says nothing
-   * about that, so the settings screen has to. `PPU` and the sprite atlas are
-   * both resolved from it at module load and cannot be moved apart afterwards.
+   * Applied immediately using camera zoom; the saved rung also determines
+   * atlas resolution on the next launch.
    */
   cameraZoom: CameraZoom;
 }

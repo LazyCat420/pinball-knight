@@ -42,10 +42,10 @@ describe("sprite scale invariants", () => {
     // Was >= 64, written when PPU was a single fixed number. The camera zoom is
     // now a PLAYER SETTING, and grid falls with it because a smaller actor on
     // screen cannot carry more texels than it covers — that is arithmetic, not
-    // a regression. 72 is the floor of the offered ladder (`widest`, PPU 48, at
+    // a regression. 36 is the floor of the offered ladder (`overview`, PPU 24, at
     // the 3/2 sprite:tile ratio); anything below it would be a new rung, which
     // is a deliberate decision and should have to change this line to happen.
-    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(72);
+    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(36);
   });
 });
 

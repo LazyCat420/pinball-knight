@@ -274,3 +274,28 @@ project-local lock did not protect against a later release from an older branch.
 - NAS advanced to `c9bd868b` during development (animated tavern keepers and maze
   merchant). Integrate this committed batch onto that verified release before
   running the full deploy gate; preserve all its content.
+
+### Compact HUD / chrome pinball deployed — 2026-09-11
+
+- Feature handoff: `a0f4c793`, `8b4dc061`; release `49503fd2` on `release/compact-hud-chrome-ball`. Preserves deployed NPC release `c9bd868b` and maze atlas performance fix `77b61be4`.
+- Full release gate: 4,188 tests passed, 12 skipped; 360 test files passed, 5 skipped. Docker build, transfer, restart and release guard succeeded through the existing deploy wrapper.
+- NAS container verified `49503fd2`, healthy. NAS and public HTML SHA-256 both `48556dde4a1df97681985c1aeb68fd2bd7ce2e7524407ba9c89b1e67df530ea0`.
+- Muted browser checks: compact single style-combo card, HUD scale 1.8, Escape menu, automatic ball and live-character trail; final chrome workshop and public gameplay reported no JavaScript errors.
+
+### Camera pullback — 2026-09-11
+
+- Branch `fix/camera-pullback-20`: reduce every saved camera rung to the nearest even PPU to old PPU / 1.2; default 56 -> 46 shows 21.7% more corridor. HUD scaling stays independent. Engine fallback matches the default.
+- Validation: 48 tests passed across sprite scale, render sizing, engine config mirror and atlas sizing; diff check passed. Ready for release integration with the deployed HUD/chrome fixes.
+
+### Camera pullback deployed — 2026-09-11
+
+- Feature `a5ed5a0c`; integrated release `a6626512` includes deployed Doppelganger boss `a02c784f` and all earlier HUD/chrome/NPC/performance changes.
+- Full release gate passed: 4,194 tests, 12 skipped; 361 test files passed, 5 skipped. Existing deploy wrapper completed image build, NAS transfer and restart. NAS `git.sha=a6626512`, healthy.
+- Public and NAS HTTP responses match SHA-256 `1333a3247a10cf9615ab6588771b3a55f43dc418b622c6427446a99264895eaa`.
+- Muted browser visual validation: 1280x944 shows 27.83 tiles across at PPU 46 (previously 22.86 at 56); HUD zoom remains 1.8; no JavaScript exceptions. Test-owned browser and loopback preview stopped.
+
+### Live player camera controls — 2026-09-11
+
+- Branch `feat/live-camera-zoom`: Options camera row has bounded Zoom Out / Zoom In buttons, applies immediately, persists the existing cameraZoom setting, and adds Panorama / Overview (PPU 32 / 24).
+- Live camera multiplier is selected PPU / boot PPU; projection and camera snapping honor zoom, while atlases remain intact. New cameras reapply the preference; reload bakes the saved PPU with the same framing. Live resampling prioritizes immediate framing over rebuilding atlases mid-run.
+- Validation: camera projection and new-camera restoration tests plus Options reachability passed (8); existing render sizing, sprite scale, atlas and config checks passed (50, including the two new zoom rungs). Ready for integrated release validation.

@@ -25,7 +25,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createCanvas } from "canvas";
 import { beginUi, emptyUiInput } from "../im";
 import type { UiScreen } from "../stack";
-import { CAMERA_ZOOM_ORDER } from "../../constants";
+
 
 const realDoc = (globalThis as { document?: unknown }).document;
 beforeAll(() => {
@@ -113,7 +113,9 @@ describe("the camera setting is reachable from Esc", () => {
     expect(labels).toContain("Camera distance");
     // The cycler carries the CURRENT rung as its face, so one of the five must
     // be on screen — this is the control, not just the heading.
-    expect(labels.some((s) => CAMERA_ZOOM_ORDER.some((z) => s === z.toUpperCase()))).toBe(true);
+    expect(labels).toContain("ZOOM OUT");
+    expect(labels).toContain("ZOOM IN");
+    expect(labels).not.toContain("RELOAD");
   });
 
   it("puts it in the first screenful, so no scroll is needed to find it", async () => {
