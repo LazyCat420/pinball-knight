@@ -234,3 +234,22 @@ project-local lock did not protect against a later release from an older branch.
 - Follow-up ready for integration: preserve the current tumble orientation when
   a new roll interrupts recovery. The added regression and all 12 focused motion/
   live-layer tests pass; this avoids snapping to zero rotation mid-transition.
+
+### Forged knight validation and release status
+
+- Feature batches `b7c7fe7b` and `b8bfc372` integrated into dedicated
+  `release/forged-knight-roll`, candidate `f666fdab`, containing NAS `1e8971f7`.
+- Full local suite: 4,162 tests passed, 12 skipped, with one fresh-worktree
+  fixture-order failure in `sandbox-death-runtime.test.ts`. The existing sprite
+  inbox test subsequently generated `work/goblin-S/S-death3.png`; rerunning the
+  failed test passed without changing its assertions or supplying substitute art.
+- After the rotation-continuity follow-up, all 13 targeted tests (motion, live
+  pixel layer and goblin death runtime) passed. Final ordinary Vite build passed.
+  No unresolved test failure remains. The deploy wrapper will rerun the full gate.
+- NOT DEPLOYED: automatic approval review rejected NAS deployment because it
+  requires explicit integration-owner designation. Earlier publishing requests
+  and standing deploy-after-validation instructions were supplied to review;
+  the ownership rejection remained. No release lock or guard was bypassed.
+- Awaiting user authorization to act as integration owner for this completed
+  release. Current verified NAS remains `1e8971f7`; other developers' worktrees
+  and the shared main checkout were not edited. Test browsers and Vite stopped.
