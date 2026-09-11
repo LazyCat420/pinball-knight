@@ -156,3 +156,31 @@ project-local lock did not protect against a later release from an older branch.
   the guard is installed and active on this deployment host. The Pinball Knight
   main push succeeded. Other hosts must install the updated shared kit; the new
   game wrapper fails closed if the guard is missing.
+
+## Level 5 boss disappearance fix — 2026-09-10
+
+- Feature branch `fix/level5-boss-disappearance`, worktree `.worktrees/wt-level5-boss`,
+  completed fix `66c2faff` (based on main `59421a32`).
+- Root cause: Reaper King teleport fallback returned unchecked coordinates when
+  all eight candidates failed. On generated level 5 maps, those coordinates
+  overlap solid walls, leaving a living, unreachable guardian and a locked exit.
+  Reproduced by failing regression tests on seeds 1, 777, and 12345.
+- Fix: require full body clearance, cancel when no safe destination exists, and
+  recheck the landing after wind-up. Cancel teleport state on disengagement so
+  it cannot block walking home; clean the old tell on a phase transition.
+- Regression coverage includes real level 5 map candidates, blocked teleport
+  fight-to-exit completion, and disengagement during a teleport wind-up.
+  All 29 focused boss tests passed.
+- Dedicated release branch `release/level5-boss`, worktree
+  `.worktrees/wt-level5-boss-release`, based on running release `a68f4065`.
+  Only the completed fix was cherry-picked as `b0b76e9f`; unrelated newer main
+  features were not included in this release.
+- Existing project deploy-kit wrapper/guard/lock: full suite passed, 350 files
+  passed / 5 skipped, 4,106 tests passed / 12 skipped, zero failures. Production
+  image build, transfer and NAS restart succeeded.
+- Verified NAS `b0b76e9f` running/healthy; public and NAS health endpoints healthy.
+  Image, NAS and public HTML hashes match exactly.
+- Isolated muted public browser (multiplayer networking blocked) entered level 5,
+  kept the Reaper King present through several attack cycles, then killed it via
+  the normal damage hook. Exit reported `locked: false` and `haulShown: true`.
+  Zero script errors. Future releases must preserve `b0b76e9f`.
