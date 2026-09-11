@@ -463,7 +463,11 @@ export function loop(now: number): void {
     if (state.renderer && state.player) {
       const p = state.player;
       armoredPlayer.update(state.renderer, p.sprite, p.anim.getClip(), p.facing,
-        p.attackT >= 0 ? Math.min(1, p.attackT / .4) : state.elapsed, armoredWeapon().id);
+        state.elapsed, armoredWeapon().id, {
+          dt: isSimPaused() || state.hitstopT > 0 ? 0 : frame, x: p.x, z: p.z,
+          attackTime: p.attackT, timing: p.move, variant: p.move?.tag === 'light2' ? 1 : p.move?.tag === 'finish' || p.move?.tag === 'surge' || p.move?.tag === 'heavy' ? 2 : 0,
+          hp: p.hp, charge: Math.max(0, p.chargeT) / .5,
+        });
     }
     state.pixelPass.render(state.scene, renderCam);
     profEnd("pixelPass.render");

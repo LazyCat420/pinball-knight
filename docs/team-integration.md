@@ -184,3 +184,72 @@ project-local lock did not protect against a later release from an older branch.
   kept the Reaper King present through several attack cycles, then killed it via
   the normal damage hook. Exit reported `locked: false` and `haulShown: true`.
   Zero script errors. Future releases must preserve `b0b76e9f`.
+
+## Fluid armored knight — completed batch (2026-09-11)
+
+- Branch `feat/fluid-knight-animation`, worktree `.worktrees/wt-fluid-knight`.
+- Ready for integration: articulated rigid-armor bone hierarchy; two-bone leg
+  IK; distance-driven walking/running with heel/toe motion; continuous turning
+  and pose transitions; authored diagonal, reverse and heavy sword motions tied
+  to actual combat timing; breathing, recoil, and helmet-removal arm IK.
+- Dungeon and tavern supply achieved travel and the simulation clock. The intro
+  uses the same rig. Existing physics and attack hitboxes remain unchanged.
+- Added standalone `ThreeJS/scripts/knight-motion-preview.html` for motion review.
+- Validation: 46 focused tests passed, production build passed, no new TypeScript
+  diagnostics in changed files. Muted browser verified tavern and dungeon walking,
+  light attacks, all seven intro phases and return to tavern, with zero script
+  errors. Recorded slow-motion walking/running and three sword variants.
+- Integrate this committed batch onto verified NAS release `035a23b6`, preserving
+  the newer Fry Sentinel changes; run the project release gate before publishing.
+
+### Fluid knight release verification
+
+- Completed feature commit `af2d4861`; merged onto verified NAS `035a23b6` in
+  dedicated branch `release/fluid-knight-animation`, release commit `1e8971f7`.
+- Project deploy-kit wrapper with release lock and ancestry guard passed:
+  355 test files passed, 5 skipped; 4,160 tests passed, 12 skipped; zero failures.
+  Production image build, transfer and NAS restart succeeded.
+- NAS `1e8971f7` reports healthy. Public and container `/health` return healthy.
+  Public and NAS HTML SHA-256 match:
+  `5ed6426ca6da58941ae87478c0d5cf65d3cb9b533163ea7827c343108d4dcf85`.
+- Future releases must preserve `1e8971f7`. Shared main and other developers'
+  branches were not changed by this task.
+
+## Forged armor and full-body rolling — completed batch (2026-09-11)
+
+- Branch `feat/forged-knight-roll`, worktree `.worktrees/wt-forged-knight-roll`,
+  based on the verified fluid-knight release and its documentation `12c9be32`.
+- Ready for integration: six-view generated armor reference and prompt; custom
+  curved plate geometry, articulated armor details, updated selection portrait;
+  live full-body tuck/tumble/ball and chrome-ball transformations with recovery.
+- `roll`, `ball`, and `steelball` now stay on the live 3D layer. Distinct magical
+  marble and ricochet artwork, gameplay physics and damage timing are preserved.
+- Validation: 38 focused tests passed; no changed-file TypeScript diagnostics
+  (existing unrelated repository diagnostics remain). Muted browser confirmed
+  all three gameplay roll/ball clips hide the old sprite, recovery stays live,
+  and all seven intro phases return to tavern, with zero script errors.
+- Workshop recording includes the new armor, walking, tuck, continuous tumble,
+  chrome transformation and recovery. Full project release gate remains required.
+
+- Follow-up ready for integration: preserve the current tumble orientation when
+  a new roll interrupts recovery. The added regression and all 12 focused motion/
+  live-layer tests pass; this avoids snapping to zero rotation mid-transition.
+
+### Forged knight validation and release status
+
+- Feature batches `b7c7fe7b` and `b8bfc372` integrated into dedicated
+  `release/forged-knight-roll`, candidate `f666fdab`, containing NAS `1e8971f7`.
+- Full local suite: 4,162 tests passed, 12 skipped, with one fresh-worktree
+  fixture-order failure in `sandbox-death-runtime.test.ts`. The existing sprite
+  inbox test subsequently generated `work/goblin-S/S-death3.png`; rerunning the
+  failed test passed without changing its assertions or supplying substitute art.
+- After the rotation-continuity follow-up, all 13 targeted tests (motion, live
+  pixel layer and goblin death runtime) passed. Final ordinary Vite build passed.
+  No unresolved test failure remains. The deploy wrapper will rerun the full gate.
+- NOT DEPLOYED: automatic approval review rejected NAS deployment because it
+  requires explicit integration-owner designation. Earlier publishing requests
+  and standing deploy-after-validation instructions were supplied to review;
+  the ownership rejection remained. No release lock or guard was bypassed.
+- Awaiting user authorization to act as integration owner for this completed
+  release. Current verified NAS remains `1e8971f7`; other developers' worktrees
+  and the shared main checkout were not edited. Test browsers and Vite stopped.
