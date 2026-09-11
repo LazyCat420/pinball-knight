@@ -604,6 +604,12 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   hamster_ball: "iron",
   ascii_human: "iron",
   computer_screen: "iron",
+  giant_ascii_human: "iron",
+  pit_peeper: "chitin",
+  dumpster_dan: "bone",
+  toaster_gremlin: "iron",
+  lip_flapper: "bone",
+  hydrant_hound: "iron",
 };
 
 /**

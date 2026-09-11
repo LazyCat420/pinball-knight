@@ -97,6 +97,11 @@ import { makeHamsterBallPaints } from "./monsters/hamster-ball";
 import { makeAsciiHumanPaints } from "./monsters/ascii-human";
 import { makeComputerScreenPaints } from "./monsters/computer-screen";
 import { makeGiantAsciiHumanPaints } from "./monsters/giant-ascii-human";
+import { makePitPeeperPaints } from "./monsters/pit-peeper";
+import { makeDumpsterDanPaints } from "./monsters/dumpster-dan";
+import { makeToasterGremlinPaints } from "./monsters/toaster-gremlin";
+import { makeLipFlapperPaints } from "./monsters/lip-flapper";
+import { makeHydrantHoundPaints } from "./monsters/hydrant-hound";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -185,6 +190,11 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   ascii_human: { paints: makeAsciiHumanPaints },
   computer_screen: { paints: makeComputerScreenPaints },
   giant_ascii_human: { paints: makeGiantAsciiHumanPaints },
+  pit_peeper: { paints: makePitPeeperPaints },
+  dumpster_dan: { paints: makeDumpsterDanPaints },
+  toaster_gremlin: { paints: makeToasterGremlinPaints },
+  lip_flapper: { paints: makeLipFlapperPaints },
+  hydrant_hound: { paints: makeHydrantHoundPaints },
 };
 
 /**

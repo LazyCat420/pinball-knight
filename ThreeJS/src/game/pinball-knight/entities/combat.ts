@@ -1113,6 +1113,28 @@ export function killZombie(z: Zombie): void {
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 1.5, 20);
     state.shakeT = Math.max(state.shakeT, 0.45);
   }
+  // 5 WEIRD AMERICAN MONSTERS DEATH VFX
+  if (z.kind === "pit_peeper") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0x22c55e, 16, 1.8);
+    state.vfx?.smoke(z.x, 0.4, z.z, 1.0);
+  }
+  if (z.kind === "dumpster_dan") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0x713f12, 16, 2.0);
+    state.vfx?.dust(z.x, 0.1, z.z);
+  }
+  if (z.kind === "toaster_gremlin") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xf97316, 20, 2.2);
+    state.vfx?.sparks(z.x, 0.5, z.z, 0, 1.2, 12);
+  }
+  if (z.kind === "lip_flapper") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xef4444, 18, 2.0);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.5);
+  }
+  if (z.kind === "hydrant_hound") {
+    state.vfx?.burst(z.x, 0.5, z.z, 0x38bdf8, 24, 2.5);
+    state.vfx?.burst(z.x, 0.5, z.z, 0x0284c7, 16, 1.8);
+    state.shakeT = Math.max(state.shakeT, 0.25);
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1346,6 +1368,11 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   ascii_human: ASCII_HUMAN_DAMAGE,
   computer_screen: 0,
   giant_ascii_human: GIANT_ASCII_DAMAGE,
+  pit_peeper: 1,
+  dumpster_dan: 2,
+  toaster_gremlin: 1,
+  lip_flapper: 1,
+  hydrant_hound: 2,
 };
 
 /**

@@ -91,6 +91,11 @@ import { makeAsciiHumanPaints } from "./monsters/ascii-human";
 import { makeComputerScreenPaints } from "./monsters/computer-screen";
 import { makeGiantAsciiHumanPaints } from "./monsters/giant-ascii-human";
 import { makeDoppelgangerPaints } from "./monsters/doppelganger";
+import { makePitPeeperPaints } from "./monsters/pit-peeper";
+import { makeDumpsterDanPaints } from "./monsters/dumpster-dan";
+import { makeToasterGremlinPaints } from "./monsters/toaster-gremlin";
+import { makeLipFlapperPaints } from "./monsters/lip-flapper";
+import { makeHydrantHoundPaints } from "./monsters/hydrant-hound";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -170,6 +175,11 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   computer_screen: makeComputerScreenPaints,
   giant_ascii_human: makeGiantAsciiHumanPaints,
   doppelganger: makeDoppelgangerPaints,
+  pit_peeper: makePitPeeperPaints,
+  dumpster_dan: makeDumpsterDanPaints,
+  toaster_gremlin: makeToasterGremlinPaints,
+  lip_flapper: makeLipFlapperPaints,
+  hydrant_hound: makeHydrantHoundPaints,
 };
 
 export {
@@ -189,4 +199,9 @@ export {
   makeComputerScreenPaints,
   makeGiantAsciiHumanPaints,
   makeDoppelgangerPaints,
+  makePitPeeperPaints,
+  makeDumpsterDanPaints,
+  makeToasterGremlinPaints,
+  makeLipFlapperPaints,
+  makeHydrantHoundPaints,
 };
