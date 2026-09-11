@@ -281,3 +281,8 @@ project-local lock did not protect against a later release from an older branch.
 - Full release gate: 4,188 tests passed, 12 skipped; 360 test files passed, 5 skipped. Docker build, transfer, restart and release guard succeeded through the existing deploy wrapper.
 - NAS container verified `49503fd2`, healthy. NAS and public HTML SHA-256 both `48556dde4a1df97681985c1aeb68fd2bd7ce2e7524407ba9c89b1e67df530ea0`.
 - Muted browser checks: compact single style-combo card, HUD scale 1.8, Escape menu, automatic ball and live-character trail; final chrome workshop and public gameplay reported no JavaScript errors.
+
+### Camera pullback — 2026-09-11
+
+- Branch `fix/camera-pullback-20`: reduce every saved camera rung to the nearest even PPU to old PPU / 1.2; default 56 -> 46 shows 21.7% more corridor. HUD scaling stays independent. Engine fallback matches the default.
+- Validation: 48 tests passed across sprite scale, render sizing, engine config mirror and atlas sizing; diff check passed. Ready for release integration with the deployed HUD/chrome fixes.

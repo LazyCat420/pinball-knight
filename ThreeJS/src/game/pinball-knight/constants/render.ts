@@ -165,18 +165,17 @@ export const MAX_RENDER_H = 1440;
  * exists to prevent — and `SPRITE_UNITS` is 3/2, PPU must be EVEN.
  * There is no continuous zoom slider available here; there are rungs.
  *
- *     setting   PPU   grid   tiles @1712   vs NORMAL
- *     close      80    120      21.4       -11%  (the old pre-2026-07 framing)
- *     normal     72    108      23.8         —
- *     wide       64     96      26.8       +12.5%
- *     wider      56     84      30.6       +28.6%   ← default
- *     widest     48     72      35.7       +50%
+ * Camera pullback (2026-09-11): each saved rung now shows approximately 20%
+ * more world in each direction. Divide the old PPU by 1.2, rounded to the
+ * nearest even value so sprite texels remain aligned. The default 56 -> 46
+ * shows 21.7% more corridor; saved preferences keep their relative rung.
  *
- * The right-hand column is the price: grid is texels per actor, and it falls
- * with the zoom because the actor is physically smaller on screen. `widest` at
- * 54 is the resolution the note under SPRITE_PIXEL_GRID calls "the awkward
- * middle" — it is offered because a player fighting at speed may want the
- * field of view more than the faces, but it is not the default.
+ *     setting   PPU   grid   tiles @1712
+ *     close      66     99      25.9
+ *     normal     60     90      28.5
+ *     wide       54     81      31.7
+ *     wider      46     69      37.2   ← default
+ *     widest     40     60      42.8
  *
  * DEFAULT IS `wider`. Playtested at speed: at `normal` the knight outruns what
  * is on screen, which is a control problem rather than a taste one — you cannot
@@ -185,11 +184,11 @@ export const MAX_RENDER_H = 1440;
 export type CameraZoom = "close" | "normal" | "wide" | "wider" | "widest";
 
 export const CAMERA_ZOOMS: Record<CameraZoom, number> = {
-  close: 80,
-  normal: 72,
-  wide: 64,
-  wider: 56,
-  widest: 48,
+  close: 66,
+  normal: 60,
+  wide: 54,
+  wider: 46,
+  widest: 40,
 };
 
 /** Display order for the settings cycler — closest first. */

@@ -138,7 +138,7 @@ export interface EngineConfig {
  * engine does not depend on the game), so the link is a test rather than a
  * type. Everything sprite-shaped below derives from it.
  */
-const DEFAULT_PPU = 56;
+const DEFAULT_PPU = 46;
 
 export const engineConfig: EngineConfig = {
   camera: {
