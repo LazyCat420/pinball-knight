@@ -1220,7 +1220,7 @@ export function killZombie(z: Zombie): void {
       state.goldRun += bonus;
       addGold(bonus, "dungeon-game");
     }
-    showPickupNote(`💥 STYLE KILL +${bonus}g${p.bounceCombo >= 3 ? ` · combo ×${p.bounceCombo}` : ""}`);
+    showPickupNote(`STYLE +${bonus}g${p.bounceCombo >= 3 ? ` · ×${p.bounceCombo}` : ""}`, "style-kill");
     // ── A KILL SUSTAINS THE CHAIN ──
     // Kills used to have no relationship with the bounce combo at all: the
     // window ran on bounces alone, so wading into a pack and killing four

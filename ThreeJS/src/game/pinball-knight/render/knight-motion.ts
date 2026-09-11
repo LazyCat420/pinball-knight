@@ -163,7 +163,7 @@ export function sampleKnightPose(clip: KnightClip, time: number, options: Motion
     // Pelvis folds over the thighs; chin and forearms protect the chest.
     // Foot targets stay inside the two-bone reach, so armour never stretches.
     const compact = clip === 'tumble' ? .86 : 1;
-    p.shellWeight = clip === 'steel-ball' ? 1 : 0;
+    p.shellWeight = clip === 'tumble' ? 0 : 1; // Full-speed pinball closes into polished steel.
     p.pelvisPosition = [0, .78, -.23];
     p.pelvisRotation = [.52 * compact, 0, 0];
     p.spine = [1.08 * compact, 0, 0]; p.chest = [.65 * compact, 0, 0];

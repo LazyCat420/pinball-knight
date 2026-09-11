@@ -49,6 +49,7 @@ export function createPixelKnightLayer() {
         if (silhouette.material.map !== map) { silhouette.material.map = map; silhouette.material.needsUpdate = true; }
       }
       sprite.mesh.add(plane);
+      plane.userData.liveCharacter = true;
       const source = sprite.mesh.material as THREE.Material;
       const originalVisible = source.visible;
       const originalDispose = sprite.dispose;

@@ -211,7 +211,18 @@ export function createArmoredKnight() {
   for(const id of ['gun','flamethrower']) {const g=alternate(id);mesh(g,box,dark,[0,.12,.18],[.14,.16,.6]);mesh(g,box,leather,[0,-.04,0],[.1,.3,.14]);}
   const bow=alternate('bow');const bowGeo=own(new THREE.TorusGeometry(.5,.035,6,32,Math.PI));const bm=mesh(bow,bowGeo,leather,[0,.22,0]);bm.rotation.z=-Math.PI/2;mesh(bow,box,chain,[0,.22,0],[.015,1,.015]);
   const chair=alternate('chair');mesh(chair,box,leather,[0,.28,0],[.5,.08,.45]);mesh(chair,box,leather,[0,.58,-.20],[.5,.65,.06]);for(const x of [-.2,.2])for(const z of [-.17,.17])mesh(chair,box,leather,[x,.05,z],[.06,.45,.06]);
-  const chrome = steel(0xdce4e7,.19); chrome.transparent=true;
+  // Broad studio reflections make the small sphere read as polished metal,
+  // rather than a flat gray orb. This is an environment, not painted highlights.
+  const envW=256,envH=128,envData=new Uint8Array(envW*envH*4);
+  for(let y=0;y<envH;y++)for(let x=0;x<envW;x++){
+    const u=x/envW,v=y/envH;
+    const panel=(cx:number,cy:number,sx:number,sy:number)=>Math.exp(-(((u-cx)/sx)**8)-(((v-cy)/sy)**8));
+    const light=Math.min(1,panel(.22,.37,.055,.22)+panel(.68,.34,.12,.13)+.65*panel(.89,.55,.035,.24));
+    const base=85+70*Math.max(0,1-v),i=(y*envW+x)*4;
+    envData[i]=Math.min(255,base+light*205);envData[i+1]=Math.min(255,base+light*218);envData[i+2]=Math.min(255,base+5+light*226);envData[i+3]=255;
+  }
+  const reflection=new THREE.DataTexture(envData,envW,envH);reflection.colorSpace=THREE.SRGBColorSpace;reflection.mapping=THREE.EquirectangularReflectionMapping;reflection.needsUpdate=true;textures.push(reflection);
+  const chrome = steel(0xe6ecef,.07,null); chrome.metalness=1;chrome.envMap=reflection;chrome.envMapIntensity=1.8;chrome.transparent=true;
   const ballShell = mesh(tumble,own(new THREE.SphereGeometry(.8,40,24)),chrome,[0,.8,0]);
   ballShell.name='Live chrome ball transformation'; ballShell.visible=false;
   let weaponId: WeaponId='sword';
