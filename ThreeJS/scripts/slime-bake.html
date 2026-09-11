@@ -1,0 +1,47 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Slime · Sprite studio</title><style>body{margin:0;background:#152336;color:#d8eaf0;font:14px system-ui;padding:24px}h1{font-size:24px}canvas{max-width:100%;height:auto;background:repeating-conic-gradient(#24364b 0% 25%,#1b2c40 0% 50%) 0/24px 24px}</style></head><body><h1>Slime · Sprite studio</h1><p>Gameplay sprite sheets rendered from the 3D slime rig (render/slime-3d.ts). Front / back / right side; west mirrors east.</p><div id="preview"></div><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import { createSlime, SLIME_CLIPS, SLIME_FRAMES, SLIME_LOOPS, SLIME_PALETTE, SLIME_SHEET } from '/src/game/pinball-knight/render/slime-3d.ts';
+// Square cells: the slime is as wide as it is tall, and the death puddle and
+// the attack splash both spread PAST the rest width, so the frustum is fit to
+// the widest pose rather than the idle.
+const W=256,H=256,COLS=8;
+
+window.bakeSlimeSheets=async()=>{
+ const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true}); renderer.setSize(W,H); renderer.setPixelRatio(1);renderer.setClearColor(0,0); renderer.outputColorSpace=THREE.SRGBColorSpace;
+ const scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xdfffe0,0x1c4a2a,1.2));
+ const light=new THREE.DirectionalLight(0xffffff,2.0);light.position.set(-3,6,5);scene.add(light);
+ const rim=new THREE.DirectionalLight(0xa8ffb8,.6);rim.position.set(3,2,-4);scene.add(rim);
+ // Orthographic, a touch above eye level like the dungeon camera; 3.4 units wide covers the splash.
+ const HALF=2.0; const camera=new THREE.OrthographicCamera(-HALF,HALF,HALF*1.25,-HALF*0.75,.1,30); camera.position.set(0,2.4,9);camera.lookAt(0,0.55,0);
+ const rig=createSlime();scene.add(rig.root);
+ const result=[]; const name=SLIME_SHEET;
+ const total=SLIME_CLIPS.reduce((n,c)=>n+SLIME_FRAMES[c],0), ROWS=Math.ceil(total/COLS);
+ for(const [dir,yaw] of [['S',0],['N',Math.PI],['E',Math.PI/2]]){
+  const canvas=document.createElement('canvas');canvas.width=W*COLS;canvas.height=H*ROWS;const ctx=canvas.getContext('2d');const rows=[];let frame=0;
+  rig.root.rotation.y=yaw;
+  for(const clip of SLIME_CLIPS){const count=SLIME_FRAMES[clip];const cells=[];
+   for(let i=0;i<count;i++){
+    const u=i/(SLIME_LOOPS[clip]?count:count-1);
+    rig.pose(clip,u);renderer.render(scene,camera);
+    const x=(frame%COLS)*W,y=Math.floor(frame/COLS)*H;ctx.drawImage(renderer.domElement,x,y);cells.push([x,y,x+W-1,y+H-1]);frame++;
+   }
+   rows.push({clip,cells});
+  }
+  // One shared registration rectangle for every pose: no per-frame crop wobble.
+  // (cellPlacement registers by bounding box; a puddle cropped to its own ink
+  // would be inflated back to the dome's height.)
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  let minX=W,minY=H,maxX=0,maxY=0;
+  for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>24){
+    const lx=x%W,ly=y%H;minX=Math.min(minX,lx);maxX=Math.max(maxX,lx);minY=Math.min(minY,ly);maxY=Math.max(maxY,ly);
+  }
+  const half=Math.min(W/2,Math.max(W/2-minX,maxX-W/2)+2);
+  for(const row of rows)row.cells=row.cells.map(([x,y])=>[x+W/2-half,y+Math.max(0,minY-2),x+W/2+half-1,y+Math.min(H-1,maxY+2)]);
+  const png=canvas.toDataURL('image/png');
+  result.push({dir,png,manifest:{name,dir,image:`/sprites/${name}-${dir}.png`,source:[canvas.width,canvas.height],grid:1,mirror:false,palette:Object.values(SLIME_PALETTE),rows}});
+  const label=document.createElement('h2');label.textContent=dir;document.querySelector('#preview').append(label,canvas);
+ }
+ rig.dispose();renderer.dispose();return result;
+};
+window.studioReady=true;
+</script></body></html>
