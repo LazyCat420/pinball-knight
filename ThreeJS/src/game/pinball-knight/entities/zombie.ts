@@ -173,7 +173,13 @@ import {
   SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN,
   CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN,
   GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN,
-  HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN } from "../constants";
+  HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN,
+  ASCII_HUMAN_R, ASCII_HUMAN_HP, ASCII_HUMAN_SPEED_FACTOR, ASCII_HUMAN_WINDUP, ASCII_HUMAN_COOLDOWN,
+  COMPUTER_SCREEN_HP, COMPUTER_SCREEN_R, COMPUTER_SCREEN_COOLDOWN, COMPUTER_SCREEN_MAX_CHILDREN } from "../constants";
+import { sheetFor } from "../boot/sheets";
+import { createActorSprite } from "../engine/render/sprite";
+import { MonsterAnimator } from "../engine/render/monster-animator";
+import { queueAsciiHuman } from "../spawn/factory";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -274,6 +280,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   pinball_boss: { bodyR: 1.1, contactRange: 1.6, windup: 0.6, cooldown: 2.0, ranged: false },
   gas_can: { bodyR: GAS_CAN_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: GAS_CAN_WINDUP, cooldown: GAS_CAN_COOLDOWN, ranged: false },
   hamster_ball: { bodyR: HAMSTER_BALL_R, contactRange: 0.85, windup: HAMSTER_BALL_WINDUP, cooldown: HAMSTER_BALL_COOLDOWN, ranged: false },
+  ascii_human: { bodyR: ASCII_HUMAN_R, contactRange: 0.9, windup: ASCII_HUMAN_WINDUP, cooldown: ASCII_HUMAN_COOLDOWN, ranged: false },
+  computer_screen: { bodyR: COMPUTER_SCREEN_R, contactRange: 0, windup: 0, cooldown: COMPUTER_SCREEN_COOLDOWN, ranged: false },
 };
 
 /**
@@ -727,6 +735,103 @@ function detonateCroakerCorpse(z: Zombie, index: number): void {
   }
 }
 
+/**
+ * Infectious ASCII Binary Human:
+ * Converts normal living monsters into ASCII Humans upon punch attack.
+ */
+export function convertMonsterToAsciiHuman(target: Zombie): boolean {
+  if (
+    target.kind === "ascii_human" ||
+    target.kind === "computer_screen" ||
+    target.kind === "pin" ||
+    target.boss ||
+    target.dormant ||
+    target.mode === "dead" ||
+    target.hp <= 0
+  ) {
+    return false;
+  }
+
+  // Dispose previous sprite geometry/material from scene
+  if (target.sprite?.mesh?.parent) {
+    target.sprite.mesh.parent.remove(target.sprite.mesh);
+  } else if (state.scene && target.sprite?.mesh) {
+    state.scene.remove(target.sprite.mesh);
+  }
+  target.sprite?.dispose?.();
+
+  // Create ASCII human sprite
+  const sheet = sheetFor("ascii_human");
+  const newSprite = createActorSprite(sheet, false);
+  if (state.scene) {
+    state.scene.add(newSprite.mesh);
+  }
+  const newAnim = new MonsterAnimator(newSprite);
+  newAnim.setFacing("S");
+  newAnim.play("walk");
+
+  target.kind = "ascii_human";
+  target.ztype = undefined;
+  target.sprite = newSprite;
+  target.anim = newAnim;
+  target.hp = ASCII_HUMAN_HP;
+  target.maxHp = ASCII_HUMAN_HP;
+  target.bodyR = ASCII_HUMAN_R;
+  target.speed = (target.speed || 1.6) * ASCII_HUMAN_SPEED_FACTOR;
+  target.mode = "chase";
+  target.cooldown = 0.5;
+  target.windupT = 0;
+  target.aggro = true;
+  target.baseTint = 0x22ff55;
+  if (target.flashT <= 0) target.sprite.setTint(target.baseTint);
+
+  syncActorMesh(target);
+
+  // FX: Green binary matrix burst, sparks, and screenshake
+  state.vfx?.burst(target.x, 0.5, target.z, 0x00ff66, 1.4, 16);
+  state.vfx?.sparks(target.x, 0.5, target.z, 0, 1, 8);
+  state.shakeT = Math.max(state.shakeT, 0.12);
+  return true;
+}
+
+/**
+ * Punch attack for ASCII Human:
+ * Punches the knight if in range, and infects nearby monsters.
+ */
+function asciiHumanPunch(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (p && p.hp > 0 && pdist <= contactRange * 1.3) {
+    hitPlayer(z);
+    state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 4);
+    state.shakeT = Math.max(state.shakeT, 0.08);
+  }
+
+  // Infectious binary strike: attempt to convert nearby non-ascii monsters
+  const infectRadius = 1.8;
+  const infectR2 = infectRadius * infectRadius;
+  for (let i = 0; i < state.zombies.length; i++) {
+    const other = state.zombies[i];
+    if (other === z) continue;
+    if (
+      other.kind === "ascii_human" ||
+      other.kind === "computer_screen" ||
+      other.kind === "pin" ||
+      other.boss ||
+      other.mode === "dead" ||
+      other.hp <= 0
+    ) {
+      continue;
+    }
+    const dx = other.x - z.x;
+    const dz = other.z - z.z;
+    if (dx * dx + dz * dz <= infectR2) {
+      if (convertMonsterToAsciiHuman(other)) {
+        break; // convert one per punch
+      }
+    }
+  }
+}
+
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
@@ -769,6 +874,32 @@ export function updateZombies(dt: number): void {
       if (z.kind === "toucan") {
         // Feather burst and clean splice out
         if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
+      if (z.kind === "computer_screen") {
+        // Shattered CRT frame fades out after 1.2s
+        if (z.corpseT > 1.2 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
+      if (z.kind === "ascii_human") {
+        // Dissolves quickly as digital matrix code (0.6s)
+        if (z.corpseT > 0.6 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
           if (z.sprite?.mesh?.parent) {
             z.sprite.mesh.parent.remove(z.sprite.mesh);
           } else if (state.scene) {
@@ -824,6 +955,47 @@ export function updateZombies(dt: number): void {
     // combat), chains into pins it hits, and a wall slam finishes it.
     if (move === "inert") {
       updatePin(z, dt);
+      continue;
+    }
+
+    // ── COMPUTER SCREEN SPAWNER ──
+    // Stationary terminal that periodically glitches and surges, spawning
+    // ASCII humans until smashed by the knight.
+    if (z.kind === "computer_screen") {
+      z.spawnTimer = (z.spawnTimer ?? COMPUTER_SCREEN_COOLDOWN) - dt;
+      let activeChildren = 0;
+      for (const other of state.zombies) {
+        if (other.spawnerNid === z.nid && other.mode !== "dead") {
+          activeChildren++;
+        }
+      }
+
+      if (activeChildren < COMPUTER_SCREEN_MAX_CHILDREN) {
+        if (z.spawnTimer <= 0.6 && z.spawnTimer > 0) {
+          z.anim.play("attack");
+          if (z.flashT <= 0) z.sprite.setTint(0x00ff66);
+          if (Math.random() < 0.3) {
+            state.vfx?.sparks(z.x, 0.45, z.z, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, 2);
+          }
+        } else if (z.spawnTimer <= 0) {
+          z.spawnTimer = COMPUTER_SCREEN_COOLDOWN;
+          z.anim.play("idle");
+          if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+          const ang = Math.random() * Math.PI * 2;
+          const spawnDist = COMPUTER_SCREEN_R + ASCII_HUMAN_R + 0.15;
+          const sx = z.x + Math.cos(ang) * spawnDist;
+          const sz = z.z + Math.sin(ang) * spawnDist;
+          queueAsciiHuman(sx, sz, z.nid);
+          state.vfx?.burst(z.x, 0.5, z.z, 0x00ff66, 1.2, 10);
+        } else {
+          z.anim.play("idle");
+          if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+        }
+      } else {
+        z.anim.play("idle");
+        if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+      }
+      syncActorMesh(z);
       continue;
     }
 
@@ -1313,6 +1485,8 @@ export function updateZombies(dt: number): void {
             cigaretteBurnAttack(z, pdist, contactRange); // burning cherry ember jab
           } else if (z.kind === "toucan") {
             toucanBarrelRollAttack(z, pdist, contactRange); // corkscrew barrel roll dive
+          } else if (z.kind === "ascii_human") {
+            asciiHumanPunch(z, pdist, contactRange); // binary martial arts punch & infection
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {
@@ -1411,10 +1585,20 @@ export function updateZombies(dt: number): void {
     // ARC, which is the de-clone — a straight dash is beaten by one sidestep,
     // an arc has to be read.
     const committed = isCommitted(move, z);
+    const canMeleeInfect = z.kind === "ascii_human" && z.cooldown <= 0 && state.zombies.some(other =>
+      other !== z &&
+      other.kind !== "ascii_human" &&
+      other.kind !== "computer_screen" &&
+      other.kind !== "pin" &&
+      !other.boss &&
+      other.mode !== "dead" &&
+      other.hp > 0 &&
+      (other.x - z.x) ** 2 + (other.z - z.z) ** 2 <= (contactRange * 1.3) ** 2
+    );
     // Melee bites in contact range; a spitter fires from anywhere in its long
     // fire range (contactRange for it is SPITTER_FIRE_RANGE). The goblin never
     // bites — its contact behaviour is the bumper kick above.
-    if (!committed && z.kind !== "goblin" && pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
+    if (!committed && z.kind !== "goblin" && (pdist <= contactRange || canMeleeInfect) && z.cooldown <= 0 && p.hp > 0) {
       z.mode = "windup";
       z.windupT = 0;
       cancelCommit(z); // a bite out of a crouch: the leap is off

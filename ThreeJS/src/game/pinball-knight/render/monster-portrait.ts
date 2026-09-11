@@ -94,6 +94,8 @@ import { makePinballBossPaints } from "./monsters/pinball-boss";
 import { makeChristmasTreePaints } from "./monsters/christmas-tree";
 import { makeGasCanPaints } from "./monsters/gas-can";
 import { makeHamsterBallPaints } from "./monsters/hamster-ball";
+import { makeAsciiHumanPaints } from "./monsters/ascii-human";
+import { makeComputerScreenPaints } from "./monsters/computer-screen";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -179,6 +181,8 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   christmas_tree: { paints: makeChristmasTreePaints },
   gas_can: { paints: makeGasCanPaints },
   hamster_ball: { paints: makeHamsterBallPaints },
+  ascii_human: { paints: makeAsciiHumanPaints },
+  computer_screen: { paints: makeComputerScreenPaints },
 };
 
 /**

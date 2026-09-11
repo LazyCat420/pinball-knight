@@ -63,6 +63,8 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   gas_can: ["S"],
   christmas_tree: ["S"],
   hamster_ball: ["S"],
+  ascii_human: ["S"],
+  computer_screen: ["S"],
   cerberus: ["S"],
   clam: ["S"],
   crab: ["S"],

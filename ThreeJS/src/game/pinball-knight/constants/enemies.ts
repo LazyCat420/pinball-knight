@@ -1316,3 +1316,24 @@ export const HAMSTER_BALL_DAMAGE = 1;
 export const HAMSTER_BALL_WINDUP = 0.35;
 export const HAMSTER_BALL_COOLDOWN = 2.2;
 export const HAMSTER_BALL_DEFLECT_SPEED = 14.0;
+
+// ASCII Binary Human (Glowing 0s and 1s silhouette; swarms, punches, and infects monsters)
+export const ASCII_HUMAN_HP = 20;
+export const ASCII_HUMAN_R = 0.44;
+export const ASCII_HUMAN_SPEED_FACTOR = 1.1;
+export const ASCII_HUMAN_FROM_LEVEL = 4;
+export const ASCII_HUMAN_RATIO = 12;
+export const ASCII_HUMAN_DAMAGE = 1;
+export const ASCII_HUMAN_WINDUP = 0.35;
+export const ASCII_HUMAN_COOLDOWN = 0.85;
+
+// Computer Screen Spawner (CRT monitor terminal; spawns ASCII humans on Level 4 until destroyed)
+export const COMPUTER_SCREEN_HP = 40;
+export const COMPUTER_SCREEN_R = 0.65;
+export const COMPUTER_SCREEN_SPEED_FACTOR = 0;
+export const COMPUTER_SCREEN_FROM_LEVEL = 4;
+export const COMPUTER_SCREEN_RATIO = 20;
+export const COMPUTER_SCREEN_DAMAGE = 0;
+export const COMPUTER_SCREEN_WINDUP = 0.5;
+export const COMPUTER_SCREEN_COOLDOWN = 3.5;
+export const COMPUTER_SCREEN_MAX_CHILDREN = 5;

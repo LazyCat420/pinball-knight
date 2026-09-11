@@ -76,6 +76,7 @@ import {
   CHRISTMAS_TREE_DAMAGE,
   GAS_CAN_DAMAGE,
   HAMSTER_BALL_DAMAGE,
+  ASCII_HUMAN_DAMAGE,
   HAMSTER_BALL_DEFLECT_SPEED,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
@@ -1093,6 +1094,17 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.5, z.z, 0xffffff, 12, 2.0); // Bright white specular sparkles
     onHamsterBallDeath?.(z.x, z.z);
   }
+  // COMPUTER SCREEN: glass implosion, electrical burst, smoke puff
+  if (z.kind === "computer_screen") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x22c55e, 18, 2.2); // Green phosphor sparks
+    state.vfx?.burst(z.x, 0.5, z.z, 0xffffff, 10, 1.8);  // White glass shards
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.8);
+  }
+  // ASCII BINARY HUMAN: dissolves into collapsing digital matrix cascade
+  if (z.kind === "ascii_human") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x00ff66, 16, 2.0); // Bright green matrix digits
+    state.vfx?.burst(z.x, 0.5, z.z, 0x16a34a, 12, 1.4);
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1323,6 +1335,8 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   christmas_tree: CHRISTMAS_TREE_DAMAGE,
   gas_can: GAS_CAN_DAMAGE,
   hamster_ball: HAMSTER_BALL_DAMAGE,
+  ascii_human: ASCII_HUMAN_DAMAGE,
+  computer_screen: 0,
 };
 
 /**
