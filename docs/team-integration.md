@@ -230,3 +230,7 @@ project-local lock did not protect against a later release from an older branch.
   and all seven intro phases return to tavern, with zero script errors.
 - Workshop recording includes the new armor, walking, tuck, continuous tumble,
   chrome transformation and recovery. Full project release gate remains required.
+
+- Follow-up ready for integration: preserve the current tumble orientation when
+  a new roll interrupts recovery. The added regression and all 12 focused motion/
+  live-layer tests pass; this avoids snapping to zero rotation mid-transition.
