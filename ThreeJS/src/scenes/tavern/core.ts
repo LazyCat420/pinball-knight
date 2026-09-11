@@ -7,6 +7,7 @@
  * maths, the sprite pipeline, the palette) is shared, which is what keeps the
  * two scenes looking like one game.
  */
+import { createPixelKnightLayer } from '../../game/pinball-knight/render/pixel-knight';
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend, createGPURenderer } from "../../render/backend";
@@ -234,6 +235,8 @@ function hideDungeonHud(hidden: boolean): void {
 }
 
 /** True while any overlay owns the screen — movement and interaction freeze. */
+const armoredPlayer = createPixelKnightLayer();
+
 export function isPanelOpen(): boolean {
   return uiIsOpen("tavern") || isRunSummaryOpen() || isGamblerOpen() || uiIsOpen("menu") || uiIsOpen("character-select");
 }
@@ -517,6 +520,10 @@ function frame(now: number): void {
     case "ui-only":
     case "scene":
       if (tavern.scene && tavern.camera) {
+        if (tavern.renderer && tavern.player) {
+          const p = tavern.player;
+          armoredPlayer.update(tavern.renderer, p.sprite, p.speed > .35 ? 'walk' : 'idle', p.facing, p.animT, activeWeapon().id);
+        }
         if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
         else tavern.renderer?.render(tavern.scene, tavern.camera);
         // Measurement boundary: stalls BEFORE this mark are covered by the
@@ -820,6 +827,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
 /** Tear the scene down. Safe to call twice. */
 export function closeTavern(): void {
+  armoredPlayer.dispose();
   if (!tavern.active) return;
   tavern.active = false;
   if (raf) cancelAnimationFrame(raf);

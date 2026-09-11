@@ -11,6 +11,8 @@
  * mirrors it back onto `state.accumulator` because the headless harness reads
  * that as its loop-health diagnostic.
  */
+import { createPixelKnightLayer } from '../render/pixel-knight';
+import { activeWeapon as armoredWeapon } from '../state';
 import * as THREE from "three";
 import { state } from "../state";
 import { FixedStepLoop } from "../GameEngine";
@@ -84,6 +86,8 @@ let gpuResolveInFlight = false;
 let frenzyOverride: number | null = null;
 
 /** See `frenzyOverride`. Clamped — the shader's fringe is unbounded above. */
+const armoredPlayer = createPixelKnightLayer();
+
 export function setFrenzyOverride(v: number | null): void {
   frenzyOverride = v === null ? null : Math.max(0, Math.min(1, v));
 }
@@ -456,6 +460,11 @@ export function loop(now: number): void {
     // CPU cost of building + submitting the passes. A small number here with a
     // large FRAME total means the cost is CPU-side, above this line.
     profBegin("pixelPass.render");
+    if (state.renderer && state.player) {
+      const p = state.player;
+      armoredPlayer.update(state.renderer, p.sprite, p.anim.getClip(), p.facing,
+        p.attackT >= 0 ? Math.min(1, p.attackT / .4) : state.elapsed, armoredWeapon().id);
+    }
     state.pixelPass.render(state.scene, renderCam);
     profEnd("pixelPass.render");
     if (state.renderer) {
