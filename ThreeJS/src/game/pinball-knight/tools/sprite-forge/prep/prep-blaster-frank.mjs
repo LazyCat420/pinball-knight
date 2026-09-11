@@ -11,7 +11,7 @@ const BASE = join(__dirname, "..");
 const INBOX = join(BASE, "inbox");
 const SOURCES = join(BASE, "sources");
 
-const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/e9d59216-6eca-4313-a866-a558302582cb/blaster_frank_sheet_1789149818575.jpg";
+const RAW_IMG = "/home/lazycat/.gemini/antigravity-ide/brain/e9d59216-6eca-4313-a866-a558302582cb/blaster_frank_v2_1789156327709.jpg";
 const MONSTER_DIR = join(SOURCES, "blaster_frank-2026-09-11");
 const ALT_DIR = join(MONSTER_DIR, "alt-takes");
 const MASTER_SRC = join(ALT_DIR, "blaster_frank_master.jpg");
@@ -37,12 +37,14 @@ async function run() {
 - **Primary Source**: \`src/game/pinball-knight/tools/sprite-forge/sources/blaster_frank-2026-09-11/blaster_frank-S.png\`
 - **Layout**: 4 columns × 4 rows (16 frames, 1024×1024, 256×256 per cell)
   - Row 0 (0..3): \`idle\` (4 frames: short stout waddle bob, spectacles glinting, revolver at waist)
-  - Row 1 (4..7): \`walk\` (4 frames: frantic waddling stride forward, coat flapping)
+  - Row 1 (4..7): \`walk\` (4 frames: alternating high-knee running stride with dynamic leg extension, forward lean, coat flapping)
   - Row 2 (8..11): \`attack\` (4 frames: raises revolver straight up, shoots ceiling with muzzle flash, recoil)
   - Row 3 (12..15): \`death\` (4 frames: comic dizzy eyes, drops smoking gun, slips and falls flat on back)
 - **Chroma Background**: \`#00FF00\` pure chroma green
 - **Takes Archive**:
-  - \`alt-takes/blaster_frank_master.jpg\` (Master Take)
+  - \`alt-takes/take1_blaster_frank_master.jpg\` (Take 1: Initial generation with static leg frames on walk row)
+  - \`alt-takes/blaster_frank_master_v2.jpg\` (Take 2: Dynamic 4-phase alternating waddle-run stride)
+  - \`alt-takes/blaster_frank_master.jpg\` (Active Master)
 `,
   );
   console.log(`Saved README to ${readme}`);
