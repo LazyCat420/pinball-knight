@@ -165,6 +165,25 @@ describe("tavern character select and sprite update", () => {
     expect(isPanelOpen()).toBe(false);
   });
 
+  it("opens with the currently selected character focused", () => {
+    setPlayerSheetName("mario");
+    expect(characterSelectScreen(() => {}).focus).toBe(PLAYABLE.findIndex(c => c.sheet === "mario"));
+  });
+
+  it("keeps a clicked Clockwork card selected without a preceding mouse move", () => {
+    const screen = characterSelectScreen(() => {});
+    const ctx = createCanvas(600, 338).getContext("2d") as unknown as CanvasRenderingContext2D;
+    const pointer = { x: 300, y: 130, inside: true, down: true, pressed: true, released: false };
+    let f = beginUi(ctx, 600, 338, { ...emptyUiInput(), pointer }, screen.focus, true);
+    screen.paint(f, screen);
+    expect(screen.focus).toBe(1);
+    f = beginUi(ctx, 600, 338, emptyUiInput(), screen.focus, true);
+    screen.paint(f, screen);
+    expect(screen.focus).toBe(1);
+    // Clockwork-specific launch buttons remain registered on the next frame.
+    expect(f.count).toBe(PLAYABLE.length + 4);
+  });
+
   it("navigates 2D focus across character cards with controller directional inputs", () => {
     const screen = characterSelectScreen(() => {});
     const canvas = createCanvas(600, 338);
