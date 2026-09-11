@@ -34,7 +34,7 @@ import { playerArtKey } from "../render/knight-sheets";
 import { createPinballParts } from "../render/pinball-parts";
 import { spawnCorpsePiles } from "../run/death";
 import { playerMaxHp } from "../skill-runtime";
-import { makeZombie, spawnHordeMember, spawnPinCrew, spawnKind } from "../spawn/factory";
+import { makeSkinned, makeZombie, spawnHordeMember, spawnPinCrew, spawnKind } from "../spawn/factory";
 import { armTide } from "../spawn/tide";
 import { type GroundItem, type Zombie, activeWeapon } from "../state";
 
@@ -374,6 +374,28 @@ export function populateFloor(f: AuthoredFloor): void {
         if (!spot) continue;
         const c = tileCenter(grid, spot.i, spot.j);
         state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
+      }
+    }
+  }
+
+  // ── LEVEL 4: COMPUTER SCREEN SPAWNERS ──
+  // CRT computer monitors scattered in Level 4 mazes that periodically
+  // surge with green Matrix code and emit ASCII Humans until smashed/destroyed.
+  if (level === 4) {
+    const screens = 2 + Math.floor(rng() * 2); // 2 or 3 computer screens
+    const minDistanceTiles = 5;
+    for (let n = 0; n < screens; n++) {
+      const ref = plan.plazas[n % Math.max(1, plan.plazas.length)] ?? plan.stairs;
+      const spot = nearestOpenTile(grid, ref.i, ref.j, 2 + n * 4, 1);
+      if (spot) {
+        const c = tileCenter(grid, spot.i, spot.j);
+        const distFromStart = Math.hypot(spot.i - plan.start.i, spot.j - plan.start.j);
+        if (distFromStart >= minDistanceTiles) {
+          const comp = makeSkinned("computer_screen", c.x, c.z, 0);
+          if (comp) {
+            state.zombies.push(comp);
+          }
+        }
       }
     }
   }

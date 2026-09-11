@@ -91,6 +91,11 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   moray_mob: { label: "Moray Extortionist", icon: "⚡", blurb: "slithering green moray eel in a zoot suit firing twin crackling electric shock orbs that leave persistent shock hazard pools on the floor" },
   seahorse_mob: { label: "Seahorse Gunner", icon: "🐴", blurb: "armored seahorse in a fedora and vest wielding a brass water mortar that lobs high-angle water shells over dungeon walls" },
   pinball_boss: { label: "Tilt Titan", icon: "⚪", blurb: "giant rolling chrome steel pinball titan that boosts into flattening smashes, ricochets off walls, and triggers multiball" },
+  christmas_tree: { label: "Holiday Tree", icon: "🎄", blurb: "hops energetically on its wooden stump while hurling bouncing glass bauble ornaments at the knight — bursts into an inferno on death" },
+  gas_can: { label: "Toon Gas Can", icon: "⛽", blurb: "1950s rubber-hose cartoon gas can walking in pairs with Pyro Zippo — spills slippery oil on death, triggering fire pandemonium" },
+  hamster_ball: { label: "Hamster Ball", icon: "🐹", blurb: "manic hamster sprinting inside a plastic exercise ball — in pinball mode it acts as a kinetic deflector, on foot it tramples you, and shatters on death" },
+  ascii_human: { label: "Binary Human", icon: "👤", blurb: "digitized human silhouette of glowing 0s and 1s that swarms the player, punches, and infects other monsters into ASCII clones" },
+  computer_screen: { label: "CRT Terminal", icon: "🖥️", blurb: "glitching retro computer monitor that manifests ASCII binary humans on Level 4 until smashed by the player" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

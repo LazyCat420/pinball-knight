@@ -84,6 +84,11 @@ import {
   makeMorayMobPaints,
   makeSeahorseMobPaints,
 } from "./monsters/aquatic-painters";
+import { makeChristmasTreePaints } from "./monsters/christmas-tree";
+import { makeGasCanPaints } from "./monsters/gas-can";
+import { makeHamsterBallPaints } from "./monsters/hamster-ball";
+import { makeAsciiHumanPaints } from "./monsters/ascii-human";
+import { makeComputerScreenPaints } from "./monsters/computer-screen";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -156,6 +161,11 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   swordfish_mob: makeSwordfishMobPaints,
   moray_mob: makeMorayMobPaints,
   seahorse_mob: makeSeahorseMobPaints,
+  christmas_tree: makeChristmasTreePaints,
+  gas_can: makeGasCanPaints,
+  hamster_ball: makeHamsterBallPaints,
+  ascii_human: makeAsciiHumanPaints,
+  computer_screen: makeComputerScreenPaints,
 };
 
 export {
@@ -165,14 +175,12 @@ export {
   makeMedusaPaints,
   makeDraculaPaints,
   makeSpinningTopPaints,
-  makeSharkTrapperPaints,
-  makeDolphinBrawlerPaints,
-  makeOctopusGunnerPaints,
-  makeClownfishMobPaints,
-  makeLionfishMobPaints,
-  makeAnglerfishHitmanPaints,
-  makePufferfishMobPaints,
   makeSwordfishMobPaints,
   makeMorayMobPaints,
   makeSeahorseMobPaints,
+  makeChristmasTreePaints,
+  makeGasCanPaints,
+  makeHamsterBallPaints,
+  makeAsciiHumanPaints,
+  makeComputerScreenPaints,
 };

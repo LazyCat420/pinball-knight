@@ -170,7 +170,16 @@ import {
   PUFFERFISH_MOB_R, PUFFERFISH_MOB_FIRE_RANGE, PUFFERFISH_MOB_WINDUP, PUFFERFISH_MOB_COOLDOWN,
   SWORDFISH_MOB_R, SWORDFISH_MOB_HARPOON_RANGE, SWORDFISH_MOB_WINDUP, SWORDFISH_MOB_COOLDOWN,
   MORAY_MOB_R, MORAY_MOB_FIRE_RANGE, MORAY_MOB_WINDUP, MORAY_MOB_COOLDOWN,
-  SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN } from "../constants";
+  SEAHORSE_MOB_R, SEAHORSE_MOB_FIRE_RANGE, SEAHORSE_MOB_WINDUP, SEAHORSE_MOB_COOLDOWN,
+  CHRISTMAS_TREE_R, CHRISTMAS_TREE_FIRE_RANGE, CHRISTMAS_TREE_WINDUP, CHRISTMAS_TREE_COOLDOWN,
+  GAS_CAN_R, GAS_CAN_WINDUP, GAS_CAN_COOLDOWN,
+  HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN,
+  ASCII_HUMAN_R, ASCII_HUMAN_HP, ASCII_HUMAN_SPEED_FACTOR, ASCII_HUMAN_WINDUP, ASCII_HUMAN_COOLDOWN,
+  COMPUTER_SCREEN_HP, COMPUTER_SCREEN_R, COMPUTER_SCREEN_COOLDOWN, COMPUTER_SCREEN_MAX_CHILDREN } from "../constants";
+import { sheetFor } from "../boot/sheets";
+import { createActorSprite } from "../engine/render/sprite";
+import { MonsterAnimator } from "../engine/render/monster-animator";
+import { queueAsciiHuman } from "../spawn/factory";
 import { updateMedusaGaze } from "./medusa";
 import { updateDraculaSiphon } from "./dracula";
 import { updateSpinningTop } from "./spinning-top";
@@ -186,8 +195,8 @@ import { worldToTile, tileCenter, idx, isWalkable, isLowWall, type Grid } from "
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
-import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
+import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -267,6 +276,12 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   swordfish_mob: { bodyR: SWORDFISH_MOB_R, contactRange: SWORDFISH_MOB_HARPOON_RANGE, windup: SWORDFISH_MOB_WINDUP, cooldown: SWORDFISH_MOB_COOLDOWN, ranged: true },
   moray_mob: { bodyR: MORAY_MOB_R, contactRange: MORAY_MOB_FIRE_RANGE, windup: MORAY_MOB_WINDUP, cooldown: MORAY_MOB_COOLDOWN, ranged: true },
   seahorse_mob: { bodyR: SEAHORSE_MOB_R, contactRange: SEAHORSE_MOB_FIRE_RANGE, windup: SEAHORSE_MOB_WINDUP, cooldown: SEAHORSE_MOB_COOLDOWN, ranged: true },
+  christmas_tree: { bodyR: CHRISTMAS_TREE_R, contactRange: CHRISTMAS_TREE_FIRE_RANGE, windup: CHRISTMAS_TREE_WINDUP, cooldown: CHRISTMAS_TREE_COOLDOWN, ranged: true },
+  pinball_boss: { bodyR: 1.1, contactRange: 1.6, windup: 0.6, cooldown: 2.0, ranged: false },
+  gas_can: { bodyR: GAS_CAN_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: GAS_CAN_WINDUP, cooldown: GAS_CAN_COOLDOWN, ranged: false },
+  hamster_ball: { bodyR: HAMSTER_BALL_R, contactRange: 0.85, windup: HAMSTER_BALL_WINDUP, cooldown: HAMSTER_BALL_COOLDOWN, ranged: false },
+  ascii_human: { bodyR: ASCII_HUMAN_R, contactRange: 0.9, windup: ASCII_HUMAN_WINDUP, cooldown: ASCII_HUMAN_COOLDOWN, ranged: false },
+  computer_screen: { bodyR: COMPUTER_SCREEN_R, contactRange: 0, windup: 0, cooldown: COMPUTER_SCREEN_COOLDOWN, ranged: false },
 };
 
 /**
@@ -720,6 +735,103 @@ function detonateCroakerCorpse(z: Zombie, index: number): void {
   }
 }
 
+/**
+ * Infectious ASCII Binary Human:
+ * Converts normal living monsters into ASCII Humans upon punch attack.
+ */
+export function convertMonsterToAsciiHuman(target: Zombie): boolean {
+  if (
+    target.kind === "ascii_human" ||
+    target.kind === "computer_screen" ||
+    target.kind === "pin" ||
+    target.boss ||
+    target.dormant ||
+    target.mode === "dead" ||
+    target.hp <= 0
+  ) {
+    return false;
+  }
+
+  // Dispose previous sprite geometry/material from scene
+  if (target.sprite?.mesh?.parent) {
+    target.sprite.mesh.parent.remove(target.sprite.mesh);
+  } else if (state.scene && target.sprite?.mesh) {
+    state.scene.remove(target.sprite.mesh);
+  }
+  target.sprite?.dispose?.();
+
+  // Create ASCII human sprite
+  const sheet = sheetFor("ascii_human");
+  const newSprite = createActorSprite(sheet, false);
+  if (state.scene) {
+    state.scene.add(newSprite.mesh);
+  }
+  const newAnim = new MonsterAnimator(newSprite);
+  newAnim.setFacing("S");
+  newAnim.play("walk");
+
+  target.kind = "ascii_human";
+  target.ztype = undefined;
+  target.sprite = newSprite;
+  target.anim = newAnim;
+  target.hp = ASCII_HUMAN_HP;
+  target.maxHp = ASCII_HUMAN_HP;
+  target.bodyR = ASCII_HUMAN_R;
+  target.speed = (target.speed || 1.6) * ASCII_HUMAN_SPEED_FACTOR;
+  target.mode = "chase";
+  target.cooldown = 0.5;
+  target.windupT = 0;
+  target.aggro = true;
+  target.baseTint = 0x22ff55;
+  if (target.flashT <= 0) target.sprite.setTint(target.baseTint);
+
+  syncActorMesh(target);
+
+  // FX: Green binary matrix burst, sparks, and screenshake
+  state.vfx?.burst(target.x, 0.5, target.z, 0x00ff66, 1.4, 16);
+  state.vfx?.sparks(target.x, 0.5, target.z, 0, 1, 8);
+  state.shakeT = Math.max(state.shakeT, 0.12);
+  return true;
+}
+
+/**
+ * Punch attack for ASCII Human:
+ * Punches the knight if in range, and infects nearby monsters.
+ */
+function asciiHumanPunch(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (p && p.hp > 0 && pdist <= contactRange * 1.3) {
+    hitPlayer(z);
+    state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 4);
+    state.shakeT = Math.max(state.shakeT, 0.08);
+  }
+
+  // Infectious binary strike: attempt to convert nearby non-ascii monsters
+  const infectRadius = 1.8;
+  const infectR2 = infectRadius * infectRadius;
+  for (let i = 0; i < state.zombies.length; i++) {
+    const other = state.zombies[i];
+    if (other === z) continue;
+    if (
+      other.kind === "ascii_human" ||
+      other.kind === "computer_screen" ||
+      other.kind === "pin" ||
+      other.boss ||
+      other.mode === "dead" ||
+      other.hp <= 0
+    ) {
+      continue;
+    }
+    const dx = other.x - z.x;
+    const dz = other.z - z.z;
+    if (dx * dx + dz * dz <= infectR2) {
+      if (convertMonsterToAsciiHuman(other)) {
+        break; // convert one per punch
+      }
+    }
+  }
+}
+
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
@@ -772,6 +884,32 @@ export function updateZombies(dt: number): void {
         }
         continue;
       }
+      if (z.kind === "computer_screen") {
+        // Shattered CRT frame fades out after 1.2s
+        if (z.corpseT > 1.2 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
+      if (z.kind === "ascii_human") {
+        // Dissolves quickly as digital matrix code (0.6s)
+        if (z.corpseT > 0.6 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          if (z.sprite?.mesh?.parent) {
+            z.sprite.mesh.parent.remove(z.sprite.mesh);
+          } else if (state.scene) {
+            state.scene.remove(z.sprite.mesh);
+          }
+          z.sprite?.mesh?.geometry?.dispose();
+          state.zombies.splice(i, 1);
+        }
+        continue;
+      }
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;
@@ -789,6 +927,12 @@ export function updateZombies(dt: number): void {
     // the policy, never the family — so a kind can never be handled by two
     // different movement rules in two different places in this function.
     const move = movementOf(z);
+
+    // ── HELD MOVEMENT (e.g. boss spin-in-place rev-up or charge) ──
+    if (z.holdMove) {
+      syncActorMesh(z);
+      continue;
+    }
 
     // ── FREEZE RAY ── the whole machine holds its breath. Enemies stop
     // mid-stride, iced blue; timers don't tick, so nobody bites out of a thaw.
@@ -811,6 +955,47 @@ export function updateZombies(dt: number): void {
     // combat), chains into pins it hits, and a wall slam finishes it.
     if (move === "inert") {
       updatePin(z, dt);
+      continue;
+    }
+
+    // ── COMPUTER SCREEN SPAWNER ──
+    // Stationary terminal that periodically glitches and surges, spawning
+    // ASCII humans until smashed by the knight.
+    if (z.kind === "computer_screen") {
+      z.spawnTimer = (z.spawnTimer ?? COMPUTER_SCREEN_COOLDOWN) - dt;
+      let activeChildren = 0;
+      for (const other of state.zombies) {
+        if (other.spawnerNid === z.nid && other.mode !== "dead") {
+          activeChildren++;
+        }
+      }
+
+      if (activeChildren < COMPUTER_SCREEN_MAX_CHILDREN) {
+        if (z.spawnTimer <= 0.6 && z.spawnTimer > 0) {
+          z.anim.play("attack");
+          if (z.flashT <= 0) z.sprite.setTint(0x00ff66);
+          if (Math.random() < 0.3) {
+            state.vfx?.sparks(z.x, 0.45, z.z, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, 2);
+          }
+        } else if (z.spawnTimer <= 0) {
+          z.spawnTimer = COMPUTER_SCREEN_COOLDOWN;
+          z.anim.play("idle");
+          if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+          const ang = Math.random() * Math.PI * 2;
+          const spawnDist = COMPUTER_SCREEN_R + ASCII_HUMAN_R + 0.15;
+          const sx = z.x + Math.cos(ang) * spawnDist;
+          const sz = z.z + Math.sin(ang) * spawnDist;
+          queueAsciiHuman(sx, sz, z.nid);
+          state.vfx?.burst(z.x, 0.5, z.z, 0x00ff66, 1.2, 10);
+        } else {
+          z.anim.play("idle");
+          if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+        }
+      } else {
+        z.anim.play("idle");
+        if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+      }
+      syncActorMesh(z);
       continue;
     }
 
@@ -914,6 +1099,38 @@ export function updateZombies(dt: number): void {
         z.castT = 0.35 + Math.random() * 0.3;
         state.vfx?.smoke?.(z.x, 0.75, z.z, 0.25, 1);
       }
+    }
+
+    // ── PANIC (e.g. Pyro Zippo freaks out when gas can buddy dies) ──
+    if (z.panicT && z.panicT > 0) {
+      z.panicT -= dt;
+      z.bobT = (z.bobT ?? 0) + dt;
+      // Waving arms frantically, erratic zigzag sprint
+      const panicAngle = (z.bobT ?? 0) * 16 + (z.nid ? parseInt(z.nid.slice(-2), 16) || 0 : 0);
+      const vx = Math.cos(panicAngle) * z.speed * 1.5;
+      const vz = Math.sin(panicAngle) * z.speed * 1.5;
+      const sres = moveCircle(g, z.x, z.z, bodyR, vx * dt, vz * dt);
+      z.x = sres.x;
+      z.z = sres.z;
+      z.anim.play("walk");
+      z.anim.setFacing(facingFromWorld(vx, vz, "S"));
+      if (Math.random() < 0.25) {
+        state.vfx?.sparks(z.x, 0.45, z.z, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, 4);
+      }
+      if (z.panicT <= 0) {
+        z.panicT = 0;
+        // Trip, fall over, and ignite the ground!
+        z.mode = "dead";
+        z.corpseT = 0;
+        z.deathFacing = z.anim.getFacing?.() ?? "S";
+        z.anim.play("death");
+        spawnFloorFx("fire", z.x, z.z, 0.85, 4.5, true);
+        state.vfx?.burst(z.x, 0.4, z.z, 0xff4400, 22, 2.0);
+        state.vfx?.smoke(z.x, 0.4, z.z, 8, 0.9);
+        state.shakeT = Math.max(state.shakeT, 0.18);
+      }
+      syncActorMesh(z);
+      continue;
     }
 
     // ── WATER SLICK ── stepped on a marble-water scar: lost its footing and
@@ -1268,6 +1485,8 @@ export function updateZombies(dt: number): void {
             cigaretteBurnAttack(z, pdist, contactRange); // burning cherry ember jab
           } else if (z.kind === "toucan") {
             toucanBarrelRollAttack(z, pdist, contactRange); // corkscrew barrel roll dive
+          } else if (z.kind === "ascii_human") {
+            asciiHumanPunch(z, pdist, contactRange); // binary martial arts punch & infection
           } else if (z.kind === "necromancer") {
             necroSummon(z); // raise an add instead of a projectile
           } else if (ranged) {
@@ -1324,6 +1543,9 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "zippo") {
                 // 1960s cartoon lighter chugs alcohol and exhales flame breath
                 launchZippoFlameBreath(z.x, z.z, ux, uz);
+              } else if (z.kind === "christmas_tree") {
+                // Festive holiday tree tosses bouncing ornaments at the knight
+                launchOrnament(z.x, z.z, ux, uz);
               } else if (z.kind === "clam") {
                 // Old Clam spits a bouncy trajectory-deflecting pearl
                 spitPearl(z.x, z.z, ux, uz);
@@ -1336,7 +1558,11 @@ export function updateZombies(dt: number): void {
               }
             }
           } else if (pdist <= contactRange * 1.3) {
-            hitPlayer(z);
+            if (z.kind === "hamster_ball" && (p.momSpeed || 0) > 0) {
+              deflectOffHamsterBall(z);
+            } else {
+              hitPlayer(z);
+            }
             if (z.kind === "crab") {
               p.momSpeed = (p.momSpeed || 0) * 0.5;
               state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, 8);
@@ -1359,10 +1585,20 @@ export function updateZombies(dt: number): void {
     // ARC, which is the de-clone — a straight dash is beaten by one sidestep,
     // an arc has to be read.
     const committed = isCommitted(move, z);
+    const canMeleeInfect = z.kind === "ascii_human" && z.cooldown <= 0 && state.zombies.some(other =>
+      other !== z &&
+      other.kind !== "ascii_human" &&
+      other.kind !== "computer_screen" &&
+      other.kind !== "pin" &&
+      !other.boss &&
+      other.mode !== "dead" &&
+      other.hp > 0 &&
+      (other.x - z.x) ** 2 + (other.z - z.z) ** 2 <= (contactRange * 1.3) ** 2
+    );
     // Melee bites in contact range; a spitter fires from anywhere in its long
     // fire range (contactRange for it is SPITTER_FIRE_RANGE). The goblin never
     // bites — its contact behaviour is the bumper kick above.
-    if (!committed && z.kind !== "goblin" && pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
+    if (!committed && z.kind !== "goblin" && (pdist <= contactRange || canMeleeInfect) && z.cooldown <= 0 && p.hp > 0) {
       z.mode = "windup";
       z.windupT = 0;
       cancelCommit(z); // a bite out of a crouch: the leap is off
@@ -1515,6 +1751,12 @@ export function updateZombies(dt: number): void {
     if (z.kind === "rotortail") {
       z.bobT = (z.bobT ?? 0) + dt;
       z.sprite.mesh.position.y = ROTORTAIL_HOVER_Y + Math.sin(z.bobT * 2.6) * 0.1;
+    }
+    // Festive Christmas Tree: hops energetically on its trunk/stump to walk around
+    if (z.kind === "christmas_tree") {
+      z.bobT = (z.bobT ?? 0) + dt * (moving ? 10 : 2);
+      const hop = moving ? Math.abs(Math.sin((z.bobT ?? 0) * 8)) * 0.18 : 0;
+      z.sprite.mesh.position.y = z.sprite.mesh.position.y + hop;
     }
   }
 }

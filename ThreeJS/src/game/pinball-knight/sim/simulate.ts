@@ -41,7 +41,7 @@ import { onPlayerDeath } from "../run/death";
 import { descend } from "../run/descend";
 import { updateSecretDoors } from "../secrets";
 import { playerMaxHp } from "../skill-runtime";
-import { drainPendingDraculaBats, drainPendingMinis, drainPendingSummons } from "../spawn/factory";
+import { drainPendingAsciiHumans, drainPendingDraculaBats, drainPendingMinis, drainPendingSummons } from "../spawn/factory";
 import { spawnReaper } from "../spawn/reaper";
 import { reapCorpses, tickTide } from "../spawn/tide";
 import { showToast } from "../ui";
@@ -159,6 +159,7 @@ export function simulate(dt: number): void {
   drainPendingMinis(); // slime splits deferred past all combat resolution
   drainPendingSummons(); // necromancer adds, same deferral
   drainPendingDraculaBats(); // Dracula bat final form, deferred past combat resolution
+  drainPendingAsciiHumans(); // ASCII binary humans from CRT computer screen spawners
   tickTide(dt); // THE TIDE: reinforcements walk in, ramping toward the Dealer
   reapCorpses(); // …and the oldest bodies are cleared to pay for them
   if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death

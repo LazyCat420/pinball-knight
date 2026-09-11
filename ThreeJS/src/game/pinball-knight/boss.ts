@@ -518,6 +518,7 @@ export function updateBoss(dt: number): void {
     boss.engaged = false;
   }
   boss.z.aggro = boss.engaged;
+  boss.z.holdMove = (boss.pinballCharge !== null && pinballChargeHoldsMovement(boss.pinballCharge));
 
   // ── RETURNING ── walk home under our own steam. With `aggro` false the
   // generic AI parks him in `idle` and does not move him at all, so without
@@ -705,6 +706,14 @@ function makeCtx(dt: number, target: { x: number; z: number }): MoveCtx {
     },
     setFacing(dir) {
       b.z.anim.setFacing(dir);
+    },
+    rotateSprite(angle) {
+      if (b.z.sprite?.mesh) {
+        b.z.sprite.mesh.rotation.z = angle;
+      }
+    },
+    setHoldMovement(hold) {
+      b.z.holdMove = hold;
     },
     grabPlayer(grabDuration, escapeCount, damage) {
       const p = state.player;

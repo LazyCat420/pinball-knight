@@ -21,7 +21,7 @@ import { at, tileCenter, worldToTile } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { ITEM_PAINTS, ZOMBIE_VARIANTS } from "../render/cel-painter";
 import { createStaticSprite, type SpriteSheet } from "../engine/render/sprite";
-import { makeSkinned, makeZombie, skinSheet, spawnKind } from "../spawn/factory";
+import { makeSkinned, makeZombie, queueAsciiHuman, skinSheet, spawnKind } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { variantIndicesFor, type ZombieType } from "../zombie-types";
@@ -160,7 +160,8 @@ export function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
   const points = resolveSpawnPoints(g, cx, cz, spec);
   const placed: Array<{ x: number; z: number }> = [];
   for (const pt of points) {
-    const zz = makeDebugEnemy(spec.kind, pt.x, pt.z, spec.ztype);
+    const kindToMake = spec.kind === "ascii_human" ? "computer_screen" : spec.kind;
+    const zz = makeDebugEnemy(kindToMake, pt.x, pt.z, spec.ztype);
     if (!zz) continue;
     zz.aggro = spec.aggro ?? true;
     const hp = spec.hp;
@@ -170,6 +171,9 @@ export function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
     }
     state.zombies.push(zz);
     placed.push({ x: pt.x, z: pt.z });
+    if (spec.kind === "ascii_human") {
+      queueAsciiHuman(pt.x + 0.6, pt.z, zz.nid);
+    }
     if (spec.kind === "jade_buddha" && !bossActive()) {
       adoptBoss(zz, BOSSES.jade_buddha);
     }

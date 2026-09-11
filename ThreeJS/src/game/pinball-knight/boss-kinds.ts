@@ -760,11 +760,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
     speedMult: 1.05,
     moves: {
       pinballCharge: {
-        intervalMin: 2.6,
-        intervalMax: 4.8,
-        telegraphMin: 0.65,
-        telegraphMax: 1.15,
-        speed: 25,
+        intervalMin: 1.2,
+        intervalMax: 2.0,
+        telegraphMin: 0.85,
+        telegraphMax: 1.25,
+        speed: 26,
         damage: 3,
         distance: 14,
         launch: 28,
@@ -788,11 +788,11 @@ export const BOSSES: Record<BossKind, BossSpec> = {
       speedMult: 1.35,
       moves: {
         pinballCharge: {
-          intervalMin: 1.8,
-          intervalMax: 3.2,
-          telegraphMin: 0.45,
-          telegraphMax: 0.80,
-          speed: 29,
+          intervalMin: 0.8,
+          intervalMax: 1.4,
+          telegraphMin: 0.55,
+          telegraphMax: 0.85,
+          speed: 30,
           damage: 4,
           distance: 18,
           launch: 32,

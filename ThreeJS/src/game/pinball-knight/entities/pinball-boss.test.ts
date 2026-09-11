@@ -128,23 +128,28 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     expect(pinballChargeHoldsMovement(rt)).toBe(false);
   });
 
-  it("telegraphs and holds movement during telegraph phase", () => {
+  it("telegraphs, locks position stationary, and accelerates 360° spin in place", () => {
     const spec = BOSSES.pinball_boss.moves.pinballCharge!;
     const rt = freshPinballCharge(spec);
     rt.t = rt.telegraphDur; // Trigger telegraph
 
     let facingSet = "";
+    let holdState = false;
+    const movedTo: Array<{ x: number; z: number }> = [];
+    const rotations: number[] = [];
     const ctx: MoveCtx = {
-      dt: 0.016,
-      x: 0,
-      z: 0,
-      target: { x: 10, z: 0 },
+      dt: 0.05,
+      x: 5,
+      z: 5,
+      target: { x: 15, z: 5 },
       grid: null,
       bodyR: 1.2,
       hitAt: vi.fn(),
-      moveTo: vi.fn(),
+      moveTo: (nx, nz) => { movedTo.push({ x: nx, z: nz }); },
       setFacing: (d) => { facingSet = d; },
       playAnim: vi.fn(),
+      rotateSprite: (ang) => { rotations.push(ang); },
+      setHoldMovement: (h) => { holdState = h; },
     };
 
     updatePinballCharge(rt, spec, ctx);
@@ -152,6 +157,34 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     expect(rt.lane).toBeDefined();
     expect(pinballChargeHoldsMovement(rt)).toBe(true);
     expect(facingSet).toBe("E");
+    expect(holdState).toBe(true);
+
+    const initialSpinSpeed = rt.spinSpeed;
+    expect(initialSpinSpeed).toBeGreaterThanOrEqual(6);
+
+    // Advance halfway through telegraph
+    for (let i = 0; i < 8; i++) {
+      updatePinballCharge(rt, spec, ctx);
+    }
+    const midSpinSpeed = rt.spinSpeed;
+    expect(midSpinSpeed).toBeGreaterThan(initialSpinSpeed);
+
+    // Finish telegraph — RPM should reach peak, then transition to running
+    while (rt.t > 0) {
+      updatePinballCharge(rt, spec, ctx);
+    }
+    // Release trigger tick
+    updatePinballCharge(rt, spec, ctx);
+    expect(rt.phase).toBe("running");
+    expect(rotations.length).toBeGreaterThan(5);
+
+    // All moveTo calls during telegraph must have kept position locked at (5, 5)
+    for (const pt of movedTo) {
+      if (rt.phase === "telegraph") {
+        expect(pt.x).toBe(5);
+        expect(pt.z).toBe(5);
+      }
+    }
   });
 
   it("steamrolls player into a pancake with flattenT, launch momentum, and wall crunch damage", () => {
@@ -175,20 +208,20 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
       playAnim: vi.fn(),
       flattenPlayer: (dmg, launch, duration, wallCrunch) => {
         flattened = true;
-        state.player.flattenT = duration;
-        state.player.pinballWallCrunchDamage = wallCrunch;
-        state.player.momSpeed = launch;
-        state.player.momX = 1;
-        state.player.momZ = 0;
+        state.player!.flattenT = duration;
+        state.player!.pinballWallCrunchDamage = wallCrunch;
+        state.player!.momSpeed = launch;
+        state.player!.momX = 1;
+        state.player!.momZ = 0;
         return true;
       },
     };
 
     updatePinballCharge(rt, spec, ctx);
     expect(flattened).toBe(true);
-    expect(state.player.flattenT).toBe(spec.flattenDuration);
-    expect(state.player.pinballWallCrunchDamage).toBe(spec.wallCrunchDamage);
-    expect(state.player.momSpeed).toBe(spec.launch);
+    expect(state.player!.flattenT).toBe(spec.flattenDuration);
+    expect(state.player!.pinballWallCrunchDamage).toBe(spec.wallCrunchDamage);
+    expect(state.player!.momSpeed).toBe(spec.launch);
     expect(rt.hasHitPlayer).toBe(true);
   });
 
@@ -239,7 +272,7 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     const geo = new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial();
     rt.lane = new THREE.Mesh(geo, mat);
-    state.scene.add(rt.lane);
+    state.scene!.add(rt.lane);
 
     disposePinballCharge(rt);
     expect(rt.lane).toBeNull();
@@ -252,10 +285,13 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     expect(paints.E).toBeDefined();
 
     for (const dir of ["S", "N", "E"] as const) {
-      expect(paints[dir].idle.length).toBeGreaterThan(0);
-      expect(paints[dir].walk.length).toBeGreaterThan(0);
-      expect(paints[dir].attack.length).toBeGreaterThan(0);
-      expect(paints[dir].death.length).toBeGreaterThan(0);
+      const pd = paints[dir];
+      expect(pd).toBeDefined();
+      if (!pd) continue;
+      expect(pd.idle?.length).toBeGreaterThan(0);
+      expect(pd.walk?.length).toBeGreaterThan(0);
+      expect(pd.attack?.length).toBeGreaterThan(0);
+      expect(pd.death?.length).toBeGreaterThan(0);
     }
   });
 });

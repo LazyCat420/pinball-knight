@@ -73,6 +73,11 @@ import {
   CRAWLING_HAND_GRAB_DURATION,
   SUMO_NINJA_DAMAGE,
   ZIPPO_DAMAGE,
+  CHRISTMAS_TREE_DAMAGE,
+  GAS_CAN_DAMAGE,
+  HAMSTER_BALL_DAMAGE,
+  ASCII_HUMAN_DAMAGE,
+  HAMSTER_BALL_DEFLECT_SPEED,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -444,6 +449,36 @@ function springOffJester(z: Zombie): void {
   p.iframes = Math.max(p.iframes, 0.25);
   state.vfx?.sparks(z.x, 0.7, z.z, nx, nz, 12);
   state.shakeT = Math.max(state.shakeT, 0.16);
+}
+
+/**
+ * HAMSTER BALL kinetic deflection:
+ * When the player in pinball mode collides with the hamster in an exercise ball,
+ * the sphere acts as a high-energy kinetic deflector / bumper, kicking the
+ * pinball away into a wild deflected trajectory with amplified momentum!
+ */
+export function deflectOffHamsterBall(z: Zombie): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+  const dx = p.x - z.x;
+  const dz = p.z - z.z;
+  const d = Math.hypot(dx, dz);
+  // Reflective / kinetic scatter angle (±0.35 rad)
+  const angleScatter = (Math.random() - 0.5) * 0.7;
+  const baseAngle = d > 1e-4 ? Math.atan2(dz, dx) : Math.atan2(p.momZ || 0, p.momX || 1);
+  const finalAngle = baseAngle + angleScatter;
+  const nx = Math.cos(finalAngle);
+  const nz = Math.sin(finalAngle);
+  p.momX = nx;
+  p.momZ = nz;
+  p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * 1.15, HAMSTER_BALL_DEFLECT_SPEED));
+  p.bounceCombo += 1;
+  p.bounceComboT = comboWindow(p.bounceCombo);
+  p.iframes = Math.max(p.iframes, 0.25);
+  state.vfx?.sparks(z.x, 0.65, z.z, nx, nz, 14);
+  state.shakeT = Math.max(state.shakeT, 0.18);
+  showToast("🐹 HAMSTER BALL DEFLECTION!");
 }
 
 export function damageZombie(
@@ -883,6 +918,34 @@ export function triggerBurgerRot(x: number, z: number): void {
   onBurgerRot?.(x, z);
 }
 
+/** CHRISTMAS TREE death → a roaring fire puddle. */
+let onChristmasTreeDeath: ((x: number, z: number) => void) | null = null;
+export function setChristmasTreeDeathHandler(fn: (x: number, z: number) => void): void {
+  onChristmasTreeDeath = fn;
+}
+export function triggerChristmasTreeDeath(x: number, z: number): void {
+  onChristmasTreeDeath?.(x, z);
+}
+
+/** 1950s TOON GAS CAN death → spills slick oil pool. */
+let onGasCanDeath: ((x: number, z: number) => void) | null = null;
+export function setGasCanDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onGasCanDeath = fn;
+}
+export function triggerGasCanDeath(x: number, z: number): void {
+  onGasCanDeath?.(x, z);
+}
+
+/** HAMSTER BALL death → plastic sphere fractures and shatters. */
+let onHamsterBallDeath: ((x: number, z: number) => void) | null = null;
+export function setHamsterBallDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onHamsterBallDeath = fn;
+}
+export function triggerHamsterBallDeath(x: number, z: number): void {
+  onHamsterBallDeath?.(x, z);
+}
+
+
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
  *
@@ -998,6 +1061,50 @@ export function killZombie(z: Zombie): void {
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // A SPORELING bursts into a toxic spore cloud when it dies (OPEN_WORK 2.1).
   if (z.kind === "sporeling") onSporelingBurst?.(z.x, z.z);
+  // CHRISTMAS TREE: bursts into roaring bonfire and persistent fire puddle on death!
+  if (z.kind === "christmas_tree") onChristmasTreeDeath?.(z.x, z.z);
+  // 1950s TOON GAS CAN: spills slippery oil pool on death, and triggers panic in its paired lighter!
+  if (z.kind === "gas_can") {
+    onGasCanDeath?.(z.x, z.z);
+    let buddy: Zombie | undefined = undefined;
+    if (z.pairedBuddyNid) {
+      buddy = state.zombies.find((other) => other.nid === z.pairedBuddyNid && other.mode !== "dead");
+    }
+    if (!buddy) {
+      let minDist = 8.0;
+      for (const other of state.zombies) {
+        if (other.kind === "zippo" && other.mode !== "dead") {
+          const d = Math.hypot(other.x - z.x, other.z - z.z);
+          if (d < minDist) {
+            minDist = d;
+            buddy = other;
+          }
+        }
+      }
+    }
+    if (buddy) {
+      buddy.panicT = 1.35;
+      buddy.anim.play("walk");
+      state.vfx?.burst(buddy.x, 0.4, buddy.z, 0xff7700, 8, 0.8);
+    }
+  }
+  // HAMSTER BALL: plastic sphere fractures and shatters into ricocheting shards!
+  if (z.kind === "hamster_ball") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x38bdf8, 20, 2.5); // Cyan plastic shards
+    state.vfx?.burst(z.x, 0.5, z.z, 0xffffff, 12, 2.0); // Bright white specular sparkles
+    onHamsterBallDeath?.(z.x, z.z);
+  }
+  // COMPUTER SCREEN: glass implosion, electrical burst, smoke puff
+  if (z.kind === "computer_screen") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x22c55e, 18, 2.2); // Green phosphor sparks
+    state.vfx?.burst(z.x, 0.5, z.z, 0xffffff, 10, 1.8);  // White glass shards
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.8);
+  }
+  // ASCII BINARY HUMAN: dissolves into collapsing digital matrix cascade
+  if (z.kind === "ascii_human") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x00ff66, 16, 2.0); // Bright green matrix digits
+    state.vfx?.burst(z.x, 0.5, z.z, 0x16a34a, 12, 1.4);
+  }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
     _pinKills += 1;
@@ -1224,6 +1331,12 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   swordfish_mob: 2,
   moray_mob: 1,
   seahorse_mob: 2,
+  pinball_boss: 3,
+  christmas_tree: CHRISTMAS_TREE_DAMAGE,
+  gas_can: GAS_CAN_DAMAGE,
+  hamster_ball: HAMSTER_BALL_DAMAGE,
+  ascii_human: ASCII_HUMAN_DAMAGE,
+  computer_screen: 0,
 };
 
 /**

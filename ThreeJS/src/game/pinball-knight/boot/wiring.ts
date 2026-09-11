@@ -46,12 +46,16 @@ import {
   setSporelingBurstHandler,
   setEspressoSpillHandler,
   setBurgerRotHandler,
+  setChristmasTreeDeathHandler,
+  setGasCanDeathHandler,
+  setHamsterBallDeathHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
   hitPlayerRanged,
   resetCombatJuice,
 } from "../entities/combat";
+import { sfxBreak } from "../sfx";
 import { setSummonHandler } from "../entities/zombie";
 import { setMerchantCaughtHandler } from "../entities/npc";
 import { queueDraculaBat, queueMini, queueSummon, makeZombie, bumpZombieNid } from "../spawn/factory";
@@ -76,6 +80,8 @@ import {
   BURGER_ROT_RADIUS,
   BURGER_ROT_LIFE,
   BURGER_ROT_DAMAGE,
+  GAS_CAN_SPILL_RADIUS,
+  GAS_CAN_SPILL_LIFE,
   CARD_BURN_TICK,
   BOSS_GOLD,
   GOLD_PER_KILL,
@@ -397,6 +403,36 @@ export function installGameplayWiring(deps: WiringDeps): void {
         state.vfx?.burst(px, 0.25, pz, 0x4d7c0f, 6, 1.0);
       }
     }
+  });
+  // A CHRISTMAS TREE bursts into roaring bonfire flames and a persistent fire hazard puddle on death.
+  setChristmasTreeDeathHandler((x, z) => {
+    // 1. Spawns persistent fire puddle on floor
+    spawnFloorFx("fire", x, z, 1.4, 5.0, true);
+    // 2. Fiery explosive combustion VFX
+    state.vfx?.burst(x, 0.45, z, 0xff4400, 28, 2.6);
+    state.vfx?.smoke(x, 0.4, z, 14, 1.0);
+    state.vfx?.sparks(x, 0.5, z, 0, 0, 20);
+    // 3. Audio & screen shake
+    sfxFlame();
+    state.shakeT = Math.max(state.shakeT, 0.22);
+  });
+  // 1950s TOON GAS CAN spills a wide oil slick puddle on death that easily catches fire!
+  setGasCanDeathHandler((x, z) => {
+    // 1. Spawns oil puddle on floor
+    spawnFloorFx("oil", x, z, GAS_CAN_SPILL_RADIUS, GAS_CAN_SPILL_LIFE);
+    // 2. Oil splashing droplet VFX
+    state.vfx?.burst(x, 0.35, z, 0x1c1917, 20, 1.8);
+    state.vfx?.sparks(x, 0.4, z, 0, 0, 10);
+    // 3. Audio & screen shake
+    state.shakeT = Math.max(state.shakeT, 0.12);
+  });
+  // HAMSTER IN EXERCISE BALL shatters into fractured plastic shards upon death!
+  setHamsterBallDeathHandler((x, z) => {
+    state.vfx?.burst(x, 0.45, z, 0x38bdf8, 24, 2.5); // Cyan plastic shards
+    state.vfx?.burst(x, 0.5, z, 0xffffff, 14, 2.0); // Bright white specular sparkles
+    state.vfx?.sparks(x, 0.45, z, 0, 0, 16);
+    sfxBreak();
+    state.shakeT = Math.max(state.shakeT, 0.16);
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

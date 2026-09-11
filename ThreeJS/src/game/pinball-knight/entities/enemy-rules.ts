@@ -101,6 +101,11 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   moray_mob: "kite",
   seahorse_mob: "kite",
   pinball_boss: "chase",
+  christmas_tree: "kite",
+  gas_can: "chase",
+  hamster_ball: "chase",
+  ascii_human: "chase",
+  computer_screen: "rooted",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
@@ -200,5 +205,11 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     soft: 0.35,
     gatesDamage: true,
     text: "Gyroscopic Armor: centrifugal spinning deflects low-speed blows down to 35% damage. Strike with pinball momentum or hit during its post-slam wobble to knock it off balance.",
+  },
+  hamster_ball: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: 1.0,
+    text: "Kinetic Sphere: when struck in pinball mode, the exercise ball acts as an energetic deflector, launching your pinball into a wild ricochet trajectory!",
   },
 };
