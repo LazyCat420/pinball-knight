@@ -522,7 +522,7 @@ function frame(now: number): void {
       if (tavern.scene && tavern.camera) {
         if (tavern.renderer && tavern.player) {
           const p = tavern.player;
-          armoredPlayer.update(tavern.renderer, p.sprite, p.speed > .35 ? 'walk' : 'idle', p.facing, p.animT, activeWeapon().id);
+          armoredPlayer.update(tavern.renderer, p.sprite, p.speed > .35 ? 'walk' : 'idle', p.facing, p.animT, activeWeapon().id, { dt, x: p.x, z: p.z });
         }
         if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
         else tavern.renderer?.render(tavern.scene, tavern.camera);

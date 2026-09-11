@@ -8,13 +8,21 @@ import type { WeaponId } from '../items';
 import { playerSheetName, DEFAULT_PLAYER_SHEET } from './knight-sheets';
 import { createArmoredKnight } from './armored-knight';
 import type { ClockworkPose } from './clockwork-knight';
+import { KnightAnimation } from './knight-animation';
+import { worldDirToScreen } from '../engine/camera';
+
+export interface KnightPresentation {
+  dt: number; x: number; z: number; attackTime?: number;
+  timing?: { windup: number; active: number; recovery: number } | null;
+  variant?: number; hp?: number; charge?: number;
+}
 
 export function createPixelKnightLayer() {
   let actor: ActorSprite | null = null;
   let release: (() => void) | null = null;
-  let draw: ((renderer: WebGPURenderer, clip: string, facing: Facing, t: number, weapon: WeaponId) => void) | null = null;
+  let draw: ((renderer: WebGPURenderer, clip: string, facing: Facing, t: number, weapon: WeaponId, motion?: KnightPresentation) => void) | null = null;
   function dispose() { release?.(); release = null; draw = null; actor = null; }
-  function update(renderer: WebGPURenderer, sprite: ActorSprite, clip: string, facing: Facing, t: number, weapon: WeaponId) {
+  function update(renderer: WebGPURenderer, sprite: ActorSprite, clip: string, facing: Facing, t: number, weapon: WeaponId, motion?: KnightPresentation) {
     if (playerSheetName() !== DEFAULT_PLAYER_SHEET) { dispose(); return; }
     if (actor !== sprite) {
       dispose(); actor = sprite;
@@ -52,17 +60,36 @@ export function createPixelKnightLayer() {
       };
       const cleanup = release;
       sprite.dispose = () => { cleanup(); originalDispose(); };
-      let lastClip = "", clipStart = 0;
-      draw = (r, name, direction, time, held) => {
+      const animation = new KnightAnimation();
+      let lastTime = NaN, lastX = NaN, lastZ = NaN, lastHp = NaN, lastHeading = NaN;
+      draw = (r, name, direction, time, held, motion) => {
         if (released) return;
         const supported = ['idle', 'walk', 'run', 'attack', 'death'].includes(name);
         syncSilhouette(supported);
         plane.visible = supported; source.visible = supported ? false : originalVisible;
-        if (!supported || !sprite.mesh.visible) return;
+        const dt = motion?.dt ?? (Number.isFinite(lastTime) ? Math.max(0, Math.min(.1, time - lastTime)) : 0);
+        let distance = motion && Number.isFinite(lastX) ? Math.hypot(motion.x - lastX, motion.z - lastZ) : 0;
+        const dx = motion ? motion.x - lastX : 0, dz = motion ? motion.z - lastZ : 0;
+        // Warps and scene changes are not steps.
+        if (distance > Math.max(.8, dt * 20)) distance = 0;
+        const velocity = distance > .00001 ? worldDirToScreen(dx, dz) : null;
+        const hurt = !!motion && Number.isFinite(lastHp) && motion.hp != null && motion.hp < lastHp;
+        lastTime = time;
+        if (motion) { lastX = motion.x; lastZ = motion.z; lastHp = motion.hp ?? NaN; }
+        if (!supported) return;
         material.color.copy((sprite.mesh.material as THREE.MeshBasicMaterial).color);
-        if (name !== lastClip) { lastClip = name; clipStart = time; }
-        rig.setWeapon(held); rig.pose(name as ClockworkPose, name === "death" ? Math.min(1, (time - clipStart) / .7) : time);
-        rig.root.rotation.y = { S: -.2, N: Math.PI, E: Math.PI / 2, W: -Math.PI / 2 }[direction];
+        const moving = name === 'walk' || name === 'run';
+        const heading = moving && velocity ? Math.atan2(velocity.x, velocity.z)
+          : name === 'idle' && Number.isFinite(lastHeading) ? lastHeading
+          : { S: 0, N: Math.PI, E: Math.PI / 2, W: -Math.PI / 2 }[direction];
+        lastHeading = heading;
+        rig.setWeapon(held);
+        const pose = animation.update({ dt, clip: name as ClockworkPose, heading, distance,
+          speed: dt > 0 ? distance / dt : 0, worldScale: SPRITE_UNITS / 4, weapon: held,
+          attackTime: motion?.attackTime ?? (name === 'attack' ? time * .48 : 0), timing: motion?.timing,
+          variant: motion?.variant, charge: motion?.charge, hurt });
+        rig.root.rotation.y = animation.heading; rig.applyPose(pose);
+        if (!sprite.mesh.visible) return;
         const oldTarget = r.getRenderTarget(), oldColor = r.getClearColor(new THREE.Color()), oldAlpha = r.getClearAlpha();
         const oldAutoClear = r.autoClear;
         try {
@@ -72,7 +99,7 @@ export function createPixelKnightLayer() {
         }
       };
     }
-    draw?.(renderer, clip, facing, t, weapon);
+    draw?.(renderer, clip, facing, t, weapon, motion);
   }
   return { update, dispose };
 }

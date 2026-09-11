@@ -1,3 +1,5 @@
+import { KnightAnimation } from '../render/knight-animation';
+import { blendKnightPoses, ease, sampleKnightPose, type KnightPose, type V3 } from '../render/knight-motion';
 import { createCharacterPixelPass } from '../render/character-pixel-pass';
 /** Town → lift off head → bowl into arcade → enchanted cabinet → the original PINBALL / KNIGHT maze. */
 import * as THREE from 'three';
@@ -24,6 +26,8 @@ export function runPinballIntro(onDone: () => void): void {
   const film = createCinematic();
   const { scene, camera, knight, layout } = film;
   const characterPixels = createCharacterPixelPass([film.knight, film.rolling.root]);
+  const heroAnimation = new KnightAnimation();
+  let heroPose = sampleKnightPose('idle', 0), removeStart: KnightPose | null = null, lastHeroX = -6;
   const overlay = document.getElementById('dungeon-game-overlay') ?? document.body;
   const hidden = Array.from(overlay.children).filter(el => el !== renderer.domElement).map(el => ({ el: el as HTMLElement, visibility: (el as HTMLElement).style.visibility }));
   hidden.forEach(({ el }) => el.style.visibility = 'hidden');
@@ -91,13 +95,20 @@ export function runPinballIntro(onDone: () => void): void {
       const walk = smooth(t / 4);
       knight.position.set(-6 + 8.4 * walk, 0, 3);
       knight.rotation.set(0, Math.PI / 2 + .9 * smooth((t - 3.3) / .7), 0);
-      film.hero.pose('walk', t * 1.3);
+      const distance = Math.abs(knight.position.x - lastHeroX); lastHeroX = knight.position.x;
+      heroPose = heroAnimation.update({ dt: pdt, clip: 'walk', heading: knight.rotation.y,
+        distance, speed: pdt > 0 ? distance / pdt * .375 : 0, worldScale: 1, weapon: 'sword' });
+      film.hero.applyPose(heroPose);
       const focus = knight.position.x;
       aim(focus + 6, 6 * portrait, 13 * portrait, focus + .8, 1.6, .5);
     } else if (t < 7) {
       diagnostics.__dungeonIntroPhase = 'head-off'; chapter.textContent = '02 / USE YOUR HEAD'; caption.textContent = 'Helmet off. Game on.';
       knight.position.set(2.4, 0, 3); knight.rotation.set(0, Math.PI / 2 + .9, 0);
-      film.hero.pose('remove', (t - 4) / 3);
+      if (!removeStart) removeStart = { ...heroPose, detachedHead: true,
+        headPosition: film.hero.head.position.toArray() as V3,
+        headRotation: [film.hero.head.rotation.x, film.hero.head.rotation.y, film.hero.head.rotation.z] };
+      heroPose = blendKnightPoses(removeStart, sampleKnightPose('remove', (t - 4) / 3), ease((t - 4) / .18));
+      film.hero.applyPose(heroPose);
       // A closer three-quarter camera makes both hands and the empty collar readable.
       const u = smooth((t - 4) / .7);
       aim(8.4 + u * .4, (6 - u * 2.2) * portrait, (13 - u * 8.2) * portrait, 3, 1.6, 2.5);
