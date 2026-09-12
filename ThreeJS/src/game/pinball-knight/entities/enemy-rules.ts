@@ -122,6 +122,10 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   toxic_slime: "flanker",
   frost_slime: "chase",
   void_slime: "chase",
+  riot_cop: "chase",
+  highway_patrol: "chase",
+  detective_cop: "flanker",
+  robo_cop: "chase",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
@@ -234,5 +238,12 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     soft: 0.25,
     gatesDamage: true,
     text: "Glacial Shell: frozen crystal crust deflects incoming strikes down to chip damage unless shattered at high pinball speed.",
+  },
+  riot_cop: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: 0.20,
+    gatesDamage: true,
+    text: "Ballistic Riot Shield: heavy polycarbonate barrier deflects frontal strikes down to 20% chip damage unless smashed with full pinball momentum.",
   },
 };

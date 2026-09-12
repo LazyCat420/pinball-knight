@@ -166,6 +166,10 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   toxic_slime: [{ id: "slimegel", chance: 0.45 }, { id: "venomsac", chance: 0.40 }],
   frost_slime: [{ id: "slimegel", chance: 0.40 }, { id: "glass", chance: 0.45 }],
   void_slime: [{ id: "slimegel", chance: 0.35 }, { id: "lodestone", chance: 0.45 }, { id: "ectoplasm", chance: 0.30 }],
+  riot_cop: [{ id: "steelpin", chance: 0.45 }, { id: "ironshard", chance: 0.35 }, { id: "glass", chance: 0.30 }],
+  highway_patrol: [{ id: "steelpin", chance: 0.40 }, { id: "ironshard", chance: 0.30 }, { id: "hide", chance: 0.25 }],
+  detective_cop: [{ id: "ironshard", chance: 0.45 }, { id: "glass", chance: 0.35 }, { id: "steelpin", chance: 0.25 }],
+  robo_cop: [{ id: "ironshard", chance: 0.55 }, { id: "lodestone", chance: 0.45 }, { id: "steelpin", chance: 0.35 }],
 };
 
 /**

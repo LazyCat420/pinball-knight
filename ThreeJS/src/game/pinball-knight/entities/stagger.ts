@@ -153,6 +153,10 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   toxic_slime: 0.60,
   frost_slime: 0.40,
   void_slime: 0.35,
+  riot_cop: 0.20,
+  highway_patrol: 0.50,
+  detective_cop: 0.45,
+  robo_cop: 0.15,
 };
 
 /**

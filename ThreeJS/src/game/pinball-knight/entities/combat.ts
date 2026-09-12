@@ -82,7 +82,8 @@ import {
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE,
   CORVID_BOMBER_DAMAGE, VULTURE_DAMAGE, GULL_DAMAGE, FALCON_DAMAGE,
   MAGMA_SLIME_DAMAGE, TOXIC_SLIME_DAMAGE, FROST_SLIME_DAMAGE, VOID_SLIME_DAMAGE,
-  TOXIC_SLIME_ACID_RADIUS, VOID_SLIME_COLLAPSE_RADIUS, VOID_SLIME_COLLAPSE_DAMAGE } from "../constants";
+  TOXIC_SLIME_ACID_RADIUS, VOID_SLIME_COLLAPSE_RADIUS, VOID_SLIME_COLLAPSE_DAMAGE,
+  RIOT_COP_DAMAGE, HIGHWAY_PATROL_DAMAGE, DETECTIVE_COP_DAMAGE, ROBO_COP_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { MOMENTUM_GATES } from "./enemy-rules";
@@ -100,7 +101,7 @@ import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 import { recordDeathTrace } from "../dev/death-debug";
-import { burstPufferSpikes, burstIceShards } from "./projectiles";
+import { burstPufferSpikes, burstIceShards, detonateEmpOverload } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 
 /**
@@ -1073,6 +1074,10 @@ export function killZombie(z: Zombie): void {
       }
     }
   }
+  // ROBO-COP: detonates in an EMP shockwave overload on death
+  if (z.kind === "robo_cop") {
+    detonateEmpOverload(z.x, z.z);
+  }
   // DRACULA: upon humanoid death, bursts into a dark vortex and transforms into his Bat Final Form.
   if (z.kind === "dracula") onDraculaTransform?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
@@ -1441,6 +1446,10 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   toxic_slime: TOXIC_SLIME_DAMAGE,
   frost_slime: FROST_SLIME_DAMAGE,
   void_slime: VOID_SLIME_DAMAGE,
+  riot_cop: RIOT_COP_DAMAGE,
+  highway_patrol: HIGHWAY_PATROL_DAMAGE,
+  detective_cop: DETECTIVE_COP_DAMAGE,
+  robo_cop: ROBO_COP_DAMAGE,
 };
 
 /**

@@ -133,6 +133,10 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   toxic_slime: { scale: 1.05 },
   frost_slime: { scale: 1.12 },
   void_slime: { scale: 1.15 },
+  riot_cop: { scale: 1.15 },
+  highway_patrol: { scale: 1.05 },
+  detective_cop: { scale: 1.0 },
+  robo_cop: { scale: 1.18 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

@@ -112,6 +112,10 @@ import { makeMagmaSlimePaints } from "./monsters/magma_slime";
 import { makeToxicSlimePaints } from "./monsters/toxic_slime";
 import { makeFrostSlimePaints } from "./monsters/frost_slime";
 import { makeVoidSlimePaints } from "./monsters/void_slime";
+import { makeRiotCopPaints } from "./monsters/riot_cop";
+import { makeHighwayPatrolPaints } from "./monsters/highway_patrol";
+import { makeDetectiveCopPaints } from "./monsters/detective_cop";
+import { makeRoboCopPaints } from "./monsters/robo_cop";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -215,6 +219,10 @@ export const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   toxic_slime: { paints: makeToxicSlimePaints },
   frost_slime: { paints: makeFrostSlimePaints },
   void_slime: { paints: makeVoidSlimePaints },
+  riot_cop: { paints: makeRiotCopPaints },
+  highway_patrol: { paints: makeHighwayPatrolPaints },
+  detective_cop: { paints: makeDetectiveCopPaints },
+  robo_cop: { paints: makeRoboCopPaints },
 };
 
 /**

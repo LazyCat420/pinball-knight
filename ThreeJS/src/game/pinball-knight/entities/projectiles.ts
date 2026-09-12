@@ -123,6 +123,14 @@ import {
   FROST_SLIME_SHARD_SPEED,
   FROST_SLIME_SHARD_DAMAGE,
   FROST_SLIME_SHARD_LIFE,
+  HIGHWAY_PATROL_SPIKE_LIFE,
+  HIGHWAY_PATROL_SPIKE_DAMAGE,
+  DETECTIVE_COP_DAMAGE,
+  DETECTIVE_COP_MAGNUM_SPEED,
+  ROBO_COP_DAMAGE,
+  ROBO_COP_AUTO9_SPEED,
+  ROBO_COP_EMP_RADIUS,
+  ROBO_COP_EMP_DAMAGE,
 } from "../constants";
 import { spawnFloorFx } from "./floor-fx";
 import { PALETTE_HEX } from "../render/palette";
@@ -1625,6 +1633,206 @@ export function burstIceShards(x: number, z: number): void {
   }
 }
 
+// ── Cop Variant Assets & Combat Actions ───────────────────────────
+let _spikeStripGeo: THREE.BoxGeometry | null = null;
+let _spikeStripMat: THREE.MeshBasicMaterial | null = null;
+export function spikeStripAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _spikeStripGeo ??= new THREE.BoxGeometry(0.55, 0.06, 0.22);
+  _spikeStripMat ??= new THREE.MeshBasicMaterial({ color: 0x475569 }); // tactical steel spikes
+  return { geo: _spikeStripGeo, mat: _spikeStripMat };
+}
+
+let _flashbangGeo: THREE.CylinderGeometry | null = null;
+let _flashbangMat: THREE.MeshBasicMaterial | null = null;
+export function flashbangAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _flashbangGeo ??= new THREE.CylinderGeometry(0.08, 0.08, 0.22, 8);
+  _flashbangMat ??= new THREE.MeshBasicMaterial({ color: 0x94a3b8 }); // aluminum stun grenade canister
+  return { geo: _flashbangGeo, mat: _flashbangMat };
+}
+
+let _auto9BulletGeo: THREE.BoxGeometry | null = null;
+let _auto9BulletMat: THREE.MeshBasicMaterial | null = null;
+export function auto9BulletAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _auto9BulletGeo ??= new THREE.BoxGeometry(0.08, 0.08, 0.28);
+  _auto9BulletMat ??= new THREE.MeshBasicMaterial({ color: 0x38bdf8 }); // cyber electric blue tracer
+  return { geo: _auto9BulletGeo, mat: _auto9BulletMat };
+}
+
+/** Highway Patrol drops a tire spike strip across corridor */
+export function dropSpikeStrip(x: number, z: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = spikeStripAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, 0.03, z);
+  mesh.rotation.y = Math.random() * Math.PI;
+  state.scene.add(mesh);
+  state.vfx?.dust(x, 0.03, z);
+
+  state.projectiles.push({
+    kind: "spike_strip",
+    x,
+    z,
+    vx: 0,
+    vz: 0,
+    life: HIGHWAY_PATROL_SPIKE_LIFE,
+    maxLife: HIGHWAY_PATROL_SPIKE_LIFE,
+    damage: HIGHWAY_PATROL_SPIKE_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Noir Detective throws an arcing flashbang canister */
+export function throwFlashbang(x: number, z: number, tx: number, tz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = flashbangAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+
+  const dx = tx - x;
+  const dz = tz - z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const speed = 7.0;
+  const travelTime = Math.min(1.2, Math.max(0.4, dist / speed));
+
+  state.projectiles.push({
+    kind: "flashbang",
+    x,
+    z,
+    vx: (dx / dist) * speed,
+    vz: (dz / dist) * speed,
+    life: travelTime,
+    maxLife: travelTime,
+    damage: 0.5,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Detonate flashbang: whiteout flash ring, disorientation, screen shake */
+export function detonateFlashbang(x: number, z: number): void {
+  state.shakeT = Math.max(state.shakeT, 0.25);
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0xffffff, 28, 4.0);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 16);
+  state.vfx?.smoke(x, PROJECTILE_Y, z, 8, 1.2);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const dist = Math.hypot(p.x - x, p.z - z);
+    if (dist <= 3.2) {
+      p.stinkSlowT = Math.max(p.stinkSlowT ?? 0, 2.0); // Concussion disorients steering
+      p.iframes = Math.max(p.iframes ?? 0, 0.2);
+    }
+  }
+
+  // Stagger nearby monsters caught in blast
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    if (dx * dx + dz * dz <= 9.0) {
+      damageZombie(zb, 0.5, dx, dz, 1.2, true, "ranged");
+    }
+  }
+}
+
+/** Noir Detective fires high-caliber .44 magnum slug */
+export function fireMagnumBullet(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = magnumBulletAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  state.scene.add(mesh);
+
+  state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 0xf59e0b, 8, 2.5);
+  state.vfx?.smoke(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 2, 0.4);
+  sfxGun();
+
+  state.projectiles.push({
+    kind: "magnum_bullet",
+    x,
+    z,
+    vx: dx * DETECTIVE_COP_MAGNUM_SPEED,
+    vz: dz * DETECTIVE_COP_MAGNUM_SPEED,
+    life: 2.5,
+    maxLife: 2.5,
+    damage: DETECTIVE_COP_DAMAGE,
+    hostile: true,
+    pierced: 1, // Pierces through 1 target
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/** Cyber Robo-Cop fires 3-round rapid Auto-9 burst */
+export function fireAuto9Burst(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = auto9BulletAssets();
+
+  for (let i = 0; i < 3; i++) {
+    const delay = i * 0.08;
+    setTimeout(() => {
+      if (!state.scene) return;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, PROJECTILE_Y, z);
+      mesh.rotation.y = Math.atan2(dx, dz);
+      state.scene.add(mesh);
+
+      state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 0x38bdf8, 5, 2.0);
+      sfxGun();
+
+      state.projectiles.push({
+        kind: "auto9_bullet",
+        x,
+        z,
+        vx: dx * ROBO_COP_AUTO9_SPEED,
+        vz: dz * ROBO_COP_AUTO9_SPEED,
+        life: 2.0,
+        maxLife: 2.0,
+        damage: ROBO_COP_DAMAGE,
+        hostile: true,
+        mesh,
+        dispose: () => {},
+      });
+    }, delay * 1000);
+  }
+}
+
+/** Robo-Cop EMP shockwave detonation on death */
+export function detonateEmpOverload(x: number, z: number): void {
+  state.shakeT = Math.max(state.shakeT, 0.3);
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0x38bdf8, 30, 4.5);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 24);
+  state.vfx?.smoke(x, PROJECTILE_Y, z, 6, 1.0);
+
+  const r2 = ROBO_COP_EMP_RADIUS * ROBO_COP_EMP_RADIUS;
+  // Damage player if caught in EMP blast
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const dx = p.x - x;
+    const dz = p.z - z;
+    if (dx * dx + dz * dz <= r2) {
+      hitPlayerRanged(ROBO_COP_EMP_DAMAGE, x, z);
+      p.momSpeed = (p.momSpeed || 0) * 0.5;
+    }
+  }
+
+  // Collateral shock to other monsters
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    if (dx * dx + dz * dz <= r2) {
+      damageZombie(zb, ROBO_COP_EMP_DAMAGE, dx, dz, 1.2, true, "ranged");
+      state.vfx?.sparks(zb.x, PROJECTILE_Y, zb.z, 0, 0, 8);
+    }
+  }
+}
+
 /** Swordfish Mobster harpoon speargun bolt */
 export function shootSpearBolt(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
@@ -1944,6 +2152,7 @@ export function updateProjectiles(dt: number): void {
       if (pr.kind === "gull_egg_bomb") detonateGullEgg(pr.x, pr.z);
       if (pr.kind === "gull_mini_bomb") detonateGullMini(pr.x, pr.z);
       if (pr.kind === "falcon_fire_bomb") detonateFalconFire(pr.x, pr.z);
+      if (pr.kind === "flashbang") detonateFlashbang(pr.x, pr.z);
       despawn(i);
       continue;
     }
@@ -2078,6 +2287,7 @@ export function updateProjectiles(dt: number): void {
           if (pr.kind === "gull_egg_bomb") detonateGullEgg(pr.x, pr.z);
           if (pr.kind === "gull_mini_bomb") detonateGullMini(pr.x, pr.z);
           if (pr.kind === "falcon_fire_bomb") detonateFalconFire(pr.x, pr.z);
+          if (pr.kind === "flashbang") detonateFlashbang(pr.x, pr.z);
           despawn(i);
           continue;
         }
@@ -2158,6 +2368,21 @@ export function updateProjectiles(dt: number): void {
             detonateGullMini(pr.x, pr.z);
           } else if (pr.kind === "falcon_fire_bomb") {
             detonateFalconFire(pr.x, pr.z);
+          } else if (pr.kind === "spike_strip") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            p.momSpeed = (p.momSpeed || 0) * 0.3;
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x94a3b8, 12, 1.5);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
+            despawn(i);
+            continue;
+          } else if (pr.kind === "flashbang") {
+            detonateFlashbang(pr.x, pr.z);
+            despawn(i);
+            continue;
+          } else if (pr.kind === "auto9_bullet") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x38bdf8, 8, 1.4);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
           } else if (pr.kind === "burger_sauce") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (p.iframes <= 0) webPlayer();

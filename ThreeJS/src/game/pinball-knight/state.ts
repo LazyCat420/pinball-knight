@@ -424,7 +424,12 @@ export type EnemyKind =
   | "magma_slime" // MOLTEN GEL — fire hazard trail, splits into fast molten minis on death
   | "toxic_slime" // CAUSTIC OOZE — rot puddle trail, corrosive acid burst on death
   | "frost_slime" // GLACIAL GEL — momentum defense shell, 8-way ricocheting ice shard shatter
-  | "void_slime"; // COSMIC GEL — gravitational suction pulse, singularity collapse on death
+  | "void_slime" // COSMIC GEL — gravitational suction pulse, singularity collapse on death
+  // ── Cop Monster Variants ──
+  | "riot_cop" // SWAT SHIELD — heavy ballistic shield with momentum gate, stun baton bash
+  | "highway_patrol" // SPEED INTERCEPTOR — flashing siren light beacon, drops spike strips
+  | "detective_cop" // NOIR DETECTIVE — throws flashbangs, fires piercing .44 magnum
+  | "robo_cop"; // CYBER ENFORCER — 3-round Auto-9 bursts, EMP shockwave on death
 
 export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 

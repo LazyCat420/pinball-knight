@@ -620,6 +620,10 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   toxic_slime: "chitin",
   frost_slime: "stone",
   void_slime: "ink",
+  riot_cop: "iron",
+  highway_patrol: "iron",
+  detective_cop: "ink",
+  robo_cop: "iron",
 };
 
 /**

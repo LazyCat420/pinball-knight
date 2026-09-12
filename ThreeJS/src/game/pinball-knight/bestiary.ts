@@ -112,6 +112,10 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   toxic_slime: { label: "Toxic Slime", icon: "🧪", blurb: "caustic neon-green acid ooze with bubbling pustules that leaves slowing rot puddles and erupts into a corrosive acid pool upon death" },
   frost_slime: { label: "Frost Slime", icon: "🧊", blurb: "glacial crystal slime with jagged ice spines and frozen crust that deflects low-speed strikes and shatters into 8 ricocheting ice shards on death" },
   void_slime: { label: "Void Slime", icon: "🌌", blurb: "cosmic obsidian gel pulsing with gravitational suction that pulls nearby knights inward before collapsing into an imploding singularity on defeat" },
+  riot_cop: { label: "Riot Cop", icon: "🛡️", blurb: "SWAT ballistic breacher with polycarbonate face shield and riot barrier that gates head-on momentum strikes and delivers electric stun baton bashes" },
+  highway_patrol: { label: "Highway Patrol", icon: "🚨", blurb: "high-speed highway motorcycle trooper with flashing red & blue emergency siren dome that deploys razor-sharp tire spike strips across corridors" },
+  detective_cop: { label: "Noir Detective", icon: "🕵️‍♂️", blurb: "cynical undercover gumshoe in trenchcoat and fedora who throws blinding flashbang grenades and fires armor-piercing .44 Magnum rounds" },
+  robo_cop: { label: "Robo-Cop", icon: "🤖", blurb: "titanium-alloy cybernetic law enforcer with laser scanning visor slit that unleashes rapid 3-round Auto-9 bursts and detonates in an EMP shockwave on death" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

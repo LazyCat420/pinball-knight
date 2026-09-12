@@ -1485,4 +1485,60 @@ export const VOID_SLIME_SUCTION_FORCE = 3.2;
 export const VOID_SLIME_COLLAPSE_RADIUS = 2.2;
 export const VOID_SLIME_COLLAPSE_DAMAGE = 3.0;
 
+// ── Cop Monster Variants ─────────────────────────────────────
+// Riot Cop (SWAT shield enforcer, frontal momentum defense gate, stun baton shock bash)
+export const RIOT_COP_HP = 8;
+export const RIOT_COP_R = 0.42;
+export const RIOT_COP_SPEED_FACTOR = 0.68;
+export const RIOT_COP_CONTACT_RANGE = 0.95;
+export const RIOT_COP_ATTACK_WINDUP = 0.40;
+export const RIOT_COP_ATTACK_COOLDOWN = 1.3;
+export const RIOT_COP_DAMAGE = 2.0;
+export const RIOT_COP_FROM_LEVEL = 3;
+export const RIOT_COP_RATIO = 6;
+export const RIOT_COP_BASH_KNOCKBACK = 9.0;
+
+// Highway Patrol (Speed interceptor, siren beacon flashing, drops spike strips)
+export const HIGHWAY_PATROL_HP = 6;
+export const HIGHWAY_PATROL_R = 0.40;
+export const HIGHWAY_PATROL_SPEED_FACTOR = 1.25;
+export const HIGHWAY_PATROL_CONTACT_RANGE = 0.85;
+export const HIGHWAY_PATROL_ATTACK_WINDUP = 0.35;
+export const HIGHWAY_PATROL_ATTACK_COOLDOWN = 1.2;
+export const HIGHWAY_PATROL_DAMAGE = 1.5;
+export const HIGHWAY_PATROL_FROM_LEVEL = 2;
+export const HIGHWAY_PATROL_RATIO = 7;
+export const HIGHWAY_PATROL_SPIKE_CADENCE = 3.2;
+export const HIGHWAY_PATROL_SPIKE_LIFE = 10.0;
+export const HIGHWAY_PATROL_SPIKE_DAMAGE = 1.5;
+
+// Detective Cop (Noir undercover detective, throws flashbangs, fires heavy .44 magnum slugs)
+export const DETECTIVE_COP_HP = 5;
+export const DETECTIVE_COP_R = 0.38;
+export const DETECTIVE_COP_SPEED_FACTOR = 0.88;
+export const DETECTIVE_COP_CONTACT_RANGE = 6.5;
+export const DETECTIVE_COP_FIRE_RANGE = 6.5;
+export const DETECTIVE_COP_ATTACK_WINDUP = 0.45;
+export const DETECTIVE_COP_ATTACK_COOLDOWN = 2.2;
+export const DETECTIVE_COP_DAMAGE = 2.5;
+export const DETECTIVE_COP_FROM_LEVEL = 3;
+export const DETECTIVE_COP_RATIO = 6;
+export const DETECTIVE_COP_MAGNUM_SPEED = 12.0;
+export const DETECTIVE_COP_FLASHBANG_CADENCE = 4.2;
+
+// Robo-Cop (Cybernetic law enforcer, 3-round rapid Auto-9 burst, EMP shock overload on death)
+export const ROBO_COP_HP = 9;
+export const ROBO_COP_R = 0.44;
+export const ROBO_COP_SPEED_FACTOR = 0.65;
+export const ROBO_COP_CONTACT_RANGE = 7.0;
+export const ROBO_COP_FIRE_RANGE = 7.0;
+export const ROBO_COP_ATTACK_WINDUP = 0.55;
+export const ROBO_COP_ATTACK_COOLDOWN = 2.5;
+export const ROBO_COP_DAMAGE = 1.2; // Per bullet in 3-round burst
+export const ROBO_COP_FROM_LEVEL = 4;
+export const ROBO_COP_RATIO = 5;
+export const ROBO_COP_AUTO9_SPEED = 14.0;
+export const ROBO_COP_EMP_RADIUS = 2.5;
+export const ROBO_COP_EMP_DAMAGE = 3.0;
+
 

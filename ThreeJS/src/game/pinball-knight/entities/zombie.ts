@@ -184,7 +184,11 @@ import {
   MAGMA_SLIME_R, MAGMA_SLIME_CONTACT_RANGE, MAGMA_SLIME_ATTACK_WINDUP, MAGMA_SLIME_ATTACK_COOLDOWN, MAGMA_SLIME_TRAIL_CADENCE,
   TOXIC_SLIME_R, TOXIC_SLIME_CONTACT_RANGE, TOXIC_SLIME_ATTACK_WINDUP, TOXIC_SLIME_ATTACK_COOLDOWN, TOXIC_SLIME_TRAIL_CADENCE,
   FROST_SLIME_R, FROST_SLIME_CONTACT_RANGE, FROST_SLIME_ATTACK_WINDUP, FROST_SLIME_ATTACK_COOLDOWN,
-  VOID_SLIME_R, VOID_SLIME_CONTACT_RANGE, VOID_SLIME_ATTACK_WINDUP, VOID_SLIME_ATTACK_COOLDOWN, VOID_SLIME_PULSE_CADENCE, VOID_SLIME_SUCTION_RADIUS, VOID_SLIME_SUCTION_FORCE } from "../constants";
+  VOID_SLIME_R, VOID_SLIME_CONTACT_RANGE, VOID_SLIME_ATTACK_WINDUP, VOID_SLIME_ATTACK_COOLDOWN, VOID_SLIME_PULSE_CADENCE, VOID_SLIME_SUCTION_RADIUS, VOID_SLIME_SUCTION_FORCE,
+  RIOT_COP_R, RIOT_COP_CONTACT_RANGE, RIOT_COP_ATTACK_WINDUP, RIOT_COP_ATTACK_COOLDOWN, RIOT_COP_BASH_KNOCKBACK,
+  HIGHWAY_PATROL_R, HIGHWAY_PATROL_CONTACT_RANGE, HIGHWAY_PATROL_ATTACK_WINDUP, HIGHWAY_PATROL_ATTACK_COOLDOWN, HIGHWAY_PATROL_SPIKE_CADENCE,
+  DETECTIVE_COP_R, DETECTIVE_COP_CONTACT_RANGE, DETECTIVE_COP_ATTACK_WINDUP, DETECTIVE_COP_ATTACK_COOLDOWN,
+  ROBO_COP_R, ROBO_COP_CONTACT_RANGE, ROBO_COP_ATTACK_WINDUP, ROBO_COP_ATTACK_COOLDOWN } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
@@ -205,7 +209,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -307,6 +311,10 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   toxic_slime: { bodyR: TOXIC_SLIME_R, contactRange: TOXIC_SLIME_CONTACT_RANGE, windup: TOXIC_SLIME_ATTACK_WINDUP, cooldown: TOXIC_SLIME_ATTACK_COOLDOWN, ranged: false },
   frost_slime: { bodyR: FROST_SLIME_R, contactRange: FROST_SLIME_CONTACT_RANGE, windup: FROST_SLIME_ATTACK_WINDUP, cooldown: FROST_SLIME_ATTACK_COOLDOWN, ranged: false },
   void_slime: { bodyR: VOID_SLIME_R, contactRange: VOID_SLIME_CONTACT_RANGE, windup: VOID_SLIME_ATTACK_WINDUP, cooldown: VOID_SLIME_ATTACK_COOLDOWN, ranged: false },
+  riot_cop: { bodyR: RIOT_COP_R, contactRange: RIOT_COP_CONTACT_RANGE, windup: RIOT_COP_ATTACK_WINDUP, cooldown: RIOT_COP_ATTACK_COOLDOWN, ranged: false },
+  highway_patrol: { bodyR: HIGHWAY_PATROL_R, contactRange: HIGHWAY_PATROL_CONTACT_RANGE, windup: HIGHWAY_PATROL_ATTACK_WINDUP, cooldown: HIGHWAY_PATROL_ATTACK_COOLDOWN, ranged: false },
+  detective_cop: { bodyR: DETECTIVE_COP_R, contactRange: DETECTIVE_COP_CONTACT_RANGE, windup: DETECTIVE_COP_ATTACK_WINDUP, cooldown: DETECTIVE_COP_ATTACK_COOLDOWN, ranged: true },
+  robo_cop: { bodyR: ROBO_COP_R, contactRange: ROBO_COP_CONTACT_RANGE, windup: ROBO_COP_ATTACK_WINDUP, cooldown: ROBO_COP_ATTACK_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1351,6 +1359,19 @@ export function updateZombies(dt: number): void {
       }
     }
 
+    // ── HIGHWAY PATROL SIREN LIGHTS & SPIKE STRIP CADENCE ──
+    if (z.kind === "highway_patrol") {
+      if (Math.random() < 0.25) {
+        const sirenColor = Math.sin((z.bobT ?? 0) * 16) > 0 ? 0xef4444 : 0x3b82f6;
+        state.vfx?.burst(z.x, 0.65, z.z, sirenColor, 1, 0.4);
+      }
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = HIGHWAY_PATROL_SPIKE_CADENCE;
+        dropSpikeStrip(z.x, z.z);
+      }
+    }
+
     // ── GNOME PIPE SMOKE ── puffs little rings of wooden-pipe smoke while active
     if (z.kind === "gnome") {
       z.castT = (z.castT ?? 0) - dt;
@@ -1850,6 +1871,14 @@ export function updateZombies(dt: number): void {
                 dropGullClusterBomb(z.x, z.z, ux, uz);
               } else if (z.kind === "sky_falcon") {
                 dropFalconFireBomb(z.x, z.z, ux, uz);
+              } else if (z.kind === "detective_cop") {
+                if (Math.random() < 0.4) {
+                  throwFlashbang(z.x, z.z, p.x, p.z);
+                } else {
+                  fireMagnumBullet(z.x, z.z, ux, uz);
+                }
+              } else if (z.kind === "robo_cop") {
+                fireAuto9Burst(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
@@ -1887,6 +1916,16 @@ export function updateZombies(dt: number): void {
               p.momZ = kz;
               p.momSpeed = 16;
               state.vfx?.burst(p.x, 0.5, p.z, 0x38bdf8, 16, 2.0);
+              state.shakeT = Math.max(state.shakeT, 0.2);
+            } else if (z.kind === "riot_cop") {
+              const kx = (p.x - z.x) || (Math.random() - 0.5);
+              const kz = (p.z - z.z) || (Math.random() - 0.5);
+              const klen = Math.hypot(kx, kz) || 1;
+              p.momX = (kx / klen) * RIOT_COP_BASH_KNOCKBACK;
+              p.momZ = (kz / klen) * RIOT_COP_BASH_KNOCKBACK;
+              p.momSpeed = RIOT_COP_BASH_KNOCKBACK;
+              state.vfx?.burst(p.x, 0.4, p.z, 0x38bdf8, 14, 2.0);
+              state.vfx?.sparks(p.x, 0.4, p.z, kx, kz, 10);
               state.shakeT = Math.max(state.shakeT, 0.2);
             }
           }

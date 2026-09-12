@@ -196,6 +196,10 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   toxic_slime: "Acid",
   frost_slime: "Frost",
   void_slime: "Void",
+  riot_cop: "Riot",
+  highway_patrol: "Patrol",
+  detective_cop: "Noir",
+  robo_cop: "Robo",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

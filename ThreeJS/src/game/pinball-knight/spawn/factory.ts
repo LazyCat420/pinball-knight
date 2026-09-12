@@ -21,7 +21,11 @@ import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL
   MAGMA_SLIME_FROM_LEVEL, MAGMA_SLIME_HP, MAGMA_SLIME_RATIO, MAGMA_SLIME_SPEED_FACTOR,
   TOXIC_SLIME_FROM_LEVEL, TOXIC_SLIME_HP, TOXIC_SLIME_RATIO, TOXIC_SLIME_SPEED_FACTOR,
   FROST_SLIME_FROM_LEVEL, FROST_SLIME_HP, FROST_SLIME_RATIO, FROST_SLIME_SPEED_FACTOR,
-  VOID_SLIME_FROM_LEVEL, VOID_SLIME_HP, VOID_SLIME_RATIO, VOID_SLIME_SPEED_FACTOR } from "../constants";
+  VOID_SLIME_FROM_LEVEL, VOID_SLIME_HP, VOID_SLIME_RATIO, VOID_SLIME_SPEED_FACTOR,
+  RIOT_COP_FROM_LEVEL, RIOT_COP_HP, RIOT_COP_RATIO, RIOT_COP_SPEED_FACTOR,
+  HIGHWAY_PATROL_FROM_LEVEL, HIGHWAY_PATROL_HP, HIGHWAY_PATROL_RATIO, HIGHWAY_PATROL_SPEED_FACTOR,
+  DETECTIVE_COP_FROM_LEVEL, DETECTIVE_COP_HP, DETECTIVE_COP_RATIO, DETECTIVE_COP_SPEED_FACTOR,
+  ROBO_COP_FROM_LEVEL, ROBO_COP_HP, ROBO_COP_RATIO, ROBO_COP_SPEED_FACTOR } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -119,6 +123,10 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   toxic_slime: TOXIC_SLIME_HP,
   frost_slime: FROST_SLIME_HP,
   void_slime: VOID_SLIME_HP,
+  riot_cop: RIOT_COP_HP,
+  highway_patrol: HIGHWAY_PATROL_HP,
+  detective_cop: DETECTIVE_COP_HP,
+  robo_cop: ROBO_COP_HP,
 };
 
 export { skinSheet };
@@ -531,6 +539,14 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= FROST_SLIME_FROM_LEVEL ? makeSkinned("frost_slime", x, z, baseSpeed * FROST_SLIME_SPEED_FACTOR) : null;
     case "void_slime":
       return level >= VOID_SLIME_FROM_LEVEL ? makeSkinned("void_slime", x, z, baseSpeed * VOID_SLIME_SPEED_FACTOR) : null;
+    case "riot_cop":
+      return level >= RIOT_COP_FROM_LEVEL ? makeSkinned("riot_cop", x, z, baseSpeed * RIOT_COP_SPEED_FACTOR) : null;
+    case "highway_patrol":
+      return level >= HIGHWAY_PATROL_FROM_LEVEL ? makeSkinned("highway_patrol", x, z, baseSpeed * HIGHWAY_PATROL_SPEED_FACTOR) : null;
+    case "detective_cop":
+      return level >= DETECTIVE_COP_FROM_LEVEL ? makeSkinned("detective_cop", x, z, baseSpeed * DETECTIVE_COP_SPEED_FACTOR) : null;
+    case "robo_cop":
+      return level >= ROBO_COP_FROM_LEVEL ? makeSkinned("robo_cop", x, z, baseSpeed * ROBO_COP_SPEED_FACTOR) : null;
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }
@@ -608,6 +624,10 @@ function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
     case "toxic_slime": return level >= TOXIC_SLIME_FROM_LEVEL;
     case "frost_slime": return level >= FROST_SLIME_FROM_LEVEL;
     case "void_slime": return level >= VOID_SLIME_FROM_LEVEL;
+    case "riot_cop": return level >= RIOT_COP_FROM_LEVEL;
+    case "highway_patrol": return level >= HIGHWAY_PATROL_FROM_LEVEL;
+    case "detective_cop": return level >= DETECTIVE_COP_FROM_LEVEL;
+    case "robo_cop": return level >= ROBO_COP_FROM_LEVEL;
     default: return true;
   }
 }
@@ -684,6 +704,10 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
   if (level >= MAGMA_SLIME_FROM_LEVEL && hash % MAGMA_SLIME_RATIO === 2) return "magma_slime";
   if (level >= FROST_SLIME_FROM_LEVEL && hash % FROST_SLIME_RATIO === 4) return "frost_slime";
   if (level >= VOID_SLIME_FROM_LEVEL && hash % VOID_SLIME_RATIO === 1) return "void_slime";
+  if (level >= HIGHWAY_PATROL_FROM_LEVEL && hash % HIGHWAY_PATROL_RATIO === 2) return "highway_patrol";
+  if (level >= RIOT_COP_FROM_LEVEL && hash % RIOT_COP_RATIO === 4) return "riot_cop";
+  if (level >= DETECTIVE_COP_FROM_LEVEL && hash % DETECTIVE_COP_RATIO === 5) return "detective_cop";
+  if (level >= ROBO_COP_FROM_LEVEL && hash % ROBO_COP_RATIO === 3) return "robo_cop";
 
   return "zombie";
 }
