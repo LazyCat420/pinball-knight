@@ -548,3 +548,20 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - Muted NVIDIA WebGPU production check spawned 18 actors across six kinds.
   Screenshot shows intact monsters; gameplay remained active without script
   exceptions or GPU validation errors. Dedicated test browser closed afterward.
+
+## Debugger spawn speed and the painter/sprite swap — 2026-09-12
+
+- Reported as "spawning monsters is super slow, and the code-written monster
+  shows before the sprite". Neither cause was redundant 3D work: **no 3D model
+  renders under a monster sprite at all**, and the stand-in is a canvas-2D
+  painter that is still load-bearing after the sheet loads.
+- Two defects fixed in `d430a9de`: the lab never awaited a kind's imported
+  sheet (two full atlas builds and a visible swap), and `debugClearEnemies`
+  never released actors (pool permanently empty, a fresh atlas texture cloned
+  to the GPU per spawn). No art was deleted.
+- Suite 388 files / 4,464 tests green; tsc baseline 60 unchanged; both fixes
+  sabotage-verified. Released as `edd79aec`, container healthy, site HTTP 200.
+- The invariant, the full 86-kind roster table and the open items live in
+  [the monster art pipeline doc](monster-art-pipeline.md). **Read it before
+  deleting any painter** — two kinds ship painter-only.
+- In-browser verification on the host GPU is still outstanding.
