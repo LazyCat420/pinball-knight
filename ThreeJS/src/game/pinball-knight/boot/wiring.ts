@@ -49,6 +49,7 @@ import {
   setChristmasTreeDeathHandler,
   setGasCanDeathHandler,
   setHamsterBallDeathHandler,
+  setHotdogDeathHandler,
   setCoopCombatBridge,
   damageZombie,
   killZombie,
@@ -80,6 +81,9 @@ import {
   BURGER_ROT_RADIUS,
   BURGER_ROT_LIFE,
   BURGER_ROT_DAMAGE,
+  HOTDOG_MUSTARD_RADIUS,
+  HOTDOG_MUSTARD_LIFE,
+  HOTDOG_DAMAGE,
   GAS_CAN_SPILL_RADIUS,
   GAS_CAN_SPILL_LIFE,
   CARD_BURN_TICK,
@@ -433,6 +437,43 @@ export function installGameplayWiring(deps: WiringDeps): void {
     state.vfx?.sparks(x, 0.45, z, 0, 0, 16);
     sfxBreak();
     state.shakeT = Math.max(state.shakeT, 0.16);
+  });
+  // HOTDOG ("Franken-Frank") bursts into a sizzling stadium mustard puddle on death!
+  setHotdogDeathHandler((x, z) => {
+    // 1. Spawns persistent mustard hazard puddle
+    spawnFloorFx("mustard", x, z, HOTDOG_MUSTARD_RADIUS, HOTDOG_MUSTARD_LIFE, true);
+    // 2. Mustard & relish splatter VFX
+    state.vfx?.burst(x, 0.25, z, 0xfacc15, 20, 2.2);
+    state.vfx?.burst(x, 0.3, z, 0x16a34a, 14, 1.8);
+    state.vfx?.dust(x, 0.2, z);
+    // 3. Audio & screen shake
+    sfxFlame();
+    state.shakeT = Math.max(state.shakeT, 0.15);
+    // 4. Harm nearby monsters in explosion
+    for (const other of state.zombies) {
+      if (other.hp <= 0 || (other.mode as string) === "dead") continue;
+      const dx = other.x - x;
+      const dz = other.z - z;
+      const distSq = dx * dx + dz * dz;
+      const r = HOTDOG_MUSTARD_RADIUS + (other.bodyR || 0.35);
+      if (distSq <= r * r) {
+        damageZombie(other, HOTDOG_DAMAGE, 0, 0, 0.5);
+        state.vfx?.burst(other.x, 0.3, other.z, 0xfacc15, 4, 0.8);
+      }
+    }
+    // 5. Player proximity slick
+    if (state.player && state.player.hp > 0) {
+      const px = state.player.x;
+      const pz = state.player.z;
+      const dx = px - x;
+      const dz = pz - z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= HOTDOG_MUSTARD_RADIUS * HOTDOG_MUSTARD_RADIUS) {
+        hitPlayerRanged(HOTDOG_DAMAGE, x, z);
+        state.player.oilT = Math.max(state.player.oilT || 0, 1.8);
+        state.vfx?.burst(px, 0.25, pz, 0xfacc15, 6, 1.0);
+      }
+    }
   });
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);

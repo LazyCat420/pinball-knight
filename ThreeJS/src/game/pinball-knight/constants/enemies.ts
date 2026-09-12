@@ -671,6 +671,26 @@ export const MILKSHAKE_RATIO = 18;
 export const MILKSHAKE_FROM_LEVEL = 3;
 
 /**
+ * HOTDOG ("Franken-Frank" / Glizzy Goliath) — plump ballpark wiener in a toasted split bun.
+ * Waddles briskly, fires high-pressure streams of burning stadium mustard, and explodes
+ * into a sizzling puddle of mustard and relish chunks on death.
+ */
+export const HOTDOG_HP = 5;
+export const HOTDOG_R = 0.38;
+export const HOTDOG_SPEED_FACTOR = 0.90;
+export const HOTDOG_FIRE_RANGE = 6.2;
+export const HOTDOG_KITE_RANGE = 3.5;
+export const HOTDOG_WINDUP = 0.45;
+export const HOTDOG_COOLDOWN = 2.2;
+export const HOTDOG_DAMAGE = 1;
+export const HOTDOG_MUSTARD_SPEED = 7.8;
+export const HOTDOG_MUSTARD_SLICK_TIME = 1.8;
+export const HOTDOG_MUSTARD_RADIUS = 1.4;
+export const HOTDOG_MUSTARD_LIFE = 4.5;
+export const HOTDOG_RATIO = 16;
+export const HOTDOG_FROM_LEVEL = 2;
+
+/**
  * CRAWLING HAND ("Thing" from Addams Family) — severed pale gothic hand
  * that skitters on its fingertips like a spider. Lunges and clamps onto the
  * knight, pinning them in place while the rest of the horde swarms and attacks!

@@ -68,6 +68,7 @@ import {
   BURGER_DAMAGE,
   FRIES_DAMAGE,
   MILKSHAKE_DAMAGE,
+  HOTDOG_DAMAGE,
   CRAWLING_HAND_DAMAGE,
   CRAWLING_HAND_ESCAPE_COUNT,
   CRAWLING_HAND_GRAB_DURATION,
@@ -952,6 +953,16 @@ export function triggerHamsterBallDeath(x: number, z: number): void {
   onHamsterBallDeath?.(x, z);
 }
 
+/** HOTDOG death → explodes into a sizzling puddle of mustard & relish. */
+let onHotdogDeath: ((x: number, z: number) => void) | null = null;
+export function setHotdogDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onHotdogDeath = fn;
+}
+export function triggerHotdogDeath(x: number, z: number): void {
+  onHotdogDeath?.(x, z);
+}
+export const triggerHotdogMustardSplatter = triggerHotdogDeath;
+
 
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
@@ -1181,6 +1192,12 @@ export function killZombie(z: Zombie): void {
     state.vfx?.sparks(z.x, 0.5, z.z, 0, 1.2, 10);
     state.vfx?.smoke(z.x, 0.3, z.z, 0.8);
     sfxGun();
+  }
+  if (z.kind === "hotdog") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xfacc15, 20, 2.2);
+    state.vfx?.burst(z.x, 0.3, z.z, 0x16a34a, 12, 1.5);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.6);
+    triggerHotdogDeath(z.x, z.z);
   }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
@@ -1450,6 +1467,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   highway_patrol: HIGHWAY_PATROL_DAMAGE,
   detective_cop: DETECTIVE_COP_DAMAGE,
   robo_cop: ROBO_COP_DAMAGE,
+  hotdog: HOTDOG_DAMAGE,
 };
 
 /**

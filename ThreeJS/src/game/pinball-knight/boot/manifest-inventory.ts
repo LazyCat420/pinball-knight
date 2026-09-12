@@ -114,6 +114,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   highway_patrol: ["S"],
   detective_cop: ["S"],
   robo_cop: ["S"],
+  hotdog: ["S"],
 };
 
 export function hasAuthoredFacing(name: string, dir: Dir): boolean {

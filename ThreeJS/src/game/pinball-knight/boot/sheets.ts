@@ -188,7 +188,8 @@ export type SheetKey =
   | "riot_cop"
   | "highway_patrol"
   | "detective_cop"
-  | "robo_cop";
+  | "robo_cop"
+  | "hotdog";
 
 /**
  * EnemyKind → the atlas that kind draws with, DERIVED, not re-listed.
@@ -231,6 +232,7 @@ export const SHEET_KEYS = new Set<string>([
   "highway_patrol",
   "detective_cop",
   "robo_cop",
+  "hotdog",
 ]);
 
 /** The atlas key a kind draws with, or undefined when it has no own/borrowed one. */
@@ -324,7 +326,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "zippo"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet", "burger", "fries", "milkshake", "crawling_hand", "sumo_ninja", "zippo", "hotdog"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
@@ -556,6 +558,7 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   highway_patrol: "highway_patrol",
   detective_cop: "detective_cop",
   robo_cop: "robo_cop",
+  hotdog: "hotdog",
 };
 
 
@@ -668,7 +671,7 @@ export async function loadMonsterSheet(key: SheetKey, active: () => boolean = ()
 export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", guardianFor(level).art.sheetKey];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
-  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand", "zippo", "clam", "crab", "gas_can", "hamster_ball", "pit_peeper", "dumpster_dan", "corvid_bomber", "gull_bomber", "toxic_slime", "highway_patrol");
+  if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand", "zippo", "clam", "crab", "gas_can", "hamster_ball", "pit_peeper", "dumpster_dan", "corvid_bomber", "gull_bomber", "toxic_slime", "highway_patrol", "hotdog");
   if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob", "christmas_tree", "toaster_gremlin", "lip_flapper", "hydrant_hound", "blaster_frank", "junkbot", "junkbot_tractor", "junkbot_cyber", "junkbot_motor", "junkbot_crane", "junkbot_appliance", "vulture_scavenger", "sky_falcon", "magma_slime", "frost_slime", "riot_cop", "detective_cop");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja", "shark_trapper", "lionfish_mob", "pufferfish_mob", "swordfish_mob", "ascii_human", "computer_screen", "giant_ascii_human", "void_slime", "robo_cop");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "six_armed_god", "cerberus", "pinball_boss", "medusa", "dracula", "spinning_top", "octopus_gunner", "anglerfish_mob", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail", "doppelganger");

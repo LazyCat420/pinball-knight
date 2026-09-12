@@ -91,6 +91,7 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   burger: { scale: 1.0 },
   fries: { scale: 1.0 },
   milkshake: { scale: 1.0 },
+  hotdog: { scale: 1.05 },
   crawling_hand: { scale: 0.95 },
   sumo_ninja: { scale: 1.0 },
   zippo: { scale: 1.0 },
