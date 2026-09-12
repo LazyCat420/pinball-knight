@@ -51,11 +51,19 @@ const ROOT = join(__dirname, "..");
 const EXEMPT = ["engine/render/pixel-pass.ts"];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    if (name === "node_modules") continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) sourceFiles(p, out);
-    else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) out.push(p);
+  try {
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name === "work" || name === ".worktrees" || name === "sources") continue;
+      const p = join(dir, name);
+      try {
+        if (statSync(p).isDirectory()) sourceFiles(p, out);
+        else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) out.push(p);
+      } catch {
+        // Ignored: transient file or directory modified concurrently
+      }
+    }
+  } catch {
+    // Ignored: directory removed concurrently
   }
   return out;
 }

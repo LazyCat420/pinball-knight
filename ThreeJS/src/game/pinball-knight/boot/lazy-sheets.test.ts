@@ -55,6 +55,7 @@ const ALL_KEYS: SheetKey[] = [
   "corvid_bomber", "vulture_scavenger", "gull_bomber", "sky_falcon",
   "magma_slime", "toxic_slime", "frost_slime", "void_slime",
   "riot_cop", "highway_patrol", "detective_cop", "robo_cop",
+  "hotdog",
 ];
 
 /**
