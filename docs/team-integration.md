@@ -527,5 +527,8 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   Rendering/spawn suites: 34 files, 434 tests passed. Production build passed.
 - The same muted 18-actor browser scene renders intact sprites after the fix,
   including after four viewport changes; no script or GPU validation errors.
-- Ready for primary-branch integration. NAS deployment remains held under the
-  workspace release instructions; the integration owner handles release.
+- Fix commit: `62d6e2b6`. All 86 debugger roster entries spawned through the
+  wired debug hooks with identity actor texture transforms; no script/GPU errors.
+  Integrated via `integrate/debug-monster-sprites`; integrated regression tests
+  and production build passed. NAS deployment remains held under the workspace
+  release instructions; the integration owner handles release.
