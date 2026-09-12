@@ -1190,6 +1190,7 @@ export function buildMaze(
 ): MazeHandle {
   const look: WallLook = opts.look ?? "legacy";
   const group = new THREE.Group();
+  group.userData.pixelEnvironment = true;
   const disposables: Array<{ dispose(): void }> = [];
 
   const track = <T extends { dispose(): void }>(x: T): T => {

@@ -415,3 +415,79 @@ project-local lock did not protect against a later release from an older branch.
   and baseline config removed.
 - Status: committed and ready for the integration owner, not merged or deployed.
   The existing release hold remains in effect.
+## Selective scenery pixel filter — ready for integration (2026-09-07)
+
+- Branch: `feat/selective-pixel-filter`.
+- Worktree: `.worktrees/wt-selective-pixel`.
+- Implementation commit: `7c8c45b0` (based on `2feac021`).
+- Adds Off / Subtle / Chunky at Esc → Options → Pixel look → Scenery pixels.
+  Subtle is the default, applies live, and persists across reloads.
+- Extends the existing TSL pass with a depth-tested, alpha-blended protection
+  attachment. Dungeon architecture and the tavern room opt in; actors,
+  transparent effects, cutouts and UI keep their original samples. Camera
+  framing and sprite resolution are unchanged. No new scene draw is added.
+- Validation: 77 focused tests passed; production Vite build passed. Real WebGPU
+  readback at 1280×720, 1366×768 and 800×600 found zero changes to protected
+  pixels or opaque UI in both modes, correct wall occlusion, and exact recovery
+  of Off. Loaded dungeon captures at all three settings had no script, GPU
+  validation or HTTP errors. See `docs/selective-pixel-filter.md` for the fixture.
+- TypeScript baseline comparison used the original tracked source in an
+  in-memory compiler host: 55 diagnostics before, the same 55 after, zero new
+  diagnostics. Repository-wide typecheck is not green.
+- Status: committed batch ready for the integration owner; not merged or
+  deployed. The current release hold remains in effect. Other worktrees and
+  the shared main checkout were not edited.
+
+## Sharper contours, intro-skip selection, and immediate emotes (2026-09-07)
+
+Follow-up batch on `feat/selective-pixel-filter`, worktree
+`.worktrees/wt-selective-pixel`; builds on the unmerged filter handoff above.
+
+- `25bd6ffc`: UI no longer treats OS key-repeat as a fresh press when a screen
+  first acquires input. Reproduced the reported character-select skip by holding
+  Escape or Enter through the intro fade: the repeated key closed/confirmed the
+  selector. Both held-key browser cases now leave character selection open;
+  release and a fresh press still work. Single-click skip and `?no-intro=1`
+  already preserve selection and were checked too.
+- `f06dbd95`: Bowling, Football and Baseball are all available immediately, as
+  explicitly requested. Removed floor locks and labels; existing saved choices
+  and the Basketball→Football migration remain supported. A fresh browser
+  profile selected Football and Baseball through keyboard navigation, confirmed
+  Clockwork, and restored Baseball on reload with no unlocked-depth record.
+- `5785987e`: Subtle keeps its 2×2 colour sampling but outlines geometry at the
+  original resolution. Geometric normals fit in the protection attachment's
+  spare channels; changes in face angle and depth breaks create one-pixel
+  contours, with planar depth slopes excluded. Texture grain does not create
+  normal edges. Actor/UI protection is preserved.
+- Validation: 19 files / 123 tests passed; production Vite build passed.
+  TypeScript remains at the same 55 baseline diagnostics, with none introduced.
+  Real WebGPU readback passed at 1280×720, 1366×768 and 800×600, with zero changed
+  protected/UI pixels and a continuous one-pixel normal crease in every case.
+  Final stable dungeon capture had zero script, GPU-validation or HTTP errors.
+- Status: committed and ready for the integration owner; not merged or deployed.
+  The current release hold remains in effect. Dedicated muted test processes
+  are stopped after validation; unrelated browsers/worktrees are untouched.
+
+### UI resize, wall springs and directional seesaws — 2026-09-08
+
+- Branch/worktree: `feat/selective-pixel-filter`, `.worktrees/wt-selective-pixel`.
+- Batch: `faac7f87`, based on the prior selective-pixel handoff at `48c0458d`.
+- UI canvas dimension changes now dispose only the GPU backing resource and
+  bump the existing texture's version. The installed three r185 CanvasTexture
+  update path does not resize an existing allocation. Verified actual WebGPU
+  texture dimensions at 1000×700, 1600×900 and back to 1280×720, with the HUD
+  still visible after all transitions. This fixes a concrete resize path; the
+  user's intermittent gameplay report was not independently reproduced.
+- Seesaws require movement toward the grounded end's exit direction (within
+  45 degrees); rolling uses actual momentum, walking uses current input. Tilt
+  still alternates. Idle, sideways and reverse contacts do not launch.
+- Wall springs reuse the original fixed-destination seesaw hop with no approach
+  gate. They have their own `wallSprings` placement count, default 2 where safe
+  spots exist, and survive the part-budget clamp. Ordinary lane springs retain
+  their existing behavior. The existing coil mesh supplies their visuals.
+- Validation: 18 files / 288 tests passed, including directional collision and
+  a 20-seed fixed-landing placement test; production Vite build passed. TypeScript
+  remains at 55 existing diagnostics, none introduced. Browser check had no
+  script or GPU-validation errors; only the existing missing favicon 404.
+- Status: ready for integration owner; not merged or deployed. Existing release
+  hold remains in force. Dedicated muted browser and Vite server stopped.

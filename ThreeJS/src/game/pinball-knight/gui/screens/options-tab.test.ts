@@ -82,6 +82,25 @@ async function paintMenu(inputs: Array<Partial<ReturnType<typeof emptyUiInput>>>
 }
 
 describe("the camera setting is reachable from Esc", () => {
+  it("cycles scenery pixels with keyboard/controller accept", async () => {
+    const { settingsBody } = await import("./settings");
+    const { getSettings, saveSettings } = await import("../../settings-save");
+    const previous = getSettings().pixelFilter;
+    saveSettings({ pixelFilter: "subtle" });
+    try {
+      for (const expected of ["chunky", "off", "subtle"]) {
+        const { ctx } = recordingCtx();
+        // Camera, sound, volume, then scenery pixels in the settings body.
+        const frame = beginUi(ctx, 600, 450, { ...emptyUiInput(), accept: true }, 3, true);
+        settingsBody(frame, { x: 0, y: 0, w: 580, h: 450 });
+        expect(getSettings().pixelFilter).toBe(expected);
+        expect(frame.consumed).toBe(true);
+      }
+    } finally {
+      saveSettings({ pixelFilter: previous });
+    }
+  });
+
   it("Esc opens the menu — not a screen with no caller", async () => {
     // The route, asserted at the seam the player actually uses. `openMenu` is
     // what input/keymap.ts calls for both Esc and I.
@@ -111,6 +130,8 @@ describe("the camera setting is reachable from Esc", () => {
     const labels = texts.map((t) => t.s);
     expect(labels).toContain("CAMERA");
     expect(labels).toContain("Camera distance");
+    expect(labels).toContain("Scenery pixels");
+    expect(labels).toContain("SUBTLE");
     // The cycler carries the CURRENT rung as its face, so one of the five must
     // be on screen — this is the control, not just the heading.
     expect(labels).toContain("ZOOM OUT");

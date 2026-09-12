@@ -668,6 +668,7 @@ describe("seesaw (Pivoting Shortcut Plank)", () => {
       },
     };
     const p = state.player!;
+    aimHint = { x: 1, z: 0 };
     p.x = 0;
     p.z = 0;
     const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: -1 });
@@ -692,6 +693,7 @@ describe("seesaw (Pivoting Shortcut Plank)", () => {
       },
     };
     const p = state.player!;
+    aimHint = { x: 1, z: 0 };
     p.x = 0;
     p.z = 0;
     const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: 1 });
@@ -717,6 +719,7 @@ describe("seesaw (Pivoting Shortcut Plank)", () => {
       },
     };
     const p = state.player!;
+    aimHint = { x: -1, z: 0 };
     p.x = 3; // at Side B
     p.z = 0;
     const ss = part("seesaw", { x: 0, z: 0, dirX: 1, dirZ: 0, span: 3, tilt: 1 });
@@ -730,6 +733,39 @@ describe("seesaw (Pivoting Shortcut Plank)", () => {
     expect(ss.tilt).toBe(-1); // tilted back
     expect(ss.cooldownT).toBeGreaterThan(0);
     expect(p.momX).toBe(-1); // heading back along -x
+  });
+});
+
+describe("directional seesaws and wall springs", () => {
+  it.each([{ x: 0, z: 1 }, { x: -1, z: 0 }, null])("rejects sideways, reverse, or idle seesaw entry: %s", (heading) => {
+    aimHint = heading;
+    const ss = part("seesaw", { span: 3, tilt: -1 });
+    state.pinballParts = [ss];
+    touchPinballParts(false, 3, deps);
+    expect(rampHops).toBe(0);
+    expect(ss.tilt).toBe(-1);
+    expect(ss.cooldownT).toBe(0);
+  });
+
+  it("uses actual momentum instead of steering to accept a rolling entry", () => {
+    aimHint = { x: -1, z: 0 };
+    Object.assign(state.player!, { momX: 1, momZ: 0, momSpeed: 5 });
+    const ss = part("seesaw", { span: 3, tilt: -1 });
+    state.pinballParts = [ss];
+    touchPinballParts(true, 0, deps);
+    expect(rampHops).toBe(1);
+    expect(ss.tilt).toBe(1);
+  });
+
+  it("pops a wall spring to its fixed landing without a directional gate", () => {
+    aimHint = { x: 0, z: 1 };
+    const spring = part("spring", { span: 4 });
+    state.pinballParts = [spring];
+    let landing: number[] = [];
+    touchPinballParts(false, 3, { ...deps, startSeesawHop: (x, z) => { landing = [x, z]; } });
+    expect(landing).toEqual([4, 0]);
+    expect(spring.cooldownT).toBeGreaterThan(0);
+    expect(steerLock).toBeGreaterThan(0);
   });
 });
 

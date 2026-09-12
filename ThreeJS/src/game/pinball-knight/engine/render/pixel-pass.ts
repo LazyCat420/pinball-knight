@@ -38,6 +38,7 @@
  * fractional-upscale scheme got wrong.
  */
 import * as THREE from "three";
+import { encodeGeometryNormal, pixelBlockSize, pixelProtection, selectivePixelSample, type PixelFilter } from "./selective-pixel";
 import type { WebGPURenderer } from "three/webgpu";
 import { BlendMode, NodeMaterial } from "three/webgpu";
 import {
@@ -52,6 +53,7 @@ import {
   mix,
   mod,
   mrt,
+  normalViewGeometry,
   mx_fractal_noise_float,
   output,
   pow,
@@ -172,6 +174,7 @@ function blurNode(src: THREE.Texture, dir: TSLNode): TSLNode {
 
 /** Uniform handles for the final composite, so render()/setters can poke them. */
 interface FinalUniforms {
+  pixelBlock: TSLUniform<number>;
   quantize: TSLUniform<number>;
   dither: TSLUniform<number>;
   scanline: TSLUniform<number>;
@@ -382,6 +385,7 @@ function buildShadedPalette(palette: Float32Array): THREE.DataTexture {
 function finalNode(
   diffuse: THREE.Texture,
   albedoTex: THREE.Texture,
+  protectionTex: THREE.Texture,
   bloomTex: THREE.Texture,
   depth: THREE.Texture,
   uiTex: THREE.Texture,
@@ -407,7 +411,8 @@ function finalNode(
    * them would wobble the monitor instead of the air. The UI is a 2D sheet
    * composited on top and must never move — see the note at the UI mix below.
    */
-  const sceneUv = heatWarp(vUv, u, res);
+  const pixelSample = selectivePixelSample(protectionTex, depth, heatWarp(vUv, u, res), res, u.pixelBlock);
+  const sceneUv = pixelSample.uv;
 
   // Derived from the array actually handed in, not from a module constant: the
   // palette is injected by the game, so its size is only known here. The
@@ -651,7 +656,7 @@ function finalNode(
   // and this is a bonus rather than a compromise: driving a pixel hard down its
   // own ramp lands it on ink at the bottom, which is exactly what an ink outline
   // is. It can no longer produce a dark version of some OTHER material.
-  light = light.mul(mix(float(1), inked, u.outline));
+  light = light.mul(mix(float(1), inked, u.outline)).mul(pixelSample.ink);
 
   // ── The in-game UI, composited HERE and nowhere else.
   //
@@ -1361,6 +1366,7 @@ export interface PixelPass {
   sizing(): Readonly<RenderSizing>;
   /** Composite the UI layer at all. Off costs nothing; see `finalNode`. */
   setUiEnabled(on: boolean): void;
+  setPixelFilter(mode: PixelFilter): void;
   setQuantize(on: boolean): void;
   setDither(on: boolean): void;
   setScanline(on: boolean): void;
@@ -1441,6 +1447,7 @@ export interface PixelPass {
 export function createPixelPass(
   renderer: WebGPURenderer,
   opts: {
+    pixelFilter?: PixelFilter;
     quantize: boolean;
     dither: boolean;
     scanline: boolean;
@@ -1493,8 +1500,8 @@ export function createPixelPass(
   depthTexture.type = THREE.UnsignedIntType;
 
   /**
-   * TWO colour attachments: the lit frame, and the ALBEDO the materials were
-   * before any light touched them.
+   * Three colour attachments: the lit frame, the ALBEDO the materials were
+   * before lighting, and an alpha-blended protection mask for selective pixels.
    *
    * The names are not decoration — three resolves an MRT output to a slot by
    * matching the key in `mrt({...})` against `textures[i].name`, so a typo here
@@ -1508,10 +1515,11 @@ export function createPixelPass(
     depthBuffer: true,
     stencilBuffer: false,
     depthTexture,
-    count: 2,
+    count: 3,
   });
   sceneTarget.textures[0].name = "output";
   sceneTarget.textures[1].name = "albedo";
+  sceneTarget.textures[2].name = "protection";
 
   /**
    * ── THE MRT DECLARATION ────────────────────────────────────────────────────
@@ -1573,10 +1581,16 @@ export function createPixelPass(
    * it three warns once and falls back to the material's blending for ALL
    * attachments, which is the same behaviour this line asks for anyway.
    */
-  const sceneMrt = mrt({ output: output, albedo: diffuseColor }).setBlendMode(
-    "albedo",
-    new BlendMode(THREE.MaterialBlending),
-  );
+  // The mask shares the scene draw and depth buffer; no extra scene pass.
+  // Per-draw uniform: sharing a material with scenery never opts an actor in.
+  // Alpha follows the material, so invisible sprite corners do not mask walls.
+  const protection = uniform(1).onObjectUpdate(({ object, material }) => object && material ? pixelProtection(object, material) : 1);
+  const sceneMrt = mrt({
+    output,
+    albedo: diffuseColor,
+    protection: vec4(protection, encodeGeometryNormal(normalViewGeometry), diffuseColor.a),
+  }).setBlendMode("albedo", new BlendMode(THREE.MaterialBlending))
+    .setBlendMode("protection", new BlendMode(THREE.MaterialBlending));
 
   // Bloom works at half resolution — cheaper, and a wider blur for free. These
   // track the render size (exactly half, since renderW/H are guaranteed even)
@@ -1623,6 +1637,7 @@ export function createPixelPass(
   // Uniform HANDLES, not a plain object: TSL uniforms are nodes whose `.value`
   // is live, which is what lets setFrenzyFx/setFlash/resize poke them.
   const finalUniforms: FinalUniforms = {
+    pixelBlock: uniform(pixelBlockSize(opts.pixelFilter ?? "off")),
     quantize: uniform(opts.quantize ? 1 : 0),
     dither: uniform(opts.dither ? 1 : 0),
     scanline: uniform(opts.scanline ? 1 : 0),
@@ -1660,6 +1675,7 @@ export function createPixelPass(
   finalMat.fragmentNode = finalNode(
     sceneTarget.textures[0],
     sceneTarget.textures[1],
+    sceneTarget.textures[2],
     bloomA.texture,
     depthTexture,
     opts.uiTexture,
@@ -1817,7 +1833,7 @@ export function createPixelPass(
     // The MRT is scoped to this one call and cleared straight after, matching
     // what three's own PostProcessing does. It has to be: every other draw in
     // this file is a fullscreen quad into a SINGLE-attachment target, and an MRT
-    // declaration left standing would have those quads describing two outputs
+    // declaration left standing would have those quads describing multiple outputs
     // for one attachment.
     renderer.setRenderTarget(sceneTarget);
     renderer.setMRT(sceneMrt);
@@ -1951,6 +1967,9 @@ export function createPixelPass(
     sizing: () => sizing,
     setUiEnabled: (on) => {
       finalUniforms.ui.value = on ? 1 : 0;
+    },
+    setPixelFilter: (mode) => {
+      finalUniforms.pixelBlock.value = pixelBlockSize(mode);
     },
     setQuantize: (on) => {
       finalUniforms.quantize.value = on ? 1 : 0;

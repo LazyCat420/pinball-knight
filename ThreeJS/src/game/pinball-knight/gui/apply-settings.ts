@@ -33,6 +33,7 @@ export function applySettingsLive(): void {
   state.dither = s.dither;
   state.scanline = s.scanline;
   state.outline = s.outline;
+  state.pixelPass?.setPixelFilter(s.pixelFilter);
   state.pixelPass?.setQuantize(s.quantize);
   state.pixelPass?.setDither(s.dither);
   state.pixelPass?.setScanline(s.scanline);

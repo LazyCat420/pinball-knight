@@ -11,6 +11,7 @@
  * itself was exempt from. (The pixel-filter toggles that once demonstrated
  * this live were retired 2026-08-03 — see settings-save.ts.)
  */
+import { PIXEL_FILTERS } from "../../engine/render/selective-pixel";
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
 import { CAMERA_ZOOM_ORDER, VOLUME_STEPS } from "../../constants";
 import { applySettingsLive } from "../apply-settings";
@@ -52,7 +53,7 @@ interface Row {
    * silently stops reaching its last row". The camera cycler needed hand
    * arithmetic there; this must not.
    */
-  kind?: "slider";
+  kind?: "slider" | "pixelFilter";
 }
 
 const SOUND: Row[] = [
@@ -61,6 +62,7 @@ const SOUND: Row[] = [
 ];
 
 const LOOK: Row[] = [
+  { key: "pixelFilter", label: "Scenery pixels", hint: "chunkier scenery; characters and text stay sharp", kind: "pixelFilter" },
   // The screen-space pixel filters (palette quantize, dither, scanlines, ink
   // outline) were RETIRED 2026-08-03 — rows removed, filters permanently off.
   // See the note in settings-save.ts; sprites keep their pixel identity at the
@@ -82,10 +84,18 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
   // `body`, so the order is load-bearing: cutting after the text is drawn leaves
   // the label and hint sized to the full row and the control lands on top of
   // them. A slider needs more room than a toggle — 56px of track is five cells.
-  const knob = cutRight(body, row.kind === "slider" ? 118 : 64);
+  const knob = cutRight(body, row.kind ? 118 : 64);
 
   text(f, row.label, body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
   text(f, row.hint, body.x, body.y + 17, { size: 8, colour: UI.textDim, max: body.w - GRID });
+
+  if (row.kind === "pixelFilter") {
+    if (button(f, { x: knob.x, y: knob.y + (knob.h - 18) / 2, w: 110, h: 18 }, s.pixelFilter.toUpperCase())) {
+      saveSettings({ pixelFilter: PIXEL_FILTERS[(PIXEL_FILTERS.indexOf(s.pixelFilter) + 1) % PIXEL_FILTERS.length] });
+      applySettingsLive();
+    }
+    return;
+  }
 
   if (row.kind === "slider") {
     const cur = s[row.key] as number;

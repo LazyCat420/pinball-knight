@@ -60,6 +60,23 @@ describe("assignCornerShapes — shaped walls on the real pipeline", () => {
 });
 
 describe("decorateMaze", () => {
+  it("places wall springs with a clear fixed landing across a wall band", () => {
+    let found = 0;
+    for (let seed = 0; seed < 20; seed++) {
+      const g = thickenWalls(generateMaze(18, 14, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 20, [], { seesaws: 0, wallSprings: 2 });
+      for (const spring of plan.parts.filter(p => p.kind === "spring" && p.span)) {
+        found++;
+        expect(spring.vault).toBe(true);
+        expect(at(g, spring.i + spring.dirI, spring.j + spring.dirJ)).toBe(T_WALL);
+        expect(at(g, spring.destI!, spring.destJ!)).toBe(T_FLOOR);
+        expect(spring.destI).toBe(spring.i + spring.dirI * spring.span!);
+        expect(spring.destJ).toBe(spring.j + spring.dirJ * spring.span!);
+      }
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+
   it("puts the stairs at the maximum BFS distance from the start", () => {
     const { g, dist, plan } = makeLevel(11);
     const max = Math.max(...Array.from(dist));
@@ -127,14 +144,14 @@ describe("decorateMaze", () => {
     expect(plan.parts.length).toBeGreaterThan(0);
     for (const part of plan.parts) {
       const open = openSides(g, part.i, part.j);
-      if (part.kind === "spring" || part.kind === "trapdoor") {
+      if ((part.kind === "spring" && !part.vault) || part.kind === "trapdoor") {
         // dead end — one way out, and the launcher aims along it
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
       } else if (part.vault) {
         // JUMP PAD or SEESAW — the deliberate exception: aimed square at a wall BAND
         // with real corridor on the far side, so the hop clears the maze.
-        expect(["jumppad", "seesaw"]).toContain(part.kind);
+        expect(["jumppad", "seesaw", "spring"]).toContain(part.kind);
         expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
         // …and a landing exists within the hop's reach past the band.
@@ -1071,6 +1088,11 @@ describe("isStructuralPart — what the density clamp may not delete", () => {
       expect(isStructuralPart(p as unknown as PinballPartSpot), `marker ${key} does not protect`).toBe(true);
     }
     expect(isStructuralPart(loose("bumper")), "a bare bumper is not structural").toBe(false);
+  });
+
+  it("preserves wall springs while leaving ordinary springs removable", () => {
+    expect(isStructuralPart({ ...loose("spring"), span: 3 })).toBe(true);
+    expect(isStructuralPart(loose("spring"))).toBe(false);
   });
 
   it("index 0 counts — the first circuit, route and field are structural", () => {

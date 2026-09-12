@@ -17,6 +17,7 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend, createGPURenderer } from "../../../render/backend";
+import { getSettings } from "../settings-save";
 import { state } from "../state";
 import { createPixelPass } from "../engine/render/pixel-pass";
 import { PALETTE_HEX } from "../render/palette";
@@ -136,6 +137,7 @@ export function installRenderer(): void {
   state.container?.appendChild(state.renderer.domElement);
 
   const pass = createPixelPass(state.renderer, {
+    pixelFilter: getSettings().pixelFilter,
     quantize: state.quantize,
     dither: state.dither,
     scanline: state.scanline,

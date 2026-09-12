@@ -27,7 +27,7 @@ import { CLOCKWORK_LAUNCHES } from "../../clockwork-launches";
  * null on ANY failure, and an offer the atlas cannot honour is how the stiltneck
  * shipped invisible for weeks.
  */
-import { CLOCKWORK_EMOTES, activeClockworkEmote, emoteUnlocked, equipClockworkEmote } from "../../clockwork-emotes";
+import { CLOCKWORK_EMOTES, activeClockworkEmote, equipClockworkEmote } from "../../clockwork-emotes";
 import { UI, GRID, ROW_H } from "../theme";
 import { clampFocus, focusRing, focusable, rect, scrim, sheet, strokeRect, text, button } from "../im";
 import { pop, type UiScreen } from "../stack";
@@ -260,9 +260,9 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
       if (chosen === "clockwork_knight") {
         text(f, "PINBALL EMOTES — EQUIP A LAUNCH", body.x + body.w / 2, top + CARD_H + 9, {size:8, colour:UI.gold, align:"center"});
         CLOCKWORK_EMOTES.forEach((emote, i) => {
-          const owned = emoteUnlocked(emote.id), active = activeClockworkEmote() === emote.id;
-          const label = `${emote.icon} ${emote.label}${active ? " ✓" : owned ? "" : ` · Floor ${emote.floor}`}`;
-          if (button(f, rect(body.x + 16 + i * 184, top + CARD_H + 26, 176, ROW_H), label) && owned && !busy) {
+          const active = activeClockworkEmote() === emote.id;
+          const label = `${emote.icon} ${emote.label}${active ? " ✓" : ""}`;
+          if (button(f, rect(body.x + 16 + i * 184, top + CARD_H + 26, 176, ROW_H), label) && !busy) {
             equipClockworkEmote(emote.id);
           }
         });

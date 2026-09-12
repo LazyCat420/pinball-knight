@@ -100,7 +100,9 @@ export function installUiInput(): void {
     (e) => {
       if (!live) return;
       const k = normKey(e.key);
-      if (!held.has(k)) tapped.set(k, (tapped.get(k) ?? 0) + 1);
+      // A key held while another screen owned input (e.g. Skip intro) can
+      // first reach us as an OS repeat. It is not a fresh accept/cancel.
+      if (!held.has(k) && !e.repeat) tapped.set(k, (tapped.get(k) ?? 0) + 1);
       held.add(k);
       // Printable characters, for the one text field the game has. Repeats DO
       // count here (unlike the tap map) because holding backspace to clear a

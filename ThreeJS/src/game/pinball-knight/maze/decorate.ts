@@ -2272,6 +2272,7 @@ export function isStructuralPart(p: PinballPartSpot): boolean {
     (p as { route?: unknown }).route !== undefined ||
     p.field !== undefined ||
     p.asm !== undefined ||
+    (p.kind === "spring" && (p.span ?? 0) > 0) ||
     p.kind === "seesaw" ||
     p.kind === "catapult" ||
     p.kind === "cannon"
@@ -2286,7 +2287,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; wallSprings?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -3744,16 +3745,17 @@ export function decorateMaze(
     fieldsPlaced++;
   }
 
-  // ── SEESAWS: two-way alternating shortcuts across wall bands.
+  // Wall shortcuts: directional seesaws followed by proximity-triggered coils.
   // Placed at the very end with an isolated seed so earlier placement,
   // item rarity, and wall triage remain bit-identical to existing floors.
-  const seesawsCount = extras.seesaws ?? SEESAWS_DEFAULT;
-  if (seesawsCount > 0) {
+  for (const shortcutKind of ["seesaw", "spring"] as const) {
+    const count = shortcutKind === "seesaw" ? (extras.seesaws ?? SEESAWS_DEFAULT) : (extras.wallSprings ?? 2);
+    if (count <= 0) continue;
     const sRng = mulberry32((assemblySeed ^ 0x5ee5a) >>> 0);
-    const seesawSpots = shuffled(floors, sRng);
-    let placedSeesaws = 0;
-    for (const c of seesawSpots) {
-      if (placedSeesaws >= seesawsCount) break;
+    const shortcutSpots = shuffled(floors, sRng);
+    let placedShortcuts = 0;
+    for (const c of shortcutSpots) {
+      if (placedShortcuts >= count) break;
       if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 4) continue;
       if (c.i === stairs.i && c.j === stairs.j) continue;
       if (inRoom(c)) continue;
@@ -3779,7 +3781,7 @@ export function decorateMaze(
       if (!aimed) continue;
 
       parts.push({
-        kind: "seesaw",
+        kind: shortcutKind,
         i: c.i,
         j: c.j,
         dirI: aimed.di,
@@ -3792,7 +3794,7 @@ export function decorateMaze(
         destJ: c.j + aimed.dj * aimed.span,
         tilt: -1,
       });
-      placedSeesaws++;
+      placedShortcuts++;
     }
   }
 
