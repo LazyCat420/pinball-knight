@@ -326,3 +326,10 @@ project-local lock did not protect against a later release from an older branch.
 - Rebuilt S/N/E atlases and added all paths to the animated preview. Fallback painter retains usable attack art for every variant. Bake runner tolerates the browser's initial execution-context race.
 - 27 focused rig, charge, debug-spawn and real-animator cadence/death tests passed. Muted front/side/back browser previews had no JavaScript errors. No changed-file TypeScript diagnostics (existing unrelated diagnostics remain).
 - Ready for integration and the full guarded NAS release gate.
+
+#### Tilt Titan release verification
+
+- Feature `be6c68be`; integrated and deployed `0a4b2c27`, preserving NAS/main `2fb28366`. Main merge pushed.
+- Full release gate: 376 files passed / 5 skipped; 4,349 tests passed / 12 skipped, zero failures. Guarded Docker build, image transfer and NAS restart completed.
+- NAS `0a4b2c27` running/healthy; both public and NAS health endpoints healthy. All six public Titan PNG/JSON files exactly match the integrated source.
+- Muted isolated gameplay loaded 32 frames in all three spin clips and exercised tornado, corkscrew and tumble during real boss charges. Zero browser exceptions. Preview server and test browser stopped; local test-generated reports restored.
