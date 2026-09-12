@@ -43,7 +43,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   mario: ["N", "S"],
   merchant: ["S"],
   mimic: ["S"],
-  milkshake: ["S"],
+  milkshake: ["E", "N", "S"],
   necro: ["S"],
   overlord: ["S"],
   pin: ["S"],
