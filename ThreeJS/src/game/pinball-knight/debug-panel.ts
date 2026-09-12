@@ -111,6 +111,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   highway_patrol: "Patrol",
   detective_cop: "Noir",
   robo_cop: "Robo",
+  hotdog: "Hotdog",
 };
 
 export const SPAWNABLE: Array<{ kind: string; label: string }> = (KIND_IDS as EnemyKind[]).map((kind) => {

@@ -57,6 +57,12 @@ import {
   MILKSHAKE_FIRE_RANGE,
   MILKSHAKE_DAMAGE,
   MILKSHAKE_SPRAY_SPEED,
+  HOTDOG_FIRE_RANGE,
+  HOTDOG_DAMAGE,
+  HOTDOG_MUSTARD_SPEED,
+  HOTDOG_MUSTARD_RADIUS,
+  HOTDOG_MUSTARD_LIFE,
+  HOTDOG_MUSTARD_SLICK_TIME,
   SUMO_NINJA_FIRE_RANGE,
   SUMO_NINJA_DAMAGE,
   SUMO_NINJA_SHURIKEN_SPEED,
@@ -302,6 +308,14 @@ export function shakeSprayAssets(): { geo: THREE.SphereGeometry; mat: THREE.Mesh
   _shakeSprayGeo ??= new THREE.SphereGeometry(0.12, 8, 6);
   _shakeSprayMat ??= new THREE.MeshBasicMaterial({ color: 0x84cc16 }); // toxic lime green milkshake glob
   return { geo: _shakeSprayGeo, mat: _shakeSprayMat };
+}
+
+let _mustardGlobGeo: THREE.SphereGeometry | null = null;
+let _mustardGlobMat: THREE.MeshBasicMaterial | null = null;
+export function mustardGlobAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _mustardGlobGeo ??= new THREE.SphereGeometry(0.13, 8, 6);
+  _mustardGlobMat ??= new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // bright stadium mustard yellow
+  return { geo: _mustardGlobGeo, mat: _mustardGlobMat };
 }
 
 let _shurikenGeo: THREE.CylinderGeometry | null = null;
@@ -1311,6 +1325,39 @@ export function launchMilkshakeSpray(x: number, z: number, dx: number, dz: numbe
   }
 }
 
+export function launchMustardStream(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+  // Squirts 3 streaming mustard globs in a high-pressure burst
+  for (let i = 0; i < 3; i++) {
+    const spread = (i - 1) * 0.08;
+    const angle = baseAngle + spread;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = mustardGlobAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const offset = MUZZLE_OFFSET + i * 0.12;
+    const sx = x + fdx * offset;
+    const sz = z + fdz * offset;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "mustard_glob",
+      x: sx,
+      z: sz,
+      vx: fdx * HOTDOG_MUSTARD_SPEED,
+      vz: fdz * HOTDOG_MUSTARD_SPEED,
+      life: HOTDOG_FIRE_RANGE / HOTDOG_MUSTARD_SPEED,
+      maxLife: HOTDOG_FIRE_RANGE / HOTDOG_MUSTARD_SPEED,
+      damage: HOTDOG_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 export function launchShuriken(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
@@ -2271,6 +2318,9 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
           } else if (pr.kind === "shake_spray") {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 8, 1.3);
+          } else if (pr.kind === "mustard_glob") {
+            spawnFloorFx("mustard", pr.x, pr.z, HOTDOG_MUSTARD_RADIUS * 0.8, HOTDOG_MUSTARD_LIFE * 0.8, true);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
           } else if (pr.kind === "shuriken") {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
           } else if (pr.kind === "zippo_flame") {
@@ -2307,6 +2357,10 @@ export function updateProjectiles(dt: number): void {
       }
       if (pr.kind === "shake_spray") {
         pr.mesh.rotation.y += dt * 10;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
+      }
+      if (pr.kind === "mustard_glob") {
+        pr.mesh.rotation.y += dt * 12;
         state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
       }
       if (pr.kind === "shuriken") {
@@ -2400,6 +2454,13 @@ export function updateProjectiles(dt: number): void {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (p.iframes <= 0) webPlayer();
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x84cc16, 12, 1.5);
+          } else if (pr.kind === "mustard_glob") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            spawnFloorFx("mustard", pr.x, pr.z, HOTDOG_MUSTARD_RADIUS, HOTDOG_MUSTARD_LIFE, true);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 12, 1.5);
+            if (p.iframes <= 0) {
+              p.oilT = Math.max(p.oilT || 0, HOTDOG_MUSTARD_SLICK_TIME);
+            }
           } else if (pr.kind === "shuriken") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 10, 1.5);
