@@ -74,10 +74,11 @@ export const DESIGN = { w: 480, h: 270, max: 3 };
 /**
  * Labyrinth cell size, in UI pixels.
  *
- * Chosen for READABILITY as a maze rather than as texture: at 14 the field is
- * about 40 cells across, which is big enough that the eye follows a corridor
- * and small enough that the walls still fill the screen. The old 8px cell gave
- * 70-odd columns of 1-cell corridors, which at a glance is noise.
+ * Chosen for READABILITY as a maze rather than as texture: at 18 UI pixels a
+ * 1600x900 grid holds a field about 33 cells across, which is big enough that
+ * the eye follows a corridor and small enough that the walls still fill the
+ * screen. The old 8px cell gave 70-odd columns of one-cell corridors, which at
+ * a glance is gravel rather than a maze.
  */
 const CELL_UI = 18;
 
@@ -115,10 +116,11 @@ export function isFloorLoadingOpen(): boolean {
  * zoom, and therefore the pixel size of a cell) is first knowable inside
  * `paint`.
  *
- * The one-off cost is two opaque canvases and a few thousand `fillRect`s —
- * measured at ~6ms for a 1600x900 field, paid on the frame the screen first
- * appears, which is the frame BEFORE the floor build blocks the thread. Paying
- * it per frame instead is what the old version did.
+ * The one-off cost is two opaque canvases and a few thousand `fillRect`s, paid
+ * on the frame the screen first appears — which is the frame BEFORE the floor
+ * build blocks the thread, and is the cheap moment to pay it. It is not even an
+ * added cost: measured against the screen this replaced (which grew a labyrinth
+ * of its own on first paint), the whole first frame went from ~28ms to ~18ms.
  */
 function ensureArt(s: LoadState, f: UiFrame): void {
   // Device pixels, not UI units: the backdrop is blitted 1:1 under an identity
