@@ -395,6 +395,10 @@ export function paintsFor(key: SheetKey): ActorPaints {
     N: { ...painted.N, ...art.N, death: (art.N?.death && art.N.death.length > 0) ? art.N.death : painted.N.death },
     E: { ...painted.E, ...art.E, death: (art.E?.death && art.E.death.length > 0) ? art.E.death : painted.E.death },
     ...(painted.beats ? { beats: painted.beats } : {}),
+    // Frank's 24 baked in-betweens keep the original eight-beat stride.
+    // Apply only to the dense imported walk, preserving fallback/older sheets.
+    ...(key === "blaster_frank" && art.S?.walk?.length === 24
+      ? { beats: { ...painted.beats, walk: 8, run: 8 } } : {}),
   };
 }
 

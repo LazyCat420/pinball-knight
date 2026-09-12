@@ -17,7 +17,7 @@
  *                  and lands on his back, X eyes and stars
  *
  * The creature is a short, rotund, balding man: bald skin dome with grey
- * side tufts, thick round spectacles, moustache, a tan trenchcoat hanging
+ * side tufts, thick round spectacles, full cheeks, a tan trenchcoat hanging
  * open over a green shirt and a belly, brown trousers, big dark shoes, and
  * a chrome snub-nosed revolver in the right hand. Every face feature sits ON
  * the head sphere (`onHead`) so a yawed bake keeps them on the surface, and
@@ -38,11 +38,12 @@ export type BlasterFrankPose = 'idle' | 'walk' | 'attack' | 'death';
 export const BLASTER_FRANK_CLIPS: readonly BlasterFrankPose[] = ['idle', 'walk', 'attack', 'death'];
 
 /**
- * Frames per clip, against engine/config.ts anim rates (idle 3, walk 8,
+ * Frames per clip. Walk uses 24 samples over the original eight beats (24 fps);
+ * other clips use engine/config.ts rates (idle 3, walk 8,
  * attack 12, death 6 fps). `death` is 5 so it FINISHES inside the 0.96 s that
  * sandbox-all-monsters-death-trace.test.ts simulates.
  */
-export const BLASTER_FRANK_FRAMES: Record<BlasterFrankPose, number> = { idle: 6, walk: 8, attack: 12, death: 5 };
+export const BLASTER_FRANK_FRAMES: Record<BlasterFrankPose, number> = { idle: 6, walk: 24, attack: 12, death: 5 };
 export const BLASTER_FRANK_LOOPS: Record<BlasterFrankPose, boolean> = { idle: true, walk: true, attack: false, death: false };
 
 /** Colours read off docs/art/blaster-frank/sprite-sheet.png. */
@@ -122,15 +123,19 @@ export function createBlasterFrank() {
   }
 
   // ── LEGS: stubby trouser cylinders with big shoes, pivoting at the hips. ──
-  const legGeo = new THREE.CylinderGeometry(0.15, 0.17, LEG_LEN, 12); geometries.add(legGeo);
+  const legGeo = new THREE.CylinderGeometry(0.15, 0.17, LEG_LEN / 2, 12); geometries.add(legGeo);
   const shoeGeo = new THREE.BoxGeometry(0.3, 0.16, 0.5); geometries.add(shoeGeo);
-  const legs: THREE.Group[] = [];
+  const legs: THREE.Group[] = [], knees: THREE.Group[] = [], ankles: THREE.Group[] = [];
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group(); pivot.name = side < 0 ? 'Left leg' : 'Right leg';
     pivot.position.set(side * 0.24, HIP_Y, 0); body.add(pivot);
-    mesh(pivot, legGeo, pantsMat, [0, -LEG_LEN / 2, 0]);
-    const shoe = mesh(pivot, shoeGeo, shoeMat, [0, -LEG_LEN - 0.02, 0.1]); shoe.name = 'Shoe';
-    legs.push(pivot);
+    mesh(pivot, legGeo, pantsMat, [0, -LEG_LEN / 4, 0]);
+    const knee = new THREE.Group(); knee.name = 'Knee'; knee.position.y = -LEG_LEN / 2; pivot.add(knee);
+    mesh(knee, sphere, pantsMat, [0, 0, 0], [0.15, 0.15, 0.15], false);
+    mesh(knee, legGeo, pantsMat, [0, -LEG_LEN / 4, 0]);
+    const ankle = new THREE.Group(); ankle.name = 'Ankle'; ankle.position.y = -LEG_LEN / 2; knee.add(ankle);
+    const shoe = mesh(ankle, shoeGeo, shoeMat, [0, -0.02, 0.1]); shoe.name = 'Shoe';
+    legs.push(pivot); knees.push(knee); ankles.push(ankle);
   }
 
   // ── TORSO: the belly in a green shirt, a belt, and the trenchcoat hanging open round it. ──
@@ -157,14 +162,18 @@ export function createBlasterFrank() {
   }
 
   // ── ARMS: coat sleeves with skin hands; the right hand holds the revolver. ──
-  const sleeveGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.62, 12); geometries.add(sleeveGeo);
+  const sleeveGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.32, 12); geometries.add(sleeveGeo);
   function makeArm(name: string, side: number) {
-    const pivot = new THREE.Group(); pivot.name = name; pivot.position.set(side * SHOULDER_X, SHOULDER_Y, 0.02); body.add(pivot);
+    const pivot = new THREE.Group(); pivot.name = name; pivot.position.set(side * SHOULDER_X, SHOULDER_Y - HIP_Y, 0.02); torso.add(pivot);
     mesh(pivot, sphere, coatMat, [0, 0, 0], [0.17, 0.17, 0.17]);
-    const sleeve = mesh(pivot, sleeveGeo, coatMat, [side * 0.03, -0.34, 0]); sleeve.rotation.z = side * -0.08;
-    mesh(sleeve, sphere, coatDarkMat, [0, -0.3, 0], [0.16, 0.06, 0.16], false);
-    const hand = mesh(sleeve, sphere, skinMat, [0, -0.4, 0.02], [0.13, 0.12, 0.13]); hand.name = 'Hand';
-    return { pivot, sleeve, hand };
+    mesh(pivot, sleeveGeo, coatMat, [0, -0.16, 0]);
+    const elbow = new THREE.Group(); elbow.name = name + ' elbow'; elbow.position.y = -0.32; pivot.add(elbow);
+    mesh(elbow, sphere, coatMat, [0, 0, 0], [0.145, 0.145, 0.145], false);
+    const sleeve = mesh(elbow, sleeveGeo, coatMat, [0, -0.16, 0]);
+    mesh(elbow, sphere, coatDarkMat, [0, -0.3, 0], [0.15, 0.05, 0.15], false);
+    const wrist = new THREE.Group(); wrist.name = name + ' wrist'; wrist.position.set(0, -0.38, 0.02); elbow.add(wrist);
+    const hand = mesh(wrist, sphere, skinMat, [0, 0, 0], [0.13, 0.12, 0.13]); hand.name = 'Hand';
+    return { pivot, sleeve, elbow, wrist, hand };
   }
   const leftArm = makeArm('Left arm', -1);
   const rightArm = makeArm('Right arm', 1);
@@ -176,7 +185,7 @@ export function createBlasterFrank() {
   // (attack). It hangs off the UNSCALED sleeve at the hand's position: a
   // child of the 0.13-scaled hand mesh inherits that scale, and the first
   // bake drew the revolver at 13% — invisible, muzzle in the palm.
-  const gunAim = new THREE.Group(); gunAim.name = 'Gun aim'; gunAim.position.set(0.02, -0.42, 0.1); rightArm.sleeve.add(gunAim);
+  const gunAim = new THREE.Group(); gunAim.name = 'Gun aim'; gunAim.position.set(0.02, -0.02, 0.08); rightArm.wrist.add(gunAim);
   const gun = new THREE.Group(); gun.name = 'Revolver'; gunAim.add(gun);
   // Rx(-π/2) turns the barrel's local -y into +z: forward, a touch downward.
   const GUN_AT_REST_X = -Math.PI / 2 + 0.25, GUN_REST_YAW = 0.7;
@@ -198,11 +207,11 @@ export function createBlasterFrank() {
 
   // ── HEAD: bald dome, grey tufts, ears; every face feature ON the sphere. ──
   const head = new THREE.Group(); head.name = 'Head'; head.position.set(0, HEAD_Y, 0.04); body.add(head);
-  const skull = mesh(head, sphere, skinMat, [0, 0, 0], [HEAD_R, HEAD_R * 1.02, HEAD_R * 0.96]); skull.name = 'Skull';
+  const skull = mesh(head, sphere, skinMat, [0, 0, 0], [HEAD_R, HEAD_R * 1.04, HEAD_R * 0.96]); skull.name = 'Skull';
   const neckGeo = new THREE.CylinderGeometry(0.16, 0.2, 0.22, 12); geometries.add(neckGeo);
   mesh(head, neckGeo, skinDarkMat, [0, -HEAD_R + 0.04, -0.02]);
   for (const side of [-1, 1]) {
-    const tuft = mesh(head, sphere, hairMat, [side * 0.36, 0.04, -0.1], [0.15, 0.24, 0.3]); tuft.name = 'Tuft';
+    const tuft = mesh(head, sphere, hairMat, [side * 0.38, -0.04, -0.13], [0.11, 0.19, 0.25]); tuft.name = 'Tuft';
     mesh(tuft, sphere, hairDarkMat, [side * 0.2, -0.3, -0.2], [0.6, 0.5, 0.6], false);
     mesh(head, sphere, skinDarkMat, [side * 0.4, -0.02, 0.06], [0.07, 0.1, 0.06]);
   }
@@ -217,12 +226,12 @@ export function createBlasterFrank() {
   const EYE_YAW = 0.36, EYE_PITCH = 0.12;
   const eyes: THREE.Mesh[] = [], pupils: THREE.Mesh[] = [], lenses: THREE.Mesh[] = [], brows: THREE.Mesh[] = [];
   const spirals: THREE.Group[] = [], xeyes: THREE.Group[] = [];
-  const rimGeo = new THREE.TorusGeometry(0.13, 0.022, 8, 20); geometries.add(rimGeo);
+  const rimGeo = new THREE.TorusGeometry(0.12, 0.016, 8, 20); geometries.add(rimGeo);
   for (const side of [-1, 1]) {
-    const e = mesh(face, sphere, whiteMat, [0, 0, 0], [0.1, 0.1, 0.05]); onHead(e, side * EYE_YAW, EYE_PITCH, 0.0); eyes.push(e);
+    const e = mesh(face, sphere, whiteMat, [0, 0, 0], [0.095, 0.070, 0.04]); onHead(e, side * EYE_YAW, EYE_PITCH, 0.0); eyes.push(e);
     const p = mesh(e, sphere, inkMat, [side * 0.1, 0, 0.7], [0.45, 0.45, 0.5], false); pupils.push(p);
-    const lens = mesh(face, sphere, lensMat, [0, 0, 0], [0.125, 0.125, 0.02], false); onHead(lens, side * EYE_YAW, EYE_PITCH, 0.07); lenses.push(lens);
-    const rim = mesh(face, rimGeo, inkMat, [0, 0, 0], [1, 1, 1], false); onHead(rim, side * EYE_YAW, EYE_PITCH, 0.08);
+    const lens = mesh(face, sphere, lensMat, [0, 0, 0], [0.115, 0.095, 0.02], false); onHead(lens, side * EYE_YAW, EYE_PITCH, 0.07); lenses.push(lens);
+    const rim = mesh(face, rimGeo, inkMat, [0, 0, 0], [1, 0.84, 1], false); onHead(rim, side * EYE_YAW, EYE_PITCH, 0.08);
     const b = mesh(face, cube, hairDarkMat, [0, 0, 0], [0.2, 0.05, 0.04], false); onHead(b, side * EYE_YAW, EYE_PITCH + 0.36, 0.04); b.rotation.z += side * -0.2; brows.push(b);
     // Dizzy spirals and X's for the death, hidden until then.
     const sp = new THREE.Group(); onHead(sp, side * EYE_YAW, EYE_PITCH, 0.1); face.add(sp); sp.visible = false;
@@ -233,9 +242,17 @@ export function createBlasterFrank() {
     xeyes.push(x);
   }
   const bridge = mesh(face, cube, inkMat, [0, 0, 0], [0.16, 0.03, 0.03], false); onHead(bridge, 0, EYE_PITCH + 0.02, 0.1);
-  const nose = mesh(face, sphere, skinDarkMat, [0, 0, 0], [0.09, 0.08, 0.09]); onHead(nose, 0, -0.06, 0.02);
-  const mustache = new THREE.Group(); onHead(mustache, 0, -0.26, 0.04); face.add(mustache);
-  for (const side of [-1, 1]) { const m = mesh(mustache, sphere, hairDarkMat, [side * 0.1, 0, 0], [0.13, 0.05, 0.05], true); m.rotation.z = side * 0.25; }
+  const nose = mesh(face, sphere, skinDarkMat, [0, 0, 0], [0.115, 0.095, 0.14]); onHead(nose, 0, -0.06, 0.02);
+  // Full cheeks, low jowls and a short double chin frame the broad nose.
+  // Keep the upper lip clear: Frank's likeness reads through his mouth, not a moustache.
+  for (const side of [-1, 1]) {
+    const cheek = mesh(face, sphere, skinMat, [0, 0, 0], [0.16, 0.13, 0.075], false);
+    onHead(cheek, side * 0.49, -0.30, 0.015);
+    const bag = mesh(face, sphere, skinDarkMat, [0, 0, 0], [0.10, 0.028, 0.025], false);
+    onHead(bag, side * EYE_YAW, -0.10, 0.025);
+  }
+  const chin = mesh(face, sphere, skinMat, [0, 0, 0], [0.24, 0.12, 0.09], false);
+  onHead(chin, 0, -0.69, 0.015);
   const smirkGeo = new THREE.TorusGeometry(0.12, 0.022, 8, 16, Math.PI * 0.8); geometries.add(smirkGeo);
   const smirk = mesh(face, smirkGeo, inkMat, [0, 0, 0], [1, 0.6, 1], false); smirk.name = 'Smirk';
   onHead(smirk, 0.05, -0.44, 0.03); smirk.rotation.z += Math.PI + 0.1;
@@ -259,7 +276,13 @@ export function createBlasterFrank() {
     legs.forEach((l, i) => { l.rotation.set(0, 0, 0); l.position.set((i === 0 ? -1 : 1) * 0.24, HIP_Y, 0); });
     tails.forEach((t) => { t.rotation.set(-0.15, 0, 0); });
     leftArm.pivot.rotation.set(0.1, 0, 0.18); rightArm.pivot.rotation.set(-0.55, 0, -0.1);
-    for (const arm of [leftArm, rightArm]) arm.pivot.position.set(arm === leftArm ? -SHOULDER_X : SHOULDER_X, SHOULDER_Y, 0.02);
+    for (const arm of [leftArm, rightArm]) arm.pivot.position.set(arm === leftArm ? -SHOULDER_X : SHOULDER_X, SHOULDER_Y - HIP_Y, 0.02);
+    knees.forEach(k => k.rotation.set(0, 0, 0));
+    ankles.forEach(a => a.rotation.set(0, 0, 0));
+    for (const arm of [leftArm, rightArm]) {
+      arm.elbow.rotation.set(-0.12, 0, 0);
+      arm.wrist.rotation.set(0, 0, 0);
+    }
     // Held forward and a little OUT to the side, so the S bake sees the revolver's profile rather than its muzzle.
     gunAim.rotation.set(GUN_AT_REST_X, -GUN_REST_YAW, 0);
     // The revolver rides the hand; the death re-parents it to the floor by position.
@@ -267,7 +290,7 @@ export function createBlasterFrank() {
     gun.position.set(0, 0, 0); gun.rotation.set(0, 0, 0); gun.visible = true;
     flash.visible = false; flash.scale.setScalar(1);
     smoke.visible = false; puffs.forEach((p) => { p.visible = false; });
-    eyes.forEach((e, i) => { onHead(e, (i === 0 ? -1 : 1) * EYE_YAW, EYE_PITCH, 0.0); e.scale.set(0.1, 0.1, 0.05); e.visible = true; });
+    eyes.forEach((e, i) => { onHead(e, (i === 0 ? -1 : 1) * EYE_YAW, EYE_PITCH, 0.0); e.scale.set(0.095, 0.070, 0.04); e.visible = true; });
     pupils.forEach((p, i) => p.position.set((i === 0 ? -1 : 1) * 0.1, 0, 0.7));
     brows.forEach((b, i) => { onHead(b, (i === 0 ? -1 : 1) * EYE_YAW, EYE_PITCH + 0.36, 0.04); b.rotation.z += (i === 0 ? -1 : 1) * -0.2; });
     spirals.forEach((s) => { s.visible = false; }); xeyes.forEach((x) => { x.visible = false; });
@@ -310,20 +333,47 @@ export function createBlasterFrank() {
       tails.forEach((tl, i) => { tl.rotation.x = -0.15 + 0.05 * Math.sin(ph + i); });
       brows.forEach((b, i) => { b.rotation.z += (i === 0 ? -1 : 1) * 0.05 * Math.sin(ph * 2); });
     } else if (clip === 'walk') {
-      // A frantic waddle: stubby legs pump, the belly bounces, arms and gun
-      // swing, coat tails flap out behind, head down, mouth open and yelling.
+      // Smooth opposed strides, with flexion on recovery and a relaxed,
+      // cross-body arm arc that remains readable when facing the camera.
       const ph = t * Math.PI * 2;
-      const stride = 0.85;
-      legs.forEach((l, i) => { l.rotation.x = Math.sin(ph + i * Math.PI) * stride; });
-      body.position.y = Math.abs(Math.sin(ph)) * 0.09;
-      body.rotation.x = 0.16; body.rotation.z = 0.08 * Math.sin(ph);
-      torso.rotation.y = 0.12 * Math.sin(ph);
-      head.rotation.x = 0.12; head.position.y = HEAD_Y - 0.04 + 0.03 * Math.abs(Math.sin(ph * 2));
-      leftArm.pivot.rotation.x = 0.1 - Math.sin(ph) * 0.7; rightArm.pivot.rotation.x = -0.55 + Math.sin(ph) * 0.5;
-      leftArm.pivot.rotation.z = 0.25; rightArm.pivot.rotation.z = -0.2;
-      tails.forEach((tl, i) => { tl.rotation.x = -0.55 - 0.3 * Math.abs(Math.sin(ph + i * 0.5)); tl.rotation.z = (i === 0 ? 1 : -1) * 0.15; });
-      smirk.visible = false; mouth.visible = true; mouth.scale.set(0.12, 0.11, 0.06);
-      brows.forEach((b, i) => { b.rotation.z += (i === 0 ? -1 : 1) * 0.25; });
+      const wave = Math.sin(ph);
+      body.position.y = -0.09 + 0.02 * (1 - Math.cos(ph * 2));
+      legs.forEach((l, i) => {
+        const phase = ph + i * Math.PI;
+        // Two-bone IK: the support foot stays down while the recovering
+        // foot clears the floor. Solve the knee instead of swinging a peg.
+        const lift = Math.max(0, Math.cos(phase)) ** 2;
+        const footZ = -0.20 * Math.sin(phase);
+        const down = HIP_Y + body.position.y - (0.14 + 0.12 * lift);
+        const reach = Math.min(LEG_LEN - 0.00001, Math.hypot(down, footZ));
+        const bend = Math.acos(reach / LEG_LEN);
+        l.rotation.x = Math.atan2(-footZ, down) - bend;
+        knees[i].rotation.x = bend * 2;
+        ankles[i].rotation.x = -l.rotation.x - knees[i].rotation.x - 0.07 + 0.10 * lift;
+      });
+      body.position.x = 0.035 * wave;
+      body.rotation.x = 0.07; body.rotation.z = 0.035 * wave;
+      torso.rotation.y = 0.16 * wave;
+      torso.rotation.z = -0.035 * wave;
+      head.rotation.y = -0.09 * wave;
+      head.rotation.z = -0.025 * wave;
+      head.position.y = HEAD_Y - 0.02 + 0.012 * Math.cos(ph * 2);
+      for (const [i, arm] of [leftArm, rightArm].entries()) {
+        const side = i === 0 ? -1 : 1;
+        const phase = ph + i * Math.PI;
+        arm.pivot.rotation.x = -0.12 - 0.72 * Math.sin(phase);
+        arm.pivot.rotation.z = side * (0.19 + 0.09 * Math.sin(phase + 0.6));
+        arm.pivot.rotation.y = side * (0.12 + 0.17 * Math.sin(phase));
+        arm.elbow.rotation.x = -0.38 - 0.23 * Math.sin(phase - 0.55);
+        arm.wrist.rotation.x = 0.10 * Math.sin(phase - 0.9);
+        arm.wrist.rotation.z = side * 0.08 * Math.sin(phase - 0.7);
+      }
+      gunAim.rotation.z = 0.06 * Math.sin(ph - 0.8);
+      tails.forEach((tl, i) => {
+        tl.rotation.x = -0.52 - 0.10 * Math.cos(ph * 2 - 0.5 + i * 0.3);
+        tl.rotation.z = (i === 0 ? 1 : -1) * (0.10 + 0.04 * Math.sin(ph - 0.6));
+      });
+      smirk.visible = false; mouth.visible = true; mouth.scale.set(0.12, 0.075, 0.06);
     } else if (clip === 'attack') {
       // Up goes the revolver, then three shots into the ceiling: flash,
       // recoil, smoke, a yelling grimace; then it comes back down.
@@ -425,6 +475,6 @@ export function createBlasterFrank() {
   pose('idle', 0);
   return {
     root, body, torso, belly, coat, tails, head, face, eyes, pupils, lenses, brows, spirals, xeyes, smirk, mouth,
-    leftArm, rightArm, arms, legs, gun, gunAim, muzzle, flash, smoke, puffs, stars, pose, reset, setFacing, shotAt, dispose,
+    leftArm, rightArm, arms, legs, knees, ankles, gun, gunAim, muzzle, flash, smoke, puffs, stars, pose, reset, setFacing, shotAt, dispose,
   };
 }
