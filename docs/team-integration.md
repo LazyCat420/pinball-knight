@@ -317,3 +317,12 @@ project-local lock did not protect against a later release from an older branch.
 - Muted isolated browser: front/side/back animated previews and actual dungeon Frank spawn, 24 walk frames and `{walk:8,run:8}` beats, no JavaScript errors. Multiplayer connections were blocked during local gameplay validation.
 - Existing deploy wrapper completed Docker build, image transfer, and restart. Verified NAS `2f1979b0` running/healthy and both NAS/public health endpoints healthy. All six public Frank PNG/JSON files match the integrated source bytes exactly.
 - Main integration pushed; later loading-screen comment-only commit preserved. Test-owned browser/server stopped and this worktree's generated test reports restored.
+
+### Tilt Titan shark face and varied power-up spins — 2026-09-12
+
+- Task branch `fix/titan-shark-spin`, isolated worktree `.worktrees/wt-titan-shark-spin`, based on NAS/main `2fb28366`.
+- Round red eyes with focused dark pupils; broad interleaved triangular shark teeth; spherical mouth surface keeps teeth visible and avoids clipping during full-body rotation.
+- Three closed multi-axis quaternion paths: tornado precession, curved corkscrew, and tumbling spin. Charge selects a non-repeating random path once per activation and keeps it through rev/release. All 32-frame loops preserve the original base cycle and acceleration; charge telegraph, collisions, damage and movement remain intact.
+- Rebuilt S/N/E atlases and added all paths to the animated preview. Fallback painter retains usable attack art for every variant. Bake runner tolerates the browser's initial execution-context race.
+- 27 focused rig, charge, debug-spawn and real-animator cadence/death tests passed. Muted front/side/back browser previews had no JavaScript errors. No changed-file TypeScript diagnostics (existing unrelated diagnostics remain).
+- Ready for integration and the full guarded NAS release gate.

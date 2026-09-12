@@ -181,7 +181,7 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     // never be swung — its origin is its feet, so a rotated quad read as a
     // pendulum, not a spin. Only the reset to 0 may reach rotateSprite.
     expect(rotations.every((a) => a === 0)).toBe(true);
-    expect(ctx.playAnim).toHaveBeenCalledWith("attack", { loop: true });
+    expect(ctx.playAnim).toHaveBeenCalledWith(rt.spinClip, { loop: true });
 
     // All moveTo calls during telegraph must have kept position locked at (5, 5)
     for (const pt of movedTo) {
@@ -190,6 +190,30 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
         expect(pt.z).toBe(5);
       }
     }
+  });
+
+  it("chooses a different spin at charge boundaries and keeps it stable through the rev", () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const spec = BOSSES.pinball_boss.moves.pinballCharge!;
+    const rt = freshPinballCharge(spec);
+    const ctx: MoveCtx = { dt: 0.01, x: 5, z: 5, target: {x: 10, z: 5}, grid: null, bodyR: 1,
+      hitAt: () => false, moveTo: vi.fn(), playAnim: vi.fn() };
+    const seen = new Set<string>();
+    try {
+      for (const value of [0, 0, 0.99]) {
+        random.mockReturnValue(value);
+        const previous = rt.spinClip;
+        rt.phase = 'idle'; rt.t = rt.telegraphDur;
+        updatePinballCharge(rt, spec, ctx);
+        const chosen = rt.spinClip;
+        expect(chosen).not.toBe(previous); seen.add(chosen);
+        for (let i = 0; i < 10; i++) updatePinballCharge(rt, spec, ctx);
+        expect(rt.spinClip).toBe(chosen);
+        expect(ctx.playAnim).toHaveBeenLastCalledWith(chosen, {loop: true});
+        disposePinballCharge(rt);
+      }
+      expect(seen.size).toBe(3);
+    } finally { disposePinballCharge(rt); random.mockRestore(); }
   });
 
   it("steamrolls player into a pancake with flattenT, launch momentum, and wall crunch damage", () => {
