@@ -218,12 +218,70 @@ export interface SpriteSheet {
   };
 }
 
-/** Nearest filtering — authored pixels must stay square on screen. */
+/**
+ * Whether sprites are FILTERED when drawn smaller than their baked size.
+ *
+ * Magnification is always NEAREST and is not negotiable: blowing a texel up is
+ * what "authored pixels stay square on screen" means, and a linear magnify is
+ * just a blurry sprite.
+ *
+ * MINIFICATION is the opposite case and the old setting was wrong for it. Once
+ * the camera zooms out past the baked scale, one screen pixel covers more than
+ * one texel and NearestFilter picks an arbitrary one of them — so the detail is
+ * not lost gracefully, it is replaced by whichever texel happened to land under
+ * the sample point. That moves as the camera moves, which is the crawling,
+ * sparkling "everything looks low-res the further I zoom out" report: the
+ * information is still in the atlas, it is simply being point-sampled away.
+ *
+ * LinearFilter averages the 2x2 footprint instead. It is sized for exactly this
+ * range: the widest zoom is 24 PPU against an atlas floored at 46, so the worst
+ * minification is ~2:1 and a 2x2 average covers it. NO MIPMAPS on purpose —
+ * atlas frames are packed edge to edge with no gutter (`repeat = 1/cols`), so a
+ * mip chain would average across frame boundaries and ghost the neighbouring
+ * frame into this one. LinearFilter bleeds at most one texel, and the frames'
+ * shared registration rect leaves that edge transparent in practice.
+ */
+let spriteSmoothing = true;
+
+/** The minification filter every sheet texture should currently carry. */
+export function spriteMinFilter(): THREE.MinificationTextureFilter {
+  return spriteSmoothing ? THREE.LinearFilter : THREE.NearestFilter;
+}
+
+function applyMinFilter(tex: THREE.Texture): void {
+  const next = spriteMinFilter();
+  if (tex.minFilter === next) return;
+  tex.minFilter = next;
+  // The filter is baked into the GPU sampler at upload, so an in-place change
+  // is invisible until the texture is re-uploaded.
+  tex.needsUpdate = true;
+}
+
+/**
+ * Turn minification filtering on or off, live, for the sheets HANDED IN.
+ *
+ * The caller supplies the textures rather than this module tracking them. A
+ * module-level registry would have to hold a strong reference to every atlas
+ * ever built, which is precisely the set that floor teardown disposes — so the
+ * registry would keep every dead floor's textures alive for the session. The
+ * game layer already knows which sheets are live (`state.sheets` and friends);
+ * asking it is both leak-free and the right direction for the dependency.
+ *
+ * Walks samplers rather than rebuilding atlases: this changes no pixel, so
+ * there is nothing to repaint, and a rebuild would cost a full atlas build per
+ * kind to change one enum.
+ */
+export function setSpriteSmoothing(on: boolean, textures: Iterable<THREE.Texture>): void {
+  spriteSmoothing = on;
+  for (const tex of textures) applyMinFilter(tex);
+}
+
+/** Nearest MAGnification — authored pixels must stay square on screen. */
 function celFilters(tex: THREE.CanvasTexture): void {
   tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
+  applyMinFilter(tex);
 }
 
 // Palette as RGB triplets for the pixelate pass, with the same luma weighting

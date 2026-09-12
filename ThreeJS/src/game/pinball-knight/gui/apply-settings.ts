@@ -12,6 +12,8 @@ import { CAMERA_PPU_MAX, CAMERA_PPU_MIN, CAMERA_ZOOM_STEP, PPU, clampCameraPpu }
 import { state } from "../state";
 import { getSettings, saveSettings } from "../settings-save";
 import { setSfxMuted, setSfxVolume } from "../sfx";
+import type * as THREE from "three";
+import { setSpriteSmoothing } from "../engine/render/sprite";
 
 /**
  * Match the selected field of view without rebuilding the boot-time atlases.
@@ -92,4 +94,21 @@ export function applySettingsLive(): void {
   state.pixelPass?.setScanline(s.scanline);
   state.pixelPass?.setOutline(s.outline);
   state.pixelPass?.setHeatEnabled(s.heatShimmer);
+  applySpriteSmoothing();
+}
+
+/**
+ * Push the sprite minification filter onto every atlas currently built.
+ *
+ * The texture list is assembled HERE rather than inside the engine: a registry
+ * living next to the sampler would have to hold a strong reference to every
+ * atlas ever built, and that is exactly the set floor teardown disposes.
+ */
+export function applySpriteSmoothing(): void {
+  const on = getSettings().spriteSmoothing;
+  const textures: THREE.Texture[] = [];
+  for (const sheet of Object.values(state.sheets)) if (sheet) textures.push(sheet.texture);
+  for (const sheet of state.zombieVariantSheets) if (sheet) textures.push(sheet.texture);
+  for (const sheet of Object.values(state.expansionSheets)) if (sheet) textures.push(sheet.texture);
+  setSpriteSmoothing(on, textures);
 }

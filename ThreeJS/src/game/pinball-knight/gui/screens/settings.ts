@@ -68,6 +68,7 @@ const LOOK: Row[] = [
   // outline) were RETIRED 2026-08-03 — rows removed, filters permanently off.
   // See the note in settings-save.ts; sprites keep their pixel identity at the
   // atlas, and the screen-wide snap only posterized the environment.
+  { key: "spriteSmoothing", label: "Smooth when zoomed out", hint: "filters sprites drawn smaller than their art — stops the crawl at wide zoom" },
   { key: "heatShimmer", label: "Heat shimmer", hint: "air bends around fire — the only effect that warps the scene" },
 ];
 

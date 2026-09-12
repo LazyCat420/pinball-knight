@@ -92,6 +92,14 @@ export interface DungeonSettings {
    * resolution is derived from on the next launch.
    */
   cameraPpu: number;
+  /**
+   * Filter sprites when the camera is zoomed out PAST their baked size.
+   *
+   * Magnification stays nearest either way — this only decides what happens
+   * when one screen pixel covers more than one texel, where nearest picks an
+   * arbitrary one and makes the image crawl as the camera moves.
+   */
+  spriteSmoothing: boolean;
 }
 
 export function defaultSettings(): DungeonSettings {
@@ -107,6 +115,7 @@ export function defaultSettings(): DungeonSettings {
     haulReveal: true,
     cameraZoom: CAMERA_ZOOM_DEFAULT,
     cameraPpu: CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT],
+    spriteSmoothing: true,
   };
 }
 
@@ -136,6 +145,7 @@ export function getSettings(): DungeonSettings {
       // RETIRED note on the interface. A stored value (true in every blob saved
       // before 2026-08-03) must not resurrect the screen-space filters.
       if (typeof p.haulReveal === "boolean") d.haulReveal = p.haulReveal;
+      if (typeof p.spriteSmoothing === "boolean") d.spriteSmoothing = p.spriteSmoothing;
       // MIGRATION: a player who had turned the old modal card reader OFF was
       // saying "stop showing me cards", so carry that across rather than
       // greeting them with a brand-new screen they already opted out of. Read
