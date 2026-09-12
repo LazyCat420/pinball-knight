@@ -176,7 +176,11 @@ import {
   HAMSTER_BALL_R, HAMSTER_BALL_WINDUP, HAMSTER_BALL_COOLDOWN,
   ASCII_HUMAN_R, ASCII_HUMAN_HP, ASCII_HUMAN_SPEED_FACTOR, ASCII_HUMAN_WINDUP, ASCII_HUMAN_COOLDOWN,
   COMPUTER_SCREEN_HP, COMPUTER_SCREEN_R, COMPUTER_SCREEN_COOLDOWN, COMPUTER_SCREEN_MAX_CHILDREN,
-  ASCII_MERGE_THRESHOLD, ASCII_MERGE_RADIUS, GIANT_ASCII_HP, GIANT_ASCII_R, GIANT_ASCII_SPEED_FACTOR, GIANT_ASCII_DAMAGE, GIANT_ASCII_SLAM_RADIUS, GIANT_ASCII_WINDUP, GIANT_ASCII_COOLDOWN } from "../constants";
+  ASCII_MERGE_THRESHOLD, ASCII_MERGE_RADIUS, GIANT_ASCII_HP, GIANT_ASCII_R, GIANT_ASCII_SPEED_FACTOR, GIANT_ASCII_DAMAGE, GIANT_ASCII_SLAM_RADIUS, GIANT_ASCII_WINDUP, GIANT_ASCII_COOLDOWN,
+  CORVID_BOMBER_R, CORVID_BOMBER_FIRE_RANGE, CORVID_BOMBER_WINDUP, CORVID_BOMBER_COOLDOWN, CORVID_BOMBER_HOVER_Y,
+  VULTURE_R, VULTURE_FIRE_RANGE, VULTURE_WINDUP, VULTURE_COOLDOWN, VULTURE_HOVER_Y,
+  GULL_R, GULL_FIRE_RANGE, GULL_WINDUP, GULL_COOLDOWN, GULL_HOVER_Y,
+  FALCON_R, FALCON_FIRE_RANGE, FALCON_WINDUP, FALCON_COOLDOWN, FALCON_HOVER_Y } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
@@ -197,7 +201,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -291,6 +295,10 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   hydrant_hound: { bodyR: 0.6, contactRange: 1.1, windup: 0.35, cooldown: 1.8, ranged: false },
   blaster_frank: { bodyR: 0.42, contactRange: 6.0, windup: 0.50, cooldown: 2.8, ranged: true },
   junkbot: { bodyR: 0.52, contactRange: 1.1, windup: 0.45, cooldown: 1.8, ranged: false },
+  corvid_bomber: { bodyR: CORVID_BOMBER_R, contactRange: CORVID_BOMBER_FIRE_RANGE, windup: CORVID_BOMBER_WINDUP, cooldown: CORVID_BOMBER_COOLDOWN, ranged: true },
+  vulture_scavenger: { bodyR: VULTURE_R, contactRange: VULTURE_FIRE_RANGE, windup: VULTURE_WINDUP, cooldown: VULTURE_COOLDOWN, ranged: true },
+  gull_bomber: { bodyR: GULL_R, contactRange: GULL_FIRE_RANGE, windup: GULL_WINDUP, cooldown: GULL_COOLDOWN, ranged: true },
+  sky_falcon: { bodyR: FALCON_R, contactRange: FALCON_FIRE_RANGE, windup: FALCON_WINDUP, cooldown: FALCON_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1776,6 +1784,14 @@ export function updateZombies(dt: number): void {
                 state.vfx?.burst(z.x, 0.4, z.z, 0xef4444, 8, 1.2);
               } else if (z.kind === "blaster_frank") {
                 launchSkyVolley(z.x, z.z, p.x, p.z);
+              } else if (z.kind === "corvid_bomber") {
+                dropCorvidBomb(z.x, z.z, ux, uz);
+              } else if (z.kind === "vulture_scavenger") {
+                dropVultureBomb(z.x, z.z);
+              } else if (z.kind === "gull_bomber") {
+                dropGullClusterBomb(z.x, z.z, ux, uz);
+              } else if (z.kind === "sky_falcon") {
+                dropFalconFireBomb(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
@@ -1942,6 +1958,15 @@ export function updateZombies(dt: number): void {
       vx = (vx + px) / len;
       vz = (vz + pz) / len;
     }
+    if (z.kind === "gull_bomber" && (vx !== 0 || vz !== 0)) {
+      z.bobT = (z.bobT ?? 0) + dt;
+      const w = Math.sin(z.bobT * 12) * 0.22;
+      const px = -vz * w;
+      const pz = vx * w;
+      const len = Math.hypot(vx + px, vz + pz) || 1;
+      vx = (vx + px) / len;
+      vz = (vz + pz) / len;
+    }
 
     // Golems and chompers are FURNITURE WITH TEETH: rooted, never shoved by
     // the horde's separation pass — they hold their chokepoint. The flag comes
@@ -1998,6 +2023,23 @@ export function updateZombies(dt: number): void {
     if (z.kind === "rotortail") {
       z.bobT = (z.bobT ?? 0) + dt;
       z.sprite.mesh.position.y = ROTORTAIL_HOVER_Y + Math.sin(z.bobT * 2.6) * 0.1;
+    }
+    // ── 4 Bomb Birds: hovering altitudes and distinct wing-beat bobbing ──
+    if (z.kind === "corvid_bomber") {
+      z.bobT = (z.bobT ?? 0) + dt;
+      z.sprite.mesh.position.y = CORVID_BOMBER_HOVER_Y + Math.sin(z.bobT * 4.5) * 0.08;
+    }
+    if (z.kind === "vulture_scavenger") {
+      z.bobT = (z.bobT ?? 0) + dt;
+      z.sprite.mesh.position.y = VULTURE_HOVER_Y + Math.sin(z.bobT * 2.2) * 0.12;
+    }
+    if (z.kind === "gull_bomber") {
+      z.bobT = (z.bobT ?? 0) + dt;
+      z.sprite.mesh.position.y = GULL_HOVER_Y + Math.sin(z.bobT * 8.0) * 0.05;
+    }
+    if (z.kind === "sky_falcon") {
+      z.bobT = (z.bobT ?? 0) + dt;
+      z.sprite.mesh.position.y = FALCON_HOVER_Y + Math.sin(z.bobT * 5.0) * 0.07;
     }
     // Festive Christmas Tree: hops energetically on its trunk/stump to walk around
     if (z.kind === "christmas_tree") {

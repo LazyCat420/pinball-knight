@@ -145,6 +145,10 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   hydrant_hound: 0.25,
   blaster_frank: 0.55,
   junkbot: 0.35,
+  corvid_bomber: 0.60,
+  vulture_scavenger: 0.85,
+  gull_bomber: 0.45,
+  sky_falcon: 0.50,
 };
 
 /**

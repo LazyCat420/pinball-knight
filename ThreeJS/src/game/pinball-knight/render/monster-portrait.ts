@@ -104,6 +104,10 @@ import { makeLipFlapperPaints } from "./monsters/lip-flapper";
 import { makeHydrantHoundPaints } from "./monsters/hydrant-hound";
 import { makeBlasterFrankPaints } from "./monsters/blaster-frank";
 import { makeJunkbotPaints } from "./monsters/junkbot";
+import { makeCorvidBomberPaints } from "./monsters/corvid_bomber";
+import { makeVultureScavengerPaints } from "./monsters/vulture_scavenger";
+import { makeGullBomberPaints } from "./monsters/gull_bomber";
+import { makeSkyFalconPaints } from "./monsters/sky_falcon";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -199,6 +203,10 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   hydrant_hound: { paints: makeHydrantHoundPaints },
   blaster_frank: { paints: makeBlasterFrankPaints },
   junkbot: { paints: makeJunkbotPaints },
+  corvid_bomber: { paints: makeCorvidBomberPaints },
+  vulture_scavenger: { paints: makeVultureScavengerPaints },
+  gull_bomber: { paints: makeGullBomberPaints },
+  sky_falcon: { paints: makeSkyFalconPaints },
 };
 
 /**

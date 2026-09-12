@@ -415,7 +415,11 @@ export type EnemyKind =
   | "lip_flapper" // WEIRD — accordion stalk with braced cartoon red lips, suction pull and control-reversing kiss
   | "hydrant_hound" // WEIRD — fire hydrant bulldog with glove ears, twin water cannons and geyser death
   | "blaster_frank" // DANNY DEVITO — short stout rogue with round specs, shooting revolver into the air with random misfires
-  | "junkbot"; // SCAVENGER JUNK BOT — computer monitor robot with scavenged limbs (tractor, cyber, motor, crane, appliance)
+  | "junkbot" // SCAVENGER JUNK BOT — computer monitor robot with scavenged limbs (tractor, cyber, motor, crane, appliance)
+  | "corvid_bomber" // BOMB BIRD — raven corridor prowler dropping heavy timed iron fuse bombs
+  | "vulture_scavenger" // BOMB BIRD — high-altitude bone vulture dropping toxic sludge area-denial bombs
+  | "gull_bomber" // BOMB BIRD — erratic buzzing seagull strafer dropping bouncing cluster egg bombs
+  | "sky_falcon"; // BOMB BIRD — supersonic peregrine raptor dive-bomber dropping incendiary napalm bombs
 
 export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 

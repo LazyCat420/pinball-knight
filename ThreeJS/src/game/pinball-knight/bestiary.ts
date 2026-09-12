@@ -104,6 +104,10 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   hydrant_hound: { label: "Hydrant Hound", icon: "🚒", blurb: "heavy red cast-iron municipal fire hydrant bulldog blasting high-pressure water cannon geysers that send knights flying" },
   blaster_frank: { label: "Blaster Frank", icon: "🔫", blurb: "stout, balding rogue in a rumpled trenchcoat with round spectacles clutching a snub-nosed revolver; claims he 'started blasting', shoots wild volleys into the air and suffers random misfires" },
   junkbot: { label: "Junkbot", icon: "🤖", blurb: "sentient computer monitor robot cobbled together from scrap parts across the realm — rolls on treads, stomps on biped struts, bounces on car tires, marches on crane girders, or scoots on chair wheels" },
+  corvid_bomber: { label: "Raven Bombardier", icon: "🦅", blurb: "cunning raven corridor prowler dropping heavy timed iron fuse bombs" },
+  vulture_scavenger: { label: "Bone Vulture", icon: "🦤", blurb: "high-altitude scavenger orbiter dropping toxic area-denial sludge bombs" },
+  gull_bomber: { label: "Plunder Gull", icon: "🕊️", blurb: "erratic buzzing coastal seagull strafer dropping bouncing cluster egg bombs" },
+  sky_falcon: { label: "Peregrine Screamer", icon: "⚡", blurb: "supersonic raptor dive-bomber dropping incendiary napalm fire bombs" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

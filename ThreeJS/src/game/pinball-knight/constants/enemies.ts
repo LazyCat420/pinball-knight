@@ -1360,3 +1360,71 @@ export const JUNKBOT_DAMAGE = 2;
 export const JUNKBOT_WINDUP = 0.45;
 export const JUNKBOT_COOLDOWN = 1.8;
 
+// ── 4 Bomb-Dropping Birds ──
+
+// Raven Bombardier (Corvid corridor prowler dropping heavy timed iron fuse bombs)
+export const CORVID_BOMBER_HP = 22;
+export const CORVID_BOMBER_R = 0.35;
+export const CORVID_BOMBER_SPEED_FACTOR = 1.05;
+export const CORVID_BOMBER_HOVER_Y = 0.85;
+export const CORVID_BOMBER_FROM_LEVEL = 2;
+export const CORVID_BOMBER_RATIO = 8;
+export const CORVID_BOMBER_DAMAGE = 1;
+export const CORVID_BOMBER_WINDUP = 0.55;
+export const CORVID_BOMBER_COOLDOWN = 3.2;
+export const CORVID_BOMBER_FIRE_RANGE = 5.5;
+export const CORVID_BOMB_FUSE = 2.0;
+export const CORVID_BLAST_RADIUS = 2.2;
+export const CORVID_BLAST_DAMAGE = 2;
+export const CORVID_BLAST_ENEMY_DAMAGE = 4;
+export const CORVID_BLAST_PUSH = 2.2;
+
+// Bone Vulture (High-altitude scavenger orbiter dropping toxic sludge area-denial bombs)
+export const VULTURE_HP = 30;
+export const VULTURE_R = 0.42;
+export const VULTURE_SPEED_FACTOR = 0.85;
+export const VULTURE_HOVER_Y = 1.25;
+export const VULTURE_FROM_LEVEL = 3;
+export const VULTURE_RATIO = 9;
+export const VULTURE_DAMAGE = 1.5;
+export const VULTURE_WINDUP = 0.70;
+export const VULTURE_COOLDOWN = 4.0;
+export const VULTURE_FIRE_RANGE = 6.0;
+export const VULTURE_SLUDGE_RADIUS = 1.6;
+export const VULTURE_ROT_LIFE = 4.0;
+export const VULTURE_BLAST_DAMAGE = 2;
+export const VULTURE_BLAST_ENEMY_DAMAGE = 3;
+
+// Plunder Gull (Erratic buzzing coastal seagull strafer dropping bouncing cluster egg bombs)
+export const GULL_HP = 16;
+export const GULL_R = 0.30;
+export const GULL_SPEED_FACTOR = 1.30;
+export const GULL_HOVER_Y = 0.65;
+export const GULL_FROM_LEVEL = 2;
+export const GULL_RATIO = 7;
+export const GULL_DAMAGE = 1;
+export const GULL_WINDUP = 0.40;
+export const GULL_COOLDOWN = 2.8;
+export const GULL_FIRE_RANGE = 5.0;
+export const GULL_EGG_SPEED = 4.5;
+export const GULL_MINI_RADIUS = 1.2;
+export const GULL_BLAST_DAMAGE = 1;
+export const GULL_BLAST_ENEMY_DAMAGE = 2;
+
+// Peregrine Screamer (Supersonic raptor dive-bomber dropping incendiary napalm bombs)
+export const FALCON_HP = 20;
+export const FALCON_R = 0.32;
+export const FALCON_SPEED_FACTOR = 1.40;
+export const FALCON_HOVER_Y = 0.95;
+export const FALCON_FROM_LEVEL = 3;
+export const FALCON_RATIO = 8;
+export const FALCON_DAMAGE = 1.5;
+export const FALCON_WINDUP = 0.45;
+export const FALCON_COOLDOWN = 3.5;
+export const FALCON_FIRE_RANGE = 6.5;
+export const FALCON_BLAST_RADIUS = 1.8;
+export const FALCON_FIRE_LIFE = 4.0;
+export const FALCON_BLAST_DAMAGE = 2;
+export const FALCON_BLAST_ENEMY_DAMAGE = 3;
+
+

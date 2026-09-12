@@ -158,6 +158,10 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   hydrant_hound: [{ id: "ironshard", chance: 0.40 }, { id: "steelpin", chance: 0.30 }],
   blaster_frank: [{ id: "ironshard", chance: 0.35 }, { id: "steelpin", chance: 0.30 }],
   junkbot: [{ id: "ironshard", chance: 0.45 }, { id: "lodestone", chance: 0.35 }, { id: "glass", chance: 0.30 }],
+  corvid_bomber: [{ id: "ironshard", chance: 0.35 }, { id: "fang", chance: 0.20 }],
+  vulture_scavenger: [{ id: "rotflesh", chance: 0.35 }, { id: "hide", chance: 0.25 }],
+  gull_bomber: [{ id: "fang", chance: 0.25 }, { id: "batwing", chance: 0.20 }],
+  sky_falcon: [{ id: "fang", chance: 0.30 }, { id: "ironshard", chance: 0.20 }],
 };
 
 /**

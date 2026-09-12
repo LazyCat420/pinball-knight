@@ -114,6 +114,10 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   hydrant_hound: "chase",
   blaster_frank: "kite",
   junkbot: "chase",
+  corvid_bomber: "flanker",
+  vulture_scavenger: "orbiter",
+  gull_bomber: "strafer",
+  sky_falcon: "kite",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the

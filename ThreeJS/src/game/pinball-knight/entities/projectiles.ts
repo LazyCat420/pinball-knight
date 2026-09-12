@@ -102,6 +102,23 @@ import {
   ORNAMENT_SPEED,
   ORNAMENT_DAMAGE,
   ORNAMENT_BOUNCES,
+  CORVID_BOMB_FUSE,
+  CORVID_BLAST_RADIUS,
+  CORVID_BLAST_DAMAGE,
+  CORVID_BLAST_ENEMY_DAMAGE,
+  CORVID_BLAST_PUSH,
+  VULTURE_SLUDGE_RADIUS,
+  VULTURE_ROT_LIFE,
+  VULTURE_BLAST_DAMAGE,
+  VULTURE_BLAST_ENEMY_DAMAGE,
+  GULL_EGG_SPEED,
+  GULL_MINI_RADIUS,
+  GULL_BLAST_DAMAGE,
+  GULL_BLAST_ENEMY_DAMAGE,
+  FALCON_BLAST_RADIUS,
+  FALCON_FIRE_LIFE,
+  FALCON_BLAST_DAMAGE,
+  FALCON_BLAST_ENEMY_DAMAGE,
 } from "../constants";
 import { spawnFloorFx } from "./floor-fx";
 import { PALETTE_HEX } from "../render/palette";
@@ -387,8 +404,53 @@ export function ornamentAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBa
   return { geo: _ornamentGeo, mat: _ornamentMat };
 }
 
+let _corvidBombGeo: THREE.SphereGeometry | null = null;
+let _corvidBombMat: THREE.MeshBasicMaterial | null = null;
+export function corvidBombAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _corvidBombGeo ??= new THREE.SphereGeometry(0.20, 10, 8);
+  _corvidBombMat ??= new THREE.MeshBasicMaterial({ color: 0x18181b }); // cast iron dark charcoal
+  return { geo: _corvidBombGeo, mat: _corvidBombMat };
+}
+
+let _vultureSludgeGeo: THREE.SphereGeometry | null = null;
+let _vultureSludgeMat: THREE.MeshBasicMaterial | null = null;
+export function vultureSludgeAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _vultureSludgeGeo ??= new THREE.SphereGeometry(0.22, 8, 6);
+  _vultureSludgeMat ??= new THREE.MeshBasicMaterial({ color: 0x4d7c0f }); // toxic bile green
+  return { geo: _vultureSludgeGeo, mat: _vultureSludgeMat };
+}
+
+let _gullEggGeo: THREE.SphereGeometry | null = null;
+let _gullEggMat: THREE.MeshBasicMaterial | null = null;
+export function gullEggAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _gullEggGeo ??= new THREE.SphereGeometry(0.18, 9, 7);
+  _gullEggMat ??= new THREE.MeshBasicMaterial({ color: 0xfef08a }); // speckled egg cream
+  return { geo: _gullEggGeo, mat: _gullEggMat };
+}
+
+let _gullMiniGeo: THREE.SphereGeometry | null = null;
+let _gullMiniMat: THREE.MeshBasicMaterial | null = null;
+export function gullMiniAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _gullMiniGeo ??= new THREE.SphereGeometry(0.11, 7, 5);
+  _gullMiniMat ??= new THREE.MeshBasicMaterial({ color: 0xfbbf24 }); // amber yolk mini
+  return { geo: _gullMiniGeo, mat: _gullMiniMat };
+}
+
+let _falconFireGeo: THREE.CylinderGeometry | null = null;
+let _falconFireMat: THREE.MeshBasicMaterial | null = null;
+export function falconFireBombAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _falconFireGeo ??= new THREE.CylinderGeometry(0.08, 0.12, 0.32, 8);
+  _falconFireMat ??= new THREE.MeshBasicMaterial({ color: 0xe11d48 }); // incendiary scarlet
+  return { geo: _falconFireGeo, mat: _falconFireMat };
+}
+
 export function disposeProjectileAssets(): void {
   _ornamentGeo?.dispose(); _ornamentGeo = null; _ornamentMat?.dispose(); _ornamentMat = null;
+  _corvidBombGeo?.dispose(); _corvidBombGeo = null; _corvidBombMat?.dispose(); _corvidBombMat = null;
+  _vultureSludgeGeo?.dispose(); _vultureSludgeGeo = null; _vultureSludgeMat?.dispose(); _vultureSludgeMat = null;
+  _gullEggGeo?.dispose(); _gullEggGeo = null; _gullEggMat?.dispose(); _gullEggMat = null;
+  _gullMiniGeo?.dispose(); _gullMiniGeo = null; _gullMiniMat?.dispose(); _gullMiniMat = null;
+  _falconFireGeo?.dispose(); _falconFireGeo = null; _falconFireMat?.dispose(); _falconFireMat = null;
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
   _copBulletGeo?.dispose();
@@ -725,6 +787,263 @@ export function detonate(x: number, z: number): void {
     // exactly on it, in which case any direction will do.
     const d = Math.sqrt(d2) || 1;
     damageZombie(zb, STILTNECK_BLAST_ENEMY_DAMAGE, dx / d, dz / d, STILTNECK_BLAST_PUSH, true, "ranged");
+    state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "red", 5);
+  }
+}
+
+/**
+ * RAVEN BOMBARDIER: drops a heavy cast-iron timed delay bomb onto the corridor floor.
+ */
+export function dropCorvidBomb(x: number, z: number, dx = 0, dz = 0): void {
+  if (!state.scene) return;
+  const { geo, mat } = corvidBombAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "corvid_bomb",
+    x,
+    z,
+    vx: dx * 1.5,
+    vz: dz * 1.5,
+    life: CORVID_BOMB_FUSE,
+    maxLife: CORVID_BOMB_FUSE,
+    damage: CORVID_BLAST_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+export function detonateCorvidBomb(x: number, z: number): void {
+  const r = CORVID_BLAST_RADIUS;
+  const r2 = r * r;
+
+  state.vfx?.ring(x, z, PALETTE_HEX[16], r, 0.4);
+  state.vfx?.burst(x, PROJECTILE_Y, z, PALETTE_HEX[17], 24, 8);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 12);
+  state.shakeT = Math.max(state.shakeT, 0.28);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+    if (d2 <= r2) {
+      const t = 1 - Math.sqrt(d2) / r;
+      hitPlayerRanged(Math.max(1, Math.round(CORVID_BLAST_DAMAGE * (0.5 + 0.5 * t))), x, z);
+    }
+  }
+
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    if (zb.kind === "reaper") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) || 1;
+    damageZombie(zb, CORVID_BLAST_ENEMY_DAMAGE, dx / d, dz / d, CORVID_BLAST_PUSH, true, "ranged");
+    state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "red", 6);
+  }
+}
+
+/**
+ * BONE VULTURE: drops a heavy toxic sludge bomb vertically from altitude.
+ */
+export function dropVultureBomb(x: number, z: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = vultureSludgeAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "vulture_sludge_bomb",
+    x,
+    z,
+    vx: 0,
+    vz: 0,
+    life: 1.2,
+    maxLife: 1.2,
+    damage: VULTURE_BLAST_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+export function detonateVultureSludge(x: number, z: number): void {
+  const r = VULTURE_SLUDGE_RADIUS;
+  const r2 = r * r;
+
+  state.vfx?.ring(x, z, 0x84cc16, r, 0.4);
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0x4d7c0f, 20, 6);
+  state.vfx?.smoke(x, PROJECTILE_Y, z, 1.2, 10);
+  state.shakeT = Math.max(state.shakeT, 0.18);
+
+  // Spawns lingering toxic rot / tar floor hazard puddles
+  spawnFloorFx("rot", x, z, VULTURE_SLUDGE_RADIUS, VULTURE_ROT_LIFE, true);
+  spawnFloorFx("tar", x, z, VULTURE_SLUDGE_RADIUS * 0.85, VULTURE_ROT_LIFE, true);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+    if (d2 <= r2) {
+      const t = 1 - Math.sqrt(d2) / r;
+      hitPlayerRanged(Math.max(1, Math.round(VULTURE_BLAST_DAMAGE * (0.5 + 0.5 * t))), x, z);
+    }
+  }
+
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    if (zb.kind === "reaper") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) || 1;
+    damageZombie(zb, VULTURE_BLAST_ENEMY_DAMAGE, dx / d, dz / d, 1.2, true, "ranged");
+    state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "green", 5);
+  }
+}
+
+/**
+ * PLUNDER GULL: drops a bouncing cluster egg bomb that ricochets and fragments into 3 mini bomblets.
+ */
+export function dropGullClusterBomb(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = gullEggAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "gull_egg_bomb",
+    x,
+    z,
+    vx: dx * GULL_EGG_SPEED,
+    vz: dz * GULL_EGG_SPEED,
+    life: 1.5,
+    maxLife: 1.5,
+    damage: GULL_BLAST_DAMAGE,
+    hostile: true,
+    bounces: 1,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+export function dropGullMiniBomb(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = gullMiniAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "gull_mini_bomb",
+    x,
+    z,
+    vx: dx * 3.2,
+    vz: dz * 3.2,
+    life: 0.65,
+    maxLife: 0.65,
+    damage: GULL_BLAST_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+export function detonateGullEgg(x: number, z: number): void {
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0xfef08a, 12, 1.8);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 6);
+  // Spawn 3 mini-bomblets in a triangular spread
+  const angles = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3];
+  for (const baseA of angles) {
+    const a = baseA + (Math.random() - 0.5) * 0.3;
+    dropGullMiniBomb(x, z, Math.cos(a), Math.sin(a));
+  }
+}
+
+export function detonateGullMini(x: number, z: number): void {
+  const r = GULL_MINI_RADIUS;
+  const r2 = r * r;
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0xfacc15, 10, 1.5);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 5);
+  state.shakeT = Math.max(state.shakeT, 0.12);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+    if (d2 <= r2) {
+      hitPlayerRanged(GULL_BLAST_DAMAGE, x, z);
+    }
+  }
+
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    if (zb.kind === "reaper") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) || 1;
+    damageZombie(zb, GULL_BLAST_ENEMY_DAMAGE, dx / d, dz / d, 0.8, true, "ranged");
+    state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "red", 3);
+  }
+}
+
+/**
+ * PEREGRINE SCREAMER: drops a supersonic incendiary napalm bomb leaving burning corridors.
+ */
+export function dropFalconFireBomb(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = falconFireBombAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, PROJECTILE_Y, z);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "falcon_fire_bomb",
+    x,
+    z,
+    vx: dx * 7.5,
+    vz: dz * 7.5,
+    life: 1.2,
+    maxLife: 1.2,
+    damage: FALCON_BLAST_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+export function detonateFalconFire(x: number, z: number): void {
+  const r = FALCON_BLAST_RADIUS;
+  const r2 = r * r;
+
+  state.vfx?.ring(x, z, 0xf97316, r, 0.45);
+  state.vfx?.burst(x, PROJECTILE_Y, z, 0xef4444, 22, 7);
+  state.vfx?.smoke(x, PROJECTILE_Y, z, 1.0, 12);
+  state.shakeT = Math.max(state.shakeT, 0.22);
+
+  // Spawn fire hazard in the corridor
+  spawnFloorFx("fire", x, z, FALCON_BLAST_RADIUS, FALCON_FIRE_LIFE, true);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+    if (d2 <= r2) {
+      const t = 1 - Math.sqrt(d2) / r;
+      hitPlayerRanged(Math.max(1, Math.round(FALCON_BLAST_DAMAGE * (0.5 + 0.5 * t))), x, z);
+    }
+  }
+
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    if (zb.kind === "reaper") continue;
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > r2) continue;
+    const d = Math.sqrt(d2) || 1;
+    damageZombie(zb, FALCON_BLAST_ENEMY_DAMAGE, dx / d, dz / d, 1.5, true, "ranged");
     state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "red", 5);
   }
 }
@@ -1573,6 +1892,11 @@ export function updateProjectiles(dt: number): void {
       // the shot fell short. For a BOMB it is the fuse, and running out is the
       // whole point — a bomb nobody dodged still goes off where it got to.
       if (pr.kind === "bomb") detonate(pr.x, pr.z);
+      if (pr.kind === "corvid_bomb") detonateCorvidBomb(pr.x, pr.z);
+      if (pr.kind === "vulture_sludge_bomb") detonateVultureSludge(pr.x, pr.z);
+      if (pr.kind === "gull_egg_bomb") detonateGullEgg(pr.x, pr.z);
+      if (pr.kind === "gull_mini_bomb") detonateGullMini(pr.x, pr.z);
+      if (pr.kind === "falcon_fire_bomb") detonateFalconFire(pr.x, pr.z);
       despawn(i);
       continue;
     }
@@ -1702,6 +2026,11 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 8);
           }
           if (pr.kind === "bomb") detonate(pr.x, pr.z);
+          if (pr.kind === "corvid_bomb") detonateCorvidBomb(pr.x, pr.z);
+          if (pr.kind === "vulture_sludge_bomb") detonateVultureSludge(pr.x, pr.z);
+          if (pr.kind === "gull_egg_bomb") detonateGullEgg(pr.x, pr.z);
+          if (pr.kind === "gull_mini_bomb") detonateGullMini(pr.x, pr.z);
+          if (pr.kind === "falcon_fire_bomb") detonateFalconFire(pr.x, pr.z);
           despawn(i);
           continue;
         }
@@ -1737,10 +2066,16 @@ export function updateProjectiles(dt: number): void {
       // able to tell a bomb that is about to go off from one that just left, and
       // a black sphere has no other way of saying it. It also pulses bigger on
       // the last third, which is the beat that says "leave now".
-      if (pr.kind === "bomb") {
+      if (pr.kind === "bomb" || pr.kind === "corvid_bomb") {
         const burn = 1 - pr.life / pr.maxLife;
         state.vfx?.sparks(pr.x, PROJECTILE_Y + 0.15, pr.z, -pr.vx * 0.02, -pr.vz * 0.02, burn > 0.66 ? 2 : 1);
         pr.mesh.scale.setScalar(1 + Math.max(0, burn - 0.6) * 0.9);
+      }
+      if (pr.kind === "falcon_fire_bomb") {
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.025, -pr.vz * 0.025, 2);
+      }
+      if (pr.kind === "vulture_sludge_bomb") {
+        state.vfx?.dust(pr.x, PROJECTILE_Y, pr.z);
       }
 
       // ARROW TRAIL: a faint glowing streak shed behind the shaft each frame,
@@ -1766,6 +2101,16 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
           } else if (pr.kind === "bomb") {
             detonate(pr.x, pr.z);
+          } else if (pr.kind === "corvid_bomb") {
+            detonateCorvidBomb(pr.x, pr.z);
+          } else if (pr.kind === "vulture_sludge_bomb") {
+            detonateVultureSludge(pr.x, pr.z);
+          } else if (pr.kind === "gull_egg_bomb") {
+            detonateGullEgg(pr.x, pr.z);
+          } else if (pr.kind === "gull_mini_bomb") {
+            detonateGullMini(pr.x, pr.z);
+          } else if (pr.kind === "falcon_fire_bomb") {
+            detonateFalconFire(pr.x, pr.z);
           } else if (pr.kind === "burger_sauce") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             if (p.iframes <= 0) webPlayer();

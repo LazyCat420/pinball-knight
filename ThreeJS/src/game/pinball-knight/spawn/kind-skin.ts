@@ -125,6 +125,10 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   hydrant_hound: { scale: 1.1 },
   blaster_frank: { scale: 0.95 },
   junkbot: { scale: 1.15 },
+  corvid_bomber: { scale: 1.0 },
+  vulture_scavenger: { scale: 1.15 },
+  gull_bomber: { scale: 0.95 },
+  sky_falcon: { scale: 1.05 },
 
   // ── Borrowed atlases, re-dyed: placeholder art, behaviour carries identity ─
   //

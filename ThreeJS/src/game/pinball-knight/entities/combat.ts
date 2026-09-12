@@ -79,7 +79,8 @@ import {
   ASCII_HUMAN_DAMAGE,
   GIANT_ASCII_DAMAGE,
   HAMSTER_BALL_DEFLECT_SPEED,
-  PINBALL_MAX_SPEED, FISH_FEET_DAMAGE } from "../constants";
+  PINBALL_MAX_SPEED, FISH_FEET_DAMAGE,
+  CORVID_BOMBER_DAMAGE, VULTURE_DAMAGE, GULL_DAMAGE, FALCON_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { MOMENTUM_GATES } from "./enemy-rules";
@@ -1179,6 +1180,22 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.4, z.z, 0x666666, 12, 2.0);  // iron fragments
     state.vfx?.smoke(z.x, 0.3, z.z, 0.9, 10);
     state.vfx?.sparks(z.x, 0.35, z.z, 0, 0.5, 12);
+  } else if (z.kind === "corvid_bomber") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x1e1b4b, 16, 2.5); // indigo/black feathers
+    state.vfx?.smoke(z.x, 0.4, z.z, 0.8, 10);
+    state.vfx?.sparks(z.x, 0.35, z.z, 0, 0.4, 8);
+  } else if (z.kind === "vulture_scavenger") {
+    state.vfx?.burst(z.x, 0.5, z.z, 0x451a03, 18, 2.8); // dark brown feathers
+    state.vfx?.burst(z.x, 0.4, z.z, 0x78716c, 12, 2.0); // bone gray
+    state.vfx?.smoke(z.x, 0.45, z.z, 1.0, 12);
+  } else if (z.kind === "gull_bomber") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xf8fafc, 16, 3.0); // white feathers
+    state.vfx?.burst(z.x, 0.45, z.z, 0x0284c7, 10, 2.0); // coastal cyan
+    state.vfx?.smoke(z.x, 0.35, z.z, 0.7, 8);
+  } else if (z.kind === "sky_falcon") {
+    state.vfx?.burst(z.x, 0.45, z.z, 0x334155, 16, 3.0); // slate raptor plumage
+    state.vfx?.burst(z.x, 0.5, z.z, 0xf59e0b, 14, 2.5); // golden barred highlights
+    state.vfx?.sparks(z.x, 0.4, z.z, 0, 0.5, 10);
   } else {
     state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
     state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
@@ -1381,6 +1398,10 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   hydrant_hound: 2,
   blaster_frank: 2,
   junkbot: 2,
+  corvid_bomber: CORVID_BOMBER_DAMAGE,
+  vulture_scavenger: VULTURE_DAMAGE,
+  gull_bomber: GULL_DAMAGE,
+  sky_falcon: FALCON_DAMAGE,
 };
 
 /**
