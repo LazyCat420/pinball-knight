@@ -1,0 +1,112 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Blaster Frank · Sprite studio</title><style>body{margin:0;background:#152336;color:#d8eaf0;font:14px system-ui;padding:24px}h1{font-size:24px}canvas{max-width:100%;height:auto;background:repeating-conic-gradient(#24364b 0% 25%,#1b2c40 0% 50%) 0/24px 24px}</style></head><body><h1>Blaster Frank · Sprite studio</h1><p>Gameplay sprite sheets rendered from the 3D Blaster Frank rig (render/blaster-frank-3d.ts). Front / back / right side; west mirrors east.</p><div id="preview"></div><script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import { createBlasterFrank, BLASTER_FRANK_CLIPS, BLASTER_FRANK_FRAMES, BLASTER_FRANK_LOOPS, BLASTER_FRANK_PALETTE, BLASTER_FRANK_SHEET } from '/src/game/pinball-knight/render/blaster-frank-3d.ts';
+
+const W = 256, H = 320, COLS = 8;
+
+window.bakeBlasterFrankSheets = async () => {
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(1);
+  renderer.setClearColor(0, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xfff5ea, 0x2a382a, 1.2));
+  const light = new THREE.DirectionalLight(0xffffff, 2.0);
+  light.position.set(-3, 6, 5);
+  scene.add(light);
+  const rim = new THREE.DirectionalLight(0xffd9a8, 0.6);
+  rim.position.set(3, 2, -4);
+  scene.add(rim);
+
+  const HALF = 2.2;
+  const camera = new THREE.OrthographicCamera(-HALF, HALF, 3.3, -2.2, 0.1, 30);
+  camera.position.set(0, 1.2 + 1.7, 9);
+  camera.lookAt(0, 1.2, 0);
+
+  const rig = createBlasterFrank();
+  scene.add(rig.root);
+
+  const result = [];
+  const name = BLASTER_FRANK_SHEET;
+  const total = BLASTER_FRANK_CLIPS.reduce((n, c) => n + BLASTER_FRANK_FRAMES[c], 0);
+  const ROWS = Math.ceil(total / COLS);
+
+  for (const [dir, yaw] of [['S', 0], ['N', Math.PI], ['E', Math.PI * 0.34]]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = W * COLS;
+    canvas.height = H * ROWS;
+    const ctx = canvas.getContext('2d');
+    const rows = [];
+    let frame = 0;
+
+    rig.root.rotation.y = yaw;
+    // Slide the face round toward the camera for the three-quarter E bake.
+    rig.setFacing(yaw);
+    for (const clip of BLASTER_FRANK_CLIPS) {
+      const count = BLASTER_FRANK_FRAMES[clip];
+      const cells = [];
+      for (let i = 0; i < count; i++) {
+        const u = i / (BLASTER_FRANK_LOOPS[clip] ? count : count - 1);
+        rig.pose(clip, u);
+        renderer.render(scene, camera);
+        const x = (frame % COLS) * W, y = Math.floor(frame / COLS) * H;
+        ctx.drawImage(renderer.domElement, x, y);
+        cells.push([x, y, x + W - 1, y + H - 1]);
+        frame++;
+      }
+      rows.push({ clip, cells });
+    }
+
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let minX = W, minY = H, maxX = 0, maxY = 0;
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        if (pixels[(y * canvas.width + x) * 4 + 3] > 24) {
+          const lx = x % W, ly = y % H;
+          minX = Math.min(minX, lx);
+          maxX = Math.max(maxX, lx);
+          minY = Math.min(minY, ly);
+          maxY = Math.max(maxY, ly);
+        }
+      }
+    }
+    const half = Math.min(W / 2, Math.max(W / 2 - minX, maxX - W / 2) + 2);
+    for (const row of rows) {
+      row.cells = row.cells.map(([x, y]) => [
+        x + W / 2 - half,
+        y + Math.max(0, minY - 2),
+        x + W / 2 + half - 1,
+        y + Math.min(H - 1, maxY + 2),
+      ]);
+    }
+
+    const png = canvas.toDataURL('image/png');
+    result.push({
+      dir,
+      png,
+      manifest: {
+        name,
+        dir,
+        image: `/sprites/${name}-${dir}.png`,
+        source: [canvas.width, canvas.height],
+        grid: 1,
+        mirror: false,
+        palette: Object.values(BLASTER_FRANK_PALETTE),
+        rows,
+      },
+    });
+
+    const label = document.createElement('h2');
+    label.textContent = dir;
+    document.querySelector('#preview').append(label, canvas);
+  }
+
+  rig.dispose();
+  renderer.dispose();
+  return result;
+};
+
+window.studioReady = true;
+</script></body></html>
