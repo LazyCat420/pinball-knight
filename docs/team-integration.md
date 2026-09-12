@@ -308,3 +308,12 @@ project-local lock did not protect against a later release from an older branch.
 - Rebuilt all three gameplay atlases. Walk now has 24 samples over the original eight beats, retaining walk/run cadence; fallback art and attack/death timing retain their existing rates.
 - Focused rig/combat/cadence checks passed (37 tests across four files); production build passed. Rig checks cover all facings, loop closure, clip reset, hand arcs, joint articulation, attack and death framing, and matching published PNG/manifest hashes.
 - Release integration and full gate pending below.
+
+#### Frank rig release verification
+
+- Feature `fca507f8`; integrated with the incoming loading-screen release on `main`, deployed revision `2f1979b0`.
+- Combined focused checks: 50 tests passed; production build passed. No TypeScript diagnostics in changed files; existing unrelated repository diagnostics remain.
+- Full guarded release: 372 files passed / 5 skipped; 4,312 tests passed / 12 skipped; zero failures. The first fresh-worktree attempt exposed deploy-kit's ignored Canvas install script; rebuilt the local native Canvas dependency and reran the complete gate successfully.
+- Muted isolated browser: front/side/back animated previews and actual dungeon Frank spawn, 24 walk frames and `{walk:8,run:8}` beats, no JavaScript errors. Multiplayer connections were blocked during local gameplay validation.
+- Existing deploy wrapper completed Docker build, image transfer, and restart. Verified NAS `2f1979b0` running/healthy and both NAS/public health endpoints healthy. All six public Frank PNG/JSON files match the integrated source bytes exactly.
+- Main integration pushed; later loading-screen comment-only commit preserved. Test-owned browser/server stopped and this worktree's generated test reports restored.
