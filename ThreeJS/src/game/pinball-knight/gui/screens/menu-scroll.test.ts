@@ -156,8 +156,8 @@ async function openTab(digit: number): Promise<UiScreen> {
 /** Saturate the wheel, then read what the region actually did. */
 function saturate(screen: UiScreen): { view: Probe["clips"][number]; shift: number; painted: number } {
   // The content height is measured from the PREVIOUS frame's paint, so the first
-  // frame declares 0. Twelve frames is well past both that and the clamp.
-  for (let i = 0; i < 12; i++) paint(screen, wheelDown());
+  // frame declares 0. Twenty-four frames is well past both that and the clamp for large rosters.
+  for (let i = 0; i < 24; i++) paint(screen, wheelDown());
   const { probe } = paint(screen, wheelDown());
   const view = probe.clips[0];
   expect(view).toBeDefined();
