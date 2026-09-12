@@ -103,6 +103,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   lip_flapper: { label: "Lip Flapper", icon: "💋", blurb: "striped accordion stalk with giant red cartoon lips and a fedora that sucks you in and confuses your controls with a lipstick kiss" },
   hydrant_hound: { label: "Hydrant Hound", icon: "🚒", blurb: "heavy red cast-iron municipal fire hydrant bulldog blasting high-pressure water cannon geysers that send knights flying" },
   blaster_frank: { label: "Blaster Frank", icon: "🔫", blurb: "stout, balding rogue in a rumpled trenchcoat with round spectacles clutching a snub-nosed revolver; claims he 'started blasting', shoots wild volleys into the air and suffers random misfires" },
+  junkbot: { label: "Junkbot", icon: "🤖", blurb: "sentient computer monitor robot cobbled together from scrap parts across the realm — rolls on treads, stomps on biped struts, bounces on car tires, marches on crane girders, or scoots on chair wheels" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

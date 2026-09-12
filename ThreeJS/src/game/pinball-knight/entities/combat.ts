@@ -1380,6 +1380,7 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   lip_flapper: 1,
   hydrant_hound: 2,
   blaster_frank: 2,
+  junkbot: 2,
 };
 
 /**
