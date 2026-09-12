@@ -187,6 +187,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   lip_flapper: "LipFlap",
   hydrant_hound: "Hydrant",
   blaster_frank: "Frank",
+  junkbot: "Junkbot",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

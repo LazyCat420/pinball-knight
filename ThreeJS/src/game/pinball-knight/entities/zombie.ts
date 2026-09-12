@@ -290,6 +290,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   lip_flapper: { bodyR: 0.45, contactRange: 4.5, windup: 0.6, cooldown: 2.5, ranged: true },
   hydrant_hound: { bodyR: 0.6, contactRange: 1.1, windup: 0.35, cooldown: 1.8, ranged: false },
   blaster_frank: { bodyR: 0.42, contactRange: 6.0, windup: 0.50, cooldown: 2.8, ranged: true },
+  junkbot: { bodyR: 0.52, contactRange: 1.1, windup: 0.45, cooldown: 1.8, ranged: false },
 };
 
 /**

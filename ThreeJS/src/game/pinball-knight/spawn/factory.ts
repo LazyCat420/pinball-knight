@@ -24,9 +24,10 @@ import { MonsterAnimator } from "../engine/render/monster-animator";
 import { ZOMBIE_VARIANTS, withRecoil } from "../render/cel-painter";
 import { bakeTintedSheet, buildSpriteSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { makeBunnyPaints } from "../render/monsters/bunny";
-import { sheetFor, skinSheet } from "../boot/sheets";
+import { sheetFor, skinSheet, type SheetKey } from "../boot/sheets";
 import { KIND_SKIN } from "./kind-skin";
-import { state, type EnemyKind, type Zombie } from "../state";
+import { state, type EnemyKind, type Zombie, type JunkbotVariant } from "../state";
+import { JUNKBOT_HP } from "../constants/enemies";
 import { ZOMBIE_TYPES, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "../zombie-types";
 
 /** Base HP per enemy family. */
@@ -101,6 +102,7 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   lip_flapper: 16,
   hydrant_hound: 32,
   blaster_frank: 24,
+  junkbot: JUNKBOT_HP,
 };
 
 export { skinSheet };
@@ -479,6 +481,17 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return makeSkinned("hydrant_hound", x, z, baseSpeed * 0.9);
     case "blaster_frank":
       return makeSkinned("blaster_frank", x, z, baseSpeed * 0.95);
+    case "junkbot": {
+      const VARIANTS: JunkbotVariant[] = ["tractor", "cyber", "motor", "crane", "appliance"];
+      const v = VARIANTS[Math.floor(Math.random() * VARIANTS.length)];
+      const bot = makeSkinned("junkbot", x, z, baseSpeed * 0.95);
+      if (bot) {
+        bot.junkbotVariant = v;
+        const vSheet = sheetFor(`junkbot_${v}` as SheetKey);
+        if (vSheet) bot.sprite.setSheet(vSheet);
+      }
+      return bot;
+    }
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }

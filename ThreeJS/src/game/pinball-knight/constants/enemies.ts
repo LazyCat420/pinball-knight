@@ -1350,3 +1350,13 @@ export const GIANT_ASCII_SLAM_RADIUS = 2.8;
 export const GIANT_ASCII_WINDUP = 0.85;
 export const GIANT_ASCII_COOLDOWN = 2.4;
 
+// Scavenger Junkbot (Computer monitor robot with 5 scavenged part variations: tractor, cyber, motor, crane, appliance)
+export const JUNKBOT_HP = 32;
+export const JUNKBOT_R = 0.52;
+export const JUNKBOT_SPEED_FACTOR = 0.95;
+export const JUNKBOT_FROM_LEVEL = 3;
+export const JUNKBOT_RATIO = 16;
+export const JUNKBOT_DAMAGE = 2;
+export const JUNKBOT_WINDUP = 0.45;
+export const JUNKBOT_COOLDOWN = 1.8;
+
