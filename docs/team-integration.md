@@ -530,5 +530,21 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - Fix commit: `62d6e2b6`. All 86 debugger roster entries spawned through the
   wired debug hooks with identity actor texture transforms; no script/GPU errors.
   Integrated via `integrate/debug-monster-sprites`; integrated regression tests
-  and production build passed. NAS deployment remains held under the workspace
-  release instructions; the integration owner handles release.
+  and production build passed. The user subsequently requested website release;
+  see the completed release below.
+
+### Website release — 2026-09-12
+
+- User requested integration/push and release for website testing. All committed
+  web branches already belonged to primary branch `main`; no merge conflicts
+  remained. Historical native-port branches and unfinished work were preserved.
+- Release gate exposed incomplete texture stubs in Dracula and bunny summon
+  tests. Commit `7d4e7a6f` uses real CanvasTextures in those fixtures; production
+  code is unchanged from the verified sprite fix. Integrated and pushed to main.
+- Full locked deploy-kit rerun passed: 4,458 tests, 12 skipped; 387 passing test
+  files, five skipped. Docker build, NAS transfer and container restart completed.
+- Running NAS image revision is `7d4e7a6f`, status running/healthy. Direct and
+  public health endpoints return healthy; public game returns HTTP 200.
+- Muted NVIDIA WebGPU production check spawned 18 actors across six kinds.
+  Screenshot shows intact monsters; gameplay remained active without script
+  exceptions or GPU validation errors. Dedicated test browser closed afterward.
