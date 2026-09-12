@@ -26,7 +26,9 @@ import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL
   HIGHWAY_PATROL_FROM_LEVEL, HIGHWAY_PATROL_HP, HIGHWAY_PATROL_RATIO, HIGHWAY_PATROL_SPEED_FACTOR,
   DETECTIVE_COP_FROM_LEVEL, DETECTIVE_COP_HP, DETECTIVE_COP_RATIO, DETECTIVE_COP_SPEED_FACTOR,
   ROBO_COP_FROM_LEVEL, ROBO_COP_HP, ROBO_COP_RATIO, ROBO_COP_SPEED_FACTOR,
-  HOTDOG_FROM_LEVEL, HOTDOG_HP, HOTDOG_RATIO, HOTDOG_SPEED_FACTOR } from "../constants";
+  HOTDOG_FROM_LEVEL, HOTDOG_HP, HOTDOG_RATIO, HOTDOG_SPEED_FACTOR,
+  KETCHUP_FROM_LEVEL, KETCHUP_HP, KETCHUP_RATIO, KETCHUP_SPEED_FACTOR,
+  MUSTARD_FROM_LEVEL, MUSTARD_HP, MUSTARD_RATIO, MUSTARD_SPEED_FACTOR } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -83,6 +85,8 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   fries: FRIES_HP,
   milkshake: MILKSHAKE_HP,
   hotdog: HOTDOG_HP,
+  ketchup: KETCHUP_HP,
+  mustard: MUSTARD_HP,
   crawling_hand: CRAWLING_HAND_HP,
   sumo_ninja: SUMO_NINJA_HP,
   zippo: ZIPPO_HP,
@@ -450,6 +454,10 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= MILKSHAKE_FROM_LEVEL ? makeSkinned("milkshake", x, z, baseSpeed * MILKSHAKE_SPEED_FACTOR) : null;
     case "hotdog":
       return level >= HOTDOG_FROM_LEVEL ? makeSkinned("hotdog", x, z, baseSpeed * HOTDOG_SPEED_FACTOR) : null;
+    case "ketchup":
+      return level >= KETCHUP_FROM_LEVEL ? makeSkinned("ketchup", x, z, baseSpeed * KETCHUP_SPEED_FACTOR) : null;
+    case "mustard":
+      return level >= MUSTARD_FROM_LEVEL ? makeSkinned("mustard", x, z, baseSpeed * MUSTARD_SPEED_FACTOR) : null;
     case "crawling_hand":
       return level >= CRAWLING_HAND_FROM_LEVEL ? makeSkinned("crawling_hand", x, z, baseSpeed * CRAWLING_HAND_SPEED_MULT) : null;
     case "sumo_ninja":
@@ -597,6 +605,8 @@ function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
     case "fries": return level >= FRIES_FROM_LEVEL;
     case "milkshake": return level >= MILKSHAKE_FROM_LEVEL;
     case "hotdog": return level >= HOTDOG_FROM_LEVEL;
+    case "ketchup": return level >= KETCHUP_FROM_LEVEL;
+    case "mustard": return level >= MUSTARD_FROM_LEVEL;
     case "crawling_hand": return level >= CRAWLING_HAND_FROM_LEVEL;
     case "sumo_ninja": return level >= SUMO_NINJA_FROM_LEVEL;
     case "zippo": return level >= ZIPPO_FROM_LEVEL;
@@ -685,6 +695,8 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
   if (level >= FRIES_FROM_LEVEL && hash % FRIES_RATIO === 13) return "fries";
   if (level >= MILKSHAKE_FROM_LEVEL && hash % MILKSHAKE_RATIO === 15) return "milkshake";
   if (level >= HOTDOG_FROM_LEVEL && hash % HOTDOG_RATIO === 7) return "hotdog";
+  if (level >= KETCHUP_FROM_LEVEL && hash % KETCHUP_RATIO === 5) return "ketchup";
+  if (level >= MUSTARD_FROM_LEVEL && hash % MUSTARD_RATIO === 6) return "mustard";
   if (level >= CRAWLING_HAND_FROM_LEVEL && hash % CRAWLING_HAND_RATIO === 5) return "crawling_hand";
   if (level >= SUMO_NINJA_FROM_LEVEL && hash % SUMO_NINJA_RATIO === 9) return "sumo_ninja";
   if (level >= CLAM_FROM_LEVEL && hash % CLAM_RATIO === 7) return "clam";
@@ -836,6 +848,14 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   }
   if (level >= HOTDOG_FROM_LEVEL && hash % HOTDOG_RATIO === 7) {
     const zb = makeSkinned("hotdog", x, z, baseSpeed * HOTDOG_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= KETCHUP_FROM_LEVEL && hash % KETCHUP_RATIO === 5) {
+    const zb = makeSkinned("ketchup", x, z, baseSpeed * KETCHUP_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= MUSTARD_FROM_LEVEL && hash % MUSTARD_RATIO === 6) {
+    const zb = makeSkinned("mustard", x, z, baseSpeed * MUSTARD_SPEED_FACTOR);
     if (zb) return zb;
   }
   if (level >= CRAWLING_HAND_FROM_LEVEL && hash % CRAWLING_HAND_RATIO === 5) {

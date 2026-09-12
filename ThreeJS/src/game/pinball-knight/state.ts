@@ -431,7 +431,9 @@ export type EnemyKind =
   | "detective_cop" // NOIR DETECTIVE — throws flashbangs, fires piercing .44 magnum
   | "robo_cop" // CYBER ENFORCER — 3-round Auto-9 bursts, EMP shockwave on death
   // ── Ballpark & Food Brawler ──
-  | "hotdog"; // BALLPARK WIENER — squirts burning stadium mustard and bursts into relish splatter
+  | "hotdog" // BALLPARK WIENER — squirts burning stadium mustard and bursts into relish splatter
+  | "ketchup" // CONDIMENT TWIN — squeeze bottle squirts thick sticky tomato paste, leaves slowing puddle
+  | "mustard"; // CONDIMENT TWIN — squeeze bottle blasts spicy stadium mustard jets, leaves slip hazard
 
 export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 
@@ -968,7 +970,7 @@ export interface Projectile {
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee" | "rot" | "ink" | "shock" | "mustard";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten" | "fissure" | "coffee" | "rot" | "ink" | "shock" | "mustard" | "ketchup";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;

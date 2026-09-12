@@ -117,6 +117,8 @@ import { makeHighwayPatrolPaints } from "./monsters/highway_patrol";
 import { makeDetectiveCopPaints } from "./monsters/detective_cop";
 import { makeRoboCopPaints } from "./monsters/robo_cop";
 import { makeHotdogPaints } from "./monsters/hotdog";
+import { makeKetchupPaints } from "./monsters/ketchup";
+import { makeMustardPaints } from "./monsters/mustard";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -225,6 +227,8 @@ export const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   detective_cop: { paints: makeDetectiveCopPaints },
   robo_cop: { paints: makeRoboCopPaints },
   hotdog: { paints: makeHotdogPaints },
+  ketchup: { paints: makeKetchupPaints },
+  mustard: { paints: makeMustardPaints },
 };
 
 /**

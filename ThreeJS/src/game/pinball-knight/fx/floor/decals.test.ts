@@ -72,7 +72,7 @@ describe("the shader registry", () => {
     // and `rot` is a decomposing sludge puddle decal.
     // `ink` and `shock` are non-elemental aquatic floor hazards.
     const canvas = FLOOR_FX_KINDS().filter((k: FloorFxKind) => !hasElementShader(k));
-    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "ink", "mustard", "rot", "shard-field", "shock"]);
+    expect(canvas.sort()).toEqual(["coffee", "fissure", "groove", "ink", "ketchup", "mustard", "rot", "shard-field", "shock"]);
   });
 
   it("builds a working material for every registered kind", () => {

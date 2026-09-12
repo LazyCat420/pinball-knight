@@ -111,9 +111,13 @@ import { makeHighwayPatrolPaints } from "./monsters/highway_patrol";
 import { makeDetectiveCopPaints } from "./monsters/detective_cop";
 import { makeRoboCopPaints } from "./monsters/robo_cop";
 import { makeHotdogPaints } from "./monsters/hotdog";
+import { makeKetchupPaints } from "./monsters/ketchup";
+import { makeMustardPaints } from "./monsters/mustard";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
+  ketchup: makeKetchupPaints,
+  mustard: makeMustardPaints,
   hotdog: makeHotdogPaints,
   corvid_bomber: makeCorvidBomberPaints,
   vulture_scavenger: makeVultureScavengerPaints,

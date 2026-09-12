@@ -189,7 +189,9 @@ import {
   HIGHWAY_PATROL_R, HIGHWAY_PATROL_CONTACT_RANGE, HIGHWAY_PATROL_ATTACK_WINDUP, HIGHWAY_PATROL_ATTACK_COOLDOWN, HIGHWAY_PATROL_SPIKE_CADENCE,
   DETECTIVE_COP_R, DETECTIVE_COP_CONTACT_RANGE, DETECTIVE_COP_ATTACK_WINDUP, DETECTIVE_COP_ATTACK_COOLDOWN,
   ROBO_COP_R, ROBO_COP_CONTACT_RANGE, ROBO_COP_ATTACK_WINDUP, ROBO_COP_ATTACK_COOLDOWN,
-  HOTDOG_R, HOTDOG_FIRE_RANGE, HOTDOG_WINDUP, HOTDOG_COOLDOWN } from "../constants";
+  HOTDOG_R, HOTDOG_FIRE_RANGE, HOTDOG_WINDUP, HOTDOG_COOLDOWN,
+  KETCHUP_R, KETCHUP_FIRE_RANGE, KETCHUP_WINDUP, KETCHUP_COOLDOWN,
+  MUSTARD_R, MUSTARD_FIRE_RANGE, MUSTARD_WINDUP, MUSTARD_COOLDOWN } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
@@ -210,7 +212,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -317,6 +319,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   detective_cop: { bodyR: DETECTIVE_COP_R, contactRange: DETECTIVE_COP_CONTACT_RANGE, windup: DETECTIVE_COP_ATTACK_WINDUP, cooldown: DETECTIVE_COP_ATTACK_COOLDOWN, ranged: true },
   robo_cop: { bodyR: ROBO_COP_R, contactRange: ROBO_COP_CONTACT_RANGE, windup: ROBO_COP_ATTACK_WINDUP, cooldown: ROBO_COP_ATTACK_COOLDOWN, ranged: true },
   hotdog: { bodyR: HOTDOG_R, contactRange: HOTDOG_FIRE_RANGE, windup: HOTDOG_WINDUP, cooldown: HOTDOG_COOLDOWN, ranged: true },
+  ketchup: { bodyR: KETCHUP_R, contactRange: KETCHUP_FIRE_RANGE, windup: KETCHUP_WINDUP, cooldown: KETCHUP_COOLDOWN, ranged: true },
+  mustard: { bodyR: MUSTARD_R, contactRange: MUSTARD_FIRE_RANGE, windup: MUSTARD_WINDUP, cooldown: MUSTARD_COOLDOWN, ranged: true },
 };
 
 /**
@@ -1852,6 +1856,12 @@ export function updateZombies(dt: number): void {
               } else if (z.kind === "hotdog") {
                 // The HOTDOG MONSTER (Franken-Frank) blasts a high-velocity stream of stadium mustard
                 launchMustardStream(z.x, z.z, ux, uz);
+              } else if (z.kind === "ketchup") {
+                // Baron von Ketchup squirts thick sticky tomato paste
+                launchKetchupSquirts(z.x, z.z, ux, uz);
+              } else if (z.kind === "mustard") {
+                // Colonel Dijon fires high-pressure twin mustard jets
+                launchMustardJets(z.x, z.z, ux, uz);
               } else if (z.kind === "sumo_ninja") {
                 // Drunk sumo ninja flings spinning ninja stars
                 launchShuriken(z.x, z.z, ux, uz);

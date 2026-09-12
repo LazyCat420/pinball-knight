@@ -63,6 +63,17 @@ import {
   HOTDOG_MUSTARD_RADIUS,
   HOTDOG_MUSTARD_LIFE,
   HOTDOG_MUSTARD_SLICK_TIME,
+  KETCHUP_FIRE_RANGE,
+  KETCHUP_DAMAGE,
+  KETCHUP_SPEED,
+  KETCHUP_SLOW_TIME,
+  KETCHUP_PUDDLE_RADIUS,
+  KETCHUP_PUDDLE_LIFE,
+  MUSTARD_FIRE_RANGE,
+  MUSTARD_DAMAGE,
+  MUSTARD_JET_SPEED,
+  MUSTARD_PUDDLE_RADIUS,
+  MUSTARD_PUDDLE_LIFE,
   SUMO_NINJA_FIRE_RANGE,
   SUMO_NINJA_DAMAGE,
   SUMO_NINJA_SHURIKEN_SPEED,
@@ -316,6 +327,14 @@ export function mustardGlobAssets(): { geo: THREE.SphereGeometry; mat: THREE.Mes
   _mustardGlobGeo ??= new THREE.SphereGeometry(0.13, 8, 6);
   _mustardGlobMat ??= new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // bright stadium mustard yellow
   return { geo: _mustardGlobGeo, mat: _mustardGlobMat };
+}
+
+let _ketchupGlobGeo: THREE.SphereGeometry | null = null;
+let _ketchupGlobMat: THREE.MeshBasicMaterial | null = null;
+export function ketchupGlobAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _ketchupGlobGeo ??= new THREE.SphereGeometry(0.14, 8, 6);
+  _ketchupGlobMat ??= new THREE.MeshBasicMaterial({ color: 0xb91c1c }); // deep ketchup crimson red
+  return { geo: _ketchupGlobGeo, mat: _ketchupGlobMat };
 }
 
 let _shurikenGeo: THREE.CylinderGeometry | null = null;
@@ -1358,6 +1377,70 @@ export function launchMustardStream(x: number, z: number, dx: number, dz: number
   }
 }
 
+export function launchKetchupSquirts(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+  // Baron von Ketchup fires a fan burst of 3 sticky tomato globs
+  for (let i = 0; i < 3; i++) {
+    const spread = (i - 1) * 0.12;
+    const angle = baseAngle + spread;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = ketchupGlobAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const offset = MUZZLE_OFFSET + (i % 2) * 0.1;
+    const sx = x + fdx * offset;
+    const sz = z + fdz * offset;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "ketchup_glob",
+      x: sx,
+      z: sz,
+      vx: fdx * KETCHUP_SPEED,
+      vz: fdz * KETCHUP_SPEED,
+      life: KETCHUP_FIRE_RANGE / KETCHUP_SPEED,
+      maxLife: KETCHUP_FIRE_RANGE / KETCHUP_SPEED,
+      damage: KETCHUP_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
+export function launchMustardJets(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const baseAngle = Math.atan2(dx, dz);
+  // Colonel Dijon fires high-pressure twin mustard jets
+  for (const offset of [-0.07, 0.07]) {
+    const angle = baseAngle + offset;
+    const fdx = Math.sin(angle);
+    const fdz = Math.cos(angle);
+    const { geo, mat } = mustardGlobAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + fdx * MUZZLE_OFFSET;
+    const sz = z + fdz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "mustard_glob",
+      x: sx,
+      z: sz,
+      vx: fdx * MUSTARD_JET_SPEED,
+      vz: fdz * MUSTARD_JET_SPEED,
+      life: MUSTARD_FIRE_RANGE / MUSTARD_JET_SPEED,
+      maxLife: MUSTARD_FIRE_RANGE / MUSTARD_JET_SPEED,
+      damage: MUSTARD_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 export function launchShuriken(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
@@ -2321,6 +2404,9 @@ export function updateProjectiles(dt: number): void {
           } else if (pr.kind === "mustard_glob") {
             spawnFloorFx("mustard", pr.x, pr.z, HOTDOG_MUSTARD_RADIUS * 0.8, HOTDOG_MUSTARD_LIFE * 0.8, true);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 8, 1.2);
+          } else if (pr.kind === "ketchup_glob") {
+            spawnFloorFx("ketchup", pr.x, pr.z, KETCHUP_PUDDLE_RADIUS * 0.8, KETCHUP_PUDDLE_LIFE * 0.8, true);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xb91c1c, 8, 1.2);
           } else if (pr.kind === "shuriken") {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xe2e8f0, 8, 1.4);
           } else if (pr.kind === "zippo_flame") {
@@ -2360,6 +2446,10 @@ export function updateProjectiles(dt: number): void {
         state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
       }
       if (pr.kind === "mustard_glob") {
+        pr.mesh.rotation.y += dt * 12;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
+      }
+      if (pr.kind === "ketchup_glob") {
         pr.mesh.rotation.y += dt * 12;
         state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.01, -pr.vz * 0.01, 1);
       }
@@ -2460,6 +2550,14 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xfacc15, 12, 1.5);
             if (p.iframes <= 0) {
               p.oilT = Math.max(p.oilT || 0, HOTDOG_MUSTARD_SLICK_TIME);
+            }
+          } else if (pr.kind === "ketchup_glob") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            spawnFloorFx("ketchup", pr.x, pr.z, KETCHUP_PUDDLE_RADIUS, KETCHUP_PUDDLE_LIFE, true);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xb91c1c, 12, 1.5);
+            if (p.iframes <= 0) {
+              p.stinkSlowT = Math.max(p.stinkSlowT || 0, KETCHUP_SLOW_TIME);
+              p.momSpeed = (p.momSpeed || 0) * 0.65;
             }
           } else if (pr.kind === "shuriken") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
