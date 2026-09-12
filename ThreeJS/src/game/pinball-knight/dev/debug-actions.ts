@@ -20,7 +20,8 @@ import { damageZombie, setBossDefeatedHandler, syncActorMesh } from "../entities
 import { at, tileCenter, worldToTile } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { ITEM_PAINTS, ZOMBIE_VARIANTS } from "../render/cel-painter";
-import { createStaticSprite, type SpriteSheet } from "../engine/render/sprite";
+import { createStaticSprite, releaseActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { loadMonsterSheet, sheetKeyForKind } from "../boot/sheets";
 import { makeSkinned, makeZombie, queueAsciiHuman, skinSheet, spawnKind } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
@@ -130,6 +131,35 @@ export function makeDebugEnemy(kind: EnemyKind, x: number, z: number, ztype?: Zo
   return spawnKind(kind, x, z, speed, 99); // level 99 clears every FROM_LEVEL gate
 }
 
+/**
+ * Load a kind's IMPORTED sheet before it is spawned — the fix for "the code
+ * drawing appears, then the sprite pops in a moment later".
+ *
+ * `debugSpawn` bypasses the level gates on purpose, but the art preload is
+ * gated: `loadMonsterSheetsForFloor` only fetches `keysForFloor(level)` behind
+ * the descent bar. So a lab spawn of anything outside the current floor's set
+ * always landed on the COLD path, where `sheetFor` builds a painter-only atlas
+ * synchronously on the spawning frame (tens of canvas paints, each with a
+ * `getImageData` readback that costs 4-36 ms while the dungeon renders) — and
+ * then threw that atlas away and repainted it when the background backfill
+ * finally reached the key. Two full builds, and a visible swap between them.
+ *
+ * Awaiting the sheet first collapses that to ONE build, with the imported art
+ * already merged in by `paintsFor`. Idempotent and cached, so a second spawn of
+ * the same kind resolves immediately.
+ *
+ * Failure is deliberately silent: a 404, a decode error or `__lab.imported
+ * (false)` all leave `imported` without the key, and `paintsFor` falls through
+ * to the painter exactly as before. The spawn still happens either way.
+ */
+export async function preloadSpawnArt(kind: EnemyKind): Promise<void> {
+  // debugSpawn builds ascii_human out of a computer_screen; preload what it
+  // will actually construct as well as what was asked for.
+  const kinds: EnemyKind[] = kind === "ascii_human" ? ["computer_screen", "ascii_human"] : [kind];
+  const keys = kinds.map((k) => sheetKeyForKind(k)).filter((k): k is NonNullable<typeof k> => Boolean(k));
+  await Promise.all(keys.map((key) => loadMonsterSheet(key).catch(() => false)));
+}
+
 /** What a scripted spawn can ask for beyond "one of these, next to me". */
 // DebugSpawnSpec / DebugSpawnResult now live in debug-spawn.ts, next to the
 // SpawnLayout they extend, so dev/window-hooks.ts can type itself without
@@ -203,7 +233,18 @@ export function debugKillAll(): void {
 
 /** Yank every enemy (and corpse) off the floor instantly — no FX, no score. */
 export function debugClearEnemies(): void {
-  for (const z of state.zombies) state.scene?.remove(z.sprite.mesh);
+  // A debug clear must RELEASE, not just unparent. `scene.remove` alone leaked
+  // every geometry/material/texture and left the actor pool permanently empty,
+  // so the next __lab.spawn/only/ring paid a fresh `texture.clone()` — a whole
+  // atlas re-uploaded to the GPU — for every actor. Bosses are skipped for the
+  // same reason spawn/tide.ts skips them: `disposeBoss()` below owns those.
+  for (const z of state.zombies) {
+    if (z.boss) {
+      state.scene?.remove(z.sprite.mesh);
+      continue;
+    }
+    releaseActorSprite(z.sprite);
+  }
   state.zombies.length = 0;
   state.reaperOut = false; // let the reaper be re-summoned after a clear
   disposeBoss();

@@ -23,6 +23,12 @@
  * floor a monster is gated to in order to look at it, and you never have to
  * abandon your run to test one on floor 1.
  *
+ * `spawn`, `only` and `ring` are ASYNC: they await the kind's imported sheet
+ * before placing anything, so the monster appears once, as its shipped sprite.
+ * Awaiting the art is also what makes them fast — see `preloadSpawnArt` in
+ * dev/debug-actions.ts for why the un-awaited path paid for two atlas builds.
+ * From the console just call them; the promise resolves with the usual result.
+ *
  * Roster comes from bestiary.ts KIND_IDS, which is derived from KIND_INFO — so
  * a new EnemyKind joins this menu automatically rather than needing a second
  * hardcoded list to fall out of date (the `__dungeonAtlas` trap).
@@ -42,6 +48,8 @@ export interface MonsterLabDeps {
   startLevel: (level: number) => void;
   debugSpawn: (spec: DebugSpawnSpec) => DebugSpawnResult;
   debugClearEnemies: () => void;
+  /** Await a kind's imported sheet before spawning it. See preloadSpawnArt. */
+  preloadSpawnArt: (kind: EnemyKind) => Promise<void>;
 }
 
 /** Narrow an arbitrary string to a real EnemyKind, with a useful complaint. */
@@ -57,7 +65,7 @@ function resolveKind(name: string): EnemyKind | null {
 
 export function installMonsterLab(deps: MonsterLabDeps): void {
   if (typeof window === "undefined") return;
-  const { startLevel, debugSpawn, debugClearEnemies } = deps;
+  const { startLevel, debugSpawn, debugClearEnemies, preloadSpawnArt } = deps;
 
   const help = (): string => {
     const rows = (KIND_IDS as EnemyKind[]).map((k) => {
@@ -96,26 +104,34 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
   const lab = Object.assign(help, {
     kinds: (): EnemyKind[] => [...(KIND_IDS as EnemyKind[])],
 
-    spawn: (name: string, count = 1, opts: Partial<DebugSpawnSpec> = {}) => {
+    spawn: async (name: string, count = 1, opts: Partial<DebugSpawnSpec> = {}) => {
       const kind = resolveKind(name);
       if (!kind) return null;
+      // Sheet FIRST, then spawn: one atlas build with the imported art already
+      // in it, instead of a painter build that visibly swaps a moment later.
+      await preloadSpawnArt(kind);
       return debugSpawn({ kind, count, ring: 3, aggro: true, ...opts });
     },
 
     /** The art-QA pose: nothing else on screen, three of one kind, not aggroed
      *  so they idle in place instead of piling onto the knight. */
-    only: (name: string, count = 3) => {
+    only: async (name: string, count = 3) => {
       const kind = resolveKind(name);
       if (!kind) return null;
+      await preloadSpawnArt(kind);
       debugClearEnemies();
       return debugSpawn({ kind, count, ring: 3, aggro: false });
     },
 
     /** One of every kind, fanned around a ring — the whole-roster silhouette
      *  check. Not aggroed, so they hold still to be looked at. */
-    ring: (radius = 5) => {
-      debugClearEnemies();
+    ring: async (radius = 5) => {
       const kinds = KIND_IDS as EnemyKind[];
+      // Every sheet up front, in parallel. The roster check used to build 86
+      // painter atlases back to back on the main thread with no yield — the
+      // slowest thing in the lab by a wide margin.
+      await Promise.all(kinds.map((k) => preloadSpawnArt(k)));
+      debugClearEnemies();
       const placed: Array<{ kind: string; ok: boolean }> = [];
       kinds.forEach((kind, i) => {
         const r = debugSpawn({

@@ -81,6 +81,8 @@ export interface DevHookDeps {
   applyPotion: (id: PotionId) => void;
   debugSpawn: (spec: DebugSpawnSpec) => DebugSpawnResult;
   debugClearEnemies: () => void;
+  /** Await a kind's imported sheet before spawning it — see preloadSpawnArt. */
+  preloadSpawnArt: (kind: EnemyKind) => Promise<void>;
   debugClearAdds: () => void;
   exitDungeonGame: () => void;
   tearGraveHole: (x: number, z: number, name: string) => void;
@@ -96,7 +98,7 @@ export interface DevHookDeps {
 const _sabotagedFrame = new WeakMap<ActorSprite, (i: number) => void>();
 
 export function installDevHooks(deps: DevHookDeps): void {
-  const { startLevel, descend, onPlayerDeath, openShop, applyPotion, debugSpawn, debugClearEnemies, debugClearAdds } = deps;
+  const { startLevel, descend, onPlayerDeath, openShop, applyPotion, debugSpawn, debugClearEnemies, debugClearAdds, preloadSpawnArt } = deps;
   const { exitDungeonGame, tearGraveHole } = deps;
   if (typeof window === "undefined") return;
 
@@ -671,7 +673,7 @@ export function installDevHooks(deps: DevHookDeps): void {
     // Dev: MONSTER LAB — the discoverable index over the hooks below.
     // `__lab()` prints the menu and the whole roster; `__lab.spawn(kind)`
     // bypasses level gates so no monster needs its floor reached to be seen.
-    installMonsterLab({ startLevel, debugSpawn, debugClearEnemies });
+    installMonsterLab({ startLevel, debugSpawn, debugClearEnemies, preloadSpawnArt });
 
     // Dev: FX LAB — the same idea for effects. `__lab` is monster-only, so
     // before this there was no way to put a fire puddle in front of the camera
