@@ -102,6 +102,18 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   junkbot_motor: ["S"],
   junkbot_crane: ["S"],
   junkbot_appliance: ["S"],
+  corvid_bomber: ["S"],
+  vulture_scavenger: ["S"],
+  gull_bomber: ["S"],
+  sky_falcon: ["S"],
+  magma_slime: ["S"],
+  toxic_slime: ["S"],
+  frost_slime: ["S"],
+  void_slime: ["S"],
+  riot_cop: ["S"],
+  highway_patrol: ["S"],
+  detective_cop: ["S"],
+  robo_cop: ["S"],
 };
 
 export function hasAuthoredFacing(name: string, dir: Dir): boolean {
