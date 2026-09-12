@@ -69,7 +69,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   cerberus: ["S"],
   clam: ["S"],
   crab: ["S"],
-  pinball_boss: ["S"],
+  pinball_boss: ["E", "N", "S"],
   medusa: ["S"],
   dracula: ["S"],
   spinning_top: ["S"],

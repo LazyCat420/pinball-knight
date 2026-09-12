@@ -1506,9 +1506,12 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     ctx.playAnim?.("attack", { loop: true });
     ctx.setAnimRate?.(3.0);
 
-    // Continuous spin in direction of roll
+    // The spin is IN THE ART: the baked `attack` clip is a seamless 360° turn
+    // of the ball (render/pinball-boss-3d.ts), looped above. Rotating the
+    // billboard quad here swung the whole boss round its FEET — the quad's
+    // origin is its bottom-centre (engine/render/sprite.ts) — and read as a
+    // pendulum, never a spin (plan/PLAN-PINBALL-BOSS-SPIN-SPRITES.md).
     rt.spinAngle = (rt.spinAngle + 38 * ctx.dt) % (Math.PI * 2);
-    ctx.rotateSprite?.(rt.spinAngle);
 
     const step = spec.speed * ctx.dt;
     const nx = ctx.x + rt.dx * step;
@@ -1624,7 +1627,7 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     // Angular velocity revs up from 6 rad/s to 45 rad/s as RPM builds to release
     rt.spinSpeed = 6 + 39 * (progress * progress);
     rt.spinAngle = (rt.spinAngle + rt.spinSpeed * ctx.dt) % (Math.PI * 2);
-    ctx.rotateSprite?.(rt.spinAngle);
+    // Spin lives in the looped `attack` clip; the rate ramp below is the rev.
     ctx.setAnimRate?.(1.0 + progress * 2.5); // Visually accelerate spin animation from 8fps to 28fps
     ctx.playAnim?.("attack", { loop: true });
 

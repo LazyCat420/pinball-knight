@@ -176,7 +176,12 @@ describe("Tilt Titan Pinball Boss — Entity & Attack Suite", () => {
     // Release trigger tick
     updatePinballCharge(rt, spec, ctx);
     expect(rt.phase).toBe("running");
-    expect(rotations.length).toBeGreaterThan(5);
+    // The spin is IN THE ART now: the baked `attack` clip is a seamless 360°
+    // turn played looped (render/pinball-boss-3d.ts). The billboard quad must
+    // never be swung — its origin is its feet, so a rotated quad read as a
+    // pendulum, not a spin. Only the reset to 0 may reach rotateSprite.
+    expect(rotations.every((a) => a === 0)).toBe(true);
+    expect(ctx.playAnim).toHaveBeenCalledWith("attack", { loop: true });
 
     // All moveTo calls during telegraph must have kept position locked at (5, 5)
     for (const pt of movedTo) {

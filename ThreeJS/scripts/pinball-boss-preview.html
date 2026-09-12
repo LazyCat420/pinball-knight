@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Tilt Titan · 3D rig preview</title>
+<style>body{margin:0;background:#142033;color:#e4edf5;font:16px system-ui;padding:32px}h1{font-size:25px;margin:0 0 10px}.cards{display:flex;gap:20px;flex-wrap:wrap}article{border:1px solid #536478;border-radius:12px;padding:20px;background:#1b2a40}canvas{width:256px;height:256px;display:block;image-rendering:pixelated}button{padding:10px 18px;margin:10px 10px 24px 0;color:#142033;background:#7fe9ff;border:0;border-radius:6px;cursor:pointer;font-weight:bold}h2{font-size:20px;margin:0}p{color:#b4c5d9}</style>
+<h1>Tilt Titan · baked from the 3D rig</h1><p>Idle, walk, attack and death — the actual gameplay sprite frames, played at the game's clip rates.</p>
+<button id="pause">Pause</button><button id="facing">Facing: S</button><div class="cards"></div>
+<script type="module">
+const FPS = { idle: 3, walk: 8, attack: 12, death: 6 }, LOOP = { idle: true, walk: true, attack: true, death: false };
+const DIRS = ['S', 'E', 'N'];
+let paused = false, facing = 0, time = 0, last = performance.now();
+const sheets = {};
+for (const dir of DIRS) {
+  const manifest = await (await fetch(`/sprites/pinball_boss-${dir}.json`, { cache: 'no-store' })).json();
+  const image = new Image();
+  image.src = manifest.image + '?v=' + manifest.hash;
+  await image.decode();
+  sheets[dir] = { image, manifest };
+}
+const cards = [];
+for (const clip of ['idle', 'walk', 'attack', 'death']) {
+  const article = document.createElement('article');
+  article.innerHTML = `<h2>${clip}</h2><p>${FPS[clip]} fps${LOOP[clip] ? ', loops' : ', holds the last frame'}</p><canvas width="256" height="256"></canvas>`;
+  document.querySelector('.cards').append(article);
+  cards.push({ clip, canvas: article.querySelector('canvas') });
+}
+document.querySelector('#pause').onclick = (e) => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Play' : 'Pause';
+};
+document.querySelector('#facing').onclick = (e) => {
+  facing = (facing + 1) % DIRS.length;
+  e.target.textContent = 'Facing: ' + DIRS[facing];
+};
+function frame(now) {
+  if (!paused) time += (now - last) / 1000;
+  last = now;
+  const sheet = sheets[DIRS[facing]];
+  for (const c of cards) {
+    const g = c.canvas.getContext('2d');
+    const row = sheet.manifest.rows.find((r) => r.clip === c.clip);
+    const n = row.cells.length;
+    const cycle = LOOP[c.clip] ? n / FPS[c.clip] : n / FPS[c.clip] + 1;
+    const ph = time % cycle;
+    const i = Math.min(n - 1, Math.floor(ph * FPS[c.clip]));
+    const [x0, y0, x1, y1] = row.cells[i];
+    g.clearRect(0, 0, 256, 256);
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const k = Math.min(256 / w, 256 / h);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sheet.image, x0, y0, w, h, (256 - w * k) / 2, 256 - h * k, w * k, h * k);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></html>
