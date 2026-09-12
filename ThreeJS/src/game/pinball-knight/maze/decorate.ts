@@ -299,7 +299,7 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
  * so `applyPotion`'s laser branch and the whole ricochet form it hands you to
  * were unreachable in a real run.
  */
-export const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "laser"];
+export const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetcore", "laser"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {

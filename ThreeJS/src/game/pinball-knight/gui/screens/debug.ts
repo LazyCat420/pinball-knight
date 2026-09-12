@@ -220,7 +220,7 @@ const POTION_LABEL: Partial<Record<PotionId, string>> = {
   ballform: "Ballform",
   multiball: "M-Ball",
   curveshot: "Curve",
-  magnetboots: "Boots",
+  magnetcore: "MagCore",
   regen: "Regen",
   venomcoat: "Venom",
   stoneskin: "Stone",

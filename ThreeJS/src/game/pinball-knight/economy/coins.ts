@@ -35,6 +35,7 @@ import {
   COIN_MAGNET_RANGE,
   COIN_MAGNET_ARC,
   COIN_AURA_RANGE_MULT,
+  MAGNET_PULL_RADIUS,
 } from "../constants";
 
 export function creditGold(v: number): void {
@@ -175,10 +176,12 @@ export function spawnCoin(x: number, z: number, value: number): void {
  */
 export function updateCoins(dt: number): void {
   const p = state.player;
-  // Magnet Aura widens the coin's OWN capture range rather than dragging the
+  // Magnet Aura / Magnet Ball widens the coin's OWN capture range rather than dragging the
   // coin itself (abilities.ts skips coins) — two systems writing one position in
   // the same frame is how you get jitter and double-speed pickups.
-  const range = COIN_MAGNET_RANGE * (p && p.magnetAuraT > 0 ? COIN_AURA_RANGE_MULT : 1);
+  const range = p && p.material === "magnet"
+    ? MAGNET_PULL_RADIUS
+    : COIN_MAGNET_RANGE * (p && p.magnetAuraT > 0 ? COIN_AURA_RANGE_MULT : 1);
 
   for (const it of state.groundItems) {
     const c = it.coin;

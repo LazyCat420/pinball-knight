@@ -60,6 +60,7 @@ const LOOPS: Record<ClipName, boolean> = {
   stormball: true,
   shadowball: true,
   lavaball: true,
+  magnetball: true,
   boltform: true,
   laserform: true,
   equip: false,
