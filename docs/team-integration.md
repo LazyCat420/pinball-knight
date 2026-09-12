@@ -491,3 +491,25 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   script or GPU-validation errors; only the existing missing favicon 404.
 - Status: ready for integration owner; not merged or deployed. Existing release
   hold remains in force. Dedicated muted browser and Vite server stopped.
+
+## Completed web-branch integration and render audit — 2026-09-12
+
+- Integration branch/worktree: `integrate/web-work-branches`,
+  `.worktrees/wt-web-work-integration`; released revision `b939b6e2`.
+- Merged all completed web branch commits, including the late `ee38550d` main
+  handoff for 14 monster sprites. Preserved the released Frank/Titan art and
+  the release lock/ancestry guard. Historical native-port branches and other
+  developers' uncommitted work remain separate.
+- Repaired narrow passages after curve rejection, prefab budget preservation,
+  widened-corridor classification and the keyboard settings test. Reviewed floor
+  snapshots were refreshed after geometry and connectivity gates passed.
+- Full release suite: 4,431 passed, 12 skipped; 383 files passed, five skipped.
+  Production Docker build and NAS transfer/restart succeeded.
+- Real Windows NVIDIA WebGPU checks covered 72- and 174-monster crowds, then
+  84 actors from the 14 newly integrated types, including repeated resizing.
+  No sprite corruption or GPU errors reproduced; frame spikes are documented
+  without claiming locked 60 FPS. See [the audit](web-integration-render-audit.md).
+- Main fast-forwarded and pushed. NAS container revision `b939b6e2` is running
+  and healthy; direct/public health endpoints and public HTTP 200 verified.
+  Fresh public-site gameplay remained active without script/GPU errors.
+- All test-owned browsers and local servers stopped; unfinished work preserved.

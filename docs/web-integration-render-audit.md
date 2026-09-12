@@ -43,8 +43,8 @@ The incoming manifest registrations and both source/public artwork were retained
 Focused control/placement/flow checks: 69 passed. Geometry gates: 246 passed
 across piece rules (including the 150-floor matrix), floor rules, floor metrics,
 wall runs and wall junctions. The separately updated density regression passed
-all six tests. Production Vite build passed. Final release suite is recorded in
-the release handoff after completion.
+all six tests. Production Vite build passed. The final release gate passed
+4,431 tests with 12 skipped across 383 passing and five skipped files (388 total).
 
 ## Sprite and frame-pacing observations
 
@@ -101,3 +101,16 @@ handoff and was not edited, stashed, reset or committed by this audit. In
 particular, unfinished Frank-run, cyber-jungle, demon-basketball,
 and pancake changes remain with their owners. This release therefore merges
 all completed web branch commits, not every uncommitted file on the computer.
+
+## Verified release
+
+`b939b6e2` was fast-forwarded into main and pushed. The locked deploy-kit
+workflow completed its full tests, Docker build, image transfer and NAS restart
+(exit 0). NAS `pinball-knight-web` reports running/healthy with `git.sha=b939b6e2`.
+Both `http://10.0.0.16:8789/health` and the public HTTPS health endpoint return
+`healthy`; the public game returns HTTP 200. A fresh muted Windows Chrome run
+of the public deployment reached active gameplay and stayed active for the
+10-second observation, with no JavaScript exceptions or WebGPU errors. The
+production capture showed intact actors and UI. Test-owned browsers and local
+servers were stopped. Generated test reports were backed up outside the worktree
+and restored; other developers' unfinished files were preserved.
