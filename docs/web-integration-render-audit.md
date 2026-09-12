@@ -14,6 +14,11 @@ ancestry without replacing newer code. The release branches contributed handoff
 documentation. The remaining batches add the reviewed curve joins, scenery
 filter/UI texture resize fix, directional shortcuts, and item effects.
 
+A completed sprite-forge batch subsequently landed on main at `ee38550d`
+(implementation `030f6495`) and was merged into this integration at `9db76a2b`.
+It fixes Dumpster Dan/Pit Peeper and adds 12 bird, slime and police sheets.
+The incoming manifest registrations and both source/public artwork were retained.
+
 ## Integration repairs
 
 - Recheck passage clearance after invalid curves revert to square masonry.
@@ -76,6 +81,15 @@ This is acceptable local stress behavior, not a claim of locked 60 FPS. These
 measurements preceded the final corridor-classifier repair; no renderer or
 sprite code changed afterward.
 
+The final `9db76a2b` tree also ran a separate crowd check with six of each of
+those 14 affected monster kinds: 84 living actors. All 14 atlases loaded, ranged
+from 1,449×69 to 1,725×69, and rendered recognizable sprites through resizing.
+No script/GPU errors; the dev favicon returned 404. Crowd p50/p95/p99 was
+12.12/25.67/39.83 ms, and after resize 12.15/24.26/36.49 ms. Another release
+was running its CPU test suite concurrently, so these timings are not a clean
+comparison with the earlier samples. Occasional slower frames remain visible
+in the measurements; this audit does not claim they have all been eliminated.
+
 ## Work deliberately preserved
 
 Four historical native-port branches remain outside this web release:
@@ -84,6 +98,6 @@ Four historical native-port branches remain outside this web release:
 
 Uncommitted work in other developers' worktrees is not a completed branch
 handoff and was not edited, stashed, reset or committed by this audit. In
-particular, unfinished Frank-run, cyber-jungle, demon-basketball, sprite-forge,
+particular, unfinished Frank-run, cyber-jungle, demon-basketball,
 and pancake changes remain with their owners. This release therefore merges
 all completed web branch commits, not every uncommitted file on the computer.
