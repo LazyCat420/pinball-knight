@@ -333,3 +333,6 @@ project-local lock did not protect against a later release from an older branch.
 - Full release gate: 376 files passed / 5 skipped; 4,349 tests passed / 12 skipped, zero failures. Guarded Docker build, image transfer and NAS restart completed.
 - NAS `0a4b2c27` running/healthy; both public and NAS health endpoints healthy. All six public Titan PNG/JSON files exactly match the integrated source.
 - Muted isolated gameplay loaded 32 frames in all three spin clips and exercised tornado, corkscrew and tumble during real boss charges. Zero browser exceptions. Preview server and test browser stopped; local test-generated reports restored.
+## 2026-09-10 — armored pixel knight release
+
+`release/armored-pixel-knight@06ba12cd` is deployed and healthy on the NAS. It contains the armored knight batches (`0526e1b6`, `78a262b0`, cherry-picked as `06986faf`, `e17e7ab6`) plus the verified live slime release `0e569b41`, preserving both updates. The feature worktree is `wt-armored-knight`; release integration is isolated in `wt-armored-knight-release`. Full release validation passed 4,145 tests with 12 skips. See [the armor rendering notes](art/armored-knight.md) for behavior and verification.
