@@ -12,7 +12,7 @@ import * as THREE from "three";
 import { state } from "../state";
 import { warmFloorFxReveal } from "../entities/floor-fx";
 import { setShadowsThrottled } from "./lighting";
-import { warmKnightSheets } from "./sheets";
+import { warmKnightSheets, keysForFloor } from "./sheets";
 import type { FloorLoading } from "../floor-loading";
 
 /**
@@ -117,6 +117,44 @@ async function warmFirstFrame(): Promise<void> {
   }
 }
 
+/**
+ * Compile representative sprite pipelines for candidate monsters on this floor,
+ * so mid-floor tide surges or summon spawns never trigger cold WebGL shader compilation.
+ */
+async function warmMonsterPipelines(level: number, camera: THREE.Camera, scene: THREE.Scene): Promise<void> {
+  const renderer = state.renderer;
+  const pixelPass = state.pixelPass;
+  if (!renderer || !pixelPass) return;
+
+  const neededKeys = keysForFloor(level);
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const group = new THREE.Group();
+  scene.add(group);
+
+  try {
+    for (const key of neededKeys) {
+      const sheet = state.sheets[key];
+      if (!sheet) continue;
+      const isSpectral = key === "ghost" || key === "reaper";
+      const mat = new THREE.MeshBasicMaterial({
+        map: sheet.texture,
+        transparent: true,
+        opacity: isSpectral ? 0.62 : 1.0,
+        alphaTest: isSpectral ? 0.02 : 0.5,
+        depthWrite: !isSpectral,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+      await pixelPass.withSceneContext(() => renderer.compileAsync(mesh, camera, scene));
+      mat.dispose();
+    }
+  } finally {
+    scene.remove(group);
+    geo.dispose();
+  }
+}
+
 export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   const renderer = state.renderer;
   const scene = state.scene;
@@ -197,6 +235,8 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
     // The knight's atlases for both slots and every weapon on this floor, so a
     // pickup is a cache hit instead of a 2 ms-per-frame paint inside the loop.
     await warmKnightSheets(() => new Promise((r) => requestAnimationFrame(() => r())));
+    // Precompile enemy sprite pipelines for candidate monsters on this floor
+    await warmMonsterPipelines(state.level, camera, scene);
     load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
     await warmFirstFrame();
   } catch {

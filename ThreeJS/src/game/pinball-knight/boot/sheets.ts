@@ -626,7 +626,7 @@ export function keysForFloor(level: number): SheetKey[] {
   const keys: SheetKey[] = ["zombie", guardianFor(level).art.sheetKey];
   if (level >= 1) keys.push("goblin", "spider", "sporeling", "hound", "pin");
   if (level >= 2) keys.push("chomper", "croaker", "fish_feet", "jester", "ghost", "platypus", "espresso", "gnome", "cigarette", "toucan", "crawling_hand", "zippo", "clam", "crab", "gas_can", "hamster_ball", "pit_peeper", "dumpster_dan");
-  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob", "christmas_tree", "toaster_gremlin", "lip_flapper", "hydrant_hound", "blaster_frank", "junkbot");
+  if (level >= 3) keys.push("bat", "slime", "brute", "golem", "magnet", "rotortail", "mimic", "burger", "fries", "milkshake", "dolphin_brawler", "clownfish_mob", "moray_mob", "seahorse_mob", "christmas_tree", "toaster_gremlin", "lip_flapper", "hydrant_hound", "blaster_frank", "junkbot", "junkbot_tractor", "junkbot_cyber", "junkbot_motor", "junkbot_crane", "junkbot_appliance");
   if (level >= 4) keys.push("webspinner", "stiltneck", "spitter", "necromancer", "warden", "crystalback", "sumo_ninja", "shark_trapper", "lionfish_mob", "pufferfish_mob", "swordfish_mob", "ascii_human", "computer_screen", "giant_ascii_human");
   if (level >= 5) keys.push("reaper", "archivist", "broodmother", "dragon", "trex", "jade_buddha", "six_armed_god", "cerberus", "pinball_boss", "medusa", "dracula", "spinning_top", "octopus_gunner", "anglerfish_mob", "dragon_snake_head", "dragon_snake_body", "dragon_snake_tail", "doppelganger");
   return [...new Set(keys)];
@@ -839,6 +839,17 @@ export async function buildFloorSheets(
     built.push(key);
     await progress(i + 1, needed.length);
   }
+
+  // Pre-bake tinted expansion skins for candidate kinds so bakeTintedSheet never blocks a gameplay frame
+  const tintedCandidates: EnemyKind[] = [];
+  if (level >= 2) tintedCandidates.push("wisp");
+  if (level >= 4) tintedCandidates.push("sapper");
+  if (level >= 5) tintedCandidates.push("dracula_bat");
+  for (const kind of tintedCandidates) {
+    if (!active()) break;
+    skinSheet(kind);
+  }
+
   return built;
 }
 

@@ -8,6 +8,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  */
 vi.mock("./factory", () => ({
   spawnHordeMember: (_hash: number, x: number, z: number, speed: number) => fakeZombie({ x, z, speed }),
+  previewHordeKind: () => "zombie",
+  isKindMobile: () => true,
 }));
 vi.mock("../ui", () => ({ showToast: () => {} }));
 vi.mock("../coop", () => ({ isReplica: () => false }));

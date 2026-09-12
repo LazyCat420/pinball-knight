@@ -1541,7 +1541,6 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   // the horde cannot simply become a single InstancedMesh without first moving
   // the frame offset into an instanced attribute.
   let tex = sheet.texture.clone();
-  tex.needsUpdate = true;
   tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
   // The uv transform is the GEOMETRY's job now (see applyFrame). Leaving the
   // texture matrix at identity means offset/repeat can stay descriptive
@@ -1647,7 +1646,6 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       if (next === api.sheet) return;
       const old = tex;
       tex = next.texture.clone();
-      tex.needsUpdate = true;
       tex.matrixAutoUpdate = false;
       api.sheet = next;
       mat.map = tex;
@@ -1687,6 +1685,59 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
 
   applyFrame();
   return api;
+}
+
+const actorPool: ActorSprite[] = [];
+const ACTOR_POOL_CAP = 32;
+
+/**
+ * Acquire an ActorSprite, reusing a pooled instance if available.
+ * Reusing avoids creating new PlaneGeometry, Float32 uv arrays, Materials, Meshes, and contact blobs.
+ */
+export function acquireActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite {
+  if (!lit && actorPool.length > 0) {
+    const pooled = actorPool.pop()!;
+    pooled.setSheet(sheet);
+    pooled.setTint(null);
+    pooled.setFlipped(false);
+    pooled.setFrame(0);
+    pooled.setElevation(0);
+    pooled.setBlobVisible(true);
+    pooled.mesh.scale.set(1, 1, 1);
+    pooled.mesh.rotation.set(0, 0, 0);
+    faceCamera(pooled.mesh);
+    pooled.mesh.visible = true;
+    return pooled;
+  }
+  return createActorSprite(sheet, lit);
+}
+
+/**
+ * Release an ActorSprite back to the pool for reuse by future spawns.
+ */
+export function releaseActorSprite(sprite: ActorSprite): void {
+  if (!sprite) return;
+  if (sprite.mesh?.parent?.remove) {
+    sprite.mesh.parent.remove(sprite.mesh);
+  }
+  if (sprite.mesh) {
+    sprite.mesh.visible = false;
+  }
+  if (actorPool.length < ACTOR_POOL_CAP && typeof sprite.setSheet === "function") {
+    actorPool.push(sprite);
+  } else if (typeof sprite.dispose === "function") {
+    sprite.dispose();
+  }
+}
+
+/**
+ * Drain and dispose the sprite pool on floor teardown.
+ */
+export function clearActorSpritePool(): void {
+  while (actorPool.length > 0) {
+    const s = actorPool.pop()!;
+    s.dispose();
+  }
 }
 
 /**

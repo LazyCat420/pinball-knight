@@ -22,7 +22,7 @@ import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { themeFor } from "../maze/prefabs";
 import { MonsterAnimator } from "../engine/render/monster-animator";
 import { ZOMBIE_VARIANTS, withRecoil } from "../render/cel-painter";
-import { bakeTintedSheet, buildSpriteSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { bakeTintedSheet, buildSpriteSheet, createActorSprite, acquireActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { makeBunnyPaints } from "../render/monsters/bunny";
 import { sheetFor, skinSheet, type SheetKey } from "../boot/sheets";
 import { KIND_SKIN } from "./kind-skin";
@@ -249,16 +249,21 @@ export function makeZombie(
   opts: { kind?: EnemyKind; hp?: number; boss?: boolean; maxHp?: number; ztype?: ZombieType } = {},
 ): Zombie {
   const kind = opts.kind ?? "zombie";
-  const sprite = createActorSprite(sheet, false);
+  const sprite = acquireActorSprite(sheet, false);
   // A ghost is SPECTRAL: knock its material translucent + disable the hard alpha
   // cutout so the see-through drape reads (it also renders after opaque actors).
   // The reaper shares the treatment, a shade more solid — it's a PRESENCE.
+  const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
   if (kind === "ghost" || kind === "reaper") {
-    const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
     mat.opacity = kind === "reaper" ? 0.82 : 0.62;
     mat.alphaTest = 0.02;
     mat.depthWrite = false;
     sprite.mesh.renderOrder = 11;
+  } else {
+    mat.opacity = 1.0;
+    mat.alphaTest = 0.5;
+    mat.depthWrite = true;
+    sprite.mesh.renderOrder = 10;
   }
   state.scene!.add(sprite.mesh);
   const anim = new MonsterAnimator(sprite);
@@ -495,6 +500,142 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }
+}
+
+/** Whether an enemy kind moves (not stationary or dormant). */
+export function isKindMobile(kind: EnemyKind): boolean {
+  return kind !== "chomper" && kind !== "golem" && kind !== "crystalback" && kind !== "computer_screen" && kind !== "mimic";
+}
+
+function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
+  switch (kind) {
+    case "brute": return level >= BRUTE_FROM_LEVEL;
+    case "spitter": return level >= SPITTER_FROM_LEVEL;
+    case "spider": return level >= SPIDER_FROM_LEVEL;
+    case "ghost": return level >= GHOST_FROM_LEVEL;
+    case "bat": return level >= BAT_FROM_LEVEL;
+    case "slime": return level >= SLIME_FROM_LEVEL;
+    case "sporeling": return level >= SPORELING_FROM_LEVEL;
+    case "jester": return level >= JESTER_FROM_LEVEL;
+    case "croaker": return level >= CROAKER_FROM_LEVEL;
+    case "rotortail": return level >= ROTORTAIL_FROM_LEVEL;
+    case "stiltneck": return level >= STILTNECK_FROM_LEVEL;
+    case "fish_feet": return level >= FISH_FEET_FROM_LEVEL;
+    case "goblin": return level >= GOBLIN_FROM_LEVEL;
+    case "chomper": return level >= CHOMPER_FROM_LEVEL;
+    case "golem": return level >= GOLEM_FROM_LEVEL;
+    case "magnet": return level >= MAGNET_FROM_LEVEL;
+    case "webspinner": return level >= WEBSPIN_FROM_LEVEL;
+    case "hound": return level >= HOUND_FROM_LEVEL;
+    case "bloater": return level >= BLOATER_FROM_LEVEL;
+    case "necromancer": return level >= NECRO_FROM_LEVEL;
+    case "warden": return level >= WARDEN_FROM_LEVEL;
+    case "wisp": return level >= WISP_FROM_LEVEL;
+    case "sapper": return level >= SAPPER_FROM_LEVEL;
+    case "crystalback": return level >= CRYSTAL_FROM_LEVEL;
+    case "mimic": return level >= MIMIC_FROM_LEVEL;
+    case "platypus": return level >= PLATYPUS_FROM_LEVEL;
+    case "espresso": return level >= ESPRESSO_FROM_LEVEL;
+    case "gnome": return level >= GNOME_FROM_LEVEL;
+    case "cigarette": return level >= CIGARETTE_FROM_LEVEL;
+    case "toucan": return level >= TOUCAN_FROM_LEVEL;
+    case "burger": return level >= BURGER_FROM_LEVEL;
+    case "fries": return level >= FRIES_FROM_LEVEL;
+    case "milkshake": return level >= MILKSHAKE_FROM_LEVEL;
+    case "crawling_hand": return level >= CRAWLING_HAND_FROM_LEVEL;
+    case "sumo_ninja": return level >= SUMO_NINJA_FROM_LEVEL;
+    case "zippo": return level >= ZIPPO_FROM_LEVEL;
+    case "clam": return level >= CLAM_FROM_LEVEL;
+    case "crab": return level >= CRAB_FROM_LEVEL;
+    case "medusa": return level >= MEDUSA_FROM_LEVEL;
+    case "dracula": return level >= DRACULA_FROM_LEVEL;
+    case "spinning_top": return level >= SPINNING_TOP_FROM_LEVEL;
+    case "shark_trapper": return level >= SHARK_TRAPPER_FROM_LEVEL;
+    case "dolphin_brawler": return level >= DOLPHIN_BRAWLER_FROM_LEVEL;
+    case "octopus_gunner": return level >= OCTOPUS_GUNNER_FROM_LEVEL;
+    case "clownfish_mob": return level >= CLOWNFISH_MOB_FROM_LEVEL;
+    case "lionfish_mob": return level >= LIONFISH_MOB_FROM_LEVEL;
+    case "anglerfish_mob": return level >= ANGLERFISH_MOB_FROM_LEVEL;
+    case "pufferfish_mob": return level >= PUFFERFISH_MOB_FROM_LEVEL;
+    case "swordfish_mob": return level >= SWORDFISH_MOB_FROM_LEVEL;
+    case "moray_mob": return level >= MORAY_MOB_FROM_LEVEL;
+    case "seahorse_mob": return level >= SEAHORSE_MOB_FROM_LEVEL;
+    case "christmas_tree": return level >= CHRISTMAS_TREE_FROM_LEVEL;
+    case "gas_can": return level >= GAS_CAN_FROM_LEVEL;
+    case "hamster_ball": return level >= HAMSTER_BALL_FROM_LEVEL;
+    case "ascii_human": return level >= ASCII_HUMAN_FROM_LEVEL;
+    case "computer_screen": return level >= COMPUTER_SCREEN_FROM_LEVEL;
+    case "giant_ascii_human": return level >= GIANT_ASCII_FROM_LEVEL;
+    default: return true;
+  }
+}
+
+/**
+ * Predict what kind a spawn hash rolls for a floor level, WITHOUT constructing
+ * meshes, actors or animators.
+ */
+export function previewHordeKind(hash: number, level: number): EnemyKind {
+  const theme = themeFor(level);
+  if (theme.enemies && hash % 100 < THEME_HORDE_BIAS) {
+    const kinds = Object.keys(theme.enemies) as EnemyKind[];
+    let total = 0;
+    for (const k of kinds) total += theme.enemies[k]!;
+    if (total > 0) {
+      let r = (hash >>> 8) % total;
+      for (const k of kinds) {
+        r -= theme.enemies[k]!;
+        if (r < 0) {
+          if (isKindAvailableAtLevel(k, level)) return k;
+          break;
+        }
+      }
+    }
+  }
+
+  if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0) return "brute";
+  if (level >= SPITTER_FROM_LEVEL && hash % SPITTER_RATIO === 1) return "spitter";
+  if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2) return "spider";
+  if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3) return "ghost";
+  if (level >= BAT_FROM_LEVEL && hash % BAT_RATIO === 3) return "bat";
+  if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4) return "slime";
+  if (level >= GOBLIN_FROM_LEVEL && hash % GOBLIN_RATIO === 1) return "goblin";
+  if (level >= SPORELING_FROM_LEVEL && hash % SPORELING_RATIO === 3) return "sporeling";
+  if (level >= CHOMPER_FROM_LEVEL && hash % CHOMPER_RATIO === 5) return "chomper";
+  if (level >= GOLEM_FROM_LEVEL && hash % GOLEM_RATIO === 5) return "golem";
+  if (level >= MAGNET_FROM_LEVEL && hash % MAGNET_RATIO === 6) return "magnet";
+  if (level >= ROTORTAIL_FROM_LEVEL && hash % ROTORTAIL_RATIO === 6) return "rotortail";
+  if (level >= STILTNECK_FROM_LEVEL && hash % STILTNECK_RATIO === 9) return "stiltneck";
+  if (level >= CROAKER_FROM_LEVEL && hash % CROAKER_RATIO === 8) return "croaker";
+  if (level >= PLATYPUS_FROM_LEVEL && hash % PLATYPUS_RATIO === 3) return "platypus";
+  if (level >= ESPRESSO_FROM_LEVEL && hash % ESPRESSO_RATIO === 5) return "espresso";
+  if (level >= GNOME_FROM_LEVEL && hash % GNOME_RATIO === 4) return "gnome";
+  if (level >= CIGARETTE_FROM_LEVEL && hash % CIGARETTE_RATIO === 5) return "cigarette";
+  if (level >= TOUCAN_FROM_LEVEL && hash % TOUCAN_RATIO === 6) return "toucan";
+  if (level >= FISH_FEET_FROM_LEVEL && hash % FISH_FEET_RATIO === 7) return "fish_feet";
+  if (level >= JESTER_FROM_LEVEL && hash % JESTER_RATIO === 4) return "jester";
+  if (level >= WEBSPIN_FROM_LEVEL && hash % WEBSPIN_RATIO === 2) return "webspinner";
+  if (level >= BURGER_FROM_LEVEL && hash % BURGER_RATIO === 11) return "burger";
+  if (level >= FRIES_FROM_LEVEL && hash % FRIES_RATIO === 13) return "fries";
+  if (level >= MILKSHAKE_FROM_LEVEL && hash % MILKSHAKE_RATIO === 15) return "milkshake";
+  if (level >= CRAWLING_HAND_FROM_LEVEL && hash % CRAWLING_HAND_RATIO === 5) return "crawling_hand";
+  if (level >= SUMO_NINJA_FROM_LEVEL && hash % SUMO_NINJA_RATIO === 9) return "sumo_ninja";
+  if (level >= CLAM_FROM_LEVEL && hash % CLAM_RATIO === 7) return "clam";
+  if (level >= CRAB_FROM_LEVEL && hash % CRAB_RATIO === 11) return "crab";
+  if (level >= MEDUSA_FROM_LEVEL && hash % MEDUSA_RATIO === 5) return "medusa";
+  if (level >= DRACULA_FROM_LEVEL && hash % DRACULA_RATIO === 3) return "dracula";
+  if (level >= SPINNING_TOP_FROM_LEVEL && hash % SPINNING_TOP_RATIO === 4) return "spinning_top";
+  if (level >= SHARK_TRAPPER_FROM_LEVEL && hash % SHARK_TRAPPER_RATIO === 6) return "shark_trapper";
+  if (level >= DOLPHIN_BRAWLER_FROM_LEVEL && hash % DOLPHIN_BRAWLER_RATIO === 8) return "dolphin_brawler";
+  if (level >= OCTOPUS_GUNNER_FROM_LEVEL && hash % OCTOPUS_GUNNER_RATIO === 2) return "octopus_gunner";
+  if (level >= CLOWNFISH_MOB_FROM_LEVEL && hash % CLOWNFISH_MOB_RATIO === 10) return "clownfish_mob";
+  if (level >= LIONFISH_MOB_FROM_LEVEL && hash % LIONFISH_MOB_RATIO === 12) return "lionfish_mob";
+  if (level >= ANGLERFISH_MOB_FROM_LEVEL && hash % ANGLERFISH_MOB_RATIO === 3) return "anglerfish_mob";
+  if (level >= PUFFERFISH_MOB_FROM_LEVEL && hash % PUFFERFISH_MOB_RATIO === 5) return "pufferfish_mob";
+  if (level >= SWORDFISH_MOB_FROM_LEVEL && hash % SWORDFISH_MOB_RATIO === 7) return "swordfish_mob";
+  if (level >= MORAY_MOB_FROM_LEVEL && hash % MORAY_MOB_RATIO === 9) return "moray_mob";
+  if (level >= SEAHORSE_MOB_FROM_LEVEL && hash % SEAHORSE_MOB_RATIO === 11) return "seahorse_mob";
+
+  return "zombie";
 }
 
 /** Weighted-pick a themed kind from the hash, or null if the biome sets none. */

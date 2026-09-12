@@ -13,6 +13,7 @@ import { disposeHUDs } from "./hud";
 import { clearScreens } from "./gui/stack";
 import { disposeUiLayer } from "./gui/layer";
 import { resetAmbience } from "./sfx/ambience";
+import { clearActorSpritePool } from "./engine/render/sprite";
 
 /**
  * Tear down one depth: the maze geometry, the horde (including corpses), any
@@ -25,6 +26,7 @@ export function disposeLevel(): void {
     z.sprite.dispose();
   });
   state.zombies = [];
+  clearActorSpritePool();
 
   clearProjectiles();
   clearFloorFx();

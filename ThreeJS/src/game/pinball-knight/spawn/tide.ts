@@ -33,6 +33,7 @@
  */
 import { state } from "../state";
 import { recordDeathTrace } from "../dev/death-debug";
+import { releaseActorSprite } from "../engine/render/sprite";
 import {
   CORPSE_BUDGET,
   TIDE_GRACE,
@@ -52,7 +53,7 @@ import { isReplica } from "../coop";
 import { isWalkable, tileCenter } from "../maze/generator";
 import type { TilePos } from "../maze/generator";
 import { showToast } from "../ui";
-import { spawnHordeMember } from "./factory";
+import { spawnHordeMember, previewHordeKind, isKindMobile } from "./factory";
 import type { Zombie } from "../state";
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -179,21 +180,14 @@ export function pickSpawnTile(): { x: number; z: number } | null {
  */
 function rollReinforcement(x: number, z: number): Zombie | null {
   const cfg = levelConfig(state.level);
-  let last: Zombie | null = null;
+  let pickedHash = (Math.random() * 0xffffffff) >>> 0;
   for (let attempt = 0; attempt < TIDE_MOBILE_TRIES; attempt++) {
     const hash = (Math.random() * 0xffffffff) >>> 0;
-    const zomb = spawnHordeMember(hash, x, z, cfg.zombieSpeed, state.level);
-    if (zomb.speed > 0 && !zomb.dormant) return zomb;
-    // Undo: makeZombie already parented the mesh into the scene, so a rejected
-    // roll that is merely dropped on the floor leaks a sprite into the graph.
-    zomb.sprite.mesh.parent?.remove(zomb.sprite.mesh);
-    last = zomb;
+    const kind = previewHordeKind(hash, state.level);
+    pickedHash = hash;
+    if (isKindMobile(kind)) break;
   }
-  // Out of retries: this floor's whole themed table is stationary. Take the
-  // last roll rather than starve the tide — but it was already un-parented, so
-  // put it back before handing it over.
-  if (last && state.scene) state.scene.add(last.sprite.mesh);
-  return last;
+  return spawnHordeMember(pickedHash, x, z, cfg.zombieSpeed, state.level);
 }
 
 /**
@@ -258,7 +252,7 @@ export function reapCorpses(): void {
     if (z.mode === "dead" && !z.boss && (!z.anim || z.anim.isFinished()) && (z.corpseT === undefined || z.corpseT >= 3.0)) {
       recordDeathTrace(z, "reap", { excess });
       state.zombies.splice(i, 1);
-      z.sprite.mesh.parent?.remove(z.sprite.mesh);
+      releaseActorSprite(z.sprite);
       excess--;
       continue; // index i now holds the next element
     }
