@@ -38,7 +38,10 @@ const send = (method, params = {}) =>
 try {
   await send('Runtime.enable');
   for (let i = 0; i < 60; i++) {
-    const r = await send('Runtime.evaluate', { expression: 'window.studioReady', returnByValue: true });
+    const r = await send('Runtime.evaluate', { expression: 'window.studioReady', returnByValue: true }).catch(error => {
+      if (String(error).includes('Cannot find default execution context')) return {};
+      throw error;
+    });
     if (r.result?.value) break;
     await new Promise((r) => setTimeout(r, 250));
   }

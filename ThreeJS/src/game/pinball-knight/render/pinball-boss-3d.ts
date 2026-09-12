@@ -11,14 +11,14 @@
  *
  *   row 1  idle    the chrome ball hangs heavy, highlight sweeping, visor eyes pulsing, sparks
  *   row 2  walk    rolls forward — the riveted seam turns, dust behind, sparks at the contact
- *   row 3  attack  the REV: a full 360° spin about its axis over the clip, sparks grinding
+ *   row 3  attack  tornado precession; roll = curved corkscrew; ball = multi-axis tumble, sparks grinding
  *                  off the floor, eyes blazing. LOOPS, so it reads as a turbine while the
  *                  boss revs and charges (boss-moves.ts plays it with { loop: true })
  *   row 4  death   cracks spider across the hull, the core glows through, it detonates into
  *                  chrome shards, ball bearings and a bumper spring that settle on the floor
  *
- * The creature is a giant chrome sphere with a face: slanted glowing crimson
- * visor eyes under brow ridges, a wide dark grin full of jagged steel teeth,
+ * The creature is a giant chrome sphere with a face: round glowing crimson
+ * eyes under brow ridges, a wide dark grin full of jagged steel teeth,
  * a riveted equatorial seam. Every face feature sits ON the sphere
  * (`onBall`), and `setFacing` slides the face round toward the camera for
  * the E bake. The spin is the WHOLE ball turning, so it is the same from
@@ -39,18 +39,18 @@
 import * as THREE from 'three';
 
 export const PINBALL_BOSS_SHEET = 'pinball_boss';
-export type PinballBossPose = 'idle' | 'walk' | 'attack' | 'death';
-export const PINBALL_BOSS_CLIPS: readonly PinballBossPose[] = ['idle', 'walk', 'attack', 'death'];
+export type PinballBossPose = 'idle' | 'walk' | 'attack' | 'roll' | 'ball' | 'death';
+export const PINBALL_BOSS_CLIPS: readonly PinballBossPose[] = ['idle', 'walk', 'attack', 'roll', 'ball', 'death'];
 
 /**
  * Frames per clip, against engine/config.ts anim rates (idle 3, walk 8,
- * attack 12, death 6 fps). `attack` is a seamless 360° spin — 12 frames of
- * 30° — because the boss plays it looped through the rev and the charge.
+ * attack 12, death 6 fps). The three power-up paths use 32 samples each;
+ * imported-sheet beats preserve a one-second loop before rev acceleration.
  * `death` is 5 so it FINISHES inside the 0.96 s that
  * sandbox-all-monsters-death-trace.test.ts simulates.
  */
-export const PINBALL_BOSS_FRAMES: Record<PinballBossPose, number> = { idle: 6, walk: 8, attack: 12, death: 5 };
-export const PINBALL_BOSS_LOOPS: Record<PinballBossPose, boolean> = { idle: true, walk: true, attack: true, death: false };
+export const PINBALL_BOSS_FRAMES: Record<PinballBossPose, number> = { idle: 6, walk: 8, attack: 32, roll: 32, ball: 32, death: 5 };
+export const PINBALL_BOSS_LOOPS: Record<PinballBossPose, boolean> = { idle: true, walk: true, attack: true, roll: true, ball: true, death: false };
 
 /** Colours read off docs/art/pinball-boss/sprite-sheet.png. */
 export const PINBALL_BOSS_PALETTE = {
@@ -144,24 +144,46 @@ export function createPinballBoss() {
     }
   }
 
-  // ── THE FACE: slanted visor eyes under brow ridges, and a wide jagged grin. ──
+  // ── THE FACE: round predatory eyes under brow ridges, and a wide jagged grin. ──
   const face = new THREE.Group(); face.name = 'Face'; ball.add(face);
   const EYE_YAW = 0.4, EYE_PITCH = 0.3;
-  const EYE_SCALE: [number, number, number] = [0.5, 0.2, 0.06];
+  const EYE_SCALE: [number, number, number] = [0.20, 0.20, 0.09];
   const eyes: THREE.Mesh[] = [], brows: THREE.Mesh[] = [];
   for (const side of [-1, 1]) {
-    const e = mesh(face, cube, eyeMat, [0, 0, 0], [...EYE_SCALE], true); onBall(e, side * EYE_YAW, EYE_PITCH, 0.03); e.rotation.z += side * 0.38; eyes.push(e);
-    mesh(e, cube, eyeCoreMat, [side * -0.15, 0.05, 0.5], [0.35, 0.3, 0.4], false);
+    const e = mesh(face, sphere, eyeMat, [0, 0, 0], [...EYE_SCALE], true); onBall(e, side * EYE_YAW, EYE_PITCH, 0.09);  eyes.push(e);
+    mesh(e, sphere, inkMat, [side * -0.12, -0.05, 0.9], [0.40, 0.40, 0.22], false);
+    mesh(e, sphere, eyeCoreMat, [-0.28, 0.30, 0.9], [0.18, 0.18, 0.18], false);
     const b = mesh(face, cube, steelDeepMat, [0, 0, 0], [0.6, 0.11, 0.1], true); onBall(b, side * EYE_YAW, EYE_PITCH + 0.22, 0.0); b.rotation.z += side * 0.38; brows.push(b);
   }
-  const MOUTH_SCALE: [number, number, number] = [0.9, 0.32, 0.14];
-  const mouth = mesh(face, sphere, mouthMat, [0, 0, 0], [...MOUTH_SCALE], true); mouth.name = 'Mouth'; onBall(mouth, 0, -0.3, 0.0);
-  const toothGeo = new THREE.ConeGeometry(0.075, 0.24, 4); geometries.add(toothGeo);
+  const MOUTH_SCALE: [number, number, number] = [1, 1, 1];
+  // A spherical patch wraps the grin around the hull. A flattened sphere
+  // protrudes at the corners, clipping the floor when the whole ball tumbles.
+  const mouthGeo = new THREE.CircleGeometry(1, 48); geometries.add(mouthGeo);
+  const mouthVertices = mouthGeo.getAttribute('position');
+  for (let i = 0; i < mouthVertices.count; i++) {
+    const x = mouthVertices.getX(i) * 0.82, y = mouthVertices.getY(i) * 0.30;
+    mouthVertices.setXYZ(i, x, y, Math.sqrt(1 - x * x - y * y) - 1);
+  }
+  mouthGeo.computeVertexNormals();
+  const mouth = mesh(face, mouthGeo, mouthMat, [0, 0, 0], [...MOUTH_SCALE], false);
+  mouth.name = 'Mouth'; onBall(mouth, 0, -0.3, 0.035);
+  // Flat triangular shark blades sit proud of the dark mouth and hull.
+  // The old cones were embedded in the sphere and vanished in the sprite bake.
+  const toothShape = new THREE.Shape();
+  toothShape.moveTo(-0.095, 0.065); toothShape.lineTo(0.095, 0.065);
+  toothShape.lineTo(0, -0.23); toothShape.closePath();
+  const toothGeo = new THREE.ExtrudeGeometry(toothShape, { depth: 0.055, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.008, bevelSegments: 1, steps: 1 });
+  geometries.add(toothGeo);
   const teeth: THREE.Mesh[] = [];
-  for (let i = 0; i < 7; i++) {
-    const yaw = (i - 3) * 0.24;
-    const top = mesh(face, toothGeo, teethMat, [0, 0, 0], [1, 1, 1], true); onBall(top, yaw, -0.12, 0.05); top.rotation.x += Math.PI; teeth.push(top);
-    if (i < 6) { const bot = mesh(face, toothGeo, teethMat, [0, 0, 0], [0.9, 0.85, 0.9], true); onBall(bot, yaw + 0.12, -0.5, 0.05); teeth.push(bot); }
+  for (let i = 0; i < 9; i++) {
+    const yaw = (i - 4) * 0.17;
+    const top = mesh(face, toothGeo, teethMat, [0, 0, 0], [1, i % 2 ? 0.87 : 1.1, 1], false);
+    onBall(top, yaw, -0.12 - 0.045 * Math.abs(i - 4), 0.065); teeth.push(top);
+    if (i < 8) {
+      const bot = mesh(face, toothGeo, teethMat, [0, 0, 0], [0.86, 0.72, 1], false);
+      onBall(bot, yaw + 0.085, -0.49 + 0.025 * Math.abs(i - 3.5), 0.065);
+      bot.rotation.z = Math.PI; teeth.push(bot);
+    }
   }
 
   // ── SPARKS: electric arcs that flicker on the hull, and grinding sparks at the floor. ──
@@ -214,7 +236,7 @@ export function createPinballBoss() {
     seam.rotation.set(0, 0, 0);
     face.rotation.set(0, faceYaw, 0);
     onBall(highlight, -0.55, 0.95, 0.02);
-    eyes.forEach((e, i) => { const side = i === 0 ? -1 : 1; onBall(e, side * EYE_YAW, EYE_PITCH, 0.03); e.rotation.z += side * 0.38; e.scale.set(...EYE_SCALE); e.material = eyeMat; });
+    eyes.forEach((e, i) => { const side = i === 0 ? -1 : 1; onBall(e, side * EYE_YAW, EYE_PITCH, 0.09);  e.scale.set(...EYE_SCALE); e.material = eyeMat; });
     mouth.scale.set(...MOUTH_SCALE); mouth.material = mouthMat;
     arcs.forEach((a) => { a.visible = false; });
     floorSparks.visible = false; dust.visible = false;
@@ -255,7 +277,7 @@ export function createPinballBoss() {
       ball.rotation.z = 0.03 * Math.sin(ph + 1);
       onBall(highlight, -0.55 + 0.25 * Math.sin(ph), 0.95 - 0.06 * Math.cos(ph), 0.02);
       const pulse = 0.5 + 0.5 * Math.sin(ph * 2);
-      eyes.forEach((e) => { e.scale.set(EYE_SCALE[0] + 0.06 * pulse, EYE_SCALE[1] + 0.04 * pulse, EYE_SCALE[2]); });
+      eyes.forEach((e) => { e.scale.set(EYE_SCALE[0] + 0.025 * pulse, EYE_SCALE[1] + 0.025 * pulse, EYE_SCALE[2]); });
       arcs.forEach((a, i) => { a.visible = Math.sin(ph * 2 + i * 1.9) > 0.55; });
     } else if (clip === 'walk') {
       // Rolling: the riveted seam turns a full revolution per cycle, the ball
@@ -275,18 +297,28 @@ export function createPinballBoss() {
       });
       grind(6, ph, 0.25, 0.25);
       arcs.forEach((a, i) => { a.visible = i === (Math.floor(t * 8) % 4); });
-    } else if (clip === 'attack') {
-      // THE REV: one full turn about the axis per clip (seamless when looped),
-      // leaning into the spin, sparks grinding off the floor, eyes blazing.
-      const yaw = t * Math.PI * 2;
-      ball.rotation.y = yaw;
-      ball.rotation.z = -0.08;
-      body.position.y = R + 0.02 * Math.sin(yaw * 3);
-      onBall(highlight, -0.55, 0.95, 0.02);
-      eyes.forEach((e) => { e.scale.set(EYE_SCALE[0] + 0.08, EYE_SCALE[1] + 0.06, EYE_SCALE[2]); });
-      mouth.scale.set(MOUTH_SCALE[0] + 0.06, MOUTH_SCALE[1] + 0.06, MOUTH_SCALE[2]);
-      arcs.forEach((a, i) => { a.visible = i % 2 === Math.floor(t * 12) % 2; });
-      grind(10, yaw, 0.45, 0.55);
+    } else if (clip === 'attack' || clip === 'roll' || clip === 'ball') {
+      // Closed quaternion curves: precession + nutation + spin. Integer
+      // frequencies close both orientation and velocity across every loop.
+      // attack = tornado, roll = curved corkscrew, ball = chaotic tumble.
+      const ph = t * Math.PI * 2;
+      const orientation = new THREE.Euler();
+      if (clip === 'attack') {
+        orientation.set(0.34 * Math.sin(ph), ph, 0.26 * Math.sin(ph * 2), 'YXZ');
+      } else if (clip === 'roll') {
+        orientation.set(ph, -ph, 0.55 * Math.sin(ph), 'ZYX');
+      } else {
+        orientation.set(ph, 0.65 * Math.sin(ph * 2), -ph + 0.25 * Math.sin(ph), 'YZX');
+      }
+      ball.quaternion.setFromEuler(orientation);
+      // Small curved orbit stays within the visible boss footprint; the
+      // charge lane and collision center remain accurate and stationary.
+      body.position.x = 0.025 * Math.sin(ph);
+      body.position.z = 0.04 * Math.sin(ph * 2);
+      body.position.y = R + 0.008 * (1 - Math.cos(ph * 2));
+      eyes.forEach(e => e.scale.set(0.23, 0.23, EYE_SCALE[2]));
+      arcs.forEach((a, i) => { a.visible = i % 2 === Math.floor(t * 32) % 2; });
+      grind(10, ph, 0.45, 0.55);
     } else {
       // Cracks spider across the hull as the core glows through, the hull
       // bulges, then it detonates: shards, bearings and the bumper spring fly

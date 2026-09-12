@@ -157,8 +157,8 @@ export function makePinballBossPaints(): ActorPaints {
   ];
 
   return {
-    S: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, death: S_DEATH },
-    N: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, death: S_DEATH },
-    E: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, death: S_DEATH },
+    S: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, roll: S_ATTACK, ball: S_ATTACK, death: S_DEATH },
+    N: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, roll: S_ATTACK, ball: S_ATTACK, death: S_DEATH },
+    E: { idle: S_IDLE, walk: S_WALK, attack: S_ATTACK, roll: S_ATTACK, ball: S_ATTACK, death: S_DEATH },
   };
 }

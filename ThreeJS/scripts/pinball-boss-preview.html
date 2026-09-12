@@ -3,7 +3,7 @@
 <h1>Tilt Titan · baked from the 3D rig</h1><p>Idle, walk, attack and death — the actual gameplay sprite frames, played at the game's clip rates.</p>
 <button id="pause">Pause</button><button id="facing">Facing: S</button><div class="cards"></div>
 <script type="module">
-const FPS = { idle: 3, walk: 8, attack: 12, death: 6 }, LOOP = { idle: true, walk: true, attack: true, death: false };
+const FPS = { idle: 3, walk: 8, attack: 32, roll: 32, ball: 32, death: 6 }, LOOP = { idle: true, walk: true, attack: true, roll: true, ball: true, death: false };
 const DIRS = ['S', 'E', 'N'];
 let paused = false, facing = 0, time = 0, last = performance.now();
 const sheets = {};
@@ -15,9 +15,9 @@ for (const dir of DIRS) {
   sheets[dir] = { image, manifest };
 }
 const cards = [];
-for (const clip of ['idle', 'walk', 'attack', 'death']) {
+for (const clip of ['idle', 'walk', 'attack', 'roll', 'ball', 'death']) {
   const article = document.createElement('article');
-  article.innerHTML = `<h2>${clip}</h2><p>${FPS[clip]} fps${LOOP[clip] ? ', loops' : ', holds the last frame'}</p><canvas width="256" height="256"></canvas>`;
+  article.innerHTML = `<h2>${({attack:'Tornado',roll:'Corkscrew',ball:'Tumble'})[clip] || clip}</h2><p>${FPS[clip]} fps${LOOP[clip] ? ', loops' : ', holds the last frame'}</p><canvas width="256" height="256"></canvas>`;
   document.querySelector('.cards').append(article);
   cards.push({ clip, canvas: article.querySelector('canvas') });
 }

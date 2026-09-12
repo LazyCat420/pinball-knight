@@ -141,30 +141,29 @@ describe('tilt titan rig', () => {
     }
   });
 
-  it('revs: the attack turns the whole ball 360° about its axis across the clip, sparks grinding', () => {
+  it('revs on three distinct closed multi-axis curves inside the sprite footprint', () => {
     const rig = createPinballBoss();
     try {
-      rig.pose('attack', 0);
-      const front = world(rig.mouth);
-      expect(front.z).toBeGreaterThan(0.8);
-      rig.pose('attack', 0.5);
-      expect(rig.ball.rotation.y).toBeCloseTo(Math.PI);
-      const back = world(rig.mouth);
-      expect(back.z).toBeLessThan(-0.8);
-      rig.pose('attack', 0.25);
-      expect(Math.abs(world(rig.mouth).x)).toBeGreaterThan(0.8);
-      expect(rig.floorSparks.visible).toBe(true);
-      expect(rig.sparkBits.filter((s) => s.visible).length).toBeGreaterThanOrEqual(8);
-      // Every frame of the spin stays inside the ball's own rect: it is the frame the boss loops on.
-      for (let i = 0; i < 12; i++) {
-        rig.pose('attack', i / 12);
-        const b = bounds(rig.root);
-        expect(b.max.y).toBeLessThan(2.25);
-        expect(Math.max(-b.min.x, b.max.x)).toBeLessThan(1.5);
+      const signatures = [];
+      for (const clip of ['attack', 'roll', 'ball'] as const) {
+        const positions = [];
+        rig.pose(clip, 0); const start = rig.ball.quaternion.clone();
+        for (let i = 0; i < 32; i++) {
+          rig.pose(clip, i / 32);
+          positions.push(world(rig.mouth).toArray());
+          const b = bounds(rig.root);
+          expect(b.max.y).toBeLessThan(2.4);
+          expect(Math.max(-b.min.x, b.max.x)).toBeLessThan(1.5);
+          expect(rig.floorSparks.visible).toBe(true);
+        }
+        rig.pose(clip, 1);
+        expect(rig.ball.quaternion.angleTo(start)).toBeLessThan(0.00001);
+        signatures.push(JSON.stringify(positions));
+        const ys = positions.map(p => p[1]);
+        expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.3);
       }
-    } finally {
-      rig.dispose();
-    }
+      expect(new Set(signatures).size).toBe(3);
+    } finally { rig.dispose(); }
   });
 
   it('dies by cracking, glowing through, and detonating into shards that settle on the floor', () => {

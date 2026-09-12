@@ -1477,6 +1477,7 @@ export interface PinballChargeRt {
   telegraphDur: number;
   spinAngle: number;
   spinSpeed: number;
+  spinClip: "attack" | "roll" | "ball";
 }
 
 export function freshPinballCharge(spec: PinballChargeSpec): PinballChargeRt {
@@ -1493,6 +1494,7 @@ export function freshPinballCharge(spec: PinballChargeSpec): PinballChargeRt {
     telegraphDur: spec.telegraphMin + Math.random() * (spec.telegraphMax - spec.telegraphMin),
     spinAngle: 0,
     spinSpeed: 0,
+    spinClip: "attack",
   };
 }
 
@@ -1503,10 +1505,10 @@ export function pinballChargeHoldsMovement(rt: PinballChargeRt): boolean {
 export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec, ctx: MoveCtx): void {
   if (rt.phase === "running") {
     ctx.setHoldMovement?.(true);
-    ctx.playAnim?.("attack", { loop: true });
+    ctx.playAnim?.(rt.spinClip, { loop: true });
     ctx.setAnimRate?.(3.0);
 
-    // The spin is IN THE ART: the baked `attack` clip is a seamless 360° turn
+    // The spin is IN THE ART: the baked spin variants are seamless multi-axis turns
     // of the ball (render/pinball-boss-3d.ts), looped above. Rotating the
     // billboard quad here swung the whole boss round its FEET — the quad's
     // origin is its bottom-centre (engine/render/sprite.ts) — and read as a
@@ -1597,6 +1599,10 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     rt.hasHitPlayer = false;
     rt.spinAngle = 0;
     rt.spinSpeed = 6;
+    // Pick once per power-up, never per frame. Avoid repeating the previous
+    // axis path; retain the chosen seamless loop throughout the charge.
+    const candidates = (["attack", "roll", "ball"] as const).filter(clip => clip !== rt.spinClip);
+    rt.spinClip = candidates[Math.floor(Math.random() * candidates.length)];
 
     const geo = new THREE.PlaneGeometry(1.6, spec.distance);
     const mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
@@ -1612,7 +1618,7 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     } else {
       ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
     }
-    ctx.playAnim?.("attack", { loop: true });
+    ctx.playAnim?.(rt.spinClip, { loop: true });
     ctx.setAnimRate?.(1.0);
     state.vfx?.burst(ctx.x, 0.2, ctx.z, spec.color, 12, 3);
   }
@@ -1628,8 +1634,8 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     rt.spinSpeed = 6 + 39 * (progress * progress);
     rt.spinAngle = (rt.spinAngle + rt.spinSpeed * ctx.dt) % (Math.PI * 2);
     // Spin lives in the looped `attack` clip; the rate ramp below is the rev.
-    ctx.setAnimRate?.(1.0 + progress * 2.5); // Visually accelerate spin animation from 8fps to 28fps
-    ctx.playAnim?.("attack", { loop: true });
+    ctx.setAnimRate?.(1.0 + progress * 2.5); // Accelerate the 32-sample loop from 1 to 3.5 revolutions/sec
+    ctx.playAnim?.(rt.spinClip, { loop: true });
 
     pulse(rt.lane, rt.t);
 
@@ -1651,7 +1657,7 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.phase = "running";
       rt.left = spec.distance;
       ctx.setAnimRate?.(3.0);
-      ctx.playAnim?.("attack", { loop: true });
+      ctx.playAnim?.(rt.spinClip, { loop: true });
       state.shakeT = Math.max(state.shakeT, 0.38);
       state.vfx?.burst(ctx.x, 0.5, ctx.z, spec.color, 24, 7);
       state.vfx?.sparks(ctx.x, 0.2, ctx.z, rt.dx, rt.dz, 14);
