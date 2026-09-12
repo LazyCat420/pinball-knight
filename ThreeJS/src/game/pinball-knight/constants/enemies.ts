@@ -691,6 +691,43 @@ export const HOTDOG_RATIO = 16;
 export const HOTDOG_FROM_LEVEL = 2;
 
 /**
+ * KETCHUP MONSTER ("Baron von Ketchup" / Sir Squirt) — living retro red diner squeeze bottle.
+ * Squirts thick arcs of sticky tomato paste that slow the knight, and splatters into a sticky red puddle on death.
+ */
+export const KETCHUP_HP = 5;
+export const KETCHUP_R = 0.36;
+export const KETCHUP_SPEED_FACTOR = 0.92;
+export const KETCHUP_FIRE_RANGE = 5.8;
+export const KETCHUP_KITE_RANGE = 3.2;
+export const KETCHUP_WINDUP = 0.45;
+export const KETCHUP_COOLDOWN = 2.4;
+export const KETCHUP_DAMAGE = 1;
+export const KETCHUP_SPEED = 7.2;
+export const KETCHUP_SLOW_TIME = 2.0;
+export const KETCHUP_PUDDLE_RADIUS = 1.3;
+export const KETCHUP_PUDDLE_LIFE = 5.0;
+export const KETCHUP_RATIO = 16;
+export const KETCHUP_FROM_LEVEL = 2;
+
+/**
+ * MUSTARD MONSTER ("Colonel Dijon" / Mister Yellow) — living retro yellow diner squeeze bottle.
+ * Rapid sprint, fires pressurized twin streams of spicy mustard, and leaves slippery grease puddles on death.
+ */
+export const MUSTARD_HP = 4;
+export const MUSTARD_R = 0.36;
+export const MUSTARD_SPEED_FACTOR = 1.05;
+export const MUSTARD_FIRE_RANGE = 6.4;
+export const MUSTARD_KITE_RANGE = 3.6;
+export const MUSTARD_WINDUP = 0.40;
+export const MUSTARD_COOLDOWN = 2.0;
+export const MUSTARD_DAMAGE = 1;
+export const MUSTARD_JET_SPEED = 8.5;
+export const MUSTARD_PUDDLE_RADIUS = 1.4;
+export const MUSTARD_PUDDLE_LIFE = 4.5;
+export const MUSTARD_RATIO = 16;
+export const MUSTARD_FROM_LEVEL = 2;
+
+/**
  * CRAWLING HAND ("Thing" from Addams Family) — severed pale gothic hand
  * that skitters on its fingertips like a spider. Lunges and clamps onto the
  * knight, pinning them in place while the rest of the horde swarms and attacks!

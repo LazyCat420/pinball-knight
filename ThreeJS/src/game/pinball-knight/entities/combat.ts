@@ -69,6 +69,8 @@ import {
   FRIES_DAMAGE,
   MILKSHAKE_DAMAGE,
   HOTDOG_DAMAGE,
+  KETCHUP_DAMAGE,
+  MUSTARD_DAMAGE,
   CRAWLING_HAND_DAMAGE,
   CRAWLING_HAND_ESCAPE_COUNT,
   CRAWLING_HAND_GRAB_DURATION,
@@ -963,6 +965,24 @@ export function triggerHotdogDeath(x: number, z: number): void {
 }
 export const triggerHotdogMustardSplatter = triggerHotdogDeath;
 
+/** KETCHUP death → explodes into a sticky puddle of thick tomato sauce. */
+let onKetchupDeath: ((x: number, z: number) => void) | null = null;
+export function setKetchupDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onKetchupDeath = fn;
+}
+export function triggerKetchupDeath(x: number, z: number): void {
+  onKetchupDeath?.(x, z);
+}
+
+/** MUSTARD death → pops into a slippery puddle of neon yellow diner mustard. */
+let onMustardDeath: ((x: number, z: number) => void) | null = null;
+export function setMustardDeathHandler(fn: ((x: number, z: number) => void) | null): void {
+  onMustardDeath = fn;
+}
+export function triggerMustardDeath(x: number, z: number): void {
+  onMustardDeath?.(x, z);
+}
+
 
 /**
  * Card-drop roll on a kill — core owns the spawn (scene access + rng).
@@ -1198,6 +1218,18 @@ export function killZombie(z: Zombie): void {
     state.vfx?.burst(z.x, 0.3, z.z, 0x16a34a, 12, 1.5);
     state.vfx?.smoke(z.x, 0.3, z.z, 0.6);
     triggerHotdogDeath(z.x, z.z);
+  }
+  if (z.kind === "ketchup") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xb91c1c, 22, 2.2);
+    state.vfx?.burst(z.x, 0.3, z.z, 0xef4444, 14, 1.6);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.6);
+    triggerKetchupDeath(z.x, z.z);
+  }
+  if (z.kind === "mustard") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xfacc15, 22, 2.2);
+    state.vfx?.burst(z.x, 0.3, z.z, 0xeab308, 14, 1.6);
+    state.vfx?.smoke(z.x, 0.3, z.z, 0.6);
+    triggerMustardDeath(z.x, z.z);
   }
   // Bowling ledger: pins downed close together are one STRIKE.
   if (z.kind === "pin") {
@@ -1468,6 +1500,8 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   detective_cop: DETECTIVE_COP_DAMAGE,
   robo_cop: ROBO_COP_DAMAGE,
   hotdog: HOTDOG_DAMAGE,
+  ketchup: KETCHUP_DAMAGE,
+  mustard: MUSTARD_DAMAGE,
 };
 
 /**

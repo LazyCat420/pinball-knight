@@ -117,6 +117,8 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   detective_cop: { label: "Noir Detective", icon: "🕵️‍♂️", blurb: "cynical undercover gumshoe in trenchcoat and fedora who throws blinding flashbang grenades and fires armor-piercing .44 Magnum rounds" },
   robo_cop: { label: "Robo-Cop", icon: "🤖", blurb: "titanium-alloy cybernetic law enforcer with laser scanning visor slit that unleashes rapid 3-round Auto-9 bursts and detonates in an EMP shockwave on death" },
   hotdog: { label: "Franken-Frank", icon: "🌭", blurb: "plump ballpark frankfurter in a toasted split bun that blasts high-pressure stadium mustard streams, leaves slippery puddles, and splatters condiments on death" },
+  ketchup: { label: "Baron von Ketchup", icon: "🍅", blurb: "fiery red diner squeeze bottle with ribbed cap nozzle that squirts thick sticky tomato paste, slows knights in condiment pools, and splatters on defeat" },
+  mustard: { label: "Colonel Dijon", icon: "🟡", blurb: "zippy yellow diner squeeze bottle that sprints fast, fires twin high-pressure mustard jets, and leaves treacherous grease-slick slide pools" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

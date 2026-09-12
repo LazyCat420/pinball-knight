@@ -129,6 +129,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   ink: 0x0f172a, // deep dark black octopus ink
   shock: 0x38bdf8, // crackling electric cyan
   mustard: 0xfacc15, // bright stadium mustard neon yellow
+  ketchup: 0xb91c1c, // deep ketchup crimson red
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -140,7 +141,7 @@ function discGeo(): THREE.CircleGeometry {
  *  worked for water but made fire look like an orange coaster and oil vanish
  *  into dark stone; every kind that has to be identified at a glance from
  *  across a room gets its own canvas. */
-const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod", "fissure", "coffee", "rot", "mustard"];
+const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod", "fissure", "coffee", "rot", "mustard", "ketchup"];
 /** Kinds that ADD light (they feed the bloom) rather than sitting on the scene. */
 const ADDITIVE: FloorFxKind[] = ["fire", "frost", "rod"];
 
@@ -414,6 +415,24 @@ function paintKindTexture(kind: FloorFxKind): THREE.CanvasTexture | null {
       const a = (i * 2.1) % (Math.PI * 2);
       const r = s * (0.12 + ((i * 19) % 25) * 0.012);
       ctx.fillRect(cx + Math.cos(a) * r, cx + Math.sin(a) * r, 3, 3);
+    }
+  } else if (kind === "ketchup") {
+    // THICK TOMATO KETCHUP CONDIMENT PUDDLE: deep crimson paste with golden seed specks
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(185, 28, 28, 0.95)");
+    g.addColorStop(0.7, "rgba(153, 27, 27, 0.9)");
+    g.addColorStop(0.9, "rgba(127, 29, 29, 0.75)");
+    g.addColorStop(1, "rgba(127, 29, 29, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Tomato seed / spice flecks
+    ctx.fillStyle = "rgba(254, 240, 138, 0.85)";
+    for (let i = 0; i < 9; i++) {
+      const a = (i * 2.2) % (Math.PI * 2);
+      const r = s * (0.1 + ((i * 13) % 25) * 0.012);
+      ctx.fillRect(cx + Math.cos(a) * r, cx + Math.sin(a) * r, 2, 3);
     }
   } else {
     // Oil: a dark pool whose RIM catches the light, plus thin sheen arcs.
@@ -1192,6 +1211,19 @@ export function updateFloorFx(dt: number): void {
         if (ticked && p.iframes <= 0) {
           hitPlayerRanged(1, fx.x, fx.z);
           state.vfx?.burst(p.x, 0.25, p.z, 0xfacc15, 6, 1.0);
+        }
+      }
+    }
+    if (fx.kind === "ketchup" && fx.hostile && p && p.hp > 0) {
+      const dx = p.x - fx.x;
+      const dz = p.z - fx.z;
+      const rr = fx.radius + PLAYER_R;
+      if (dx * dx + dz * dz <= rr * rr) {
+        p.stinkSlowT = Math.max(p.stinkSlowT || 0, 1.5);
+        p.momSpeed = (p.momSpeed || 0) * 0.70;
+        if (ticked && p.iframes <= 0) {
+          hitPlayerRanged(1, fx.x, fx.z);
+          state.vfx?.burst(p.x, 0.25, p.z, 0xb91c1c, 6, 1.0);
         }
       }
     }

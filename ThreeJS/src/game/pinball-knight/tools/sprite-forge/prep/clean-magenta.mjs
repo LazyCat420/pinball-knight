@@ -23,6 +23,8 @@ const MONSTER_KEYS = [
   "detective_cop",
   "robo_cop",
   "hotdog",
+  "ketchup",
+  "mustard",
 ];
 
 async function cleanAllMagenta() {

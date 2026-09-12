@@ -171,6 +171,8 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   detective_cop: [{ id: "ironshard", chance: 0.45 }, { id: "glass", chance: 0.35 }, { id: "steelpin", chance: 0.25 }],
   robo_cop: [{ id: "ironshard", chance: 0.55 }, { id: "lodestone", chance: 0.45 }, { id: "steelpin", chance: 0.35 }],
   hotdog: [{ id: "rotflesh", chance: 0.30 }, { id: "slimegel", chance: 0.25 }],
+  ketchup: [{ id: "rotflesh", chance: 0.25 }, { id: "slimegel", chance: 0.30 }],
+  mustard: [{ id: "rotflesh", chance: 0.25 }, { id: "slimegel", chance: 0.30 }],
 };
 
 /**
