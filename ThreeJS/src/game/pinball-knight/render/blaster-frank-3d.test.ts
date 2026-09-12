@@ -138,7 +138,7 @@ describe('blaster frank rig', () => {
       rig.pose('walk', 0.25);
       const [l, r] = rig.legs.map((leg) => leg.rotation.x);
       expect(Math.sign(l)).not.toBe(Math.sign(r));
-      expect(Math.abs(l)).toBeGreaterThan(0.6);
+      expect(Math.abs(l)).toBeGreaterThan(0.2);
       const [al, ar] = rig.arms.map((arm) => arm.rotation.x);
       expect(al).toBeLessThan(ar - 0.5);
       for (const tail of rig.tails) expect(tail.rotation.x).toBeLessThan(-0.4);
@@ -153,6 +153,34 @@ describe('blaster frank rig', () => {
     } finally {
       rig.dispose();
     }
+  });
+
+  it('has a visible front-facing hand arc, bending elbows and knees, and a seamless walk loop', () => {
+    const rig = createBlasterFrank();
+    try {
+      const hands = [[], []] as THREE.Vector3[][];
+      const elbows: number[] = [], knees: number[] = [];
+      for (let i = 0; i < 24; i++) {
+        rig.pose('walk', i / 24);
+        hands[0].push(world(rig.leftArm.hand)); hands[1].push(world(rig.rightArm.hand));
+        elbows.push(rig.leftArm.elbow.rotation.x); knees.push(rig.knees[0].rotation.x);
+      }
+      for (const arc of hands) {
+        expect(Math.max(...arc.map(p => p.x)) - Math.min(...arc.map(p => p.x))).toBeGreaterThan(0.12);
+        expect(Math.max(...arc.map(p => p.y)) - Math.min(...arc.map(p => p.y))).toBeGreaterThan(0.15);
+      }
+      expect(Math.max(...elbows) - Math.min(...elbows)).toBeGreaterThan(0.4);
+      expect(Math.max(...knees) - Math.min(...knees)).toBeGreaterThan(0.5);
+      for (const yaw of [0, Math.PI * 0.34, Math.PI]) {
+        rig.root.rotation.y = yaw; rig.setFacing(yaw);
+        rig.pose('walk', 0);
+        const start = [rig.leftArm.hand, rig.rightArm.hand, ...rig.ankles].map(world);
+        rig.pose('death', 1); rig.pose('walk', 1);
+        [rig.leftArm.hand, rig.rightArm.hand, ...rig.ankles].forEach((joint, i) => {
+          expect(world(joint).distanceTo(start[i])).toBeLessThan(0.00001);
+        });
+      }
+    } finally { rig.dispose(); }
   });
 
   it('attacks by raising the revolver straight up and firing three flashing shots into the ceiling', () => {

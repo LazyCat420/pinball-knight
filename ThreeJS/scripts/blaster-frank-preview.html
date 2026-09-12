@@ -3,7 +3,7 @@
 <h1>Blaster Frank · baked from the 3D rig</h1><p>Idle, walk, attack and death — the actual gameplay sprite frames, played at the game's clip rates.</p>
 <button id="pause">Pause</button><button id="facing">Facing: S</button><div class="cards"></div>
 <script type="module">
-const FPS = { idle: 3, walk: 8, attack: 12, death: 6 }, LOOP = { idle: true, walk: true, attack: false, death: false };
+const FPS = { idle: 3, walk: 24, attack: 12, death: 6 }, LOOP = { idle: true, walk: true, attack: false, death: false };
 const DIRS = ['S', 'E', 'N'];
 let paused = false, facing = 0, time = 0, last = performance.now();
 const sheets = {};

@@ -299,3 +299,12 @@ project-local lock did not protect against a later release from an older branch.
 - Branch `feat/live-camera-zoom`: Options camera row has bounded Zoom Out / Zoom In buttons, applies immediately, persists the existing cameraZoom setting, and adds Panorama / Overview (PPU 32 / 24).
 - Live camera multiplier is selected PPU / boot PPU; projection and camera snapping honor zoom, while atlases remain intact. New cameras reapply the preference; reload bakes the saved PPU with the same framing. Live resampling prioritizes immediate framing over rebuilding atlases mid-run.
 - Validation: camera projection and new-camera restoration tests plus Options reachability passed (8); existing render sizing, sprite scale, atlas and config checks passed (50, including the two new zoom rungs). Ready for integrated release validation.
+
+### Blaster Frank likeness and natural rig — 2026-09-12
+
+- Task branch `fix/frank-natural-rig`, isolated worktree `.worktrees/wt-frank-natural-rig`, based on NAS/main `f69aba55`.
+- Full articulated shoulders/elbows/wrists and hips/knees/ankles; two-bone leg solve, opposing arm arcs visible from the front, smooth torso/head counter-motion and delayed coat/wrist motion.
+- Refined bald hairline, nose, cheeks/chin, eyes and glasses; removed the moustache for a closer Frank Reynolds likeness.
+- Rebuilt all three gameplay atlases. Walk now has 24 samples over the original eight beats, retaining walk/run cadence; fallback art and attack/death timing retain their existing rates.
+- Focused rig/combat/cadence checks passed (37 tests across four files); production build passed. Rig checks cover all facings, loop closure, clip reset, hand arcs, joint articulation, attack and death framing, and matching published PNG/manifest hashes.
+- Release integration and full gate pending below.
