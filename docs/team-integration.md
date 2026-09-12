@@ -513,3 +513,19 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   and healthy; direct/public health endpoints and public HTTP 200 verified.
   Fresh public-site gameplay remained active without script/GPU errors.
 - All test-owned browsers and local servers stopped; unfinished work preserved.
+
+## Debugger monster texture corruption — 2026-09-12
+
+- Branch/worktree: `fix/debug-monster-sprites`, `.worktrees/wt-debug-monster-sprites`.
+- Reproduced scrambled stripes and missing sprite regions on NVIDIA WebGPU.
+  Monster prewarming updates the source atlas texture matrix; actor clones
+  inherited that transform while their geometry already selected a frame.
+  Reset the cloned matrix to identity both on creation and live sheet swaps.
+  The fix also covers pooled actors switching monster sheets.
+- Three sampling regressions fail before the fix and pass afterward, covering
+  new actors, imported-sheet replacement and pooled reuse across atlas rows.
+  Rendering/spawn suites: 34 files, 434 tests passed. Production build passed.
+- The same muted 18-actor browser scene renders intact sprites after the fix,
+  including after four viewport changes; no script or GPU validation errors.
+- Ready for primary-branch integration. NAS deployment remains held under the
+  workspace release instructions; the integration owner handles release.

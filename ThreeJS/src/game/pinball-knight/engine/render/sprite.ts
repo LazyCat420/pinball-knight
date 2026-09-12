@@ -1541,6 +1541,9 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   // the horde cannot simply become a single InstancedMesh without first moving
   // the frame offset into an instanced attribute.
   let tex = sheet.texture.clone();
+  // Prewarming can update the source atlas matrix. Geometry already selects
+  // the cel, so discard that inherited transform instead of applying it twice.
+  tex.matrix.identity();
   tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
   // The uv transform is the GEOMETRY's job now (see applyFrame). Leaving the
   // texture matrix at identity means offset/repeat can stay descriptive
@@ -1646,6 +1649,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       if (next === api.sheet) return;
       const old = tex;
       tex = next.texture.clone();
+      tex.matrix.identity();
       tex.matrixAutoUpdate = false;
       api.sheet = next;
       mat.map = tex;
