@@ -344,6 +344,11 @@ export function takeFrame(sizing: UiSizing, winW: number, winH: number, nowMs: n
   // the pointer does. Under browser zoom the two differ and a notch would
   // scroll a different number of rows at each zoom level.
   input.scroll = Math.round(wheelDelta / sizing.cssScale / 4);
+  // NOT derived from `input.scroll`: that one is rounded to whole UI rows, so
+  // every sub-row trackpad flick would floor to zero and the zoom would only
+  // move for coarse mouse wheels. 100 CSS px is one detent on every desktop
+  // browser; a trackpad reports smaller deltas and correctly yields a fraction.
+  input.wheelNotches = wheelDelta / 100;
   input.typed = typedBuf;
 
   tapped.clear();

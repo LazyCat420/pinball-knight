@@ -17,8 +17,7 @@ import {
   CAMERA_ZOOM_DEFAULT,
   SETTINGS_KEY,
   VOLUME_STEPS,
-  type CameraZoom,
-} from "./constants";
+  type CameraZoom, clampCameraPpu } from "./constants";
 
 /**
  * The key lives in `constants/render.ts`, not here.
@@ -86,6 +85,13 @@ export interface DungeonSettings {
    * atlas resolution on the next launch.
    */
   cameraZoom: CameraZoom;
+  /**
+   * The CONTINUOUS camera zoom in PPU — what the scroll wheel and the options
+   * slider actually move. `cameraZoom` above is now only the named preset the
+   * player last clicked; this is the live value, and it is what the atlas
+   * resolution is derived from on the next launch.
+   */
+  cameraPpu: number;
 }
 
 export function defaultSettings(): DungeonSettings {
@@ -100,6 +106,7 @@ export function defaultSettings(): DungeonSettings {
     outline: OUTLINE_DEFAULT,
     haulReveal: true,
     cameraZoom: CAMERA_ZOOM_DEFAULT,
+    cameraPpu: CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT],
   };
 }
 
@@ -142,6 +149,14 @@ export function getSettings(): DungeonSettings {
       // up as PPU, so a stale or hand-edited value would make the whole render
       // pipeline NaN rather than merely look wrong.
       if (typeof p.cameraZoom === "string" && p.cameraZoom in CAMERA_ZOOMS) d.cameraZoom = p.cameraZoom;
+      // RANGE-checked and clamped for the same reason volume is: this ends up
+      // as a divisor for camera.zoom, so a NaN or a 0 here does not look wrong,
+      // it makes the projection matrix non-finite and the screen goes black.
+      // MIGRATION: absent (every blob written before continuous zoom) falls
+      // back to the rung the player had, so their framing is unchanged.
+      d.cameraPpu = typeof p.cameraPpu === "number" && Number.isFinite(p.cameraPpu)
+        ? clampCameraPpu(p.cameraPpu)
+        : CAMERA_ZOOMS[d.cameraZoom];
     }
   } catch (_e) {
     // Blocked storage → defaults, session-only.
@@ -151,6 +166,15 @@ export function getSettings(): DungeonSettings {
 }
 
 export function saveSettings(patch: Partial<DungeonSettings>): DungeonSettings {
+  // A named rung WRITES THROUGH to the continuous value, unless the caller set
+  // both. Without this the presets go dead the moment zoom became continuous:
+  // `cameraZoom` would still be stored and still name a distance, but nothing
+  // reads it for framing any more, so picking one would change a label and
+  // leave the camera where it was. The rung is a shortcut onto the line, not a
+  // parallel setting.
+  if (patch.cameraZoom !== undefined && patch.cameraPpu === undefined) {
+    patch = { ...patch, cameraPpu: CAMERA_ZOOMS[patch.cameraZoom] };
+  }
   const s = Object.assign(getSettings(), patch);
   try {
     localStorage.setItem(KEY, JSON.stringify(s));

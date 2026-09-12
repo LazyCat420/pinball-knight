@@ -17,6 +17,7 @@ import { beginFrame, commit, fontsAreReady, markDirty, setUiActive, syncSize, ui
 import { beginUi, emptyUiInput, moveFocus, clampFocus, type UiFrame, type UiInput } from "./im";
 import { setUiInputLive, takeFrame } from "./input";
 import { pop, screens, top } from "./stack";
+import { nudgeCameraZoom } from "./apply-settings";
 import { state } from "../state";
 
 /**
@@ -110,6 +111,19 @@ export function drawUiFrame(pass: PixelPass): void {
   if (!g) return;
   const { w, h } = uiSize();
   const input = takeFrame(sizing, window.innerWidth, window.innerHeight, performance.now());
+
+  // WHEEL = ZOOM, but only while the world owns the wheel.
+  //
+  // `state.uiPauses`, not `open`: the HUD is a screen and is open for the whole
+  // run, so gating on openness would mean the wheel never zoomed during play —
+  // the same trap `syncPause` documents for the keyboard. Gating on `uiPauses`
+  // hands the wheel to the menus (which scroll with it) and to the world
+  // otherwise. Negated because deltaY grows DOWNWARD and pushing the wheel
+  // forward should move the camera closer.
+  if (!state.uiPauses && input.wheelNotches !== 0) {
+    nudgeCameraZoom(-input.wheelNotches);
+  }
+
   const active = top();
 
   for (const s of list) {

@@ -235,8 +235,84 @@ function savedCameraZoom(): CameraZoom {
   }
 }
 
+/**
+ * The CONTINUOUS zoom range, in PPU.
+ *
+ * The seven named rungs above are presets on this line, not the only stops.
+ * `cameraPpu` (settings-save.ts) is a free number clamped here, so the scroll
+ * wheel and the options slider can sit anywhere — including between `wide` (54)
+ * and `wider` (46), which is the widest gap in the playable half of the ladder
+ * and the one the ladder made unreachable.
+ *
+ * The ends are the old ends: nothing that used to be selectable stops being so.
+ */
+export const CAMERA_PPU_MIN = 24;
+export const CAMERA_PPU_MAX = 66;
+
+/** Multiplicative step per wheel notch — constant PERCEIVED change per notch. */
+export const CAMERA_ZOOM_STEP = 1.05;
+
+/** Clamp any candidate zoom onto the continuous range. NaN-safe. */
+export function clampCameraPpu(ppu: number): number {
+  if (!Number.isFinite(ppu)) return CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT];
+  return Math.min(CAMERA_PPU_MAX, Math.max(CAMERA_PPU_MIN, ppu));
+}
+
+/**
+ * The PPU the ATLAS is baked at for a given chosen zoom.
+ *
+ * EVEN, because `SPRITE_PIXEL_GRID = SPRITE_UNITS x PPU` with SPRITE_UNITS =
+ * 3/2: an odd PPU makes the grid a non-integer count of texels and the pixel
+ * identity this whole file is built on stops holding. The live camera zoom is
+ * continuous; the boot atlas resolution is not, and this is the seam.
+ *
+ * FLOORED AT THE DEFAULT, and that is the important half. Letting the atlas
+ * follow the zoom DOWN is the obvious reading and it is backwards: at the far
+ * end it would bake sprites at 24 PPU — 36 texels instead of 69 — so zooming
+ * out would permanently destroy the detail it was already short of, and the
+ * next launch would look worse than the session that chose it. Minifying a
+ * 69-texel sprite has the information and merely needs filtering; magnifying a
+ * 36-texel one does not have it at all.
+ *
+ * Upward it DOES follow, so a player who lives at the close end gets sprites
+ * baked to match rather than upscaled.
+ */
+export function atlasPpuFor(ppu: number): number {
+  const even = Math.round(clampCameraPpu(ppu) / 2) * 2;
+  return Math.max(CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT], even);
+}
+
+/**
+ * The saved continuous zoom, read at module load next to the rung.
+ *
+ * Falls back to the rung (and thence to the default) so a blob written before
+ * continuous zoom existed opens at exactly the framing it last had.
+ */
+function savedCameraPpu(): number {
+  const rungPpu = CAMERA_ZOOMS[savedCameraZoom()];
+  if (typeof localStorage === "undefined") return rungPpu;
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return rungPpu;
+    const parsed = JSON.parse(raw) as { cameraPpu?: unknown };
+    const n = parsed.cameraPpu;
+    return typeof n === "number" && Number.isFinite(n) ? clampCameraPpu(n) : rungPpu;
+  } catch {
+    return rungPpu;
+  }
+}
+
 export const CAMERA_ZOOM: CameraZoom = savedCameraZoom();
-export const PPU = CAMERA_ZOOMS[CAMERA_ZOOM];
+
+/** The zoom the player last had, continuous. What the camera opens at. */
+export const CAMERA_PPU: number = savedCameraPpu();
+
+/**
+ * The ATLAS resolution — even, and derived from the continuous zoom rather than
+ * from the rung, so a player who scroll-wheeled to 51 gets sprites baked at 52
+ * on the next launch instead of at whatever rung they last clicked.
+ */
+export const PPU = atlasPpuFor(CAMERA_PPU);
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live

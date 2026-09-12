@@ -127,6 +127,16 @@ export interface UiInput {
   cancel: boolean;
   /** Wheel/stick scroll in UI pixels for this frame. */
   scroll: number;
+  /**
+   * The same wheel motion in NOTCHES (one detent of a typical mouse = 1.0).
+   *
+   * Separate from `scroll` because that one is deliberately scaled into UI rows
+   * and rounded to an integer, which makes it useless as a zoom rate: a rounded
+   * row count cannot express a trackpad's fractional flick, and its divisor
+   * moves with `cssScale`. Positive = wheel DOWN (toward the user), matching
+   * `deltaY`, so a zoom caller negates it.
+   */
+  wheelNotches: number;
   /** Digits 1-9 pressed this frame, or 0. Tab jumps, belt slots, shop rows. */
   digit: number;
   /**
@@ -154,6 +164,7 @@ export function emptyUiInput(): UiInput {
     accept: false,
     cancel: false,
     scroll: 0,
+    wheelNotches: 0,
     digit: 0,
     typed: "",
   };

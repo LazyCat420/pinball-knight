@@ -1367,6 +1367,16 @@ export interface PixelPass {
   /** Composite the UI layer at all. Off costs nothing; see `finalNode`. */
   setUiEnabled(on: boolean): void;
   setPixelFilter(mode: PixelFilter): void;
+  /**
+   * Tell the pass how far the camera is zoomed from the BAKED sprite scale
+   * (camera.zoom; 1.0 = one atlas texel per screen pixel).
+   *
+   * The scenery pixel block is a SCREEN-space size. Left alone it covers more
+   * world the further you zoom out, so the scenery got CHUNKIER exactly where
+   * there was least detail to spare — the "more pixelated the more I zoom out"
+   * report. Scaling the block by the ratio holds it constant in world terms.
+   */
+  setZoomRatio(ratio: number): void;
   setQuantize(on: boolean): void;
   setDither(on: boolean): void;
   setScanline(on: boolean): void;
@@ -1633,6 +1643,38 @@ export function createPixelPass(
   blurMatV.depthTest = false;
   blurMatV.depthWrite = false;
   blurMatV.fragmentNode = blurNode(bloomB.texture, blurDir);
+
+  /**
+   * The scenery pixel block, kept as its two INPUTS rather than as the product.
+   *
+   * `setPixelFilter` and `setZoomRatio` arrive independently and in either
+   * order (boot applies the filter; the first camera apply sets the ratio), so
+   * a single stored product would be clobbered by whichever landed second.
+   */
+  let pixelMode: PixelFilter = opts.pixelFilter ?? "off";
+  let zoomRatio = 1;
+
+  /**
+   * Block size = authored block x zoom ratio, floored to a whole screen pixel.
+   *
+   * WHY THE PRODUCT. The block is measured in screen pixels, but what the
+   * player reads is its size relative to the WORLD. Zooming out shrinks the
+   * world on screen while the block stayed put, so one block swallowed more and
+   * more world — the scenery looked progressively chunkier as detail got
+   * scarcer, which is the "more pixelated the more I zoom out" report.
+   * Multiplying by the ratio pins the block to a fixed world size instead.
+   *
+   * Floor, not round, and a floor of 1: a block below 1 would sample BETWEEN
+   * texels, which is not a smaller pixel, it is a blurred one. 1 means off.
+   */
+  function applyPixelBlock(): void {
+    const authored = pixelBlockSize(pixelMode);
+    if (authored <= 1) {
+      finalUniforms.pixelBlock.value = 1;
+      return;
+    }
+    finalUniforms.pixelBlock.value = Math.max(1, Math.floor(authored * zoomRatio));
+  }
 
   // Uniform HANDLES, not a plain object: TSL uniforms are nodes whose `.value`
   // is live, which is what lets setFrenzyFx/setFlash/resize poke them.
@@ -1969,7 +2011,12 @@ export function createPixelPass(
       finalUniforms.ui.value = on ? 1 : 0;
     },
     setPixelFilter: (mode) => {
-      finalUniforms.pixelBlock.value = pixelBlockSize(mode);
+      pixelMode = mode;
+      applyPixelBlock();
+    },
+    setZoomRatio: (ratio) => {
+      zoomRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+      applyPixelBlock();
     },
     setQuantize: (on) => {
       finalUniforms.quantize.value = on ? 1 : 0;

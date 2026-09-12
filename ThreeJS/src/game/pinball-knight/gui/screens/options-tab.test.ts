@@ -90,8 +90,11 @@ describe("the camera setting is reachable from Esc", () => {
     try {
       for (const expected of ["chunky", "off", "subtle"]) {
         const { ctx } = recordingCtx();
-        // Two camera buttons, sound, volume, then scenery pixels.
-        const frame = beginUi(ctx, 600, 450, { ...emptyUiInput(), accept: true }, 4, true);
+        // Focus order: ONE camera slider, sound, volume, then scenery pixels.
+        // Was 4 when the camera row carried two buttons (ZOOM OUT / ZOOM IN);
+        // the continuous slider is a single focusable, so everything below it
+        // moved up one.
+        const frame = beginUi(ctx, 600, 450, { ...emptyUiInput(), accept: true }, 3, true);
         settingsBody(frame, { x: 0, y: 0, w: 580, h: 450 });
         expect(getSettings().pixelFilter).toBe(expected);
         expect(frame.consumed).toBe(true);
@@ -132,10 +135,18 @@ describe("the camera setting is reachable from Esc", () => {
     expect(labels).toContain("Camera distance");
     expect(labels).toContain("Scenery pixels");
     expect(labels).toContain("SUBTLE");
-    // The cycler carries the CURRENT rung as its face, so one of the five must
-    // be on screen — this is the control, not just the heading.
-    expect(labels).toContain("ZOOM OUT");
-    expect(labels).toContain("ZOOM IN");
+    // The camera control is a CONTINUOUS slider now, and a slider paints no
+    // text of its own — so assert the readout that only exists when the row
+    // actually ran. Checking the heading alone would pass on a row that paints
+    // its label and then throws. The readout also carries the live framing, so
+    // this doubles as "the number the player is choosing by is on screen".
+    const readout = labels.find((l) => l.includes("tiles wide"));
+    expect(readout, "the camera row must paint its tiles-across readout").toBeDefined();
+    expect(readout).toContain("scroll wheel also zooms");
+    // The old two-button cycler must be GONE, not merely unused: leaving it
+    // painted next to the slider is two controls for one setting.
+    expect(labels).not.toContain("ZOOM OUT");
+    expect(labels).not.toContain("ZOOM IN");
     expect(labels).not.toContain("RELOAD");
   });
 

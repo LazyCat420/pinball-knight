@@ -13,8 +13,9 @@
  */
 import { PIXEL_FILTERS } from "../../engine/render/selective-pixel";
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
-import { CAMERA_ZOOM_ORDER, VOLUME_STEPS } from "../../constants";
-import { applySettingsLive } from "../apply-settings";
+import { RENDER_W, VOLUME_STEPS, clampCameraPpu } from "../../constants";
+import { applySettingsLive, cameraZoomFraction, setCameraZoomFraction } from "../apply-settings";
+import { state } from "../../state";
 import { UI, GRID, ROW_H, PAD } from "../theme";
 import {
   beginScroll,
@@ -119,21 +120,57 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
   }
 }
 
-/** Explicit, bounded directions: zooming out must never wrap back to close. */
+/**
+ * The width the scene is actually being rendered at, for the tiles-across
+ * readout. Falls back to the 1280 reference when no pass exists (tests, and the
+ * beat between boot and the first frame) rather than dividing by undefined.
+ */
+function uiRenderWidth(): number {
+  return state.pixelPass?.sizing().renderW ?? RENDER_W;
+}
+
+/**
+ * Camera distance — a CONTINUOUS slider, not the seven-rung cycler it replaced.
+ *
+ * The rungs were the whole complaint: the gap between `wide` (54 PPU) and
+ * `wider` (46) is the biggest step in the playable half of the range, so the
+ * one framing most people want was the one framing the ladder could not
+ * express — "either too far away or too close". The named rungs still exist as
+ * the preset table and still set the boot atlas resolution; this just stops
+ * them being the only stops.
+ *
+ * Live on every drag: `applySettingsLive` pushes the value onto the camera and
+ * the pixel pass immediately, so the framing moves under the slider rather
+ * than on the next launch.
+ */
 function cameraRow(f: UiFrame, r: Rect): void {
-  const chosen = getSettings().cameraZoom;
-  const index = CAMERA_ZOOM_ORDER.indexOf(chosen);
   well(f, r);
   const body = { x: r.x + GRID, y: r.y, w: r.w - GRID * 2, h: r.h };
   const controls = cutRight(body, 198);
+  const ppu = clampCameraPpu(getSettings().cameraPpu);
   text(f, "Camera distance", body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
-  text(f, `${chosen.toUpperCase()} · saved automatically`, body.x, body.y + 17, { size: 8, colour: UI.textDim, max: body.w - GRID });
-  const y = controls.y + (controls.h - 18) / 2;
-  const out = button(f, { x: controls.x, y, w: 98, h: 18 }, "ZOOM OUT", { disabled: index === CAMERA_ZOOM_ORDER.length - 1 });
-  const into = button(f, { x: controls.x + 102, y, w: 96, h: 18 }, "ZOOM IN", { disabled: index === 0 });
-  if (out || into) {
-    saveSettings({ cameraZoom: CAMERA_ZOOM_ORDER[index + (out ? 1 : -1)] });
-    applySettingsLive();
+  // Tiles across, not PPU: "46" means nothing to a player, "28 tiles wide" is
+  // the thing they are actually choosing. Derived from the LIVE render width so
+  // the number matches what is on screen rather than the 1280 reference — the
+  // same rung frames very differently on a 2560-wide window.
+  const tiles = uiRenderWidth() / ppu;
+  text(
+    f,
+    `${tiles.toFixed(1)} tiles wide · scroll wheel also zooms`,
+    body.x,
+    body.y + 17,
+    { size: 8, colour: UI.textDim, max: body.w - GRID },
+  );
+  const y = controls.y + (controls.h - 14) / 2;
+  // INVERTED: the slider reads left-to-right as "zoom out -> zoom in", which is
+  // the direction the old ZOOM OUT / ZOOM IN buttons sat in. Storing the raw
+  // fraction would put "close" on the left and read backwards.
+  const cur = cameraZoomFraction();
+  // 42 steps over 24..66 PPU is one whole PPU per notch — fine enough that the
+  // steps are invisible, coarse enough that the keyboard can cross the range.
+  const next = slider(f, { x: controls.x, y, w: 198, h: 14 }, cur, { steps: 42 });
+  if (next !== cur) {
+    setCameraZoomFraction(next);
   }
 }
 
