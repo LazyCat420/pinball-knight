@@ -42,6 +42,8 @@ window.bakeMilkshakeSheets = async () => {
     let frame = 0;
 
     rig.root.rotation.y = yaw;
+    // Slide the face round toward the camera for the three-quarter E bake.
+    rig.setFacing(yaw);
     for (const clip of MILKSHAKE_CLIPS) {
       const count = MILKSHAKE_FRAMES[clip];
       const cells = [];
