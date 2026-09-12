@@ -544,6 +544,18 @@ export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   junkbot_motor: "junkbot_motor",
   junkbot_crane: "junkbot_crane",
   junkbot_appliance: "junkbot_appliance",
+  corvid_bomber: "corvid_bomber",
+  vulture_scavenger: "vulture_scavenger",
+  gull_bomber: "gull_bomber",
+  sky_falcon: "sky_falcon",
+  magma_slime: "magma_slime",
+  toxic_slime: "toxic_slime",
+  frost_slime: "frost_slime",
+  void_slime: "void_slime",
+  riot_cop: "riot_cop",
+  highway_patrol: "highway_patrol",
+  detective_cop: "detective_cop",
+  robo_cop: "robo_cop",
 };
 
 
