@@ -345,3 +345,8 @@ project-local lock did not protect against a later release from an older branch.
   match SHA-256 `cf5973e2b6ae5c778a94e0815f4a499a38e20fc429156430ae2a4f4d74f851b0`.
 - Muted isolated public browser verified `roll`, `ball`, and `steelball` clips,
   including the visible new armored tumble. Zero script errors.
+### Live camera controls deployed — 2026-09-11
+
+- NAS release `736f0ac7` on `release/live-camera-zoom`, verified healthy. Full gate: 4,204 tests passed, 12 skipped; 362 test files passed, 5 skipped. Existing deploy wrapper completed build, transfer and restart.
+- Public and NAS HTML SHA-256 match: `60186f17f7aaee8e7f52ec37dbd5c6184966cdfcd60827166bfe63af6d662496`.
+- Muted browser clicks verified Esc / Options, all three wider steps, bounded Overview, Zoom In, unchanged player HP, saved Panorama, and reload preserving effective PPU 32. No JavaScript errors. Browser and loopback preview shut down.
