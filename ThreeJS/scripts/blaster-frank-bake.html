@@ -1,10 +1,10 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Toxic Shake · Sprite studio</title><style>body{margin:0;background:#152336;color:#d8eaf0;font:14px system-ui;padding:24px}h1{font-size:24px}canvas{max-width:100%;height:auto;background:repeating-conic-gradient(#24364b 0% 25%,#1b2c40 0% 50%) 0/24px 24px}</style></head><body><h1>Toxic Shake · Sprite studio</h1><p>Gameplay sprite sheets rendered from the 3D Toxic Shake rig (render/milkshake-3d.ts). Front / back / right side; west mirrors east.</p><div id="preview"></div><script type="module">
+<!doctype html><html><head><meta charset="utf-8"><title>Blaster Frank · Sprite studio</title><style>body{margin:0;background:#152336;color:#d8eaf0;font:14px system-ui;padding:24px}h1{font-size:24px}canvas{max-width:100%;height:auto;background:repeating-conic-gradient(#24364b 0% 25%,#1b2c40 0% 50%) 0/24px 24px}</style></head><body><h1>Blaster Frank · Sprite studio</h1><p>Gameplay sprite sheets rendered from the 3D Blaster Frank rig (render/blaster-frank-3d.ts). Front / back / right side; west mirrors east.</p><div id="preview"></div><script type="module">
 import * as THREE from '/node_modules/three/build/three.module.js';
-import { createMilkshake, MILKSHAKE_CLIPS, MILKSHAKE_FRAMES, MILKSHAKE_LOOPS, MILKSHAKE_PALETTE, MILKSHAKE_SHEET } from '/src/game/pinball-knight/render/milkshake-3d.ts';
+import { createBlasterFrank, BLASTER_FRANK_CLIPS, BLASTER_FRANK_FRAMES, BLASTER_FRANK_LOOPS, BLASTER_FRANK_PALETTE, BLASTER_FRANK_SHEET } from '/src/game/pinball-knight/render/blaster-frank-3d.ts';
 
 const W = 256, H = 320, COLS = 8;
 
-window.bakeMilkshakeSheets = async () => {
+window.bakeBlasterFrankSheets = async () => {
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(W, H);
   renderer.setPixelRatio(1);
@@ -16,7 +16,7 @@ window.bakeMilkshakeSheets = async () => {
   const light = new THREE.DirectionalLight(0xffffff, 2.0);
   light.position.set(-3, 6, 5);
   scene.add(light);
-  const rim = new THREE.DirectionalLight(0xa3e635, 0.6);
+  const rim = new THREE.DirectionalLight(0xffd9a8, 0.6);
   rim.position.set(3, 2, -4);
   scene.add(rim);
 
@@ -25,12 +25,12 @@ window.bakeMilkshakeSheets = async () => {
   camera.position.set(0, 1.2 + 1.7, 9);
   camera.lookAt(0, 1.2, 0);
 
-  const rig = createMilkshake();
+  const rig = createBlasterFrank();
   scene.add(rig.root);
 
   const result = [];
-  const name = MILKSHAKE_SHEET;
-  const total = MILKSHAKE_CLIPS.reduce((n, c) => n + MILKSHAKE_FRAMES[c], 0);
+  const name = BLASTER_FRANK_SHEET;
+  const total = BLASTER_FRANK_CLIPS.reduce((n, c) => n + BLASTER_FRANK_FRAMES[c], 0);
   const ROWS = Math.ceil(total / COLS);
 
   for (const [dir, yaw] of [['S', 0], ['N', Math.PI], ['E', Math.PI * 0.34]]) {
@@ -44,11 +44,11 @@ window.bakeMilkshakeSheets = async () => {
     rig.root.rotation.y = yaw;
     // Slide the face round toward the camera for the three-quarter E bake.
     rig.setFacing(yaw);
-    for (const clip of MILKSHAKE_CLIPS) {
-      const count = MILKSHAKE_FRAMES[clip];
+    for (const clip of BLASTER_FRANK_CLIPS) {
+      const count = BLASTER_FRANK_FRAMES[clip];
       const cells = [];
       for (let i = 0; i < count; i++) {
-        const u = i / (MILKSHAKE_LOOPS[clip] ? count : count - 1);
+        const u = i / (BLASTER_FRANK_LOOPS[clip] ? count : count - 1);
         rig.pose(clip, u);
         renderer.render(scene, camera);
         const x = (frame % COLS) * W, y = Math.floor(frame / COLS) * H;
@@ -93,7 +93,7 @@ window.bakeMilkshakeSheets = async () => {
         source: [canvas.width, canvas.height],
         grid: 1,
         mirror: false,
-        palette: Object.values(MILKSHAKE_PALETTE),
+        palette: Object.values(BLASTER_FRANK_PALETTE),
         rows,
       },
     });
