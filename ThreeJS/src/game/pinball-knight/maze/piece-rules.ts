@@ -35,6 +35,7 @@
  *
  * DOM- and three-free. Pure: takes a grid, returns violations.
  */
+import { findBrokenWallJoins } from "./wall-junctions";
 import { type Grid, type TilePos, idx, at, isWalkable, T_WALL, T_CRACKED, T_STAIRS } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, isShaped, shapeBacking, type ArcFeature } from "../engine/tile-shape";
 import { backedFraction, findArcJunctions, MIN_ARC_LEN, MIN_ARC_TILES } from "./arc-contract";
@@ -147,6 +148,7 @@ export const PIECE_RULES: Record<PieceLabel, readonly string[]> = {
     // Two curves sharing an edge must agree, or they read as a collision
     // between two circles rather than one continuous wall.
     "coherent with any neighbouring feature: no kink, step or curvature flip",
+    "circular fillet endpoints join a wall face at the same position, tangent and solid side",
   ],
   rubber: [
     // A KickBand is an angular SUB-span. The kicker renderer draws it from its
@@ -373,6 +375,11 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
       jn.j,
       `${jn.check.reason} against feature ${jn.b} (kink ${((jn.check.kink * 180) / Math.PI).toFixed(0)}°, step ${jn.check.step.toFixed(2)})`,
     );
+  }
+
+  for (const join of findBrokenWallJoins(g)) {
+    push("arc-face", PIECE_RULES["arc-face"][4], Math.floor(join.port.x), Math.floor(join.port.z),
+      `feature ${join.feature} end ${join.end} has no matching wall face`);
   }
 
   // ── Sealed lane (the launch chute) ─────────────────────────────────────

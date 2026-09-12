@@ -378,3 +378,40 @@ project-local lock did not protect against a later release from an older branch.
   pending explicit authorization for `LazyCat420/pinball-knight`. Local commits
   and the website deployment are complete. Other developers' worktrees were not
   modified. Future releases must include `ce5f6330` to preserve these fixes.
+### Curved-wall orientation and connections — 2026-09-08
+
+- Branch: `fix/maze-curve-junctions`; worktree `.worktrees/wt-maze-curve-junctions`.
+  Batch `5448ec7c`, based on main `7fac97df`. Independent of the earlier
+  selective-pixel/UI/spring handoff; preserve those pending changes when merging.
+- `wall-junctions.ts` describes wall-face endpoints by position, outgoing tangent
+  and normal toward floor. Circular fillets must meet exposed square faces or
+  matching round, bevel or arc endpoints. Nearby wall tiles alone are insufficient.
+  Authoring tries a smaller radius when a sweep cannot reach both straight faces;
+  corner decoration preserves its continuation tiles. Final validation restores
+  incompatible circular fillets to their existing masonry with correct arc-index
+  remapping. Track cleanup then removes any resulting stubs in the same loop.
+- `arcForBend` now places the centre behind the incoming leg and inside the
+  outgoing leg at `ri + width/2`. Both ridden tangents follow the actual route
+  and outer-wall endpoints align with the straight corridor faces. The previous
+  forward offset rotated the tangents by 90 degrees.
+- Intentional conic doorway jaws retain their separate paired-arm/throat contract.
+  Applying a circular-fillet terminal rule to those chains dismantled the assembly;
+  this is explicitly excluded. The funnel test observes the real authoring stage
+  instead of trying to place a second set on already-finished geometry.
+- Validation: 229 tests across piece-rules, floor-rules, floor-metrics and wall-runs
+  passed, including the 150-floor piece gate. Final author-floor/junction/bank tests
+  passed 52/52; optional funnel tests passed 8/8. Arc-sweeps, corner-shapes,
+  wall-grammar-veto and floor-pipeline suites also passed. All eight directed turns,
+  rotated convex/concave corners, remapping and non-vacuous curve retention covered.
+  Production Vite build passed. TypeScript remains at 55 baseline diagnostics,
+  with none introduced. Five geometry/population fingerprints were refreshed for
+  the intentional layout change after checking the geometric and floor constraints.
+- Visual validation: actual WebGPU wall renderer, L5 seed 777. The baseline showed
+  the same detached crescents as the report (91 invalid ends across 71 features).
+  Revalidating that saved geometry removes 58 unsupported features and leaves 13
+  with zero invalid ends. Fresh generation retained 17 features with zero invalid
+  ends; inspected a retained curve joining both straight wall faces. No browser
+  script/GPU errors. Muted test browser and Vite server stopped; temporary harness
+  and baseline config removed.
+- Status: committed and ready for the integration owner, not merged or deployed.
+  The existing release hold remains in effect.

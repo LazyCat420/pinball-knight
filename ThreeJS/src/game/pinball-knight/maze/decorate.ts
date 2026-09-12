@@ -10,6 +10,7 @@
  *
  * DOM- and three-free: tested alongside the generator.
  */
+import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, shapeAt } from "./generator";
 import { SHAPE_ARC } from "../engine/tile-shape";
 import { assignCornerShapes } from "./corner-shapes";
@@ -3518,6 +3519,7 @@ export function decorateMaze(
   // break-throughs, secrets) is final. Only reshapes existing walls — never
   // changes walkability, so AI/flow-field/spawns are unaffected. ──
   assignCornerShapes(g, { grammar: extras.wallGrammar ?? true });
+  enforceWallJoins(g);
 
   // ── ITEM RARITY, stamped in ONE place ──
   // Every weapon/gear drop on this floor rolls its rarity here rather than at

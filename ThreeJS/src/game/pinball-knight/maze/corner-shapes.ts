@@ -1,3 +1,4 @@
+import { arcContinuationTiles } from "./wall-junctions";
 import { type Grid, at, T_WALL, idx, isWalkable, setShape, shapeAt } from "./generator";
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "../engine/tile-shape";
 import { runInteriorMask, runLengthMask } from "./wall-runs";
@@ -23,6 +24,7 @@ import { runInteriorMask, runLengthMask } from "./wall-runs";
  * tiny 2×2 nubs square and never opens a leak.
  */
 export function assignCornerShapes(g: Grid, policy: { grammar?: boolean } = {}): void {
+  const arcJoins = arcContinuationTiles(g);
   const cand = new Int8Array(g.w * g.h).fill(-1); // -1 = none, else the TileShape
   /**
    * WHERE A CURVE IS ALLOWED TO LAND (maze/wall-runs.ts).
@@ -73,6 +75,7 @@ export function assignCornerShapes(g: Grid, policy: { grammar?: boolean } = {}):
   // now dominate and the bevels are the accent.)
   const styled = (slant: TileShape, i: number, j: number): TileShape => ((i * 3 + j * 5) % 4 !== 1 ? slantToRound(slant) : slant);
   const put = (i: number, j: number, shape: TileShape): void => {
+    if (arcJoins.has(idx(g, i, j))) return;
     // Skip tiles already claimed by a multi-tile arc sweep (shape ≠ FULL).
     if (i > 0 && j > 0 && i < g.w - 1 && j < g.h - 1 && at(g, i, j) === T_WALL && shapeAt(g, i, j) === SHAPE_FULL) cand[idx(g, i, j)] = shape;
   };

@@ -183,12 +183,11 @@ export function chainBends(bends: readonly Bend[], maxGap: number): BendChain[] 
  * headings. With inner radius `ri` and corridor width `w`, the ball rides the
  * OUTER wall at `ro = ri + w`.
  *
- * The bisector is `inDir + outDir`, normalised — forward along travel AND
- * inward. Worth being explicit, because `-inDir + outDir` also lands the corner
- * at exactly radius `ro` from the centre and so passes a naive distance check,
- * but it puts the centre on the WRONG SIDE (behind and outside the turn), which
- * would author an arc curving away from the corridor instead of around it.
- * Distance alone does not pin the centre; the side does.
+ * The centre is one centreline radius BACK along the incoming leg and
+ * INWARD along the outgoing leg. Offsetting forward rotates the ridden
+ * tangents by 90 degrees; checking only distance to the corner misses that.
+ * The centreline radius is ri + w/2, so the outer wall joins the two straight
+ * corridor faces exactly w/2 from their centrelines.
  *
  * `a0`/`span` are the angular range of the OUTER wall the ball actually rides,
  * measured in the same atan2 frame `resolveArcFeature` uses.
@@ -198,21 +197,13 @@ export function arcForBend(b: Bend, ri: number, w: number): { cx: number; cz: nu
   // Corner tile centre.
   const px = b.corner.i + 0.5;
   const pz = b.corner.j + 0.5;
-  // Toward the inside of the turn: forward along travel and inward.
-  const bx = b.inDir.di + b.outDir.di;
-  const bz = b.inDir.dj + b.outDir.dj;
-  const bl = Math.hypot(bx, bz) || 1;
-  // Centre sits `ro` from the outer wall, i.e. `ro` back along the bisector.
-  const cx = px + (bx / bl) * ro;
-  const cz = pz + (bz / bl) * ro;
-  // The ridden span runs from the incoming wall to the outgoing wall. The
-  // outward radial at entry is opposite the bisector-ish direction; taking the
-  // angle of (corner - centre) and sweeping a quarter in the turn direction
-  // gives exactly the face the ball rides.
-  const entryAng = Math.atan2(pz - cz, px - cx);
+  const centreRadius = ri + w / 2;
+  const cx = px + (-b.inDir.di + b.outDir.di) * centreRadius;
+  const cz = pz + (-b.inDir.dj + b.outDir.dj) * centreRadius;
+  const entryAng = Math.atan2(-b.outDir.dj, -b.outDir.di);
+  const exitAng = Math.atan2(b.inDir.dj, b.inDir.di);
   const span = Math.PI / 2;
-  // Clockwise turn sweeps toward increasing angle in this frame.
-  const a0 = b.turn > 0 ? entryAng - span / 2 : entryAng - span / 2;
+  const a0 = b.turn > 0 ? entryAng : exitAng;
   // cw follows the turn: a clockwise bend throws clockwise.
   return { cx, cz, r: ro, a0, span, cw: b.turn > 0 };
 }

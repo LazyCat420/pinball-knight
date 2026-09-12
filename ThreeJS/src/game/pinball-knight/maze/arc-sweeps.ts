@@ -27,6 +27,7 @@
  * C = P − (cx·R, cz·R) — R away from both wall faces, tangent to each — and
  * spans the quadrant facing (cx,cz). DOM- and three-free: tested.
  */
+import { hasSquareJoins } from "./wall-junctions";
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "../engine/tile-shape";
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
@@ -301,6 +302,11 @@ function planFillet(g: Grid, px: number, pz: number, cx: number, cz: number, R: 
     solidOut: concave || undefined,
     owner: "sweep",
   };
+
+  // The exposed straight faces must continue PAST both tangent points too.
+  // A wall behind the endpoint alone also accepts a curve running into the
+  // side/back of a block. Try the next radius instead of authoring that kink.
+  if (!hasSquareJoins(g, feature)) return null;
 
   // ── THE ARC CONTRACT (maze/arc-contract.ts) ─────────────────────────────
   //

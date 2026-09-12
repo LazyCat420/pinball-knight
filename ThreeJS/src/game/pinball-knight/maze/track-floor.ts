@@ -28,6 +28,7 @@
  *
  * DOM- and three-free.
  */
+import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
@@ -958,7 +959,7 @@ export function buildTrackFloor(
     clearOrphanArcTiles(grid);
   }
 
-  // ── TRIM CURVES AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
+  // ── TRIM CURVES, CHECK JOINS AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
   //
   // These two passes feed each other, and running them once each — which is
   // what shipped — leaves whichever defect the other one just created.
@@ -993,6 +994,9 @@ export function buildTrackFloor(
   for (let round = 0; round < 8; round++) {
     uncarveDeadEnds(grid, mask, protectedWithDoors);
     compactArcs(grid);
+    // A rejected connection restores masonry too, so clean its stubs in this
+    // same round rather than leaving an unvalidated box after the loop.
+    enforceWallJoins(grid);
     if (removeWallStubs(grid, mask) === 0) break;
   }
   uncarveDeadEnds(grid, mask, protectedWithDoors);
