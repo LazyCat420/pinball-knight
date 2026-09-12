@@ -32,6 +32,7 @@ import { isPlayerInDrainRange, updateDraculaSiphon } from "./dracula";
 import { killZombie, setDraculaTransformHandler } from "./combat";
 import { installSpriteTestDom } from "../testkit/atlas-census";
 import { createCanvas } from "canvas";
+import { CanvasTexture } from "three";
 import type { Grid } from "../maze/generator";
 
 function makeGrid(): Grid {
@@ -287,11 +288,6 @@ describe("Count Dracula & Dracula Bat Final Form Mechanics", () => {
       ["S:attack", [0]],
       ["S:death", [0]],
     ]);
-    const mockTex = () => ({
-      repeat: { set() {} },
-      offset: { set() {} },
-      needsUpdate: false,
-    });
     state.sheets.bat = {
       canvas: createCanvas(64, 64),
       cellPx: 32,
@@ -299,11 +295,7 @@ describe("Count Dracula & Dracula Bat Final Form Mechanics", () => {
       rows: 2,
       clips: mockClips,
       frames: {},
-      texture: {
-        clone: mockTex,
-        repeat: { set() {} },
-        offset: { set() {} },
-      },
+      texture: new CanvasTexture(createCanvas(64, 64) as unknown as HTMLCanvasElement),
     } as unknown as typeof state.sheets.bat;
 
     drainPendingDraculaBats();

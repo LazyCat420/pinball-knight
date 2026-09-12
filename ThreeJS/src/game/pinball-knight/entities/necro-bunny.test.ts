@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { CanvasTexture } from "three";
 import { state, type Zombie } from "../state";
 import { installGameplayWiring } from "../boot/wiring";
 import { damageZombie, setReagentDropHandler, setCoinDropHandler, setCardRollHandler } from "./combat";
@@ -61,12 +62,6 @@ describe("Necromancer & Zombie Mini Bunny Rabbit Summons", () => {
     } as any;
     state.zombies = [];
     state.player = null;
-    const mockTexture = () => ({
-      needsUpdate: false,
-      repeat: { set() {} },
-      offset: { set() {} },
-      matrixAutoUpdate: false,
-    });
     const mockClips = new Map<string, number[]>([
       ["S:idle", [0]],
       ["S:walk", [0]],
@@ -79,11 +74,7 @@ describe("Necromancer & Zombie Mini Bunny Rabbit Summons", () => {
         rows: 4,
         frames: {},
         clips: mockClips,
-        texture: {
-          clone: mockTexture,
-          repeat: { set() {} },
-          offset: { set() {} },
-        },
+        texture: new CanvasTexture(document.createElement("canvas")),
       } as any,
     } as any;
     state.zombieVariantSheets = [state.sheets.zombie!];
