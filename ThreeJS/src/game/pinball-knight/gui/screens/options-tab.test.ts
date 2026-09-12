@@ -90,8 +90,8 @@ describe("the camera setting is reachable from Esc", () => {
     try {
       for (const expected of ["chunky", "off", "subtle"]) {
         const { ctx } = recordingCtx();
-        // Camera, sound, volume, then scenery pixels in the settings body.
-        const frame = beginUi(ctx, 600, 450, { ...emptyUiInput(), accept: true }, 3, true);
+        // Two camera buttons, sound, volume, then scenery pixels.
+        const frame = beginUi(ctx, 600, 450, { ...emptyUiInput(), accept: true }, 4, true);
         settingsBody(frame, { x: 0, y: 0, w: 580, h: 450 });
         expect(getSettings().pixelFilter).toBe(expected);
         expect(frame.consumed).toBe(true);

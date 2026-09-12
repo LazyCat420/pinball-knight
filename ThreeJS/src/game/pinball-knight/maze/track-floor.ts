@@ -997,7 +997,10 @@ export function buildTrackFloor(
     // A rejected connection restores masonry too, so clean its stubs in this
     // same round rather than leaving an unvalidated box after the loop.
     enforceWallJoins(grid);
-    if (removeWallStubs(grid, mask) === 0) break;
+    // Rejected curves expose square masonry; restore passage clearance before
+    // rechecking the backing and endpoints of the remaining curves.
+    const widened = ensureMin3WideClearance(grid, mask);
+    if (removeWallStubs(grid, mask) === 0 && widened === 0) break;
   }
   uncarveDeadEnds(grid, mask, protectedWithDoors);
   compactArcs(grid);

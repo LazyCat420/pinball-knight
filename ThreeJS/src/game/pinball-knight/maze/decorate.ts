@@ -3905,7 +3905,10 @@ export function decorateMaze(
   // `isStructuralPart` at module scope so `decorate.test.ts` can hold it to the
   // set above without going through a built floor — a clause dropped from it is
   // then a red test rather than a rarer broken chain.
-  const clampMayRemove = (p: PinballPartSpot): boolean => !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p);
+  // Prefab signatures remain anchored when added wall shortcuts consume the
+  // loose-furniture budget. Removing them breaks the authored prefab.
+  const prefabTiles = new Set((extras.anchors ?? []).map(a => a.j * g.w + a.i));
+  const clampMayRemove = (p: PinballPartSpot): boolean => !prefabTiles.has(p.j * g.w + p.i) && !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p);
   let walkableTotal = 0;
   for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
   const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));

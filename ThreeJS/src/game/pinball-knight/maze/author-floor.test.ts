@@ -8,15 +8,15 @@ import { liveFloor } from "../testkit/live-floor";
 
 afterEach(() => vi.restoreAllMocks());
 
-// Reviewed after the wall-junction policy change (2026-09-08). Include full
+// Reviewed after integrating wall joins, clearance and shortcuts (2026-09-12). Include full
 // geometry, surfaces, content, lamps and population RNG, not just piece counts.
 // Intentional layout changes must refresh these only after the piece/floor gates.
 const BASELINES = [
-  [1, 1, false, false, "c676288c9ae82987e67903f026f78da637d54de3208e83378c0a6e67d31c907b"],
-  [3, 424242, true, false, "4e41908b591756b7889bf1dd1a265d2f0b52a020a07fb8dce3a8e7977f6cc27c"],
-  [5, 12345, false, false, "74d82375434e285a05baddbf96b00fc0e8896d37c37413544e22d1b1bf8d352c"],
-  [24, 1, true, false, "501470e37ebae01ce8cc1130a07fc95527692d3bbb8b98dcacf9c5317fbb73fd"],
-  [6, 424242, true, true, "540bdcdf40774f767758e448e721f7a168ccae3fe80ce2f4ef07b50d19c357f2"],
+  [1, 1, false, false, "e28d6e275142448306c662e5764102c14c6b61f6993fff428931823272b0fae1"],
+  [3, 424242, true, false, "b61aef3fc52b46e1f3f1a55bf262758bc073d56ba06af2e5cca7cadc78cc2714"],
+  [5, 12345, false, false, "3710ab9c53a6f85401c612d46817455a892da6f62622bbe90558443de9f7cb18"],
+  [24, 1, true, false, "421b04d455b4e3394165a5e34cd6ca88a7ee4665c46e07af02104f6c1a045137"],
+  [6, 424242, true, true, "e556fc89f3c2f76673c779f0ff771ea1499b7309d8884287e6d370d916ac8561"],
 ] as const;
 
 describe("shared floor author", () => {

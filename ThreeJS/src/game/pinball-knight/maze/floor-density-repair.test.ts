@@ -29,7 +29,11 @@ describe("floors exposed by the corrected live density sweep", () => {
     it(`L${level}/${runSeed} respects the unchanged legibility bounds`, () => {
       const f = authorMaze({ level, runSeed, archIndex });
       expect(checkDensity(measureDensity(f.plan, f.walkable))).toEqual([]);
-      expect(f.densityRepair!.removedParts.length + f.densityRepair!.removedSpawns.length).toBeGreaterThan(0);
+      const removed = f.densityRepair!.removedParts.length + f.densityRepair!.removedSpawns.length;
+      // The integrated curve/shortcut layout no longer overfills this seed.
+      // Keep it in the density regression set and retain non-vacuous repairs elsewhere.
+      if (level === 14 && runSeed === 19156) expect(removed).toBe(0);
+      else expect(removed).toBeGreaterThan(0);
       for (const lamp of f.lampPuzzlePlan?.lamps ?? []) expect(f.plan.parts).toContain(lamp);
     });
   }
