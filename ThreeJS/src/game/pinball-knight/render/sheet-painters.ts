@@ -97,6 +97,7 @@ import { makeToasterGremlinPaints } from "./monsters/toaster-gremlin";
 import { makeLipFlapperPaints } from "./monsters/lip-flapper";
 import { makeHydrantHoundPaints } from "./monsters/hydrant-hound";
 import { makeBlasterFrankPaints } from "./monsters/blaster-frank";
+import { makeJunkbotPaints } from "./monsters/junkbot";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -182,6 +183,12 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   lip_flapper: makeLipFlapperPaints,
   hydrant_hound: makeHydrantHoundPaints,
   blaster_frank: makeBlasterFrankPaints,
+  junkbot: makeJunkbotPaints,
+  junkbot_tractor: makeJunkbotPaints,
+  junkbot_cyber: makeJunkbotPaints,
+  junkbot_motor: makeJunkbotPaints,
+  junkbot_crane: makeJunkbotPaints,
+  junkbot_appliance: makeJunkbotPaints,
 };
 
 export {
@@ -207,4 +214,5 @@ export {
   makeLipFlapperPaints,
   makeHydrantHoundPaints,
   makeBlasterFrankPaints,
+  makeJunkbotPaints,
 };

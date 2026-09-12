@@ -414,7 +414,10 @@ export type EnemyKind =
   | "toaster_gremlin" // WEIRD — purple goblin with chrome toaster head, launching flaming toast rockets
   | "lip_flapper" // WEIRD — accordion stalk with braced cartoon red lips, suction pull and control-reversing kiss
   | "hydrant_hound" // WEIRD — fire hydrant bulldog with glove ears, twin water cannons and geyser death
-  | "blaster_frank"; // DANNY DEVITO — short stout rogue with round specs, shooting revolver into the air with random misfires
+  | "blaster_frank" // DANNY DEVITO — short stout rogue with round specs, shooting revolver into the air with random misfires
+  | "junkbot"; // SCAVENGER JUNK BOT — computer monitor robot with scavenged limbs (tractor, cyber, motor, crane, appliance)
+
+export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 
 export interface Zombie extends Actor {
   anim: MonsterAnimator;
@@ -425,6 +428,8 @@ export interface Zombie extends Actor {
   dbgId?: string;
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
   kind: EnemyKind;
+  /** Which scavenged limb variant if a junkbot */
+  junkbotVariant?: JunkbotVariant;
   hp: number;
   /** Full HP, for drawing a boss health bar (only set on the overlord). */
   maxHp?: number;
