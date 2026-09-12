@@ -12,8 +12,8 @@
  * again, wearing a different hat).
  */
 import { describe, expect, it } from "vitest";
-import { LinearFilter, NearestFilter, Texture } from "three";
-import { setSpriteSmoothing, spriteMinFilter } from "./sprite";
+import { LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, Texture } from "three";
+import { actorSpriteTexture, setSpriteSmoothing, spriteMinFilter } from "./sprite";
 
 function fakeSheetTexture(): Texture {
   const tex = new Texture();
@@ -79,5 +79,31 @@ describe("sprite minification filtering", () => {
     tex.generateMipmaps = false;
     setSpriteSmoothing(true, [tex]);
     expect(tex.generateMipmaps).toBe(false);
+  });
+
+  it("exposes an actor's OWN texture, not the sheet it was cloned from", () => {
+    // `createActorSprite` clones `sheet.texture` per actor. A clone copies the
+    // filter at clone time and is NOT linked afterwards, so re-filtering only
+    // the sheets leaves every monster currently on screen untouched and the
+    // toggle looks dead until the next floor — the restart bug again. This is
+    // the accessor that lets the caller reach the clones.
+    const sheetTex = fakeSheetTexture();
+    const clone = sheetTex.clone();
+    const mesh = new Mesh(undefined, new MeshBasicMaterial({ map: clone }));
+    const found = actorSpriteTexture({ mesh });
+    expect(found, "an actor's sampled texture must be reachable").toBe(clone);
+    expect(found).not.toBe(sheetTex);
+
+    // And re-filtering the SHEET alone must demonstrably miss it.
+    setSpriteSmoothing(false, [sheetTex, clone]);
+    setSpriteSmoothing(true, [sheetTex]);
+    expect(clone.minFilter, "the sheet-only walk cannot reach a clone").toBe(NearestFilter);
+    setSpriteSmoothing(true, [sheetTex, clone]);
+    expect(clone.minFilter).toBe(LinearFilter);
+  });
+
+  it("survives an actor whose material carries no map", () => {
+    const mesh = new Mesh(undefined, new MeshBasicMaterial());
+    expect(actorSpriteTexture({ mesh })).toBeNull();
   });
 });

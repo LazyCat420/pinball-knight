@@ -271,6 +271,20 @@ function applyMinFilter(tex: THREE.Texture): void {
  * there is nothing to repaint, and a rebuild would cost a full atlas build per
  * kind to change one enum.
  */
+/**
+ * The texture an actor is ACTUALLY sampling — its own clone, not the sheet's.
+ *
+ * `createActorSprite` clones `sheet.texture` per actor so two actors sharing a
+ * sheet can sit on different frames. A clone copies `minFilter` at clone time
+ * and is not linked afterwards, so re-filtering the sheet alone reaches none of
+ * the monsters currently on screen: the setting would appear to do nothing
+ * until the floor was rebuilt, which is the restart bug all over again.
+ */
+export function actorSpriteTexture(sprite: { mesh: THREE.Mesh }): THREE.Texture | null {
+  const mat = sprite.mesh.material as THREE.MeshBasicMaterial | undefined;
+  return mat?.map ?? null;
+}
+
 export function setSpriteSmoothing(on: boolean, textures: Iterable<THREE.Texture>): void {
   spriteSmoothing = on;
   for (const tex of textures) applyMinFilter(tex);

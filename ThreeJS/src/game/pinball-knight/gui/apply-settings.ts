@@ -13,7 +13,7 @@ import { state } from "../state";
 import { getSettings, saveSettings } from "../settings-save";
 import { setSfxMuted, setSfxVolume } from "../sfx";
 import type * as THREE from "three";
-import { setSpriteSmoothing } from "../engine/render/sprite";
+import { actorSpriteTexture, setSpriteSmoothing } from "../engine/render/sprite";
 
 /**
  * Match the selected field of view without rebuilding the boot-time atlases.
@@ -110,5 +110,15 @@ export function applySpriteSmoothing(): void {
   for (const sheet of Object.values(state.sheets)) if (sheet) textures.push(sheet.texture);
   for (const sheet of state.zombieVariantSheets) if (sheet) textures.push(sheet.texture);
   for (const sheet of Object.values(state.expansionSheets)) if (sheet) textures.push(sheet.texture);
+  // The CLONES too. Every actor samples its own `sheet.texture.clone()`, which
+  // copied the filter at clone time and is not linked afterwards — so filtering
+  // only the sheets would leave every monster currently on screen unchanged and
+  // the toggle would look dead until the next floor.
+  for (const z of state.zombies) {
+    const tex = z.sprite && actorSpriteTexture(z.sprite);
+    if (tex) textures.push(tex);
+  }
+  const playerTex = state.player?.sprite ? actorSpriteTexture(state.player.sprite) : null;
+  if (playerTex) textures.push(playerTex);
   setSpriteSmoothing(on, textures);
 }

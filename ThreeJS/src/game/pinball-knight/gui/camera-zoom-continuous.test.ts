@@ -7,7 +7,7 @@
  * retuned: every assertion is derived from CAMERA_PPU_MIN/MAX/STEP.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { OrthographicCamera, Vector3 } from "three";
+import { LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, OrthographicCamera, Texture, Vector3 } from "three";
 import { state } from "../state";
 import {
   CAMERA_PPU_MAX,
@@ -166,5 +166,41 @@ describe("the atlas resolution", () => {
     expect(atlasPpuFor(CAMERA_PPU_MAX)).toBeGreaterThan(CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT]);
     expect(atlasPpuFor(CAMERA_PPU_MAX)).toBe(CAMERA_PPU_MAX);
     expect(atlasPpuFor(60)).toBe(60);
+  });
+});
+
+describe("sprite smoothing reaches what is already on screen", () => {
+  it("re-filters LIVE actors, not just the sheets they were cloned from", async () => {
+    // The accessor being correct is not the same as the caller USING it. With
+    // the clone walk removed from `applySpriteSmoothing`, every other test in
+    // the repo still passed — the toggle would have looked dead for every
+    // monster already spawned and only taken effect on the next floor, which is
+    // the restart bug this whole change exists to remove.
+    const { applySpriteSmoothing } = await import("./apply-settings");
+    const { actorSpriteTexture } = await import("../engine/render/sprite");
+    const sheetTex = new Texture();
+    sheetTex.minFilter = NearestFilter;
+    const clone = sheetTex.clone();
+    const mesh = new Mesh(undefined, new MeshBasicMaterial({ map: clone }));
+    const zombie = { sprite: { mesh } } as unknown as (typeof state.zombies)[number];
+
+    const previousZombies = state.zombies;
+    const previousSmoothing = getSettings().spriteSmoothing;
+    try {
+      state.zombies = [zombie];
+      saveSettings({ spriteSmoothing: false });
+      applySpriteSmoothing();
+      expect(actorSpriteTexture({ mesh })!.minFilter).toBe(NearestFilter);
+
+      saveSettings({ spriteSmoothing: true });
+      applySpriteSmoothing();
+      expect(
+        actorSpriteTexture({ mesh })!.minFilter,
+        "a spawned monster must re-filter without a floor rebuild",
+      ).toBe(LinearFilter);
+    } finally {
+      state.zombies = previousZombies;
+      saveSettings({ spriteSmoothing: previousSmoothing });
+    }
   });
 });
