@@ -336,3 +336,12 @@ project-local lock did not protect against a later release from an older branch.
 ## 2026-09-10 — armored pixel knight release
 
 `release/armored-pixel-knight@06ba12cd` is deployed and healthy on the NAS. It contains the armored knight batches (`0526e1b6`, `78a262b0`, cherry-picked as `06986faf`, `e17e7ab6`) plus the verified live slime release `0e569b41`, preserving both updates. The feature worktree is `wt-armored-knight`; release integration is isolated in `wt-armored-knight-release`. Full release validation passed 4,145 tests with 12 skips. See [the armor rendering notes](art/armored-knight.md) for behavior and verification.
+### Forged knight published after explicit approval
+
+- User authorized this task to act as integration owner and publish to the NAS.
+- Existing deploy wrapper passed all 4,164 tests (355 files passed, 5 skipped;
+  12 tests skipped), built/transferred/restarted release `bb44f39d` successfully.
+- NAS `bb44f39d` healthy; public and NAS `/health` healthy. Public and NAS HTML
+  match SHA-256 `cf5973e2b6ae5c778a94e0815f4a499a38e20fc429156430ae2a4f4d74f851b0`.
+- Muted isolated public browser verified `roll`, `ball`, and `steelball` clips,
+  including the visible new armored tumble. Zero script errors.
