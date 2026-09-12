@@ -565,3 +565,22 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   [the monster art pipeline doc](monster-art-pipeline.md). **Read it before
   deleting any painter** — two kinds ship painter-only.
 - In-browser verification on the host GPU is still outstanding.
+
+## Camera zoom made continuous and live — 2026-09-12
+
+- Reported as "pixel effect too strong", "zoom only works if I restart" and
+  "either too far away or too close". One mechanism behind all three: the zoom
+  was always applied live, but atlases bake at BOOT PPU, so any live zoom put
+  sprites at a non-integer texel:pixel ratio and only a reload re-baked them.
+- `cameraPpu` is continuous over the old 24..66 ends; scroll wheel zooms during
+  play, the options row is a live slider reporting tiles across. Named rungs
+  survive as presets and write through.
+- The scenery pixel block now scales with zoom, and sprite MINIFICATION is
+  filtered (`LinearFilter`, no mipmaps — atlas frames have no gutter). The atlas
+  PPU is floored at the default so zooming out cannot bake worse sprites.
+- Suite 390 files / 4,487 tests green; tsc baseline 60 unchanged; atlas floor,
+  wheel step and clone walk all sabotage-verified.
+- **Not verified on a real GPU** — llvmpipe under WSL invents artefacts. The
+  feel judgements are in [the camera zoom doc](camera-zoom.md), along with the
+  open item that matters most: the render target is capped at 2560x1440, so a 4K
+  monitor is upscaled 2x and will look low-res regardless of any of this.
