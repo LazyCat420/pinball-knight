@@ -350,3 +350,31 @@ project-local lock did not protect against a later release from an older branch.
 - NAS release `736f0ac7` on `release/live-camera-zoom`, verified healthy. Full gate: 4,204 tests passed, 12 skipped; 362 test files passed, 5 skipped. Existing deploy wrapper completed build, transfer and restart.
 - Public and NAS HTML SHA-256 match: `60186f17f7aaee8e7f52ec37dbd5c6184966cdfcd60827166bfe63af6d662496`.
 - Muted browser clicks verified Esc / Options, all three wider steps, bounded Overview, Zoom In, unchanged player HP, saved Panorama, and reload preserving effective PPU 32. No JavaScript errors. Browser and loopback preview shut down.
+## Intro, character selection, and tavern controls release — 2026-09-10
+
+- Feature branch: `fix/intro-tavern-controls`, dedicated worktree
+  `.worktrees/wt-intro-tavern-controls`; completed commits `96f3ab39` and `6571c463`.
+- Fixes: retain clicked/tapped character-card focus through confirmation; open
+  the picker focused on the current character; refresh tavern art when async
+  loading finishes; reject stale character loads; capture key releases even when
+  menus intercept input; stop movement immediately when a panel opens; ignore
+  held-key repeats when skipping the intro.
+- Dedicated integration branch: `release/tavern-controls`, worktree
+  `.worktrees/wt-tavern-release`. Release `ce5f6330` includes main `2b124f53`, both
+  fix commits, and running NAS release `093fc5fb`, preserving its monster updates.
+- The user's explicit website testing request authorized this deployment.
+  The existing project deploy-kit wrapper and release lock were used; the
+  ancestry guard correctly rejected the initial branch before integration.
+- Full release gate: 349 test files passed, 5 skipped; 4,099 tests passed,
+  12 skipped, zero failures. Docker build, NAS transfer and restart succeeded.
+- Verified NAS `ce5f6330` is running/healthy. NAS and public health endpoints
+  respond healthy; image, NAS and public HTML SHA-256 hashes are identical.
+- Public build `2026-09-11T01:30:43Z` played all seven intro phases. Actual
+  Clockwork card click and Confirm left Clockwork visible in the tavern; opening
+  a menu while holding left, releasing left inside it, closing it and pressing
+  right moved right and faced east. No browser script errors. Mario was also
+  verified in the local browser before deployment.
+- Source push remains pending: automatic approval review rejected GitHub pushes
+  pending explicit authorization for `LazyCat420/pinball-knight`. Local commits
+  and the website deployment are complete. Other developers' worktrees were not
+  modified. Future releases must include `ce5f6330` to preserve these fixes.
