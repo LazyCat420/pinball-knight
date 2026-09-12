@@ -106,6 +106,21 @@ function measureSpan(g: Grid, i: number, j: number, axisI: number, axisJ: number
   return count;
 }
 
+/** Classify the axis of a bounded corridor, including its widened interior.
+ * Immediate neighbours alone turn every three-wide corridor into a junction. */
+export function straightCorridor(g: Grid, i: number, j: number): { di: number; dj: number; width: number; length: number } | null {
+  if (!openTile(g, i, j)) return null;
+  const horizontal = measureSpan(g, i, j, 1, 0);
+  const vertical = measureSpan(g, i, j, 0, 1);
+  if (vertical <= 3 && horizontal > vertical && openTile(g, i - 1, j) && openTile(g, i + 1, j)) {
+    return { di: 1, dj: 0, width: vertical, length: horizontal };
+  }
+  if (horizontal <= 3 && vertical > horizontal && openTile(g, i, j - 1) && openTile(g, i, j + 1)) {
+    return { di: 0, dj: 1, width: horizontal, length: vertical };
+  }
+  return null;
+}
+
 /**
  * Builds the complete PatternGrammarGrid for the maze.
  */
@@ -207,10 +222,11 @@ export function analyzePatternGrammar(
         continue;
       }
 
-      // 4. Straight Corridor (2 opposite neighbors: N+S or E+W)
-      if ((N && S && !E && !W) || (E && W && !N && !S)) {
-        const isHoriz = E && W;
-        const width = isHoriz ? measureSpan(g, i, j, 0, 1) : measureSpan(g, i, j, 1, 0);
+      // 4. Straight corridor, including two/three-wide interiors.
+      const corridor = straightCorridor(g, i, j);
+      if (corridor) {
+        const isHoriz = corridor.di !== 0;
+        const width = corridor.width;
         slots[k] = {
           slotType: "straight_3wide",
           dirI: isHoriz ? 1 : 0,

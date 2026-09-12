@@ -29,6 +29,7 @@ import {
   T_STAIRS,
   T_CRACKED,
 } from "./generator";
+import { straightCorridor } from "./pattern-grammar";
 import { type TrackFloor } from "./track-floor";
 import { type Doorway, doorwayFootprint } from "./doorways";
 
@@ -210,9 +211,10 @@ export function extractSockets(
         continue;
       }
 
-      // Case B: Straight corridor run (2 opposite open neighbours)
-      if (openCards.length === 2 && (openCards[0].di === -openCards[1].di || openCards[0].dj === -openCards[1].dj)) {
-        const isHoriz = openCards[0].di !== 0;
+      // Case B: Straight corridor, including widened interiors.
+      const corridor = straightCorridor(g, i, j);
+      if (corridor) {
+        const isHoriz = corridor.di !== 0;
         const dir: Dir = isHoriz ? { di: 1, dj: 0 } : { di: 0, dj: 1 };
 
         const straightSocket: Socket = {
@@ -221,9 +223,9 @@ export function extractSockets(
           tiles: [{ i, j }],
           anchor: { i, j },
           direction: dir,
-          width: 1,
-          length: 1 + openSpan(g, i, j, dir.di, dir.dj, 6) + openSpan(g, i, j, -dir.di, -dir.dj, 6),
-          clearance: 3,
+          width: corridor.width,
+          length: corridor.length,
+          clearance: corridor.width,
           wallBacking: "wall",
         };
         claimed[k] = 1;

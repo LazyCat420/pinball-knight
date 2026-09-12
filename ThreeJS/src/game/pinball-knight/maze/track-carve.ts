@@ -795,7 +795,7 @@ export function laneTiles(g: Grid, mask: TrackMask): TilePos[] {
  * Sweeps the grid to eliminate all 1-wide and 2-wide bottleneck passages,
  * ensuring every gap, doorway, and corridor is at least 3 squares wide.
  */
-export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
+export function ensureMin3WideClearance(g: Grid, mask?: TrackMask, opts: { narrowOnly?: boolean } = {}): number {
   let cleared = 0;
   const sWalls = mask ? sealedWalls(g, mask) : null;
   const isProtected = (x: number, y: number): boolean => {
@@ -873,6 +873,10 @@ export function ensureMin3WideClearance(g: Grid, mask?: TrackMask): number {
             }
           }
         }
+
+        // Late curve repair only needs to reopen one-tile slits; keep the
+        // already authored two-wide bends and corner pockets intact.
+        if (opts.narrowOnly) continue;
 
         // 2-wide vertical slot: span of 2 floor tiles bounded by walls (i-1 wall, i floor, i+1 floor, i+2 wall)
         if (at(g, i - 1, j) === T_WALL && isWalkable(g, i + 1, j) && at(g, i + 2, j) === T_WALL) {

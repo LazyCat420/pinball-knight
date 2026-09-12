@@ -12,10 +12,10 @@ afterEach(() => vi.restoreAllMocks());
 // geometry, surfaces, content, lamps and population RNG, not just piece counts.
 // Intentional layout changes must refresh these only after the piece/floor gates.
 const BASELINES = [
-  [1, 1, false, false, "e28d6e275142448306c662e5764102c14c6b61f6993fff428931823272b0fae1"],
+  [1, 1, false, false, "533da60ce55efb36292344f5c4b447497e4d7bb89223c9570b60038afd6acf79"],
   [3, 424242, true, false, "b61aef3fc52b46e1f3f1a55bf262758bc073d56ba06af2e5cca7cadc78cc2714"],
-  [5, 12345, false, false, "3710ab9c53a6f85401c612d46817455a892da6f62622bbe90558443de9f7cb18"],
-  [24, 1, true, false, "421b04d455b4e3394165a5e34cd6ca88a7ee4665c46e07af02104f6c1a045137"],
+  [5, 12345, false, false, "1d4603a385fe54641b0bf3a3d81814e648b4f16133f0884175d653e5c640a095"],
+  [24, 1, true, false, "ce3fcbdf200e8291a691def4fa1cef6d3f0870194f47fed09bb487788336ea20"],
   [6, 424242, true, true, "e556fc89f3c2f76673c779f0ff771ea1499b7309d8884287e6d370d916ac8561"],
 ] as const;
 

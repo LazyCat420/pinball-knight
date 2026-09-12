@@ -999,7 +999,7 @@ export function buildTrackFloor(
     enforceWallJoins(grid);
     // Rejected curves expose square masonry; restore passage clearance before
     // rechecking the backing and endpoints of the remaining curves.
-    const widened = ensureMin3WideClearance(grid, mask);
+    const widened = ensureMin3WideClearance(grid, mask, { narrowOnly: true });
     if (removeWallStubs(grid, mask) === 0 && widened === 0) break;
   }
   uncarveDeadEnds(grid, mask, protectedWithDoors);

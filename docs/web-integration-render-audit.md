@@ -17,11 +17,17 @@ filter/UI texture resize fix, directional shortcuts, and item effects.
 ## Integration repairs
 
 - Recheck passage clearance after invalid curves revert to square masonry.
-  Without this, four fluid-flow cases retained narrow corridors. The existing
-  clearance pass protects track lanes, sealed walls and surviving arc faces;
+  Without this, four fluid-flow cases retained narrow corridors. Restrict the
+  late pass to one-tile bottlenecks, preserving already authored two-wide bends
+  and corner pockets. It protects track lanes, sealed walls and surviving arc faces;
   the cleanup loop then rechecks remaining curve backing and joins.
 - Preserve prefab anchor tiles during the furniture budget clamp. Newly added
   wall springs otherwise exhausted the budget and removed authored prefab parts.
+- Recognize widened straight corridors by their bounded cross-section and
+  longitudinal span in both placement grammar and socket extraction. Immediate
+  neighbour counts alone mislabeled every three-wide interior as a junction.
+  Horizontal/vertical fixtures cover actual width and clearance; a crossing
+  remains a junction. Circuit connectivity gates retain their original thresholds.
 - Update the scenery-setting keyboard test for the two current camera buttons.
 - Retain all density limits. L14/19156 no longer needs trimming with the combined
   layout; the other regression seeds still require nonzero repairs.
@@ -62,6 +68,13 @@ before/after resize showed intact Titan/Frank silhouettes and UI; the reported
 intermittent sprite corruption was not reproduced. The merged UI fix addresses
 an established CanvasTexture resize allocation bug, but this audit does not
 claim that it explains every reported sprite glitch.
+
+A heavier repeat with 29 of each kind (174 living actors) stayed active with
+zero script/GPU errors. Crowd p50/p95/p99: 12.16/20.42/29.99 ms; after resize:
+12.53/21.82/33.95 ms. There were 5 and 12 frames over 33.4 ms respectively.
+This is acceptable local stress behavior, not a claim of locked 60 FPS. These
+measurements preceded the final corridor-classifier repair; no renderer or
+sprite code changed afterward.
 
 ## Work deliberately preserved
 
