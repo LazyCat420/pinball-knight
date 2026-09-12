@@ -419,7 +419,12 @@ export type EnemyKind =
   | "corvid_bomber" // BOMB BIRD — raven corridor prowler dropping heavy timed iron fuse bombs
   | "vulture_scavenger" // BOMB BIRD — high-altitude bone vulture dropping toxic sludge area-denial bombs
   | "gull_bomber" // BOMB BIRD — erratic buzzing seagull strafer dropping bouncing cluster egg bombs
-  | "sky_falcon"; // BOMB BIRD — supersonic peregrine raptor dive-bomber dropping incendiary napalm bombs
+  | "sky_falcon" // BOMB BIRD — supersonic peregrine raptor dive-bomber dropping incendiary napalm bombs
+  // ── Elemental & Hazard Slime Variants ──
+  | "magma_slime" // MOLTEN GEL — fire hazard trail, splits into fast molten minis on death
+  | "toxic_slime" // CAUSTIC OOZE — rot puddle trail, corrosive acid burst on death
+  | "frost_slime" // GLACIAL GEL — momentum defense shell, 8-way ricocheting ice shard shatter
+  | "void_slime"; // COSMIC GEL — gravitational suction pulse, singularity collapse on death
 
 export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 

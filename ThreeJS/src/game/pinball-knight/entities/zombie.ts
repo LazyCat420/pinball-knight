@@ -180,7 +180,11 @@ import {
   CORVID_BOMBER_R, CORVID_BOMBER_FIRE_RANGE, CORVID_BOMBER_WINDUP, CORVID_BOMBER_COOLDOWN, CORVID_BOMBER_HOVER_Y,
   VULTURE_R, VULTURE_FIRE_RANGE, VULTURE_WINDUP, VULTURE_COOLDOWN, VULTURE_HOVER_Y,
   GULL_R, GULL_FIRE_RANGE, GULL_WINDUP, GULL_COOLDOWN, GULL_HOVER_Y,
-  FALCON_R, FALCON_FIRE_RANGE, FALCON_WINDUP, FALCON_COOLDOWN, FALCON_HOVER_Y } from "../constants";
+  FALCON_R, FALCON_FIRE_RANGE, FALCON_WINDUP, FALCON_COOLDOWN, FALCON_HOVER_Y,
+  MAGMA_SLIME_R, MAGMA_SLIME_CONTACT_RANGE, MAGMA_SLIME_ATTACK_WINDUP, MAGMA_SLIME_ATTACK_COOLDOWN, MAGMA_SLIME_TRAIL_CADENCE,
+  TOXIC_SLIME_R, TOXIC_SLIME_CONTACT_RANGE, TOXIC_SLIME_ATTACK_WINDUP, TOXIC_SLIME_ATTACK_COOLDOWN, TOXIC_SLIME_TRAIL_CADENCE,
+  FROST_SLIME_R, FROST_SLIME_CONTACT_RANGE, FROST_SLIME_ATTACK_WINDUP, FROST_SLIME_ATTACK_COOLDOWN,
+  VOID_SLIME_R, VOID_SLIME_CONTACT_RANGE, VOID_SLIME_ATTACK_WINDUP, VOID_SLIME_ATTACK_COOLDOWN, VOID_SLIME_PULSE_CADENCE, VOID_SLIME_SUCTION_RADIUS, VOID_SLIME_SUCTION_FORCE } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
@@ -299,6 +303,10 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   vulture_scavenger: { bodyR: VULTURE_R, contactRange: VULTURE_FIRE_RANGE, windup: VULTURE_WINDUP, cooldown: VULTURE_COOLDOWN, ranged: true },
   gull_bomber: { bodyR: GULL_R, contactRange: GULL_FIRE_RANGE, windup: GULL_WINDUP, cooldown: GULL_COOLDOWN, ranged: true },
   sky_falcon: { bodyR: FALCON_R, contactRange: FALCON_FIRE_RANGE, windup: FALCON_WINDUP, cooldown: FALCON_COOLDOWN, ranged: true },
+  magma_slime: { bodyR: MAGMA_SLIME_R, contactRange: MAGMA_SLIME_CONTACT_RANGE, windup: MAGMA_SLIME_ATTACK_WINDUP, cooldown: MAGMA_SLIME_ATTACK_COOLDOWN, ranged: false },
+  toxic_slime: { bodyR: TOXIC_SLIME_R, contactRange: TOXIC_SLIME_CONTACT_RANGE, windup: TOXIC_SLIME_ATTACK_WINDUP, cooldown: TOXIC_SLIME_ATTACK_COOLDOWN, ranged: false },
+  frost_slime: { bodyR: FROST_SLIME_R, contactRange: FROST_SLIME_CONTACT_RANGE, windup: FROST_SLIME_ATTACK_WINDUP, cooldown: FROST_SLIME_ATTACK_COOLDOWN, ranged: false },
+  void_slime: { bodyR: VOID_SLIME_R, contactRange: VOID_SLIME_CONTACT_RANGE, windup: VOID_SLIME_ATTACK_WINDUP, cooldown: VOID_SLIME_ATTACK_COOLDOWN, ranged: false },
 };
 
 /**
@@ -1290,6 +1298,56 @@ export function updateZombies(dt: number): void {
       if (z.castT <= 0) {
         z.castT = 1.5;
         spawnFloorFx("fire", z.x, z.z, 0.5, 1.4, true);
+      }
+    }
+
+    // ── MAGMA SLIME MOLTEN FIRE TRAIL ──
+    if (z.kind === "magma_slime") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = MAGMA_SLIME_TRAIL_CADENCE;
+        spawnFloorFx("fire", z.x, z.z, 0.55, 1.8, true);
+        state.vfx?.sparks(z.x, 0.35, z.z, 0, 0, 3);
+      }
+    }
+
+    // ── TOXIC SLIME CAUSTIC ROT TRAIL ──
+    if (z.kind === "toxic_slime") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = TOXIC_SLIME_TRAIL_CADENCE;
+        spawnFloorFx("rot", z.x, z.z, 0.52, 2.2, true);
+        state.vfx?.sparks(z.x, 0.3, z.z, 0, 0, 2);
+      }
+    }
+
+    // ── FROST SLIME GLACIAL TRAIL ──
+    if (z.kind === "frost_slime") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = 1.0;
+        spawnFloorFx("frost", z.x, z.z, 0.45, 1.5, true);
+      }
+    }
+
+    // ── VOID SLIME GRAVITATIONAL SUCTION PULSE ──
+    if (z.kind === "void_slime") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = VOID_SLIME_PULSE_CADENCE;
+        state.vfx?.ring(z.x, z.z, 0x8b5cf6, VOID_SLIME_SUCTION_RADIUS * 0.85, 0.35, { thin: true });
+        state.vfx?.sparks(z.x, 0.4, z.z, 0, 0, 6);
+        const p = state.player;
+        if (p && p.hp > 0) {
+          const pdx = z.x - p.x;
+          const pdz = z.z - p.z;
+          const pdist = Math.hypot(pdx, pdz);
+          if (pdist < VOID_SLIME_SUCTION_RADIUS && pdist > 0.3) {
+            const pull = (1 - pdist / VOID_SLIME_SUCTION_RADIUS) * VOID_SLIME_SUCTION_FORCE * dt * 2.5;
+            p.x += (pdx / pdist) * pull;
+            p.z += (pdz / pdist) * pull;
+          }
+        }
       }
     }
 

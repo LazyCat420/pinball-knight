@@ -119,6 +119,10 @@ import {
   FALCON_FIRE_LIFE,
   FALCON_BLAST_DAMAGE,
   FALCON_BLAST_ENEMY_DAMAGE,
+  FROST_SLIME_SHARDS,
+  FROST_SLIME_SHARD_SPEED,
+  FROST_SLIME_SHARD_DAMAGE,
+  FROST_SLIME_SHARD_LIFE,
 } from "../constants";
 import { spawnFloorFx } from "./floor-fx";
 import { PALETTE_HEX } from "../render/palette";
@@ -1578,6 +1582,49 @@ export function burstPufferSpikes(x: number, z: number): void {
   }
 }
 
+let _iceShardGeo: THREE.BufferGeometry | null = null;
+let _iceShardMat: THREE.Material | null = null;
+function iceShardAssets(): { geo: THREE.BufferGeometry; mat: THREE.Material } {
+  if (!_iceShardGeo) _iceShardGeo = new THREE.ConeGeometry(0.12, 0.45, 4);
+  if (!_iceShardMat) {
+    _iceShardMat = new THREE.MeshBasicMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.9,
+    });
+  }
+  return { geo: _iceShardGeo, mat: _iceShardMat };
+}
+
+/** Frost Slime 8-way ricocheting ice shard death shatter */
+export function burstIceShards(x: number, z: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = iceShardAssets();
+  for (let i = 0; i < FROST_SLIME_SHARDS; i++) {
+    const angle = (i / FROST_SLIME_SHARDS) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, PROJECTILE_Y, z);
+    mesh.rotation.y = angle;
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "ice_shard",
+      x,
+      z,
+      vx: dx * FROST_SLIME_SHARD_SPEED,
+      vz: dz * FROST_SLIME_SHARD_SPEED,
+      life: FROST_SLIME_SHARD_LIFE,
+      maxLife: FROST_SLIME_SHARD_LIFE,
+      damage: FROST_SLIME_SHARD_DAMAGE,
+      bounces: 2,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
+}
+
 /** Swordfish Mobster harpoon speargun bolt */
 export function shootSpearBolt(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
@@ -1944,7 +1991,7 @@ export function updateProjectiles(dt: number): void {
         if (hitX || hitZ) {
           state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 4);
         }
-      } else if (pr.kind === "shard") {
+      } else if (pr.kind === "shard" || pr.kind === "ice_shard") {
         pr.mesh.rotation.y += dt * 12;
       }
     } else {
@@ -2173,6 +2220,10 @@ export function updateProjectiles(dt: number): void {
           } else if (pr.kind === "puffer_spike") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf1f5f9, 6, 1.2);
+          } else if (pr.kind === "ice_shard") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x38bdf8, 10, 1.4);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 6);
           } else if (pr.kind === "electric_bullet") {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             spawnFloorFx("shock", pr.x, pr.z, 1.2, 3.0, true);

@@ -612,6 +612,14 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   hydrant_hound: "iron",
   blaster_frank: "iron",
   junkbot: "iron",
+  corvid_bomber: "iron",
+  vulture_scavenger: "bone",
+  gull_bomber: "bone",
+  sky_falcon: "iron",
+  magma_slime: "stone",
+  toxic_slime: "chitin",
+  frost_slime: "stone",
+  void_slime: "ink",
 };
 
 /**

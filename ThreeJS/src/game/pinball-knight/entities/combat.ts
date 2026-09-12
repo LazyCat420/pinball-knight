@@ -80,7 +80,9 @@ import {
   GIANT_ASCII_DAMAGE,
   HAMSTER_BALL_DEFLECT_SPEED,
   PINBALL_MAX_SPEED, FISH_FEET_DAMAGE,
-  CORVID_BOMBER_DAMAGE, VULTURE_DAMAGE, GULL_DAMAGE, FALCON_DAMAGE } from "../constants";
+  CORVID_BOMBER_DAMAGE, VULTURE_DAMAGE, GULL_DAMAGE, FALCON_DAMAGE,
+  MAGMA_SLIME_DAMAGE, TOXIC_SLIME_DAMAGE, FROST_SLIME_DAMAGE, VOID_SLIME_DAMAGE,
+  TOXIC_SLIME_ACID_RADIUS, VOID_SLIME_COLLAPSE_RADIUS, VOID_SLIME_COLLAPSE_DAMAGE } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { MOMENTUM_GATES } from "./enemy-rules";
@@ -98,7 +100,8 @@ import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 import { recordDeathTrace } from "../dev/death-debug";
-import { burstPufferSpikes } from "./projectiles";
+import { burstPufferSpikes, burstIceShards } from "./projectiles";
+import { spawnFloorFx } from "./floor-fx";
 
 /**
  * Player's outgoing damage: the base weapon damage run through the active
@@ -314,8 +317,8 @@ export function setCoopCombatBridge(b: CoopCombatBridge): void {
  * killZombie fires inside loops over state.zombies, and minis born mid-swing
  * would be hit by the very blow that split their parent.
  */
-let onSlimeSplit: ((x: number, z: number, speed: number) => void) | null = null;
-export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) => void): void {
+let onSlimeSplit: ((x: number, z: number, speed: number, kind?: EnemyKind) => void) | null = null;
+export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number, kind?: EnemyKind) => void): void {
   onSlimeSplit = fn;
 }
 let onDraculaTransform: ((x: number, z: number, speed: number) => void) | null = null;
@@ -419,6 +422,7 @@ const GATE_REFUSED_TOAST: Partial<Record<EnemyKind, string>> = {
   jester: "🤡 THE SPRING THROWS YOU OFF",
   clam: "🦪 SHELL DEFLECTS STEEL",
   crab: "🦀 CARAPACE DEFLECTS STEEL",
+  frost_slime: "🧊 FROZEN CRUST DEFLECTS STEEL",
 };
 
 /**
@@ -1038,6 +1042,37 @@ export function killZombie(z: Zombie): void {
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
+  // MAGMA SLIME: fireball burst, fire puddle, and splits into 2 mini molten slimes
+  if (z.kind === "magma_slime") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0xff4500, 18, 2.2);
+    spawnFloorFx("fire", z.x, z.z, 0.8, 3.0, true);
+    if (!z.mini) onSlimeSplit?.(z.x, z.z, z.speed, "magma_slime");
+  }
+  // TOXIC SLIME: erupts into a corrosive acid puddle on death
+  if (z.kind === "toxic_slime") {
+    state.vfx?.burst(z.x, 0.35, z.z, 0x22c55e, 20, 2.4);
+    spawnFloorFx("rot", z.x, z.z, TOXIC_SLIME_ACID_RADIUS, 4.5, true);
+  }
+  // FROST SLIME: shatters into 8 radial ricocheting ice shards
+  if (z.kind === "frost_slime") {
+    state.vfx?.burst(z.x, 0.4, z.z, 0x38bdf8, 24, 2.5);
+    burstIceShards(z.x, z.z);
+  }
+  // VOID SLIME: singularity collapse — implosion vortex pulling enemies and detonating
+  if (z.kind === "void_slime") {
+    state.vfx?.ring(z.x, z.z, 0x8b5cf6, VOID_SLIME_COLLAPSE_RADIUS, 0.45);
+    state.vfx?.burst(z.x, 0.4, z.z, 0x6b21a8, 24, 2.8);
+    state.shakeT = Math.max(state.shakeT, 0.25);
+    for (const other of state.zombies) {
+      if (other === z || other.mode === "dead") continue;
+      const dx = z.x - other.x;
+      const dz = z.z - other.z;
+      const d = Math.hypot(dx, dz);
+      if (d <= VOID_SLIME_COLLAPSE_RADIUS) {
+        damageZombie(other, VOID_SLIME_COLLAPSE_DAMAGE, -dx, -dz, 0.3);
+      }
+    }
+  }
   // DRACULA: upon humanoid death, bursts into a dark vortex and transforms into his Bat Final Form.
   if (z.kind === "dracula") onDraculaTransform?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
@@ -1402,6 +1437,10 @@ export const DMG_BY_KIND: Record<EnemyKind, number> = {
   vulture_scavenger: VULTURE_DAMAGE,
   gull_bomber: GULL_DAMAGE,
   sky_falcon: FALCON_DAMAGE,
+  magma_slime: MAGMA_SLIME_DAMAGE,
+  toxic_slime: TOXIC_SLIME_DAMAGE,
+  frost_slime: FROST_SLIME_DAMAGE,
+  void_slime: VOID_SLIME_DAMAGE,
 };
 
 /**

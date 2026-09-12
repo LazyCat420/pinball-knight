@@ -108,6 +108,10 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   vulture_scavenger: { label: "Bone Vulture", icon: "🦤", blurb: "high-altitude scavenger orbiter dropping toxic area-denial sludge bombs" },
   gull_bomber: { label: "Plunder Gull", icon: "🕊️", blurb: "erratic buzzing coastal seagull strafer dropping bouncing cluster egg bombs" },
   sky_falcon: { label: "Peregrine Screamer", icon: "⚡", blurb: "supersonic raptor dive-bomber dropping incendiary napalm fire bombs" },
+  magma_slime: { label: "Magma Slime", icon: "🌋", blurb: "molten volcanic gel covered in floating obsidian crust that oozes burning fire trails and bursts into two molten minis on defeat" },
+  toxic_slime: { label: "Toxic Slime", icon: "🧪", blurb: "caustic neon-green acid ooze with bubbling pustules that leaves slowing rot puddles and erupts into a corrosive acid pool upon death" },
+  frost_slime: { label: "Frost Slime", icon: "🧊", blurb: "glacial crystal slime with jagged ice spines and frozen crust that deflects low-speed strikes and shatters into 8 ricocheting ice shards on death" },
+  void_slime: { label: "Void Slime", icon: "🌌", blurb: "cosmic obsidian gel pulsing with gravitational suction that pulls nearby knights inward before collapsing into an imploding singularity on defeat" },
 };
 
 export const KIND_IDS: EnemyKind[] = Object.keys(KIND_INFO) as EnemyKind[];

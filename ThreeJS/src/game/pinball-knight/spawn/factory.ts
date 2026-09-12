@@ -17,7 +17,11 @@ import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL
   CORVID_BOMBER_FROM_LEVEL, CORVID_BOMBER_HP, CORVID_BOMBER_RATIO, CORVID_BOMBER_SPEED_FACTOR,
   VULTURE_FROM_LEVEL, VULTURE_HP, VULTURE_RATIO, VULTURE_SPEED_FACTOR,
   GULL_FROM_LEVEL, GULL_HP, GULL_RATIO, GULL_SPEED_FACTOR,
-  FALCON_FROM_LEVEL, FALCON_HP, FALCON_RATIO, FALCON_SPEED_FACTOR } from "../constants";
+  FALCON_FROM_LEVEL, FALCON_HP, FALCON_RATIO, FALCON_SPEED_FACTOR,
+  MAGMA_SLIME_FROM_LEVEL, MAGMA_SLIME_HP, MAGMA_SLIME_RATIO, MAGMA_SLIME_SPEED_FACTOR,
+  TOXIC_SLIME_FROM_LEVEL, TOXIC_SLIME_HP, TOXIC_SLIME_RATIO, TOXIC_SLIME_SPEED_FACTOR,
+  FROST_SLIME_FROM_LEVEL, FROST_SLIME_HP, FROST_SLIME_RATIO, FROST_SLIME_SPEED_FACTOR,
+  VOID_SLIME_FROM_LEVEL, VOID_SLIME_HP, VOID_SLIME_RATIO, VOID_SLIME_SPEED_FACTOR } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -111,6 +115,10 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   vulture_scavenger: VULTURE_HP,
   gull_bomber: GULL_HP,
   sky_falcon: FALCON_HP,
+  magma_slime: MAGMA_SLIME_HP,
+  toxic_slime: TOXIC_SLIME_HP,
+  frost_slime: FROST_SLIME_HP,
+  void_slime: VOID_SLIME_HP,
 };
 
 export { skinSheet };
@@ -134,18 +142,20 @@ export function makeSkinned(kind: EnemyKind, x: number, z: number, speed: number
  * killZombie fires inside loops over state.zombies, and minis born mid-swing
  * would be clipped by the very blow that split their parent.
  */
-const pendingMinis: Array<{ x: number; z: number; speed: number }> = [];
+const pendingMinis: Array<{ x: number; z: number; speed: number; kind?: EnemyKind }> = [];
 
 export function drainPendingMinis(): void {
   if (!pendingMinis.length) return;
   for (const spec of pendingMinis) {
     // The parent slime already forced this atlas into existence, so sheetFor is
     // a cache read here — it just isn't a guard that can silently eat the split.
-    const slime = sheetFor("slime");
+    const kind = spec.kind ?? "slime";
+    const sheetKey = (kind === "magma_slime" ? "magma_slime" : "slime") as SheetKey;
+    const slime = sheetFor(sheetKey);
     // Two minis scatter to either side of the corpse.
     for (const side of [-1, 1]) {
       const mini = makeZombie(slime, spec.x + side * 0.35, spec.z + (Math.random() - 0.5) * 0.3, spec.speed * SLIME_MINI_SPEED_MULT, {
-        kind: "slime",
+        kind,
         hp: SLIME_MINI_HP,
       });
       mini.mini = true;
@@ -513,6 +523,14 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= GULL_FROM_LEVEL ? makeSkinned("gull_bomber", x, z, baseSpeed * GULL_SPEED_FACTOR) : null;
     case "sky_falcon":
       return level >= FALCON_FROM_LEVEL ? makeSkinned("sky_falcon", x, z, baseSpeed * FALCON_SPEED_FACTOR) : null;
+    case "magma_slime":
+      return level >= MAGMA_SLIME_FROM_LEVEL ? makeSkinned("magma_slime", x, z, baseSpeed * MAGMA_SLIME_SPEED_FACTOR) : null;
+    case "toxic_slime":
+      return level >= TOXIC_SLIME_FROM_LEVEL ? makeSkinned("toxic_slime", x, z, baseSpeed * TOXIC_SLIME_SPEED_FACTOR) : null;
+    case "frost_slime":
+      return level >= FROST_SLIME_FROM_LEVEL ? makeSkinned("frost_slime", x, z, baseSpeed * FROST_SLIME_SPEED_FACTOR) : null;
+    case "void_slime":
+      return level >= VOID_SLIME_FROM_LEVEL ? makeSkinned("void_slime", x, z, baseSpeed * VOID_SLIME_SPEED_FACTOR) : null;
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }
@@ -586,6 +604,10 @@ function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
     case "vulture_scavenger": return level >= VULTURE_FROM_LEVEL;
     case "gull_bomber": return level >= GULL_FROM_LEVEL;
     case "sky_falcon": return level >= FALCON_FROM_LEVEL;
+    case "magma_slime": return level >= MAGMA_SLIME_FROM_LEVEL;
+    case "toxic_slime": return level >= TOXIC_SLIME_FROM_LEVEL;
+    case "frost_slime": return level >= FROST_SLIME_FROM_LEVEL;
+    case "void_slime": return level >= VOID_SLIME_FROM_LEVEL;
     default: return true;
   }
 }
@@ -658,6 +680,10 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
   if (level >= GULL_FROM_LEVEL && hash % GULL_RATIO === 5) return "gull_bomber";
   if (level >= VULTURE_FROM_LEVEL && hash % VULTURE_RATIO === 4) return "vulture_scavenger";
   if (level >= FALCON_FROM_LEVEL && hash % FALCON_RATIO === 3) return "sky_falcon";
+  if (level >= TOXIC_SLIME_FROM_LEVEL && hash % TOXIC_SLIME_RATIO === 5) return "toxic_slime";
+  if (level >= MAGMA_SLIME_FROM_LEVEL && hash % MAGMA_SLIME_RATIO === 2) return "magma_slime";
+  if (level >= FROST_SLIME_FROM_LEVEL && hash % FROST_SLIME_RATIO === 4) return "frost_slime";
+  if (level >= VOID_SLIME_FROM_LEVEL && hash % VOID_SLIME_RATIO === 1) return "void_slime";
 
   return "zombie";
 }
@@ -862,6 +888,22 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
     const zb = makeSkinned("sky_falcon", x, z, baseSpeed * FALCON_SPEED_FACTOR);
     if (zb) return zb;
   }
+  if (level >= TOXIC_SLIME_FROM_LEVEL && hash % TOXIC_SLIME_RATIO === 5) {
+    const zb = makeSkinned("toxic_slime", x, z, baseSpeed * TOXIC_SLIME_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= MAGMA_SLIME_FROM_LEVEL && hash % MAGMA_SLIME_RATIO === 2) {
+    const zb = makeSkinned("magma_slime", x, z, baseSpeed * MAGMA_SLIME_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= FROST_SLIME_FROM_LEVEL && hash % FROST_SLIME_RATIO === 4) {
+    const zb = makeSkinned("frost_slime", x, z, baseSpeed * FROST_SLIME_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= VOID_SLIME_FROM_LEVEL && hash % VOID_SLIME_RATIO === 1) {
+    const zb = makeSkinned("void_slime", x, z, baseSpeed * VOID_SLIME_SPEED_FACTOR);
+    if (zb) return zb;
+  }
   // ── Baseline zombie — but WHICH zombie (zombie-types.ts) ──
   // The sub-type comes off the SAME hash the family cascade above used (re-mixed
   // inside pickZombieType so the two rolls do not correlate), never Math.random:
@@ -934,8 +976,8 @@ export function resetZombieNid(): void {
 }
 
 /** Queue a slime MINI. Deferred: see drainPendingMinis. */
-export function queueMini(x: number, z: number, speed: number): void {
-  pendingMinis.push({ x, z, speed });
+export function queueMini(x: number, z: number, speed: number, kind: EnemyKind = "slime"): void {
+  pendingMinis.push({ x, z, speed, kind });
 }
 
 /** Queue a necromancer SUMMON. Deferred: see drainPendingSummons. */

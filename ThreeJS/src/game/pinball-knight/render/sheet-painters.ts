@@ -102,6 +102,10 @@ import { makeCorvidBomberPaints } from "./monsters/corvid_bomber";
 import { makeVultureScavengerPaints } from "./monsters/vulture_scavenger";
 import { makeGullBomberPaints } from "./monsters/gull_bomber";
 import { makeSkyFalconPaints } from "./monsters/sky_falcon";
+import { makeMagmaSlimePaints } from "./monsters/magma_slime";
+import { makeToxicSlimePaints } from "./monsters/toxic_slime";
+import { makeFrostSlimePaints } from "./monsters/frost_slime";
+import { makeVoidSlimePaints } from "./monsters/void_slime";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
@@ -109,6 +113,10 @@ export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   vulture_scavenger: makeVultureScavengerPaints,
   gull_bomber: makeGullBomberPaints,
   sky_falcon: makeSkyFalconPaints,
+  magma_slime: makeMagmaSlimePaints,
+  toxic_slime: makeToxicSlimePaints,
+  frost_slime: makeFrostSlimePaints,
+  void_slime: makeVoidSlimePaints,
   // A VARIANT FAMILY that shares one key: every variant is built from the same
   // paints, so variant 0 is the representative both the builder and the census
   // want.

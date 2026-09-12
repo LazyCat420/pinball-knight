@@ -118,6 +118,10 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   vulture_scavenger: "orbiter",
   gull_bomber: "strafer",
   sky_falcon: "kite",
+  magma_slime: "chase",
+  toxic_slime: "flanker",
+  frost_slime: "chase",
+  void_slime: "chase",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the
@@ -223,5 +227,12 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     bar: MOMENTUM_T_FLOOR,
     soft: 1.0,
     text: "Kinetic Sphere: when struck in pinball mode, the exercise ball acts as an energetic deflector, launching your pinball into a wild ricochet trajectory!",
+  },
+  frost_slime: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: 0.25,
+    gatesDamage: true,
+    text: "Glacial Shell: frozen crystal crust deflects incoming strikes down to chip damage unless shattered at high pinball speed.",
   },
 };

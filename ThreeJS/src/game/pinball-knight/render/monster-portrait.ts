@@ -108,6 +108,10 @@ import { makeCorvidBomberPaints } from "./monsters/corvid_bomber";
 import { makeVultureScavengerPaints } from "./monsters/vulture_scavenger";
 import { makeGullBomberPaints } from "./monsters/gull_bomber";
 import { makeSkyFalconPaints } from "./monsters/sky_falcon";
+import { makeMagmaSlimePaints } from "./monsters/magma_slime";
+import { makeToxicSlimePaints } from "./monsters/toxic_slime";
+import { makeFrostSlimePaints } from "./monsters/frost_slime";
+import { makeVoidSlimePaints } from "./monsters/void_slime";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = ART_PX;
@@ -131,7 +135,7 @@ const PX = ART_PX;
  * EXHAUSTIVE by EnemyKind on purpose — same discipline as ENEMY_DROPS and
  * KIND_INFO. Adding a monster should fail to compile here.
  */
-const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
+export const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   zombie: { paints: () => makeZombiePaints(ZOMBIE_VARIANTS[0]) },
   spider: { paints: makeSpiderPaints },
   brute: { paints: makeBrutePaints },
@@ -207,6 +211,10 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints }> = {
   vulture_scavenger: { paints: makeVultureScavengerPaints },
   gull_bomber: { paints: makeGullBomberPaints },
   sky_falcon: { paints: makeSkyFalconPaints },
+  magma_slime: { paints: makeMagmaSlimePaints },
+  toxic_slime: { paints: makeToxicSlimePaints },
+  frost_slime: { paints: makeFrostSlimePaints },
+  void_slime: { paints: makeVoidSlimePaints },
 };
 
 /**

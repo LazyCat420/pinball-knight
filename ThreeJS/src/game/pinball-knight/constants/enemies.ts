@@ -1427,4 +1427,62 @@ export const FALCON_FIRE_LIFE = 4.0;
 export const FALCON_BLAST_DAMAGE = 2;
 export const FALCON_BLAST_ENEMY_DAMAGE = 3;
 
+// ── Slime Variants (Elemental & Hazard Slimes) ────────────────────
+// Magma Slime (Molten volcanic fire gel, flame hazard trails, fireball split into mini magmas)
+export const MAGMA_SLIME_HP = 6;
+export const MAGMA_SLIME_R = 0.40;
+export const MAGMA_SLIME_SPEED_FACTOR = 0.50;
+export const MAGMA_SLIME_CONTACT_RANGE = 0.70;
+export const MAGMA_SLIME_ATTACK_WINDUP = 0.48;
+export const MAGMA_SLIME_ATTACK_COOLDOWN = 1.3;
+export const MAGMA_SLIME_DAMAGE = 1.5;
+export const MAGMA_SLIME_FROM_LEVEL = 3;
+export const MAGMA_SLIME_RATIO = 6;
+export const MAGMA_SLIME_TRAIL_CADENCE = 1.1;
+
+// Toxic Slime (Caustic neon-green rot ooze, leaves rot/tar puddles, explodes into acid splash)
+export const TOXIC_SLIME_HP = 5;
+export const TOXIC_SLIME_R = 0.38;
+export const TOXIC_SLIME_SPEED_FACTOR = 0.60;
+export const TOXIC_SLIME_CONTACT_RANGE = 0.68;
+export const TOXIC_SLIME_ATTACK_WINDUP = 0.45;
+export const TOXIC_SLIME_ATTACK_COOLDOWN = 1.2;
+export const TOXIC_SLIME_DAMAGE = 1.2;
+export const TOXIC_SLIME_FROM_LEVEL = 2;
+export const TOXIC_SLIME_RATIO = 7;
+export const TOXIC_SLIME_TRAIL_CADENCE = 1.3;
+export const TOXIC_SLIME_ACID_RADIUS = 1.6;
+
+// Frost Slime (Glacial crystal slime, icy drift, momentum defense shell, 8-way ricocheting ice shard shatter)
+export const FROST_SLIME_HP = 7;
+export const FROST_SLIME_R = 0.42;
+export const FROST_SLIME_SPEED_FACTOR = 0.75;
+export const FROST_SLIME_CONTACT_RANGE = 0.72;
+export const FROST_SLIME_ATTACK_WINDUP = 0.42;
+export const FROST_SLIME_ATTACK_COOLDOWN = 1.1;
+export const FROST_SLIME_DAMAGE = 1.5;
+export const FROST_SLIME_FROM_LEVEL = 3;
+export const FROST_SLIME_RATIO = 6;
+export const FROST_SLIME_MOMENTUM_GATE = 3.5;
+export const FROST_SLIME_SHARDS = 8;
+export const FROST_SLIME_SHARD_SPEED = 7.5;
+export const FROST_SLIME_SHARD_DAMAGE = 1.0;
+export const FROST_SLIME_SHARD_LIFE = 1.2;
+
+// Void Slime (Cosmic void slime, periodic gravitational suction pulse, singularity collapse on death)
+export const VOID_SLIME_HP = 8;
+export const VOID_SLIME_R = 0.44;
+export const VOID_SLIME_SPEED_FACTOR = 0.52;
+export const VOID_SLIME_CONTACT_RANGE = 0.75;
+export const VOID_SLIME_ATTACK_WINDUP = 0.50;
+export const VOID_SLIME_ATTACK_COOLDOWN = 1.4;
+export const VOID_SLIME_DAMAGE = 2.0;
+export const VOID_SLIME_FROM_LEVEL = 4;
+export const VOID_SLIME_RATIO = 5;
+export const VOID_SLIME_PULSE_CADENCE = 2.8;
+export const VOID_SLIME_SUCTION_RADIUS = 3.5;
+export const VOID_SLIME_SUCTION_FORCE = 3.2;
+export const VOID_SLIME_COLLAPSE_RADIUS = 2.2;
+export const VOID_SLIME_COLLAPSE_DAMAGE = 3.0;
+
 

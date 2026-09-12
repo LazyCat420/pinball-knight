@@ -162,6 +162,10 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   vulture_scavenger: [{ id: "rotflesh", chance: 0.35 }, { id: "hide", chance: 0.25 }],
   gull_bomber: [{ id: "fang", chance: 0.25 }, { id: "batwing", chance: 0.20 }],
   sky_falcon: [{ id: "fang", chance: 0.30 }, { id: "ironshard", chance: 0.20 }],
+  magma_slime: [{ id: "slimegel", chance: 0.50 }, { id: "ironshard", chance: 0.35 }],
+  toxic_slime: [{ id: "slimegel", chance: 0.45 }, { id: "venomsac", chance: 0.40 }],
+  frost_slime: [{ id: "slimegel", chance: 0.40 }, { id: "glass", chance: 0.45 }],
+  void_slime: [{ id: "slimegel", chance: 0.35 }, { id: "lodestone", chance: 0.45 }, { id: "ectoplasm", chance: 0.30 }],
 };
 
 /**
