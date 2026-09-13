@@ -67,3 +67,9 @@ authored content in those snapshots are unchanged.
 
 The measured comparison is geometry validation, not a claim of a GPU gameplay
 inspection or a frame-rate measurement.
+
+
+Final integration validation: 4,564 tests passed, 12 skipped, zero failures;
+394 test files passed and five were skipped. Production build passed. Comparing
+TypeScript against the committed baseline found 60 diagnostics both before and
+after, with no additions. Fix batch: `327a7cc3`; integration: `3ceb8dbb`.

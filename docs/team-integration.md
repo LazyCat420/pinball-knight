@@ -602,3 +602,36 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - Five sabotages verified red. Suite 392 files / 4,502 tests green; tsc 60
   unchanged. **Nobody has watched it spin** — see [the doc](titan-spin.md) for
   the single dial (`PINBALL_SPIN.peak`) if it reads as boil on a real GPU.
+
+
+## Maze corners require straight terminals — 2026-09-13
+
+- Feature branch/worktree: `fix/maze-straight-terminals`,
+  `.worktrees/wt-maze-straight-terminals`; completed batch `327a7cc3`.
+- Dedicated integration branch/worktree: `integrate/maze-straight-terminals`,
+  `.worktrees/wt-maze-straight-integration`; merge `3ceb8dbb`, based on primary
+  `37af0bbc`. Only this completed batch was integrated.
+- Reproduced nine failures: outward quarter-discs placed behind inward room
+  corners, tile corners left unsupported by later wall changes, and direct
+  curve-to-curve terminals. Corners now require exposed, permanent straight
+  square wall faces at both ends. Inward corners stay square unless the existing
+  concave arc author fits a proper piece. Final validation covers small corners
+  and arcs, including after secret-band pruning.
+- Three complete authored floors (L1/1, L5/777, L24/1) had 154 invalid tile-corner
+  connections before and zero afterward. Their larger arcs and floor tile values
+  are unchanged; 230 correctly fitted tile corners remain. Details and scope:
+  [maze corner audit](maze-corner-terminals.md).
+- All geometry, passage-width, connectivity, population and wall-run checks
+  passed, including the 150-floor raw piece gate and decorated-floor checks.
+  Twelve census snapshots changed only corner counts, combined tile/shape hashes
+  and wall-run measurements. Five full-author fingerprints were refreshed after
+  those gates passed; saved layout and content in the census stayed unchanged.
+- Integrated full game suite: **394 passing files, five skipped; 4,564 passing
+  tests, 12 skipped; zero failures**. Production build passed. TypeScript has
+  exactly the same 60 baseline diagnostics, with no additions (compared through
+  an in-memory compiler host against the committed source).
+- No GPU gameplay inspection is claimed. Test-owned processes finished and
+  temporary probes were removed; unrelated developers' worktrees were preserved.
+- NAS deployment remains on hold under the workspace release instructions.
+  This batch is intended for primary-branch publication and the next authorized
+  release; it has not been deployed by this task.
