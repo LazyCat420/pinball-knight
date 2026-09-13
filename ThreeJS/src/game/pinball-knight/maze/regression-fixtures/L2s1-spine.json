@@ -13,10 +13,10 @@
     "walls": 2420,
     "stairs": 1,
     "cracked": 20,
-    "boxes": 2318,
-    "bevels": 33,
+    "boxes": 2334,
+    "bevels": 17,
     "arcs": 69,
-    "tileHash": "b062314a"
+    "tileHash": "e21039e4"
   },
   "endpoints": {
     "start": {
@@ -56,10 +56,10 @@
     "partsInCloseClusters": 38
   },
   "wallRunMetrics": {
-    "totalRuns": 278,
-    "meanLength": 2.61,
-    "runsLength1or2": 212,
-    "shapedEndsOnShortRuns": 28
+    "totalRuns": 280,
+    "meanLength": 2.65,
+    "runsLength1or2": 208,
+    "shapedEndsOnShortRuns": 18
   },
   "assemblies": {
     "chuteAccessPorts": [],

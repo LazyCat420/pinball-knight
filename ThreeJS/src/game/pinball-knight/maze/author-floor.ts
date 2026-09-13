@@ -1,3 +1,4 @@
+import { enforceWallJoins } from "./wall-junctions";
 /**
  * Shared deterministic floor authoring. No live state, lighting, or spawning.
  * All callers use the same modifier → topology → secrets → decoration → lamps
@@ -136,6 +137,8 @@ export function authorMaze(opts: FloorAuthorOptions) {
   const decorateMs = Date.now() - decorateStart;
 
   pruneSealedBands(grid, plan.secrets);
+  // Secret pruning can change a shaped wall's exposed straight terminals.
+  enforceWallJoins(grid);
 
   // Lamps share the floor RNG and reserve all existing content.
   const puzzleOccupied = new Set<string>();
