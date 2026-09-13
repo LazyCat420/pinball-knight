@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { arcContinuationTiles, arcPorts, enforceWallJoins, findBrokenWallJoins, hasSquareJoins, portsMatch } from "./wall-junctions";
+import { arcContinuationTiles, arcPorts, findBrokenCornerJoins, enforceWallJoins, findBrokenWallJoins, hasSquareJoins } from "./wall-junctions";
 import { T_FLOOR, T_WALL, idx, type Grid } from "./generator";
-import { SHAPE_ARC, SHAPE_FULL, SHAPE_ROUND_NE, type ArcFeature } from "../engine/tile-shape";
+import { SHAPE_ARC, SHAPE_FULL, SHAPE_ROUND_NE } from "../engine/tile-shape";
 import { authorMaze } from "./author-floor";
 
 /** A quarter turn between a horizontal wall and a vertical wall, in grid units. */
@@ -70,39 +70,27 @@ describe("wall face connections", () => {
     expect(findBrokenWallJoins(g).map(x => x.end)).toEqual([0]);
   });
 
-  it("keeps a continuous chain of curves and remaps its ownership after a removal", () => {
+  it("rejects direct curve chains and remaps a surviving straight-ended feature", () => {
     const g = corner();
     const f = g.arcs![0];
-    const first = { ...f, span: Math.PI / 4 };
-    const second = { ...f, a0: f.a0 + Math.PI / 4, span: Math.PI / 4 };
-    const broken = { ...f, cx: 50, cz: 50 };
-    g.arcs = [broken, first, second];
-    g.arcIdx![idx(g, 4, 4)] = 1;
-    g.arcIdx![idx(g, 5, 4)] = 1;
-    g.arcIdx![idx(g, 5, 5)] = 2;
-    expect(enforceWallJoins(g)).toBe(1);
-    expect(g.arcs).toEqual([first, second]);
+    const first = { ...f, cx: 50, span: Math.PI / 4 };
+    const second = { ...first, a0: first.a0 + Math.PI / 4 };
+    g.arcs = [first, f, second];
+    for (const k of [idx(g, 4, 4), idx(g, 5, 4), idx(g, 5, 5)]) g.arcIdx![k] = 1;
+    expect(enforceWallJoins(g)).toBe(2);
+    expect(g.arcs).toEqual([f]);
     expect(g.arcIdx![idx(g, 4, 4)]).toBe(0);
-    expect(g.arcIdx![idx(g, 5, 5)]).toBe(1);
+    expect(g.arcIdx![idx(g, 5, 5)]).toBe(0);
     expect(findBrokenWallJoins(g)).toEqual([]);
   });
 
-  it("requires matching position, tangent and solid side independently", () => {
-    const f: ArcFeature = { cx: 4, cz: 6, r: 2, a0: 0, span: Math.PI / 4 };
-    const a = arcPorts(f)[1];
-    const b = arcPorts({ ...f, a0: Math.PI / 4 })[0];
-    expect(portsMatch(a, b)).toBe(true);
-    expect(portsMatch(a, { ...b, x: b.x + 0.1 })).toBe(false);
-    expect(portsMatch(a, { ...b, tx: -b.tz, tz: b.tx })).toBe(false);
-    expect(portsMatch(a, { ...b, nx: -b.nx, nz: -b.nz })).toBe(false);
-  });
-
-  it("matches the floor side across different circle centres and radii", () => {
-    const convex: ArcFeature = { cx: 4, cz: 6, r: 2, a0: 0, span: Math.PI / 2 };
-    const concave: ArcFeature = { cx: 4, cz: 11, r: 3, a0: -Math.PI, span: Math.PI / 2, solidOut: true };
-    // Opposite curvature can share a smooth tangent; comparing solidOut flags
-    // alone would reject this legitimate S connection.
-    expect(portsMatch(arcPorts(convex)[1], arcPorts(concave)[1])).toBe(true);
+  it("rejects a shifted curve and a reversed solid side", () => {
+    const shifted = corner();
+    shifted.arcs![0].cx += 0.25;
+    expect(findBrokenWallJoins(shifted)).toHaveLength(2);
+    const reversed = corner();
+    reversed.arcs![0].solidOut = true;
+    expect(findBrokenWallJoins(reversed)).toHaveLength(2);
   });
 
   it("allows a closed island without inventing endpoints", () => {
@@ -119,6 +107,7 @@ describe("finished maze connections", () => {
     for (const level of [1, 5, 8]) for (const runSeed of [777, 1234, 8675309]) {
       const { grid } = authorMaze({ level, runSeed });
       expect(findBrokenWallJoins(grid), `L${level}, seed ${runSeed}`).toEqual([]);
+      expect(findBrokenCornerJoins(grid), `L${level}, seed ${runSeed}`).toEqual([]);
       curves += grid.arcs!.filter(f => f.span < Math.PI * 2 - 1e-5).length;
     }
     // Passing by deleting all the curved walls would not satisfy the request.

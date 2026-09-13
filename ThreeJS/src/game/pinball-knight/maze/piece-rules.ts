@@ -35,7 +35,7 @@
  *
  * DOM- and three-free. Pure: takes a grid, returns violations.
  */
-import { findBrokenWallJoins } from "./wall-junctions";
+import { findBrokenWallJoins, hasCornerSquareJoins } from "./wall-junctions";
 import { type Grid, type TilePos, idx, at, isWalkable, T_WALL, T_CRACKED, T_STAIRS } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, isShaped, shapeBacking, type ArcFeature } from "../engine/tile-shape";
 import { backedFraction, findArcJunctions, MIN_ARC_LEN, MIN_ARC_TILES } from "./arc-contract";
@@ -135,6 +135,7 @@ export const PIECE_RULES: Record<PieceLabel, readonly string[]> = {
     // solid neighbours or the diagonal face floats — tile-shape.shapeBacking
     // names exactly which two.
     "both legs backed by solid neighbours",
+    "faces open floor and joins two exposed straight square wall faces",
   ],
   "arc-face": [
     // THE rule. `arcSweepGeometry` draws the full span from (cx,cz,r,a0,span)
@@ -148,7 +149,7 @@ export const PIECE_RULES: Record<PieceLabel, readonly string[]> = {
     // Two curves sharing an edge must agree, or they read as a collision
     // between two circles rather than one continuous wall.
     "coherent with any neighbouring feature: no kink, step or curvature flip",
-    "circular fillet endpoints join a wall face at the same position, tangent and solid side",
+    "circular fillet endpoints join straight square wall faces at the same position, tangent and solid side",
   ],
   rubber: [
     // A KickBand is an angular SUB-span. The kicker renderer draws it from its
@@ -293,6 +294,9 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
               break;
             }
           }
+        }
+        if (!hasCornerSquareJoins(g, i, j)) {
+          push("wall-bevel", PIECE_RULES["wall-bevel"][1], i, j, "corner has no pair of exposed straight terminals");
         }
         continue;
       }

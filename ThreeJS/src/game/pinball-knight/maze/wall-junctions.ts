@@ -1,6 +1,6 @@
 /** Geometric connections between wall faces. Tile adjacency alone is not a join. */
 import { at, idx, isWalkable, shapeAt, T_WALL, type Grid } from "./generator";
-import { SHAPE_ARC, SHAPE_FULL, isRound, isSlant, roundCenter, shapeNormal, shapeCorners, type ArcFeature } from "../engine/tile-shape";
+import { SHAPE_ARC, SHAPE_FULL, isRound, isSlant, roundCenter, slantToRound, type TileShape, type ArcFeature } from "../engine/tile-shape";
 
 export interface WallPort {
   x: number;
@@ -28,13 +28,6 @@ export function arcPorts(f: ArcFeature): WallPort[] {
   });
 }
 
-/** Same endpoint and floor side, with each piece continuing away from the other. */
-export function portsMatch(a: WallPort, b: WallPort): boolean {
-  return Math.hypot(a.x - b.x, a.z - b.z) < EPS &&
-    a.tx * b.tx + a.tz * b.tz < -1 + EPS &&
-    a.nx * b.nx + a.nz * b.nz > 1 - EPS;
-}
-
 /** The square wall beyond a cardinal endpoint, if its exposed face is flush. */
 function squareContinuation(g: Grid, p: WallPort): number | null {
   if (Math.min(Math.abs(p.nx), Math.abs(p.nz)) > EPS) return null;
@@ -54,29 +47,29 @@ export function hasSquareJoins(g: Grid, f: ArcFeature): boolean {
   return arcPorts(f).every(p => squareContinuation(g, p) !== null);
 }
 
-function tilePorts(g: Grid, i: number, j: number): WallPort[] {
-  if (at(g, i, j) !== T_WALL) return [];
-  const shape = shapeAt(g, i, j);
-  if (isRound(shape)) {
-    const c = roundCenter(shape)!;
-    const a0 = c.x === 0 ? (c.z === 0 ? 0 : -Math.PI / 2) : (c.z === 0 ? Math.PI / 2 : Math.PI);
-    return arcPorts({ cx: i + c.x, cz: j + c.z, r: 1, a0, span: Math.PI / 2 });
+/**
+ * Rounds and bevels share their endpoints and square backing faces. A bevel
+ * intentionally turns 45 degrees at each end; use the equivalent round's
+ * cardinal ports to locate its straight terminals, not its diagonal tangent.
+ */
+export function hasCornerSquareJoins(g: Grid, i: number, j: number, shape: TileShape = shapeAt(g, i, j)): boolean {
+  if (!isRound(shape) && !isSlant(shape)) return false;
+  const c = roundCenter(isSlant(shape) ? slantToRound(shape) : shape)!;
+  const dx = c.x === 0 ? 1 : -1, dz = c.z === 0 ? 1 : -1;
+  // Convex shell only: both sides and the cut quadrant must face open floor.
+  if (!isWalkable(g, i + dx, j) || !isWalkable(g, i, j + dz) || !isWalkable(g, i + dx, j + dz)) return false;
+  const a0 = c.x === 0 ? (c.z === 0 ? 0 : -Math.PI / 2) : (c.z === 0 ? Math.PI / 2 : Math.PI);
+  return hasSquareJoins(g, { cx: i + c.x, cz: j + c.z, r: 1, a0, span: Math.PI / 2 });
+}
+
+/** Find tile corners whose orientation or straight terminals no longer fit. */
+export function findBrokenCornerJoins(g: Grid): number[] {
+  const broken: number[] = [];
+  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) {
+    const shape = shapeAt(g, i, j);
+    if (at(g, i, j) === T_WALL && (isRound(shape) || isSlant(shape)) && !hasCornerSquareJoins(g, i, j)) broken.push(idx(g, i, j));
   }
-  if (isSlant(shape)) {
-    const n = shapeNormal(shape)!;
-    // The diagonal is the only edge with two changing coordinates.
-    const points = shapeCorners(shape)!;
-    for (let k = 0; k < 3; k++) {
-      const a = points[k], b = points[(k + 1) % 3];
-      if (a.x === b.x || a.z === b.z) continue;
-      const tx = (b.x - a.x) / Math.SQRT2, tz = (b.z - a.z) / Math.SQRT2;
-      return [
-        { x: i + a.x, z: j + a.z, tx: -tx, tz: -tz, nx: n.x, nz: n.z },
-        { x: i + b.x, z: j + b.z, tx, tz, nx: n.x, nz: n.z },
-      ];
-    }
-  }
-  return [];
+  return broken;
 }
 
 /** Keep a later corner-decoration pass from cutting off a curve's landing. */
@@ -91,7 +84,7 @@ export function arcContinuationTiles(g: Grid): Set<number> {
 
 export interface BrokenWallJoin { feature: number; end: number; port: WallPort }
 
-/** Judge the actual drawn endpoints against square, bevel, round and arc faces. */
+/** Every ordinary curve must end on straight square masonry on both sides. */
 export function findBrokenWallJoins(g: Grid): BrokenWallJoin[] {
   const ports = (g.arcs ?? []).map(arcPorts);
   const broken: BrokenWallJoin[] = [];
@@ -103,15 +96,7 @@ export function findBrokenWallJoins(g: Grid): BrokenWallJoin[] {
     if (g.arcs![fi].owner === "funnel") continue;
     const p = ports[fi][end];
     if (squareContinuation(g, p) !== null) continue;
-    if (ports.some((other, oi) => oi !== fi && other.some(q => portsMatch(p, q)))) continue;
-    // At an integer corner up to four tile-local shapes may meet this point.
-    let connected = false;
-    for (let j = Math.floor(p.z - EPS); j <= Math.floor(p.z + EPS); j++) {
-      for (let i = Math.floor(p.x - EPS); i <= Math.floor(p.x + EPS); i++) {
-        if (tilePorts(g, i, j).some(q => portsMatch(p, q))) connected = true;
-      }
-    }
-    if (!connected) broken.push({ feature: fi, end, port: p });
+    broken.push({ feature: fi, end, port: p });
   }
   return broken;
 }
@@ -123,6 +108,13 @@ export function findBrokenWallJoins(g: Grid): BrokenWallJoin[] {
  */
 export function enforceWallJoins(g: Grid): number {
   let removed = 0;
+  // Validate against one snapshot, then restore rejected shapes together. This
+  // avoids row-order winners when two incompatible corners touch each other.
+  for (const k of findBrokenCornerJoins(g)) {
+    g.shapes[k] = SHAPE_FULL;
+    if (g.arcIdx) g.arcIdx[k] = -1;
+    removed++;
+  }
   while (g.arcs?.length && g.arcIdx) {
     const bad = new Set(findBrokenWallJoins(g).map(x => x.feature));
     if (!bad.size) break;

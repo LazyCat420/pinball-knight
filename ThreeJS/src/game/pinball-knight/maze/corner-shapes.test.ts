@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assignCornerShapes } from "./corner-shapes";
 import { type Grid, T_FLOOR, T_CRACKED, idx, setTile, shapeAt, setShape } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, shapeBacking } from "../engine/tile-shape";
+import { SHAPE_FULL, SHAPE_ARC } from "../engine/tile-shape";
 
 function stone(): Grid {
   return { w: 11, h: 11, t: new Uint8Array(121), shapes: new Uint8Array(121) };
@@ -24,14 +24,11 @@ describe("single-tile corner placement", () => {
       expect(shapeAt(g, 5 + di, 5 + dj)).toBe(SHAPE_FULL);
     });
 
-    it(`faces a complete open pocket (${di},${dj})`, () => {
+    it(`keeps inward room-corner masonry square even at a complete pocket (${di},${dj})`, () => {
       const g = pocket(di, dj, true);
       assignCornerShapes(g, { grammar: false });
       const shape = shapeAt(g, 5 + di, 5 + dj);
-      expect(shape).not.toBe(SHAPE_FULL);
-      const backing = shapeBacking(shape)!;
-      expect(backing.some((v) => v.x === di && v.z === 0)).toBe(true);
-      expect(backing.some((v) => v.x === 0 && v.z === dj)).toBe(true);
+      expect(shape).toBe(SHAPE_FULL);
     });
 
     it(`rejects breakable backing (${di},${dj})`, () => {
