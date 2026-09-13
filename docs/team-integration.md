@@ -584,3 +584,21 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   feel judgements are in [the camera zoom doc](camera-zoom.md), along with the
   open item that matters most: the render target is capped at 2560x1440, so a 4K
   monitor is upscaled 2x and will look low-res regardless of any of this.
+
+## Tilt Titan spin cadence — 2026-09-12
+
+- Third report of "the 3d pinball spins really slow". The three earlier fixes
+  each rebuilt the ART; `git show be6c68be^` shows the last one changed the
+  speed by exactly 0.000 rev/s (12 cells no-beats = 1.000 s/loop, 32 cells with
+  beats 12 = 1.000 s/loop, landed in the same commit).
+- Four timing causes, no art touched: the ambient window used `walk`, whose
+  pose turns the seam ring only and leaves the hull static (~26% of the fight
+  at literally zero spin); the launch frame hard-coded 3.0 against a ramp that
+  reached 3.5 (a 14% DECELERATION on release); one loop is not one turn, so a
+  shared rate made the same charge read 51% different run to run; and the
+  rev-up opened at a standstill.
+- Time-weighted 2.59 -> 4.17 surface rev/s (+61%), phase 2 +79%, with the dead
+  window removed. Capped by a measured aliasing budget, not by taste.
+- Five sabotages verified red. Suite 392 files / 4,502 tests green; tsc 60
+  unchanged. **Nobody has watched it spin** — see [the doc](titan-spin.md) for
+  the single dial (`PINBALL_SPIN.peak`) if it reads as boil on a real GPU.
