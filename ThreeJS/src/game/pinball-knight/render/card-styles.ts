@@ -627,6 +627,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   hotdog: "bone",
   ketchup: "bone",
   mustard: "bone",
+  don_quixote: "iron",
 };
 
 /**

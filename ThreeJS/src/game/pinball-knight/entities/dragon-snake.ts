@@ -67,6 +67,87 @@ export interface DragonSnakeBoss {
   isEnraged: boolean;
   dead: boolean;
   deathT: number;
+  growTimer?: number;
+  growInterval?: number;
+  maxSegments?: number;
+  pathHistory?: Array<{ x: number; z: number }>;
+}
+
+export const DRAGON_GROW_INTERVAL = 4.5;
+export const DRAGON_MAX_SEGMENTS = 45;
+
+/**
+ * Dynamically appends a new modular body segment to the snake.
+ */
+export function growDragonSnake(dragon: DragonSnakeBoss, scene?: THREE.Scene | null): DragonBodySegment {
+  const bodySheet = sheetFor("dragon_snake_body") ?? sheetFor("dragon");
+  const i = dragon.segments.length;
+  const sprite = createActorSprite(bodySheet!, false);
+  sprite.mesh.scale.set(dragon.scale, dragon.scale, 1);
+  const anim = new MonsterAnimator(sprite);
+  anim.play("idle");
+
+  const lastSeg = dragon.segments[dragon.segments.length - 1];
+  const segX = lastSeg ? lastSeg.x - dragon.segmentDist : dragon.head.x - (i + 1) * dragon.segmentDist;
+  const segZ = lastSeg ? lastSeg.z : dragon.head.z;
+
+  const targetScene = scene ?? state.scene;
+  if (targetScene) {
+    targetScene.add(sprite.mesh);
+  }
+
+  const segment: DragonBodySegment = {
+    index: i,
+    mesh: sprite.mesh,
+    sprite,
+    anim,
+    x: segX,
+    z: segZ,
+    vx: 0,
+    vz: 0,
+    radius: DRAGON_SEGMENT_RADIUS * (dragon.scale / 2.0),
+    flinchT: 0,
+  };
+  animationPresentation.register(segment);
+  syncActorMesh({ sprite, x: segX, z: segZ });
+  dragon.segments.push(segment);
+
+  // Reposition tail behind the new segment
+  dragon.tail.x = segX - dragon.segmentDist;
+  dragon.tail.z = segZ;
+  syncActorMesh({ sprite: dragon.tail.sprite, x: dragon.tail.x, z: dragon.tail.z });
+
+  return segment;
+}
+
+/**
+ * Ticks growth timer and adds segments every growInterval seconds up to maxSegments.
+ */
+export function updateDragonSnakeGrowth(
+  dragon: DragonSnakeBoss,
+  dt: number,
+  scene?: THREE.Scene | null,
+): boolean {
+  if (dragon.dead || dragon.head.hp <= 0) return false;
+  dragon.growTimer = (dragon.growTimer ?? 0) + dt;
+  const interval = dragon.growInterval ?? DRAGON_GROW_INTERVAL;
+  const max = dragon.maxSegments ?? DRAGON_MAX_SEGMENTS;
+
+  if (dragon.growTimer >= interval && dragon.segments.length < max) {
+    dragon.growTimer = 0;
+    growDragonSnake(dragon, scene);
+    state.vfx?.sparks(dragon.tail.x, 0.6, dragon.tail.z, 0, 1, 8);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Calculates the constriction fraction of the maze corridor space occupied by the snake.
+ */
+export function snakeConstrictionFraction(dragon: DragonSnakeBoss, totalCorridorTiles = 120): number {
+  const totalLength = (dragon.segments.length + 2) * dragon.segmentDist;
+  return Math.min(1.0, totalLength / totalCorridorTiles);
 }
 
 /**
@@ -156,6 +237,10 @@ export function createDragonSnake(
     isEnraged: false,
     dead: false,
     deathT: 0,
+    growTimer: 0,
+    growInterval: DRAGON_GROW_INTERVAL,
+    maxSegments: DRAGON_MAX_SEGMENTS,
+    pathHistory: [],
   };
 }
 
@@ -277,12 +362,12 @@ export function checkDragonSnakeCollisions(dragon: DragonSnakeBoss, player: Play
       part.flinchT = 0.15;
 
       // Inflict damage to boss shared health pool
-      const isFastRam = curSpeed > 8.0;
+      const isFastRam = curSpeed > 8.0 || (player.turboT !== undefined && player.turboT > 0);
       const baseDmg = isFastRam ? 28 : 14;
       damageZombie(dragon.head, playerDamage(baseDmg), nx, nz, 0.4, false, isFastRam ? "bounce" : "steel");
 
       // If player collided at low speed without iframes, take contact damage
-      if (player.iframes <= 0.05 && curSpeed < 6.0) {
+      if (player.iframes <= 0.05 && curSpeed < 6.0 && !isFastRam) {
         hitPlayerRanged(1, part.x, part.z);
       }
     }

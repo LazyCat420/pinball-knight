@@ -94,6 +94,9 @@ export const KIND_SKIN: Partial<Record<EnemyKind, KindSkin>> = {
   hotdog: { scale: 1.05 },
   ketchup: { scale: 1.0 },
   mustard: { scale: 1.0 },
+  // Wears his own sheet; a head taller than the horde, which is the point of
+  // a knight in plate walking at you.
+  don_quixote: { scale: 1.12 },
   crawling_hand: { scale: 0.95 },
   sumo_ninja: { scale: 1.0 },
   zippo: { scale: 1.0 },

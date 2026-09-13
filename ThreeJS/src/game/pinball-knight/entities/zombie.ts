@@ -192,7 +192,9 @@ import {
   ROBO_COP_R, ROBO_COP_CONTACT_RANGE, ROBO_COP_ATTACK_WINDUP, ROBO_COP_ATTACK_COOLDOWN,
   HOTDOG_R, HOTDOG_FIRE_RANGE, HOTDOG_WINDUP, HOTDOG_COOLDOWN,
   KETCHUP_R, KETCHUP_FIRE_RANGE, KETCHUP_WINDUP, KETCHUP_COOLDOWN,
-  MUSTARD_R, MUSTARD_FIRE_RANGE, MUSTARD_WINDUP, MUSTARD_COOLDOWN } from "../constants";
+  MUSTARD_R, MUSTARD_FIRE_RANGE, MUSTARD_WINDUP, MUSTARD_COOLDOWN,
+  DON_QUIXOTE_R, DON_QUIXOTE_CONTACT_RANGE, DON_QUIXOTE_ATTACK_WINDUP, DON_QUIXOTE_ATTACK_COOLDOWN,
+  DON_QUIXOTE_CHARGE_SPEED, DON_QUIXOTE_CHARGE_TIME } from "../constants";
 import { sheetFor } from "../boot/sheets";
 import { createActorSprite } from "../engine/render/sprite";
 import { MonsterAnimator } from "../engine/render/monster-animator";
@@ -213,6 +215,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
+import { donQuixoteWallCrash } from "./don-quixote";
 import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
@@ -322,6 +325,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   hotdog: { bodyR: HOTDOG_R, contactRange: HOTDOG_FIRE_RANGE, windup: HOTDOG_WINDUP, cooldown: HOTDOG_COOLDOWN, ranged: true },
   ketchup: { bodyR: KETCHUP_R, contactRange: KETCHUP_FIRE_RANGE, windup: KETCHUP_WINDUP, cooldown: KETCHUP_COOLDOWN, ranged: true },
   mustard: { bodyR: MUSTARD_R, contactRange: MUSTARD_FIRE_RANGE, windup: MUSTARD_WINDUP, cooldown: MUSTARD_COOLDOWN, ranged: true },
+  don_quixote: { bodyR: DON_QUIXOTE_R, contactRange: DON_QUIXOTE_CONTACT_RANGE, windup: DON_QUIXOTE_ATTACK_WINDUP, cooldown: DON_QUIXOTE_ATTACK_COOLDOWN, ranged: false },
 };
 
 /**
@@ -450,7 +454,7 @@ export function setSummonHandler(fn: (x: number, z: number) => void): void {
 function startCharge(z: Zombie, pdx: number, pdz: number, pdist: number): void {
   const d = pdist > 1e-4 ? pdist : 1;
   z.mode = "charge";
-  z.chargeT = HOUND_CHARGE_TIME;
+  z.chargeT = z.kind === "don_quixote" ? DON_QUIXOTE_CHARGE_TIME : HOUND_CHARGE_TIME;
   z.chargeDirX = pdx / d;
   z.chargeDirZ = pdz / d;
 }
@@ -1710,7 +1714,10 @@ export function updateZombies(dt: number): void {
       const cdz = z.chargeDirZ ?? 0;
       z.anim.setFacing(facingFromWorld(cdx, cdz, "S"));
       z.anim.play("walk", { force: true });
-      const step = HOUND_CHARGE_SPEED * dt;
+      // The Don's lance charge covers less ground per second than a hound's
+      // dash on purpose: a charge you cannot step out of is not a telegraph.
+      const chargeSpeed = z.kind === "don_quixote" ? DON_QUIXOTE_CHARGE_SPEED : HOUND_CHARGE_SPEED;
+      const step = chargeSpeed * dt;
       const res = moveCircle(g, z.x, z.z, bodyR, cdx * step, cdz * step);
       const moved = Math.hypot(res.x - z.x, res.z - z.z);
       z.x = res.x;
@@ -1728,8 +1735,14 @@ export function updateZombies(dt: number): void {
         z.mode = "chase";
         z.cooldown = attackCooldown + (slammed ? 0.5 : 0);
         if (slammed) {
-          state.vfx?.dust(z.x, 0.05, z.z);
-          state.vfx?.sparks(z.x, 0.4, z.z, cdx, cdz, 6);
+          if (z.kind === "don_quixote") {
+            // Lance into masonry: self-damage and a real stun, not a longer
+            // cooldown. See entities/don-quixote.ts.
+            donQuixoteWallCrash(z, cdx, cdz);
+          } else {
+            state.vfx?.dust(z.x, 0.05, z.z);
+            state.vfx?.sparks(z.x, 0.4, z.z, cdx, cdz, 6);
+          }
         }
       }
       continue;
@@ -1783,7 +1796,7 @@ export function updateZombies(dt: number): void {
         z.cooldown = attackCooldown;
         if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null); // drop the telegraph on release
         if (p.hp > 0) {
-          if (z.kind === "mimic") {
+          if (z.kind === "mimic" || z.kind === "don_quixote") {
             startCharge(z, pdx, pdz, pdist); // the windup ends in a DASH, not a bite
             continue;
           } else if (z.kind === "brute") {

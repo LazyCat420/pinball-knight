@@ -160,6 +160,9 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   hotdog: 0.45,
   ketchup: 0.50,
   mustard: 0.45,
+  // Plate armour, in the Doom ranking: he takes a blow and keeps coming. The
+  // way to interrupt him is to make him miss, not to out-DPS his flinch.
+  don_quixote: 0.18,
 };
 
 /**

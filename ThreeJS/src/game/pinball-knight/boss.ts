@@ -49,6 +49,7 @@ import {
   updateDragonSnakeKinematics,
   checkDragonSnakeCollisions,
   updateDragonSnakeAttacks,
+  updateDragonSnakeGrowth,
   onDragonSnakeDeath,
   disposeDragonSnake,
   type DragonSnakeBoss,
@@ -668,6 +669,7 @@ export function updateBoss(dt: number): void {
     updateDragonSnakeKinematics(boss.dragonSnake, dt);
     checkDragonSnakeCollisions(boss.dragonSnake, p, dt);
     updateDragonSnakeAttacks(boss.dragonSnake, dt, target);
+    updateDragonSnakeGrowth(boss.dragonSnake, dt);
   }
 }
 

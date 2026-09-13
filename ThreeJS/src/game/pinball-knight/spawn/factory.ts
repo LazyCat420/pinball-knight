@@ -28,7 +28,8 @@ import { BAT_FROM_LEVEL, BAT_HP, BAT_RATIO, BAT_SPEED_FACTOR, BLOATER_FROM_LEVEL
   ROBO_COP_FROM_LEVEL, ROBO_COP_HP, ROBO_COP_RATIO, ROBO_COP_SPEED_FACTOR,
   HOTDOG_FROM_LEVEL, HOTDOG_HP, HOTDOG_RATIO, HOTDOG_SPEED_FACTOR,
   KETCHUP_FROM_LEVEL, KETCHUP_HP, KETCHUP_RATIO, KETCHUP_SPEED_FACTOR,
-  MUSTARD_FROM_LEVEL, MUSTARD_HP, MUSTARD_RATIO, MUSTARD_SPEED_FACTOR } from "../constants";
+  MUSTARD_FROM_LEVEL, MUSTARD_HP, MUSTARD_RATIO, MUSTARD_SPEED_FACTOR,
+  DON_QUIXOTE_FROM_LEVEL, DON_QUIXOTE_HP, DON_QUIXOTE_RATIO, DON_QUIXOTE_SPEED_FACTOR } from "../constants";
 import { syncActorMesh } from "../entities/combat";
 import * as THREE from "three";
 import { updateZombies } from "../entities/zombie";
@@ -133,6 +134,7 @@ export const HP_BY_KIND: Record<EnemyKind, number> = {
   highway_patrol: HIGHWAY_PATROL_HP,
   detective_cop: DETECTIVE_COP_HP,
   robo_cop: ROBO_COP_HP,
+  don_quixote: DON_QUIXOTE_HP,
 };
 
 export { skinSheet };
@@ -458,6 +460,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= KETCHUP_FROM_LEVEL ? makeSkinned("ketchup", x, z, baseSpeed * KETCHUP_SPEED_FACTOR) : null;
     case "mustard":
       return level >= MUSTARD_FROM_LEVEL ? makeSkinned("mustard", x, z, baseSpeed * MUSTARD_SPEED_FACTOR) : null;
+    case "don_quixote":
+      return level >= DON_QUIXOTE_FROM_LEVEL ? makeSkinned("don_quixote", x, z, baseSpeed * DON_QUIXOTE_SPEED_FACTOR) : null;
     case "crawling_hand":
       return level >= CRAWLING_HAND_FROM_LEVEL ? makeSkinned("crawling_hand", x, z, baseSpeed * CRAWLING_HAND_SPEED_MULT) : null;
     case "sumo_ninja":
@@ -607,6 +611,7 @@ function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
     case "hotdog": return level >= HOTDOG_FROM_LEVEL;
     case "ketchup": return level >= KETCHUP_FROM_LEVEL;
     case "mustard": return level >= MUSTARD_FROM_LEVEL;
+    case "don_quixote": return level >= DON_QUIXOTE_FROM_LEVEL;
     case "crawling_hand": return level >= CRAWLING_HAND_FROM_LEVEL;
     case "sumo_ninja": return level >= SUMO_NINJA_FROM_LEVEL;
     case "zippo": return level >= ZIPPO_FROM_LEVEL;
@@ -697,6 +702,7 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
   if (level >= HOTDOG_FROM_LEVEL && hash % HOTDOG_RATIO === 7) return "hotdog";
   if (level >= KETCHUP_FROM_LEVEL && hash % KETCHUP_RATIO === 5) return "ketchup";
   if (level >= MUSTARD_FROM_LEVEL && hash % MUSTARD_RATIO === 6) return "mustard";
+  if (level >= DON_QUIXOTE_FROM_LEVEL && hash % DON_QUIXOTE_RATIO === 9) return "don_quixote";
   if (level >= CRAWLING_HAND_FROM_LEVEL && hash % CRAWLING_HAND_RATIO === 5) return "crawling_hand";
   if (level >= SUMO_NINJA_FROM_LEVEL && hash % SUMO_NINJA_RATIO === 9) return "sumo_ninja";
   if (level >= CLAM_FROM_LEVEL && hash % CLAM_RATIO === 7) return "clam";

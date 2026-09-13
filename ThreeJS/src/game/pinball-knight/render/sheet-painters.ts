@@ -113,12 +113,14 @@ import { makeRoboCopPaints } from "./monsters/robo_cop";
 import { makeHotdogPaints } from "./monsters/hotdog";
 import { makeKetchupPaints } from "./monsters/ketchup";
 import { makeMustardPaints } from "./monsters/mustard";
+import { makeDonQuixotePaints } from "./monsters/don-quixote";
 import type { SheetKey } from "../boot/sheets";
 
 export const SHEET_PAINTERS: Record<SheetKey, () => ActorPaints> = {
   ketchup: makeKetchupPaints,
   mustard: makeMustardPaints,
   hotdog: makeHotdogPaints,
+  don_quixote: makeDonQuixotePaints,
   corvid_bomber: makeCorvidBomberPaints,
   vulture_scavenger: makeVultureScavengerPaints,
   gull_bomber: makeGullBomberPaints,

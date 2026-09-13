@@ -728,6 +728,36 @@ export const MUSTARD_RATIO = 16;
 export const MUSTARD_FROM_LEVEL = 2;
 
 /**
+ * DON QUIXOTE — the chivalrous mad jouster.
+ *
+ * A CHARGER, built on the same committed-dash mechanic the Hound and the woken
+ * Mimic already use (`startCharge` in entities/zombie.ts) rather than on a
+ * bespoke state machine. What makes him his own monster is what happens when
+ * the charge MISSES: a hound shrugs off a wall and re-chases, the Don runs his
+ * lance into the masonry, hurts himself on it, and stands there seeing stars
+ * long enough to be punished for it.
+ *
+ * He is deliberately slower and longer-winded than the hound (a 0.55s tell
+ * against 0.3, and a dash that covers more ground at less speed), because the
+ * whole fight is meant to be readable: watch the lance come down, step out of
+ * the line, listen for the crash.
+ */
+export const DON_QUIXOTE_HP = 10;
+export const DON_QUIXOTE_R = 0.42;
+export const DON_QUIXOTE_CONTACT_RANGE = 0.95; // a lance outreaches a bite
+export const DON_QUIXOTE_ATTACK_WINDUP = 0.55; // lance couched, donkey-less and committed
+export const DON_QUIXOTE_ATTACK_COOLDOWN = 1.9;
+export const DON_QUIXOTE_SPEED_FACTOR = 0.95; // plate is heavy; the CHARGE is the speed
+export const DON_QUIXOTE_CHARGE_SPEED = 8.5;
+export const DON_QUIXOTE_CHARGE_TIME = 0.62;
+export const DON_QUIXOTE_DAMAGE = 2; // a couched lance is not a bite
+/** Self-damage for running the lance into a wall, and how long he reels after. */
+export const DON_QUIXOTE_CRASH_SELF_DAMAGE = 2;
+export const DON_QUIXOTE_CRASH_STUN = 1.8;
+export const DON_QUIXOTE_RATIO = 14;
+export const DON_QUIXOTE_FROM_LEVEL = 3;
+
+/**
  * CRAWLING HAND ("Thing" from Addams Family) — severed pale gothic hand
  * that skitters on its fingertips like a spider. Lunges and clamps onto the
  * knight, pinning them in place while the rest of the horde swarms and attacks!

@@ -203,6 +203,7 @@ const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
   hotdog: "Hotdog",
   ketchup: "Ketchup",
   mustard: "Mustard",
+  don_quixote: "Quixote",
 };
 
 const MATERIALS = ["diamond", "water", "stone", "storm", "shadow", "lava"];

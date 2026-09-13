@@ -129,6 +129,9 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   hotdog: "kite",
   ketchup: "kite",
   mustard: "kite",
+  // Closes on foot and commits to a lance charge out of the wind-up — the same
+  // shape as the hound, which is also a `leaper` that ends its tell in a dash.
+  don_quixote: "leaper",
 };
 
 /** One family's momentum rule: where the old binary bar was, and how soft the

@@ -10,6 +10,11 @@ import {
   DRAGON_DEFAULT_SEGMENTS,
   DRAGON_SEGMENT_DIST,
   DRAGON_BOUNCE_SPEED,
+  growDragonSnake,
+  updateDragonSnakeGrowth,
+  snakeConstrictionFraction,
+  DRAGON_GROW_INTERVAL,
+  DRAGON_MAX_SEGMENTS,
   type DragonSnakeBoss,
 } from "./dragon-snake";
 import { state, type Zombie, type Player } from "../state";
@@ -218,5 +223,70 @@ describe("Dragon Snake Boss Entity & Modular Serpentine Kinematics", () => {
 
     disposeBoss();
     expect(bossActive()).toBe(false);
+  });
+
+  it("grows new modular body segments dynamically and updates tail position", () => {
+    const dragon = createDragonSnake(mockHead, 4, 2.35);
+    expect(dragon.segments.length).toBe(4);
+
+    const newSeg = growDragonSnake(dragon, state.scene);
+    expect(dragon.segments.length).toBe(5);
+    expect(newSeg.index).toBe(4);
+    expect(state.scene?.children.includes(newSeg.mesh)).toBe(true);
+
+    // Tail should be repositioned behind the new segment
+    expect(dragon.tail.x).toBeCloseTo(newSeg.x - dragon.segmentDist, 2);
+  });
+
+  it("ticks growth timer and triggers dynamic growth at intervals", () => {
+    const dragon = createDragonSnake(mockHead, 4, 2.35);
+    dragon.growInterval = 4.5;
+    dragon.growTimer = 4.4;
+
+    // Small tick not crossing interval
+    const grew1 = updateDragonSnakeGrowth(dragon, 0.05, state.scene);
+    expect(grew1).toBe(false);
+    expect(dragon.segments.length).toBe(4);
+
+    // Tick that crosses 4.5s
+    const grew2 = updateDragonSnakeGrowth(dragon, 0.1, state.scene);
+    expect(grew2).toBe(true);
+    expect(dragon.segments.length).toBe(5);
+    expect(dragon.growTimer).toBe(0);
+  });
+
+  it("calculates accurate corridor constriction fraction", () => {
+    const dragon = createDragonSnake(mockHead, 8, 2.35);
+    const fraction = snakeConstrictionFraction(dragon, 100);
+    // (8 + 2) * 0.72 = 7.2. 7.2 / 100 = 0.072
+    expect(fraction).toBeCloseTo(0.072, 3);
+  });
+
+  it("allows boosted player with turbo to ram body safely without taking damage", () => {
+    const dragon = createDragonSnake(mockHead, 4, 2.35);
+    state.zombies.push(mockHead);
+
+    const seg0 = dragon.segments[0];
+    const player: Player = {
+      x: seg0.x + 0.1,
+      z: seg0.z,
+      hp: 6,
+      maxHp: 6,
+      momX: -1,
+      momZ: 0,
+      momSpeed: 12,
+      turboT: 2.0,
+      iframes: 0,
+      bounceCombo: 0,
+      facing: "W",
+    } as unknown as Player;
+    state.player = player;
+
+    const initialHp = player.hp;
+    checkDragonSnakeCollisions(dragon, player, 0.016);
+
+    // Player takes no damage due to turbo/fast ram
+    expect(player.hp).toBe(initialHp);
+    expect(player.momSpeed).toBeGreaterThanOrEqual(12);
   });
 });

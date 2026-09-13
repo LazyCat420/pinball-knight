@@ -433,7 +433,8 @@ export type EnemyKind =
   // ── Ballpark & Food Brawler ──
   | "hotdog" // BALLPARK WIENER — squirts burning stadium mustard and bursts into relish splatter
   | "ketchup" // CONDIMENT TWIN — squeeze bottle squirts thick sticky tomato paste, leaves slowing puddle
-  | "mustard"; // CONDIMENT TWIN — squeeze bottle blasts spicy stadium mustard jets, leaves slip hazard
+  | "mustard" // CONDIMENT TWIN — squeeze bottle blasts spicy stadium mustard jets, leaves slip hazard
+  | "don_quixote"; // CHIVALRIC JOUSTER — charges with couched lance on donkey, stuns on wall crash
 
 export type JunkbotVariant = "tractor" | "cyber" | "motor" | "crane" | "appliance";
 
