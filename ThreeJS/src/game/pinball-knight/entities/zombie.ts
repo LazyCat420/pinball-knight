@@ -27,6 +27,7 @@
  * grew in the first place.
  */
 import { state, playerIsVisibleToEnemies, type Zombie, type EnemyKind } from "../state";
+import { PINBALL_AMBIENT_CLIP } from "../pinball-spin";
 import { ZOMBIE_TYPES } from "../zombie-types";
 import {
   ZOMBIE_R,
@@ -2116,15 +2117,33 @@ export function updateZombies(dt: number): void {
     // half of the telegraph that reads at a glance across a lit room.
     const moving = vx !== 0 || vz !== 0;
     const tellClip = clipForSteer(steer, moving);
+    // THE TILT TITAN IS A BALL, and its `walk` pose turns the riveted seam ring
+    // ONLY — render/pinball-boss-3d.ts holds `ball.rotation.x` at a static 0.16
+    // lean with a ±0.03 wobble, so the hull and the face do not rotate at all.
+    // A chrome sphere crossing the floor without turning does not read as
+    // "spinning slowly", it reads as SLIDING, and that is about a quarter of
+    // the fight. Roll it instead.
+    //
+    // This belongs here and not in boss-moves.ts: sim/simulate.ts runs
+    // updateZombies BEFORE updateBoss, and `play()` resets frameIdx to 0 on any
+    // clip CHANGE — so a boss that played the spin clip while this AI kept
+    // playing `walk` would alternate them every frame and freeze the ball on
+    // frame 0 for the whole ambient window. Set it once, in the code that owns
+    // the clip, and every other `play()` becomes a same-clip early return.
+    //
+    // ⚠ `roll` does not loop by default, so the flag is REQUIRED: without it
+    // the ball completes one turn and stops on its last cell.
+    const ballClip = z.bossKind === "pinball_boss" ? PINBALL_AMBIENT_CLIP : null;
+    const ballOpts = ballClip ? { loop: true } : undefined;
     if (moving && !steer.hold) {
       z.anim.setFacing(facingFromWorld(vx, vz, "S"));
-      z.anim.play(tellClip ?? "walk");
+      z.anim.play(ballClip ?? tellClip ?? "walk", ballOpts);
     } else {
       // `hold` is a policy STANDING STILL on purpose (an ambusher in wait, a
       // leaper mid-crouch). It must read as stillness, not as a walk cycle in
       // place, or the telegraph the whole policy rests on is invisible.
       if (steer.hold && moving) z.anim.setFacing(facingFromWorld(vx, vz, "S"));
-      z.anim.play(tellClip ?? "idle");
+      z.anim.play(ballClip ?? tellClip ?? "idle", ballOpts);
     }
 
     syncActorMesh(z);

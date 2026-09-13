@@ -30,6 +30,7 @@
 import * as THREE from "three";
 import type { BarrageSpec, ChargeSpec, DaggerVolleySpec, FanBoomerangSpec, MouthFireSpec, NovaSpec, OrbitSpec, PinballChargeSpec, SlamSpec, SummonSpec, TeleportFireSpec, ThrashGrabSpec } from "./boss-kinds";
 import { state } from "./state";
+import { PINBALL_AMBIENT_CLIP, PINBALL_SPIN, pinballPeakRevs, spinRate } from "./pinball-spin";
 import type { Grid } from "./maze/generator";
 import { circleCollides, moveCircle } from "./engine/collision";
 import { isWalkable, worldToTile } from "./maze/generator";
@@ -1506,7 +1507,10 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
   if (rt.phase === "running") {
     ctx.setHoldMovement?.(true);
     ctx.playAnim?.(rt.spinClip, { loop: true });
-    ctx.setAnimRate?.(3.0);
+    // Surface rev/s, gain-corrected per clip and scaled by ground speed. A
+    // flat 3.0 made the same dash read 51% faster or slower depending only on
+    // which axis path the RNG drew, and never escalated into phase 2.
+    ctx.setAnimRate?.(spinRate(rt.spinClip, pinballPeakRevs(spec.speed)));
 
     // The spin is IN THE ART: the baked spin variants are seamless multi-axis turns
     // of the ball (render/pinball-boss-3d.ts), looped above. Rotating the
@@ -1578,12 +1582,26 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.hasHitPlayer = false;
       rt.spinAngle = 0;
       rt.spinSpeed = 0;
-      ctx.setAnimRate?.(1.0);
+      // Back to the ambient roll, not a standstill: `idle` and `walk` both
+      // leave the hull static, and the generic AI re-asserts the clip next
+      // frame anyway (entities/zombie.ts) — only the RATE is ours to hold.
+      ctx.setAnimRate?.(spinRate(PINBALL_AMBIENT_CLIP, PINBALL_SPIN.ambient));
       ctx.rotateSprite?.(0);
       ctx.setHoldMovement?.(false);
       ctx.playAnim?.("idle");
     }
     return;
+  }
+
+  // AMBIENT ROLL RATE, re-asserted every idle frame.
+  //
+  // Between charges `holdMove` is false, so the generic AI in entities/zombie.ts
+  // owns the CLIP; only the rate is ours. It has to be set every frame because
+  // nothing re-asserts it after a slam, a stagger or a sheet rebuild, and the
+  // animator would otherwise keep whatever the last charge left behind — the
+  // ball would coast out of a dash still spinning at dash speed.
+  if (rt.phase === "idle") {
+    ctx.setAnimRate?.(spinRate(PINBALL_AMBIENT_CLIP, PINBALL_SPIN.ambient));
   }
 
   rt.t -= ctx.dt;
@@ -1601,8 +1619,14 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     rt.spinSpeed = 6;
     // Pick once per power-up, never per frame. Avoid repeating the previous
     // axis path; retain the chosen seamless loop throughout the charge.
-    const candidates = (["attack", "roll", "ball"] as const).filter(clip => clip !== rt.spinClip);
-    rt.spinClip = candidates[Math.floor(Math.random() * candidates.length)];
+    // WEIGHTED, not uniform. `attack` hides the face entirely for 7 of its 32
+    // baked cells (measured on public/sprites/pinball_boss-S.png; `roll` hides
+    // none) and has the lowest adjacent-frame delta of the three, so it is the
+    // clip that reads slowest at any given rate. Keep it for variety, draw it
+    // less. The art is the shipped art and is not re-baked — this is a
+    // weighting, not a fix for the cells themselves.
+    const pool = (["roll", "ball", "roll", "ball", "attack"] as const).filter(clip => clip !== rt.spinClip);
+    rt.spinClip = pool[Math.floor(Math.random() * pool.length)];
 
     const geo = new THREE.PlaneGeometry(1.6, spec.distance);
     const mat = new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
@@ -1619,7 +1643,9 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       ctx.setFacing?.(rt.dz > 0 ? "S" : "N");
     }
     ctx.playAnim?.(rt.spinClip, { loop: true });
-    ctx.setAnimRate?.(1.0);
+    // The ramp below overwrites this on the same frame; it matches the ramp's
+    // floor anyway, so a future reader does not find a stray 1.0 to copy.
+    ctx.setAnimRate?.(spinRate(rt.spinClip, PINBALL_SPIN.floor));
     state.vfx?.burst(ctx.x, 0.2, ctx.z, spec.color, 12, 3);
   }
 
@@ -1633,8 +1659,17 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
     // Angular velocity revs up from 6 rad/s to 45 rad/s as RPM builds to release
     rt.spinSpeed = 6 + 39 * (progress * progress);
     rt.spinAngle = (rt.spinAngle + rt.spinSpeed * ctx.dt) % (Math.PI * 2);
-    // Spin lives in the looped `attack` clip; the rate ramp below is the rev.
-    ctx.setAnimRate?.(1.0 + progress * 2.5); // Accelerate the 32-sample loop from 1 to 3.5 revolutions/sec
+    // Spin lives in the looped spin clip; this ramp is the rev.
+    //
+    // CONCAVE, and starting from a floor rather than from a standstill. A
+    // spin-up is torque-limited, so sqrt reads as a rev where linear reads as
+    // a slow fade-in — and this is the one window where the boss is stationary
+    // at eye level with the player watching it, so opening at 1.0 rev/s was
+    // the most visible "it barely turns" moment in the fight. The top equals
+    // the DASH rate below, so the launch never decelerates.
+    const peakRevs = pinballPeakRevs(spec.speed);
+    const revs = PINBALL_SPIN.floor + (peakRevs - PINBALL_SPIN.floor) * Math.sqrt(progress);
+    ctx.setAnimRate?.(spinRate(rt.spinClip, revs));
     ctx.playAnim?.(rt.spinClip, { loop: true });
 
     pulse(rt.lane, rt.t);
@@ -1656,7 +1691,10 @@ export function updatePinballCharge(rt: PinballChargeRt, spec: PinballChargeSpec
       rt.lane = null;
       rt.phase = "running";
       rt.left = spec.distance;
-      ctx.setAnimRate?.(3.0);
+      // MUST equal the rate the ramp just reached. This was a flat 3.0 while
+      // the ramp ended at 3.5, so the ball visibly SLOWED by 14% on the exact
+      // frame it fired — the opposite of the intended release.
+      ctx.setAnimRate?.(spinRate(rt.spinClip, pinballPeakRevs(spec.speed)));
       ctx.playAnim?.(rt.spinClip, { loop: true });
       state.shakeT = Math.max(state.shakeT, 0.38);
       state.vfx?.burst(ctx.x, 0.5, ctx.z, spec.color, 24, 7);
