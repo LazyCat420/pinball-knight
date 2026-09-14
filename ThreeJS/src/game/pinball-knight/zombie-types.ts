@@ -1,19 +1,13 @@
 /**
- * ZOMBIE SUB-TYPES — behavioural variety inside the `zombie` EnemyKind.
- *
- * The horde used to be five zombies that LOOKED different and FOUGHT identically:
- * `ZOMBIE_VARIANTS` (render/cel-painter.ts) varies the silhouette — stumps,
- * spurs, bared bone, trailing rags — but every one of them carried ZOMBIE_HP,
- * ZOMBIE_R and the single `levelConfig().zombieSpeed`. A one-armed zombie hit
- * exactly as hard, as fast, and as far as an intact one.
+ * ZOMBIE SUB-TYPES — 20 distinct behavioural varieties inside the `zombie` EnemyKind.
  *
  * A sub-type is a MULTIPLIER BUNDLE over the zombie baseline, not a new
  * EnemyKind. That is deliberate and load-bearing: `EnemyKind` is consumed by six
  * exhaustive `Record<EnemyKind, …>` tables (STATS in entities/zombie.ts,
  * HP_BY_KIND in core.ts, ENEMY_DROPS in reagents.ts, the bite table in
- * combat.ts, plus the spawnKind switch and EXPANSION_SKIN). Eight zombie
- * flavours as kinds would mean 48 new rows that all say the same thing, and it
- * would fork `rotflesh` drops across nine keys. One optional `ztype` field on
+ * combat.ts, plus the spawnKind switch and EXPANSION_SKIN). Twenty zombie
+ * flavours as kinds would mean 120 new rows that all say the same thing, and it
+ * would fork `rotflesh` drops across twenty-one keys. One optional `ztype` field on
  * Zombie plus this table costs almost nothing by comparison.
  *
  * Everything is a MULTIPLIER, never an absolute, so `levelConfig().zombieSpeed`
@@ -25,14 +19,26 @@ import type { ZVariant } from "./render/cel-painter";
 import type { MovementKind } from "./entities/movement";
 
 export type ZombieType =
-  | "shambler" // baseline — what a zombie was before this table existed
-  | "runner" // fast, frail
-  | "lurcher" // slow, tanky
-  | "hulk" // BIG: slow, very tanky, knocks you back
-  | "midget" // small, quick, short reach
-  | "crawler" // NO LEGS: prone, very slow, tough
-  | "flailer" // NO ARMS: bites instead of swinging — short reach, fast windup
-  | "hobbler"; // one leg: LIMPS, gait oscillates
+  | "shambler" // 1: baseline horde core
+  | "runner" // 2: fast, frail flanker
+  | "lurcher" // 3: heavy, tanky, bounce-immune
+  | "hulk" // 4: massive bruiser, heavy knockback, speed-only
+  | "midget" // 5: tiny swarm pack-hunter, dodges ranged
+  | "crawler" // 6: legless ambusher, prone gait, bounce-immune
+  | "flailer" // 7: armless leaper, speed-only
+  | "hobbler" // 8: one-legged limper, oscillating gait, bounce-immune
+  | "plague" // 9: plague shambler, rot-puddle on death
+  | "armored" // 10: grave knight, ironclad defense
+  | "bloated" // 11: bloated corpse, toxic explosion on death
+  | "frenzy" // 12: frenzy ghoul, enrages when low HP, dodges ranged
+  | "frost" // 13: frost husk, chills knight on contact, ice burst
+  | "charred" // 14: charred revenant, fire-immune, ignites oil
+  | "screamer" // 15: plague screamer, concussive shriek disorients
+  | "clutcher" // 16: grave clutcher, leaping grab slows momentum
+  | "gravedigger" // 17: grave digger with rusty spade, unearths bony traps
+  | "mummy" // 18: cursed mummy, wraps snare on death
+  | "herald" // 19: necro-herald with censer, dark aura buffs horde
+  | "abomination"; // 20: two-headed mutant abomination behemoth
 
 export interface ZombieTypeDef {
   id: ZombieType;
@@ -41,189 +47,251 @@ export interface ZombieTypeDef {
   /** × levelConfig().zombieSpeed. For "limp" this is the AVERAGE — the gait
    * oscillates ±LIMP_AMP around it (see entities/zombie.ts). */
   speedMult: number;
-  /** × ZOMBIE_HP, rounded, floor of 1. */
+  /** × ZOMBIE_HP (or floor-scaled hp, via typeHp()). */
   hpMult: number;
-  /** Sprite mesh scale. */
+  /** Sprite mesh scale — Reaper-tested collider trap (DECLONE §3). */
   scale: number;
   /**
-   * × ZOMBIE_R for the collider.
-   *
-   * MUST differ from 1 whenever `scale` does — state.ts's `Zombie.bodyR`
-   * comment documents the Reaper King walking half-buried into corridors
-   * because its mesh scaled 2.17× while the collider stayed at 0.42.
-   * `zombie-types.test.ts` asserts this pairing so the trap can't come back.
+   * × ZOMBIE_R. MUST track `scale` (see `zombie-types.test.ts`): scaling the
+   * visual mesh without moving the collision circle is how the Reaper walked
+   * into walls.
    */
   bodyRMult: number;
-  /** × ZOMBIE_CONTACT_RANGE. */
+  /** × ZOMBIE_REACH (the melee bite radius). */
   reachMult: number;
-  /** × ZOMBIE_ATTACK_WINDUP. */
+  /** × ZOMBIE_WINDUP (the telegraphed pause before bite lands). */
   windupMult: number;
-  /** Spawn weight within the zombie kind. The table sums to 100 so the numbers
-   * read as straight percentages (asserted in the test). */
+  /**
+   * Relative spawn weight within the zombie roll. Sum of the active roster = 100.
+   */
   weight: number;
-  /** Depth gate — the nastier flavours stay out of floor 1. */
+  /** Minimum floor depth this sub-type can appear on. */
   fromLevel: number;
   /**
-   * Forces a silhouette from ZOMBIE_VARIANTS so the art agrees with the stats:
-   * a crawler that renders with two good legs is a lie the player will notice.
-   * null = any variant (scale/speed carries the read instead).
+   * Selects art from ZOMBIE_VARIANTS. null = any variant is fine (default).
+   * A function = only variants passing this filter are picked (e.g. Crawler
+   * MUST use a legless silhouette or it makes no sense).
    */
   variantFilter: ((v: ZVariant) => boolean) | null;
-  /** Animation hook — "limp" oscillates speed, "crawl" renders prone. */
+  /** Optional gait override — "limp" oscillates speed, "crawl" stays low. */
   gait?: "limp" | "crawl";
-  /** Contact knockback impulse (hulk only); undefined = the normal shove. */
+  /** Optional push delivered to the player on bite. Defaults to KNOCKBACK_PLAYER. */
   knockback?: number;
   /**
    * STEERING POLICY (entities/movement.ts), overriding the zombie family's
    * `chase`. Absent = it walks the baseline line.
-   *
-   * This is the single field that stops the sub-type table from being eight
-   * flavours of "the same monster at a different speed". Before it, a Runner and
-   * a Crawler differed only in how FAST they walked the identical route to your
-   * face; now the Runner comes at an angle, the Crawler does not move until you
-   * are close, and the Midget will not engage until it has friends. `gait`
-   * decorates the walk; `movement` decides where the walk goes.
    */
   movement?: MovementKind;
   /**
    * × the zombie family's pain chance (entities/stagger.ts). Absent = 1.
-   *
-   * The sub-type's half of the stagger economy: a Hulk shrugs off the ricochet
-   * that stunlocks a Midget, without either of them needing a different HP pool
-   * or a different branch anywhere.
    */
   painMult?: number;
   /**
    * ONE ASYMMETRIC EXCEPTION (DECLONE §6.2) — Hotline Miami's weapon-puzzle
    * trick, as pure data.
-   *
-   * HM's Dodger sidesteps every projectile and can only be killed in melee; its
-   * Thug ignores melee entirely. Neither needed a damage number or an AI
-   * branch — the rule IS the enemy, and a floor becomes a puzzle about which
-   * tool goes where. Pinball Knight already has three tools (steel, the ram,
-   * the bow) and until now every zombie answered all three identically.
-   *
-   * So each sub-type takes exactly ONE exception from a deliberately tiny
-   * vocabulary, and only one, because a monster with two rules is a monster
-   * nobody reads:
-   *
-   *   "bounce-immune"  a body-ram does no damage (it still shoves). Too heavy,
-   *                    too low, or already on the floor. Bring steel.
-   *   "speed-only"     ordinary damage lands, but the KILLING blow needs real
-   *                    momentum — it can be worn to 1 hp at a walk and no
-   *                    further. Finish it with the ride.
-   *   "dodges-ranged"  sidesteps arrows and thrown things, on the same entropy
-   *                    counter as stagger (never dice), so it is a reliable
-   *                    fraction rather than an unlucky streak.
-   *
-   * The SHAMBLER deliberately has none. It is a third of every spawn and the
-   * thing the player learns "zombie" from; an exception on the baseline makes
-   * every other exception unreadable, because there is no longer a normal case
-   * to notice a deviation from.
    */
   exception?: "bounce-immune" | "speed-only" | "dodges-ranged";
 }
 
 /**
- * The roster. Shambler keeps the plurality on purpose — the horde must still
- * read as A HORDE, not a freak show, so the baseline is a third of every spawn.
- *
- * First-pass numbers; tune after playtest. Weights sum to 100.
+ * The 20 Zombie Variations.
+ * Shambler keeps the plurality (15%), so the horde reads as A HORDE.
+ * All 20 types have distinct profiles, scaling, movements, and mechanics.
+ * Active weights sum to exactly 100.
  */
 export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
   shambler: {
     id: "shambler", label: "Shambler",
     speedMult: 1.0, hpMult: 1.0, scale: 1.0, bodyRMult: 1.0, reachMult: 1.0, windupMult: 1.0,
-    weight: 34, fromLevel: 1, variantFilter: null,
+    weight: 15, fromLevel: 1, variantFilter: null,
   },
   runner: {
     id: "runner", label: "Runner",
     speedMult: 1.75, hpMult: 0.67, scale: 0.95, bodyRMult: 0.95, reachMult: 1.0, windupMult: 0.75,
-    weight: 16, fromLevel: 2, variantFilter: null,
-    // Fast enough to afford the detour: it arrives from the side of whatever
-    // corridor you are pointing your sword down.
+    weight: 7, fromLevel: 2, variantFilter: null,
     movement: "flanker",
-    // Frail and light — anything that connects rocks it.
     painMult: 1.2,
-    // Quick on its feet: it steps off the line of an arrow.
     exception: "dodges-ranged",
   },
   lurcher: {
     id: "lurcher", label: "Lurcher",
     speedMult: 0.55, hpMult: 2.0, scale: 1.1, bodyRMult: 1.1, reachMult: 1.05, windupMult: 1.3,
-    weight: 14, fromLevel: 1, variantFilter: null,
-    // Slow and heavy; it absorbs a hit and keeps coming.
+    weight: 6, fromLevel: 1, variantFilter: null,
     painMult: 0.6,
-    // Two zombies' worth of mass. A ricochet just annoys it.
     exception: "bounce-immune",
   },
   hulk: {
     id: "hulk", label: "Hulk",
     speedMult: 0.7, hpMult: 3.0, scale: 1.55, bodyRMult: 1.5, reachMult: 1.35, windupMult: 1.45,
-    weight: 6, fromLevel: 4, variantFilter: null, knockback: 7.5,
-    // Three times a zombie's mass. A ricochet does not move it.
+    weight: 4, fromLevel: 4, variantFilter: null,
+    knockback: 7.5,
     painMult: 0.25,
-    // Wearable down at a walk, killable only on the ride.
     exception: "speed-only",
   },
   midget: {
     id: "midget", label: "Midget",
     speedMult: 1.35, hpMult: 0.67, scale: 0.62, bodyRMult: 0.65, reachMult: 0.7, windupMult: 0.85,
-    weight: 12, fromLevel: 2, variantFilter: null,
-    // Too small to fight you alone, and it knows it. Hangs at the edge of the
-    // light until three of them agree — then they all arrive at once.
+    weight: 5, fromLevel: 2, variantFilter: null,
     movement: "packhunter",
-    // The most stunlockable thing on the floor — and it knows it,
-    // which is why it will not come at you alone.
     painMult: 1.3,
-    // A small fast target; arrows go over it.
     exception: "dodges-ranged",
   },
   crawler: {
-    id: "crawler", label: "Crawler",
+    id: "crawler", label: "Crypt Crawler",
     speedMult: 0.4, hpMult: 1.33, scale: 0.5, bodyRMult: 0.7, reachMult: 0.65, windupMult: 1.1,
-    weight: 8, fromLevel: 3,
-    // Legless: BOTH legs gone in the art, and it renders prone (§gait).
+    weight: 4, fromLevel: 3,
     variantFilter: (v) => v.legStump === "both",
     gait: "crawl",
-    // No legs, so it does not chase — it WAITS, flat on the floor, and springs
-    // when you finally walk into its line. The one sub-type you can miss.
     movement: "ambusher",
-    // Already on the floor: there is less of it to knock over.
     painMult: 0.8,
-    // Flat on the floor — the ride passes straight over.
     exception: "bounce-immune",
   },
   flailer: {
     id: "flailer", label: "Flailer",
     speedMult: 1.15, hpMult: 1.0, scale: 1.0, bodyRMult: 1.0, reachMult: 0.6, windupMult: 0.7,
-    weight: 6, fromLevel: 3,
-    // No arms: it bites, so it needs the armless silhouette. (`stump` is the
-    // ARM field — legs are `legStump`. Easy to transpose; the test pins it.)
+    weight: 4, fromLevel: 3,
     variantFilter: (v) => v.stump === "both",
-    // Nothing to swing with, so the whole BODY is the weapon: it crouches and
-    // pounces along an arc. The crouch is the window you get.
     movement: "leaper",
-    // Baseline — its exception is the leap, not its footing.
     painMult: 1.0,
-    // All body, no guard: it dies to impact, not to poking.
     exception: "speed-only",
   },
   hobbler: {
     id: "hobbler", label: "Hobbler",
     speedMult: 0.85, hpMult: 1.0, scale: 1.0, bodyRMult: 1.0, reachMult: 0.9, windupMult: 1.0,
     weight: 4, fromLevel: 2,
-    // One leg gone IS the limp — exactly one, not both (that's the crawler).
     variantFilter: (v) => v.legStump === "L" || v.legStump === "R",
     gait: "limp",
-    // One leg. Its footing is the joke and the weakness.
     painMult: 1.15,
-    // Already half-fallen; there is nothing left to knock down.
     exception: "bounce-immune",
+  },
+  plague: {
+    id: "plague", label: "Plague Shambler",
+    speedMult: 0.9, hpMult: 1.2, scale: 1.05, bodyRMult: 1.05, reachMult: 1.0, windupMult: 1.05,
+    weight: 5, fromLevel: 2,
+    variantFilter: (v) => v.pustules === true || v.gore >= 2,
+    painMult: 1.0,
+    exception: "bounce-immune",
+  },
+  armored: {
+    id: "armored", label: "Grave Knight",
+    speedMult: 0.75, hpMult: 2.2, scale: 1.15, bodyRMult: 1.15, reachMult: 1.1, windupMult: 1.2,
+    weight: 5, fromLevel: 3,
+    variantFilter: (v) => v.helmet === true || v.bandage === true,
+    painMult: 0.5,
+    exception: "bounce-immune",
+  },
+  bloated: {
+    id: "bloated", label: "Bloated Corpse",
+    speedMult: 0.6, hpMult: 1.8, scale: 1.25, bodyRMult: 1.25, reachMult: 0.95, windupMult: 1.25,
+    weight: 5, fromLevel: 3,
+    variantFilter: (v) => v.bloated === true || v.bone === "ribs",
+    painMult: 0.7,
+    exception: "speed-only",
+  },
+  frenzy: {
+    id: "frenzy", label: "Frenzy Ghoul",
+    speedMult: 1.6, hpMult: 0.75, scale: 0.9, bodyRMult: 0.9, reachMult: 1.0, windupMult: 0.7,
+    weight: 5, fromLevel: 3,
+    variantFilter: (v) => v.gore >= 3 || v.spur !== null,
+    movement: "flanker",
+    painMult: 1.25,
+    exception: "dodges-ranged",
+  },
+  frost: {
+    id: "frost", label: "Frostbitten Husk",
+    speedMult: 0.85, hpMult: 1.4, scale: 1.05, bodyRMult: 1.05, reachMult: 1.05, windupMult: 1.0,
+    weight: 5, fromLevel: 3,
+    variantFilter: (v) => v.frost === true || v.bone === "skull",
+    movement: "strafer",
+    painMult: 0.9,
+    exception: "bounce-immune",
+  },
+  charred: {
+    id: "charred", label: "Charred Revenant",
+    speedMult: 1.05, hpMult: 1.1, scale: 0.95, bodyRMult: 0.95, reachMult: 1.0, windupMult: 0.9,
+    weight: 5, fromLevel: 4,
+    variantFilter: (v) => v.charred === true || v.bone === "spine",
+    painMult: 1.0,
+    exception: "speed-only",
+  },
+  screamer: {
+    id: "screamer", label: "Plague Screamer",
+    speedMult: 1.1, hpMult: 0.85, scale: 0.95, bodyRMult: 0.95, reachMult: 1.35, windupMult: 0.8,
+    weight: 4, fromLevel: 4,
+    variantFilter: (v) => v.screamer === true || v.tatter > 20,
+    movement: "kite",
+    painMult: 1.2,
+    exception: "dodges-ranged",
+  },
+  clutcher: {
+    id: "clutcher", label: "Grave Clutcher",
+    speedMult: 1.1, hpMult: 1.25, scale: 1.1, bodyRMult: 1.1, reachMult: 1.3, windupMult: 0.85,
+    weight: 4, fromLevel: 4,
+    variantFilter: (v) => v.claws === true || v.stump === null,
+    movement: "leaper",
+    painMult: 1.0,
+    exception: "speed-only",
+  },
+  gravedigger: {
+    id: "gravedigger", label: "Grave Digger",
+    speedMult: 0.8, hpMult: 1.8, scale: 1.15, bodyRMult: 1.15, reachMult: 1.4, windupMult: 1.15,
+    weight: 4, fromLevel: 5,
+    variantFilter: (v) => v.shovel === true || v.rag === 27,
+    painMult: 0.7,
+    exception: "bounce-immune",
+  },
+  mummy: {
+    id: "mummy", label: "Cursed Mummy",
+    speedMult: 0.7, hpMult: 2.5, scale: 1.05, bodyRMult: 1.05, reachMult: 1.0, windupMult: 1.1,
+    weight: 3, fromLevel: 5,
+    variantFilter: (v) => v.linens === true || v.bandage === true,
+    painMult: 0.4,
+    exception: "bounce-immune",
+  },
+  herald: {
+    id: "herald", label: "Necro-Herald",
+    speedMult: 0.9, hpMult: 1.5, scale: 1.05, bodyRMult: 1.05, reachMult: 1.2, windupMult: 1.0,
+    weight: 3, fromLevel: 5,
+    variantFilter: (v) => v.censer === true || v.rag === 28,
+    movement: "orbiter",
+    painMult: 0.8,
+    exception: "dodges-ranged",
+  },
+  abomination: {
+    id: "abomination", label: "Abomination Hulk",
+    speedMult: 0.65, hpMult: 3.5, scale: 1.6, bodyRMult: 1.55, reachMult: 1.4, windupMult: 1.5,
+    weight: 3, fromLevel: 5,
+    variantFilter: (v) => v.twoheaded === true || v.seed === 9,
+    knockback: 8.5,
+    painMult: 0.2,
+    exception: "speed-only",
   },
 };
 
-export const ZOMBIE_TYPE_IDS: ZombieType[] = Object.keys(ZOMBIE_TYPES) as ZombieType[];
+export const ZOMBIE_TYPE_IDS: readonly ZombieType[] = [
+  "shambler",
+  "runner",
+  "lurcher",
+  "hulk",
+  "midget",
+  "crawler",
+  "flailer",
+  "hobbler",
+  "plague",
+  "armored",
+  "bloated",
+  "frenzy",
+  "frost",
+  "charred",
+  "screamer",
+  "clutcher",
+  "gravedigger",
+  "mummy",
+  "herald",
+  "abomination",
+] as const;
+
+export const ACTIVE_ZOMBIE_TYPE_IDS: readonly ZombieType[] = ZOMBIE_TYPE_IDS;
 
 /**
  * Integer avalanche (the xorshift-multiply finalizer). Pure, deterministic, and
@@ -253,13 +321,6 @@ export function pickZombieType(hash: number, level: number): ZombieType {
   let total = 0;
   for (const t of eligible) total += ZOMBIE_TYPES[t].weight;
   if (total <= 0) return "shambler";
-  // RE-MIX rather than merely shifting. The caller's residue classes
-  // (hash % BRUTE_RATIO, % SPIDER_RATIO, …) already consumed the low bits to
-  // choose the FAMILY, so reusing them raw would correlate sub-type with kind.
-  // A bare `hash >>> 11` looked like the fix and is not: it maps every hash
-  // below 2048 to zero, so a caller passing small sequential hashes gets
-  // nothing but shamblers. Hashing the whole word decorrelates without caring
-  // how big the input happens to be.
   let r = mix32(hash) % total;
   for (const t of eligible) {
     r -= ZOMBIE_TYPES[t].weight;

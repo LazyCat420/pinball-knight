@@ -147,8 +147,8 @@ describe("manifest inventory & floor loading", () => {
     expect(authoredFacingsFor("goblin")).toEqual(["S"]);
 
     expect(hasAuthoredFacing("zombie", "E")).toBe(true);
-    expect(hasAuthoredFacing("zombie", "S")).toBe(false);
-    expect(authoredFacingsFor("zombie")).toEqual(["E"]);
+    expect(hasAuthoredFacing("zombie", "S")).toBe(true);
+    expect(authoredFacingsFor("zombie")).toEqual(["S", "E"]);
 
     expect(hasAuthoredFacing("fish_feet", "S")).toBe(true);
     expect(hasAuthoredFacing("fish_feet", "E")).toBe(true);

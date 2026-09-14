@@ -25,7 +25,7 @@ import { loadMonsterSheet, sheetKeyForKind } from "../boot/sheets";
 import { makeSkinned, makeZombie, queueAsciiHuman, skinSheet, spawnKind } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
-import { variantIndicesFor, type ZombieType } from "../zombie-types";
+import { variantIndicesFor, ZOMBIE_TYPE_IDS, type ZombieType } from "../zombie-types";
 import { adoptBoss, bossActive, disposeBoss } from "../boss";
 import { BOSSES } from "../boss-kinds";
 
@@ -158,6 +158,28 @@ export async function preloadSpawnArt(kind: EnemyKind): Promise<void> {
   const kinds: EnemyKind[] = kind === "ascii_human" ? ["computer_screen", "ascii_human"] : [kind];
   const keys = kinds.map((k) => sheetKeyForKind(k)).filter((k): k is NonNullable<typeof k> => Boolean(k));
   await Promise.all(keys.map((key) => loadMonsterSheet(key).catch(() => false)));
+}
+
+/**
+ * Dev-only: drop all 20 Zombie variations in an open ring around the player
+ * for instant live visual and behavioral inspection in god-mode.
+ */
+export function debugSpawnAllZombies(): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || !state.scene) return;
+  const pt = worldToTile(g, p.x, p.z);
+  ZOMBIE_TYPE_IDS.forEach((ztype, i) => {
+    const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
+    const c = tileCenter(g, spot.i, spot.j);
+    const zz = makeDebugEnemy("zombie", c.x, c.z, ztype);
+    if (zz) {
+      zz.aggro = true;
+      zz.anim.setFacing("S");
+      zz.anim.play("walk", { force: true });
+      state.zombies.push(zz);
+    }
+  });
 }
 
 /** What a scripted spawn can ask for beyond "one of these, next to me". */
