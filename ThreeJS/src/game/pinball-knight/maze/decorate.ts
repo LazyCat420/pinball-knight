@@ -2295,7 +2295,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; wallSprings?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { playSpaces?: readonly TilePos[]; anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; wallSprings?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -2675,7 +2675,11 @@ export function decorateMaze(
       inCircuit(i, j) ||
       items.some((it) => it.i === i && it.j === j) ||
       parts.some((q) => q.i === i && q.j === j),
-    budget: extras.assemblies ?? assemblyBudgetFor(floors.length),
+    roomSites: extras.playSpaces?.flatMap(p => [
+      { i: p.i - 5, j: p.j - 4 }, { i: p.i + 4, j: p.j - 4 },
+      { i: p.i - 5, j: p.j + 4 }, { i: p.i + 4, j: p.j + 4 },
+    ]),
+    budget: extras.assemblies ?? (assemblyBudgetFor(floors.length) + Math.min(4, extras.playSpaces?.length ?? 0)),
     stride: ASSEMBLY_STRIDE,
   });
   const assemblyTiles = new Set<number>();

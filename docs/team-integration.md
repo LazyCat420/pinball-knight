@@ -722,3 +722,20 @@ Integrated feature commit `4b05793c` with zombie baseline `2e852602` as
 4,668 tests passed / 12 skipped, zero failures. The integrated production build
 passed. The generated sprite-forge report remains excluded. Ready to
 fast-forward and push primary; deployment remains on hold.
+
+## Whole-map clearance and room activities — 2026-09-14
+
+Completed batch on `feat/room-play-spaces` (`wt-room-play-spaces`), based on
+`a2ecfe68`. Replaces doorway-only detection with a whole-grid cardinal/diagonal
+aperture audit, repairs the exact L6/1 reported corner, widens existing chute
+access ports, increases island circulation width, and clears stale arc collision
+metadata. Adds spacious wall islands, independent room activity sites, atomic
+replacement of loose clutter with safe chicanes, and shared-junction circuit
+preference. See `docs/perf/map-clearance-and-activities.md` and its PNG.
+
+Clearance/circuit/launch/fixture gates pass; the 15-floor completion audit has
+zero narrow gaps. Audited scaling through 419,105 tiles has zero narrow gaps,
+zero unreachable tiles and a reachable exit. Production build passed; compiler
+diagnostics match baseline (65 existing, no additions). Full post-merge suite
+will run in `wt-room-play-spaces-integration`. Generated sprite-forge reports
+are excluded. NAS deployment remains on hold.

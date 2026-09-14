@@ -63,7 +63,8 @@ export const FILLET_RADII: readonly number[] = [3, 2];
 export const MAX_SWEEPS_PER_FLOOR = 96;
 /** Orbit island: island radius and required clear ring beyond it (tiles). */
 export const ORBIT_RADIUS = 2.3;
-export const ORBIT_RING = 1.6;
+// Leave a real three-tile circulation lane around the island, including at the rim.
+export const ORBIT_RING = 3;
 
 // ── KICKER BANDS — the booster rubber wrapped around a sweep (see KickBand) ──
 // Authoring knobs live here beside the sweeps they dress (constants.ts owns the

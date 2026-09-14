@@ -23,9 +23,10 @@ try {
   await build({ stdin: { contents: `
     export { buildMegaFloor } from './src/game/pinball-knight/dev/mega-floor';
     export { bfsDistancesOwned } from './src/game/pinball-knight/engine/flow-field';
+    export { narrowGaps } from './src/game/pinball-knight/maze/gap-clearance';
     export { isWalkable } from './src/game/pinball-knight/engine/grid';
   `, resolveDir: root }, bundle: true, platform: "node", format: "esm", outfile });
-  const { buildMegaFloor, bfsDistancesOwned, isWalkable } = await import(pathToFileURL(outfile).href);
+  const { buildMegaFloor, bfsDistancesOwned, isWalkable, narrowGaps } = await import(pathToFileURL(outfile).href);
   buildMegaFloor({ level, runSeed, scale: 1 }); // warm the code before timing
   const median = values => [...values].sort((a,b) => a-b)[Math.floor(values.length / 2)];
   for (const scale of scales) {
@@ -45,13 +46,13 @@ try {
       const gridBytes = Object.values(g).reduce((sum, v) => sum + (ArrayBuffer.isView(v) ? v.byteLength : 0), 0);
       rows.push({ totalMs, trackMs: f.timing.track, decorateMs: f.timing.decorate,
         tiles: g.t.length, width: g.w, height: g.h, walkable: f.walkable,
-        parts: f.plan.parts.length, gridBytes, unreachable, stairsReachable });
+        parts: f.plan.parts.length, gridBytes, unreachable, stairsReachable, narrowGaps: narrowGaps(g).length });
     }
     const row = rows[0];
     console.log(JSON.stringify({ level, runSeed, scale, samples, ...row,
       totalMs: median(rows.map(r => r.totalMs)), trackMs: median(rows.map(r => r.trackMs)),
       decorateMs: median(rows.map(r => r.decorateMs)) }));
-    if (rows.some(r => r.unreachable || !r.stairsReachable)) process.exitCode = 1;
+    if (rows.some(r => r.unreachable || !r.stairsReachable || r.narrowGaps)) process.exitCode = 1;
   }
 } finally {
   await rm(scratch, { recursive: true, force: true });
