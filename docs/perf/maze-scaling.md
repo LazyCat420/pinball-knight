@@ -50,6 +50,13 @@ authoring, decoration, lamps and density repair. The benchmark also reports type
 grid-array bytes, explicitly excluding JS objects, renderer resources and GPU
 allocations. Generation at this size does not certify smooth rendered gameplay.
 
+An additional connectivity stress run at 6× and 8× dimensions also passed:
+235,993 tiles / 106,567 walkable / 1,400 parts, and 419,105 tiles / 190,446
+walkable / 1,870 parts. Both had zero unreachable walkable tiles and reachable
+stairs. These single samples ran alongside the full test suite; their wall times
+are excluded from the performance comparison. They are diagnostic size checks,
+not a rendering or content-quality certification at those scales.
+
 ## Gameplay pathfinding allocation
 
 The horde previously copied a full-map distance array every update despite its
@@ -83,6 +90,14 @@ Next gates before increasing playable floor sizes: expand the multi-archetype,
 multi-seed oversized corpus; profile browser build/upload and visible-frame cost;
 then add regional renderer/physics/AI activation if those measurements require
 it. Keep the authoring path and the deterministic corridor checks shared.
+
+## Validation
+
+Final integrated suite: 399 files passed, five skipped; 4,588 tests passed,
+12 skipped, zero failures. The integrated production build passed. TypeScript
+has the same 60 pre-existing diagnostics, with no additions or removals against
+main 11ba7ede. Post-merge focused checks passed 35 tests; the reviewed census
+rerun passed all 12 cases. No browser/GPU gameplay inspection is claimed.
 
 ## Release status
 

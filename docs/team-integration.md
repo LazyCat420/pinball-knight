@@ -635,3 +635,35 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - NAS deployment remains on hold under the workspace release instructions.
   This batch is intended for primary-branch publication and the next authorized
   release; it has not been deployed by this task.
+
+
+## Map scaling and horde allocation — 2026-09-13
+
+- Feature branch/worktree: `perf/map-scaling`, `.worktrees/wt-map-scaling`;
+  completed implementation `7a0b7717`, based on primary `11ba7ede`.
+- Dedicated integration: `integrate/map-scaling`,
+  `.worktrees/wt-map-scaling-integration`; merge `db772205`.
+- Extracted connectivity repair from track carving. Initial component labels,
+  incremental reachability and reusable search buffers replace repeated floods,
+  full-grid scans and queue shifting. Removed the 400-repair cap; its 1,024-pocket
+  regression left 623 tiles stranded before the fix and none afterward.
+- Preserved 100 original connectivity outputs and all five full-author/RNG
+  fingerprints. The full suite identified L25/seed 1 as another cap-affected
+  layout. Baseline instrumentation, isolated variants and zero piece/connectivity
+  violations justified refreshing only that census JSON/SVG in `27faf07d`.
+  Endpoints and its 201-tile exit route are unchanged; constraints were preserved.
+- Simulation reuses its owned horde distance field, avoiding a full-map allocation
+  each update while preserving scratch-buffer isolation and wall-seed snapping.
+- Five alternating local benchmark runs measured generation reductions of 33–57%
+  over 6,693–105,105 tiles. Additional 235,993- and 419,105-tile generation stress
+  cases had zero unreachable walkable tiles and reachable stairs. The live size
+  table is unchanged; these checks do not certify rendering/physics at that size.
+- Final integrated full suite: **399 files passed, five skipped; 4,588 tests
+  passed, 12 skipped; zero failures**. Integrated production build passed.
+  TypeScript remains at exactly 60 baseline diagnostics, with none introduced.
+- Details and reproducible `pnpm maze:scale` command:
+  [map scaling audit](perf/maze-scaling.md).
+- Status: integrated and validated for primary-branch publication. NAS deployment
+  remains under the existing hold; no release or GPU gameplay check is claimed.
+  Test-owned processes finish before temporary worktrees are removed. Unrelated
+  developers' worktrees and the shared checkout's unfinished report are preserved.
