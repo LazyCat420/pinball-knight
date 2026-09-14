@@ -762,3 +762,8 @@ refreshed after gameplay checks. Production build passed. Scale 1/2/4/8 audits
 full sweep exposed expected fixture changes and a chicane-search regression;
 both were corrected. A fresh full suite is required in the integration checkout.
 Generated sprite-forge reports are excluded. NAS deployment remains on hold.
+
+Follow-up on `feat/room-exit-balance`: activity replacement prefilter avoids
+rebuilding full part occupancy for candidates blocked by immutable furniture or
+invalid pad geometry. The 23 focused activity, launch, full-author hash and census
+fixture tests pass unchanged; this optimization does not alter generated output.
