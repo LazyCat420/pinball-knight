@@ -339,7 +339,7 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
     if (f.r * f.span < MIN_ARC_LEN) {
       push("arc-face", PIECE_RULES["arc-face"][1], ci, cj, `arc length ${(f.r * f.span).toFixed(2)} < ${MIN_ARC_LEN}`);
     }
-    if (f.owner !== "island" && tilesPer[fi] < MIN_ARC_TILES) {
+    if (f.owner !== "island" && f.owner !== "funnel" && tilesPer[fi] < MIN_ARC_TILES) {
       push("arc-face", PIECE_RULES["arc-face"][2], ci, cj, `owns ${tilesPer[fi]} tiles`);
     }
     // A FULL CIRCLE's bands are strung around it from a rolled phase, so they
@@ -354,9 +354,9 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
     for (const b of f.lanes ?? []) {
       if (!inSpan(b)) push("rail", PIECE_RULES.rail[0], ci, cj, "lane band runs past the arc it rides");
       // ── WHERE THE RAIL PUTS YOU. Needs Φ, so it is skipped (not passed) on a
-      // caller that did not supply it. `orientArcRails` is what makes these
-      // hold; this is the gate that keeps it holding.
-      if (!phi) continue;
+      // caller that did not supply it. Funnel lanes feed doorways locally, not
+      // down-Φ toward stairs; see orientArcRails.
+      if (!phi || f.owner === "funnel") continue;
       const x = railExit(g, f, b, b.cw);
       if (!x) {
         push("rail", PIECE_RULES.rail[1], ci, cj, "its exit is off the grid or against stone");
