@@ -77,3 +77,16 @@ it('checks the actual landing of a spring wall-hop', () => {
     g.t[6 * g.w + 9] = 0;
     expect(launchExitInspector(g, [p])(p).safe).toBe(false);
 });
+
+it('does not count a corner receiver that rejects this approach at runtime', () => {
+    const g = room(); carve(g, 1, 6, 12, 1); carve(g, 1, 2, 3, 10);
+    const p = part(3, 6);
+    const corner = { ...part(5, 6, 'boostcorner', 0, 1), dir2I: -1, dir2J: 0 };
+    expect(launchExitInspector(g, [p, corner])(p).safe).toBe(false);
+});
+
+it('rejects an outlet passed before maximum-speed steering unlocks', () => {
+    const g = room(); carve(g, 1, 6, 7, 1); carve(g, 6, 2, 2, 9);
+    const p = { ...part(3, 6, 'boostcorner', 0, -1), dir2I: 1, dir2J: 0 };
+    expect(launchExitInspector(g, [p])(p).safe).toBe(false);
+});

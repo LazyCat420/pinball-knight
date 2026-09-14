@@ -307,8 +307,10 @@ export function isLegalSlotForPart(kind: string, slotType: FloorSlotType): boole
   }
 
   switch (kind) {
-    case "deflector":
     case "boostcorner":
+      // Authored chicanes can turn in an open arena without a wall pocket.
+      return slotType === "corner_inner" || slotType === "open_arena";
+    case "deflector":
       // Corner parts must ONLY land on genuine inner corners or room corner bends
       return slotType === "corner_inner";
 

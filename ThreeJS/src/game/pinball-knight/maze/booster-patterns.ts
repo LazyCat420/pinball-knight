@@ -16,7 +16,7 @@ export const BOOSTER_PATTERNS: ReadonlyArray<{
 }> = [
     { name: 'acceleration', pads: [[0, 0, 'booster', 1, 0], [4, 0, 'booster', 1, 0], [8, 0, 'booster', 1, 0]] },
     { name: 'jump-relay', pads: [[0, 0, 'booster', 1, 0], [4, 0, 'jumppad', 1, 0], [9, 0, 'booster', 1, 0]] },
-    { name: 'chicane', pads: [[0, 0, 'booster', 1, 0], [3, 0, 'boostcorner', -1, 0, 0, 1], [3, 3, 'boostcorner', 0, -1, 1, 0], [6, 3, 'booster', 1, 0]] },
+    { name: 'chicane', pads: [[0, 0, 'booster', 1, 0], [2, 0, 'boostcorner', -1, 0, 0, 1], [2, 2, 'boostcorner', 0, -1, 1, 0], [4, 2, 'booster', 1, 0]] },
 ];
 const rotate = (x: number, y: number, r: number): readonly [
     number,

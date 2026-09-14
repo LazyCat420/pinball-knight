@@ -113,6 +113,8 @@ export type PartSpotKind =
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
+  /** Original powered kind when final exit safety retains a passive landmark. */
+  launchFallback?: PartSpotKind;
   pattern?: string;
   patternId?: string;
   patternSize?: number;
@@ -1026,6 +1028,7 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
         !p.spine &&
         p.circuit === undefined &&
         p.asm === undefined &&
+        p.patternId === undefined &&
         LAUNCH_KINDS.has(p.kind) &&
         Math.abs(p.dirI) + Math.abs(p.dirJ) === 1,
     ),
@@ -3414,7 +3417,7 @@ export function decorateMaze(
     // jump-the-maze shot into an ordinary dash pad, silently, on every track
     // floor since `strictLaunchers` shipped. The kind survived; the feature did
     // not.
-    if (p.vault || p.circuit !== undefined || p.asm !== undefined) continue;
+    if (p.vault || p.circuit !== undefined || p.asm !== undefined || p.patternId) continue;
     if ((!strictLaunchers && p.spine) || !LAUNCH_KINDS.has(p.kind)) continue;
     if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
     if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;

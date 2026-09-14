@@ -9,14 +9,14 @@
   "gridDigest": {
     "w": 87,
     "h": 61,
-    "floors": 2184,
-    "walls": 3098,
+    "floors": 2191,
+    "walls": 3091,
     "stairs": 1,
     "cracked": 24,
-    "boxes": 3001,
+    "boxes": 2994,
     "bevels": 22,
     "arcs": 75,
-    "tileHash": "78f6365a"
+    "tileHash": "baec1339"
   },
   "endpoints": {
     "start": {
@@ -40,22 +40,22 @@
       "trapdoor": 1,
       "flipper": 1,
       "jumppad": 3,
-      "rollover": 6,
-      "swingarm": 1,
+      "rollover": 5,
+      "swingarm": 2,
       "flywheel": 2,
       "magpost": 4,
       "catapult": 2,
       "cannon": 2,
       "lamp": 4
     },
-    "partsInCorners": 6,
-    "partsInCloseClusters": 33
+    "partsInCorners": 5,
+    "partsInCloseClusters": 35
   },
   "wallRunMetrics": {
-    "totalRuns": 254,
-    "meanLength": 2.45,
-    "runsLength1or2": 183,
-    "shapedEndsOnShortRuns": 22
+    "totalRuns": 250,
+    "meanLength": 2.48,
+    "runsLength1or2": 182,
+    "shapedEndsOnShortRuns": 23
   },
   "assemblies": {
     "chuteAccessPorts": [
@@ -355,8 +355,8 @@
     },
     {
       "kind": "booster",
-      "i": 26,
-      "j": 45,
+      "i": 41,
+      "j": 25,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -365,8 +365,8 @@
     },
     {
       "kind": "booster",
-      "i": 30,
-      "j": 45,
+      "i": 45,
+      "j": 25,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -375,8 +375,8 @@
     },
     {
       "kind": "booster",
-      "i": 34,
-      "j": 45,
+      "i": 49,
+      "j": 25,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -385,8 +385,8 @@
     },
     {
       "kind": "pit",
-      "i": 49,
-      "j": 10,
+      "i": 72,
+      "j": 5,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -394,8 +394,8 @@
     },
     {
       "kind": "trapdoor",
-      "i": 81,
-      "j": 12,
+      "i": 34,
+      "j": 3,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -403,10 +403,10 @@
     },
     {
       "kind": "flipper",
-      "i": 80,
-      "j": 16,
-      "dirI": 0,
-      "dirJ": -1,
+      "i": 77,
+      "j": 11,
+      "dirI": 1,
+      "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
     },
@@ -421,8 +421,8 @@
     },
     {
       "kind": "jumppad",
-      "i": 64,
-      "j": 25,
+      "i": 19,
+      "j": 23,
       "dirI": 0,
       "dirJ": -1,
       "dir2I": 0,
@@ -430,17 +430,17 @@
     },
     {
       "kind": "jumppad",
+      "i": 67,
+      "j": 16,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
       "i": 68,
-      "j": 25,
-      "dirI": 0,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 17,
-      "j": 23,
+      "j": 3,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -448,8 +448,8 @@
     },
     {
       "kind": "rollover",
-      "i": 17,
-      "j": 24,
+      "i": 68,
+      "j": 4,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -457,8 +457,8 @@
     },
     {
       "kind": "rollover",
-      "i": 17,
-      "j": 25,
+      "i": 68,
+      "j": 5,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -466,8 +466,8 @@
     },
     {
       "kind": "rollover",
-      "i": 83,
-      "j": 14,
+      "i": 61,
+      "j": 16,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
@@ -475,17 +475,8 @@
     },
     {
       "kind": "rollover",
-      "i": 84,
-      "j": 14,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 85,
-      "j": 14,
+      "i": 62,
+      "j": 16,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
@@ -511,8 +502,8 @@
     },
     {
       "kind": "bumper",
-      "i": 45,
-      "j": 23,
+      "i": 29,
+      "j": 27,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -520,8 +511,8 @@
     },
     {
       "kind": "bumper",
-      "i": 41,
-      "j": 23,
+      "i": 25,
+      "j": 27,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -529,7 +520,16 @@
     },
     {
       "kind": "bumper",
-      "i": 43,
+      "i": 27,
+      "j": 29,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 27,
       "j": 25,
       "dirI": 0,
       "dirJ": 0,
@@ -538,17 +538,8 @@
     },
     {
       "kind": "bumper",
-      "i": 43,
-      "j": 21,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
       "i": 41,
-      "j": 15,
+      "j": 35,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -557,7 +548,7 @@
     {
       "kind": "bumper",
       "i": 37,
-      "j": 15,
+      "j": 35,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -566,7 +557,7 @@
     {
       "kind": "bumper",
       "i": 39,
-      "j": 17,
+      "j": 37,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -575,7 +566,7 @@
     {
       "kind": "bumper",
       "i": 39,
-      "j": 13,
+      "j": 33,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -584,114 +575,15 @@
     {
       "kind": "swingarm",
       "i": 43,
-      "j": 38,
+      "j": 17,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
     },
     {
-      "kind": "flywheel",
-      "i": 26,
-      "j": 26,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "flywheel",
-      "i": 39,
-      "j": 34,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
-      "i": 43,
-      "j": 31,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "magpost",
+      "kind": "swingarm",
       "i": 41,
-      "j": 33,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "magpost",
-      "i": 40,
-      "j": 32,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "magpost",
-      "i": 42,
-      "j": 32,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "magpost",
-      "i": 43,
-      "j": 33,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "catapult",
-      "i": 80,
-      "j": 7,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "catapult",
-      "i": 14,
-      "j": 7,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "cannon",
-      "i": 24,
-      "j": 2,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "cannon",
-      "i": 62,
-      "j": 44,
-      "dirI": 0,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "lamp",
-      "i": 59,
       "j": 21,
       "dirI": 0,
       "dirJ": 0,
@@ -699,9 +591,108 @@
       "dir2J": 0
     },
     {
-      "kind": "lamp",
-      "i": 63,
+      "kind": "flywheel",
+      "i": 41,
+      "j": 13,
+      "dirI": 0,
+      "dirJ": 1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "flywheel",
+      "i": 34,
+      "j": 19,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 51,
+      "j": 10,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "magpost",
+      "i": 53,
+      "j": 10,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "magpost",
+      "i": 53,
+      "j": 8,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "magpost",
+      "i": 52,
+      "j": 11,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "magpost",
+      "i": 51,
+      "j": 8,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "catapult",
+      "i": 12,
+      "j": 31,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "catapult",
+      "i": 81,
       "j": 7,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "cannon",
+      "i": 11,
+      "j": 35,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "cannon",
+      "i": 58,
+      "j": 10,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "lamp",
+      "i": 48,
+      "j": 12,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -709,8 +700,8 @@
     },
     {
       "kind": "lamp",
-      "i": 32,
-      "j": 27,
+      "i": 52,
+      "j": 35,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -718,8 +709,17 @@
     },
     {
       "kind": "lamp",
-      "i": 35,
-      "j": 2,
+      "i": 37,
+      "j": 32,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "lamp",
+      "i": 31,
+      "j": 20,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -819,38 +819,45 @@
       "kind": "booster"
     },
     {
-      "fromI": 26,
-      "fromJ": 45,
-      "toI": 30,
-      "toJ": 45,
+      "fromI": 41,
+      "fromJ": 25,
+      "toI": 45,
+      "toJ": 25,
       "kind": "booster"
     },
     {
-      "fromI": 30,
-      "fromJ": 45,
-      "toI": 34,
-      "toJ": 45,
+      "fromI": 45,
+      "fromJ": 25,
+      "toI": 49,
+      "toJ": 25,
       "kind": "booster"
     },
     {
-      "fromI": 80,
-      "fromJ": 16,
-      "toI": 80,
-      "toJ": 7,
-      "kind": "flipper"
+      "fromI": 68,
+      "fromJ": 5,
+      "toI": 72,
+      "toJ": 5,
+      "kind": "rollover"
     },
     {
-      "fromI": 39,
-      "fromJ": 34,
-      "toI": 39,
-      "toJ": 42,
+      "fromI": 41,
+      "fromJ": 13,
+      "toI": 41,
+      "toJ": 21,
       "kind": "flywheel"
     },
     {
-      "fromI": 24,
-      "fromJ": 2,
-      "toI": 35,
-      "toJ": 2,
+      "fromI": 11,
+      "fromJ": 35,
+      "toI": 17,
+      "toJ": 35,
+      "kind": "cannon"
+    },
+    {
+      "fromI": 58,
+      "fromJ": 10,
+      "toI": 53,
+      "toJ": 10,
       "kind": "cannon"
     }
   ],

@@ -2,7 +2,7 @@
  * Tags describe ownership, never proof of an escape. No RNG or wall edits. */
 import { type Grid, at, T_CRACKED, T_WALL } from './generator';
 import { circleCollides } from '../engine/collision';
-import { PLAYER_R } from '../constants';
+import { PLAYER_R, PINBALL_MAX_SPEED, BOOSTER_STEER_LOCK, CORNER_BOOST_STEER_LOCK, CURVE_BOOST_STEER_LOCK, BOOSTER_RADIUS, CORNER_BOOST_RADIUS, CURVE_BOOST_RADIUS } from '../constants';
 import type { PinballPartSpot } from './decorate';
 import { exitRay } from './flow-loops';
 const LAUNCH = new Set(['booster', 'boostcorner', 'boostcurve', 'ramp', 'spring', 'slingshot', 'flipper', 'jumppad']);
@@ -49,6 +49,12 @@ export function launchExitInspector(g: Grid, parts: readonly PinballPartSpot[]) 
                     return { safe: false, reason: 'invalid-heading' };
                 const dx = heading[0] / length, dy = heading[1] / length;
                 const sx = p.i + .5, sy = p.j + .5;
+                // Prove the outlet is available after the worst-speed steering
+                // lock, not merely after a fixed three-tile runway.
+                const lock = p.kind === 'booster' ? BOOSTER_STEER_LOCK :
+                    p.kind === 'boostcorner' ? CORNER_BOOST_STEER_LOCK :
+                    p.kind === 'boostcurve' ? CURVE_BOOST_STEER_LOCK : 0;
+                const steeringDistance = Math.max(STEERING_RUNOUT, PINBALL_MAX_SPEED * lock);
                 // Springs have an explicit ballistic landing; validate its footprint.
                 if (p.kind === 'spring' && p.span && p.span > 0 &&
                     clear(sx + dx * p.span, sy + dy * p.span) &&
@@ -90,8 +96,14 @@ export function launchExitInspector(g: Grid, parts: readonly PinballPartSpot[]) 
                     for (let oy = -1; oy <= 1; oy++)
                         for (let ox = -1; ox <= 1; ox++) {
                             for (const q of byTile.get((j + oy) * g.w + i + ox) ?? []) {
-                                if (q === p || PASSIVE.has(q.kind) || Math.hypot(q.i + .5 - x, q.j + .5 - y) > .45)
-                                    continue;
+                                if (q === p || PASSIVE.has(q.kind)) continue;
+                                const radius = q.kind === 'booster' ? BOOSTER_RADIUS :
+                                    q.kind === 'boostcorner' ? CORNER_BOOST_RADIUS :
+                                    q.kind === 'boostcurve' ? CURVE_BOOST_RADIUS : .5;
+                                // Test the whole sampled segment, including grazing
+                                // trigger contacts between its quarter-tile endpoints.
+                                const along = Math.max(d - .25, Math.min(d, (q.i + .5 - sx) * dx + (q.j + .5 - sy) * dy));
+                                if (Math.hypot(q.i + .5 - sx - dx * along, q.j + .5 - sy - dy * along) > radius) continue;
                                 if (q.kind === 'deflector') {
                                     const a = -dx * q.dirI - dy * q.dirJ, b = -dx * q.dir2I - dy * q.dir2J;
                                     if (Math.max(a, b) < .3)
@@ -100,6 +112,10 @@ export function launchExitInspector(g: Grid, parts: readonly PinballPartSpot[]) 
                                     heading = a >= b ? [q.dir2I, q.dir2J] : [q.dirI, q.dirJ];
                                     continue route;
                                 }
+                                // Corner pads decline axial exit traffic, including
+                                // rebounds; only a genuine side entry can turn here.
+                                if (q.kind === 'boostcorner' && Math.abs(dx * q.dir2I + dy * q.dir2J) > .7)
+                                    continue;
                                 if (LAUNCH.has(q.kind)) {
                                     p = q;
                                     heading = exitRay(q);
@@ -108,7 +124,7 @@ export function launchExitInspector(g: Grid, parts: readonly PinballPartSpot[]) 
                                 return { safe: false, reason: 'part' }; // an impact bumper is not an authored exit
                             }
                         }
-                    if (d >= STEERING_RUNOUT && pocket(x, y, dx, dy))
+                    if (d >= steeringDistance && pocket(x, y, dx, dy))
                         return { safe: true, reason: 'steering-pocket' };
                 }
                 return { safe: false, reason: 'wall' };
@@ -143,6 +159,7 @@ export function enforceLaunchExits(g: Grid, parts: PinballPartSpot[]): number {
         // A passive rollover cannot force a wall rebound and preserves the budget.
         for (const p of bad) {
             if (!p.patternId && (p.spine || p.chute || p.circuit !== undefined || p.asm !== undefined)) {
+                p.launchFallback = p.kind;
                 p.kind = 'rollover';
                 bad.delete(p);
             }

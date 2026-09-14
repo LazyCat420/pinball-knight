@@ -18,6 +18,15 @@ export function thickenDiagonalWalls(g: Grid, protectedTile: (i: number, j: numb
             // Three-square elbows, or two walls touching only at a diagonal point.
             if (count !== 3 && !(count === 2 && walls[0] === walls[3] && walls[1] === walls[2]))
                 continue;
+            // A lone L-shaped corner is not a diagonal boundary. Require
+            // the original staircase to continue outside this square.
+            if (count === 3) {
+                const continuation = walls[0] && walls[3]
+                    ? [[i - 1, j - 1], [i + 2, j + 2]]
+                    : [[i + 2, j - 1], [i - 1, j + 2]];
+                if (!continuation.some(([x, y]) => at(original, x, y) === T_WALL &&
+                    DIRS.filter(([dx, dy]) => at(original, x + dx, y + dy) === T_FLOOR).length >= 2)) continue;
+            }
             const fill = square.filter((_, k) => !walls[k]);
             if (!square.some(([x, y], k) => walls[k] &&
                 DIRS.filter(([dx, dy]) => at(original, x + dx, y + dy) === T_FLOOR).length >= 2))

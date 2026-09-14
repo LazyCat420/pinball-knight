@@ -1,3 +1,5 @@
+import { launchExitInspector } from './launch-exits';
+import type { PinballPartSpot } from './decorate';
 /**
  * THE PIECE REGISTRY — every renderable maze piece, labelled, with its rules.
  *
@@ -241,6 +243,7 @@ export interface PieceContent {
  */
 export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceContent): PieceViolation[] {
   const out: PieceViolation[] = [];
+  let inspectLaunch: ReturnType<typeof launchExitInspector> | undefined;
   const phi = content?.phi ?? null;
   const push = (label: PieceLabel, rule: string, i: number, j: number, detail: string): void => {
     out.push({ label, rule, i, j, detail });
@@ -441,7 +444,11 @@ export function checkPieces(g: Grid, mask?: TrackMask | null, content?: PieceCon
     //   · a CHUTE pad's facing IS the plunger lane, sealed on both sides.
     if (p.vault || p.chute) continue;
     if (openRunway(g, p.i, p.j, di, dj, MIN_PART_RUNWAY) < MIN_PART_RUNWAY && at(g, p.i + di, p.j + dj) !== T_CRACKED) {
-      push("furniture", PIECE_RULES.furniture[1], p.i, p.j, `${p.kind} fires (${di},${dj}) into stone within ${MIN_PART_RUNWAY} tiles`);
+      // A real receiving turn before the wall can provide the runway's exit.
+      // Use the same final physical proof, never a pattern/ownership exemption.
+      inspectLaunch ??= launchExitInspector(g, (content?.parts ?? []) as readonly PinballPartSpot[]);
+      if (!inspectLaunch(p as PinballPartSpot).safe)
+        push("furniture", PIECE_RULES.furniture[1], p.i, p.j, `${p.kind} fires (${di},${dj}) into stone within ${MIN_PART_RUNWAY} tiles`);
     }
     // A ROUTE part carries the floor's one-way structure and gets no kickback
     // allowance; a loose corridor part does (KICKBACK_CHANCE), so it is not
