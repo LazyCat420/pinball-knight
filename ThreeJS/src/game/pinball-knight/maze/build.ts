@@ -1066,7 +1066,7 @@ function slantPrismGeometry(shape: TileShape, height: number): THREE.BufferGeome
  * exactly on the collider arc. Capless shell (DoubleSide material) like the old
  * curve court — but now bound to a real per-tile collider, so no more mismatch.
  */
-function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.BufferGeometry {
+export function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.BufferGeometry {
   const cc = roundCenter(shape)!; // tile-local [0,1]
   const cx = cc.x - 0.5; // tile-centred
   const cz = cc.z - 0.5;
@@ -1086,6 +1086,35 @@ function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.B
     const t = start + da * (s / seg);
     ring.push({ x: cx + Math.cos(t), z: cz + Math.sin(t) });
   }
+
+  // Top and bottom horizontal caps (group 1 → cap material), so the corner
+  // does not read as a hollow tube from the isometric camera.
+  const capUV = (p: { x: number; z: number }): [number, number] => [p.x + 0.5, p.z + 0.5];
+  for (let s = 0; s < seg; s++) {
+    const r0 = ring[s];
+    const r1 = ring[s + 1];
+    if (da > 0) {
+      // Top cap (+y normal)
+      pos.push(cx, height, cz, r0.x, height, r0.z, r1.x, height, r1.z);
+      nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+      uv.push(...capUV({ x: cx, z: cz }), ...capUV(r0), ...capUV(r1));
+      // Bottom cap (-y normal)
+      pos.push(cx, 0, cz, r1.x, 0, r1.z, r0.x, 0, r0.z);
+      nor.push(0, -1, 0, 0, -1, 0, 0, -1, 0);
+      uv.push(...capUV({ x: cx, z: cz }), ...capUV(r1), ...capUV(r0));
+    } else {
+      // Top cap (+y normal)
+      pos.push(cx, height, cz, r1.x, height, r1.z, r0.x, height, r0.z);
+      nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+      uv.push(...capUV({ x: cx, z: cz }), ...capUV(r1), ...capUV(r0));
+      // Bottom cap (-y normal)
+      pos.push(cx, 0, cz, r0.x, 0, r0.z, r1.x, 0, r1.z);
+      nor.push(0, -1, 0, 0, -1, 0, 0, -1, 0);
+      uv.push(...capUV({ x: cx, z: cz }), ...capUV(r0), ...capUV(r1));
+    }
+  }
+  const capVerts = pos.length / 3;
+
   const face = (ax: number, az: number, bx: number, bz: number): void => {
     // Two tris for the vertical quad a(bottom)→b(bottom)→b(top)→a(top); radial
     // outward normals (per-vertex, so the lit surface reads as a smooth curve).
@@ -1109,6 +1138,8 @@ function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.B
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
   geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.addGroup(0, capVerts, 1); // caps → material index 1 (capMat)
+  geo.addGroup(capVerts, pos.length / 3 - capVerts, 0); // sides → material index 0 (wall face)
   return geo;
 }
 
@@ -1466,7 +1497,7 @@ export function buildMaze(
       const height = low ? WALL_LOW : WALL_H;
       const round = isRound(shape);
       const geo = track(round ? roundShellGeometry(shape, height) : slantPrismGeometry(shape, height));
-      const mat: THREE.Material | THREE.Material[] = round ? (low ? roundLow : roundFull) : [low ? faceLow : faceFull, capMat];
+      const mat: THREE.Material[] = [low ? (round ? roundLow : faceLow) : (round ? roundFull : faceFull), capMat];
       const mesh = new THREE.InstancedMesh(geo, mat, cells.length);
       mesh.castShadow = true;
       mesh.receiveShadow = true;

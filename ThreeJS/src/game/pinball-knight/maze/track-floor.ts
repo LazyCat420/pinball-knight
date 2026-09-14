@@ -922,7 +922,8 @@ export function buildTrackFloor(
   // It both carves and FILLS — a funnel's arm is wall the corridor did not have
   // — so it carries the same collective BFS strand guard with revert that the
   // concave fillets do, taking `ends.start` as the root.
-  if (opts.funnels === true)
+  const funnelsEnabled = opts.funnels ?? true;
+  if (funnelsEnabled)
     authorDoorwayFunnels(
       grid,
       doors.doorways,
@@ -949,7 +950,7 @@ export function buildTrackFloor(
   if (opts.relays === true)
     authorRelayChambers(grid, doors.doorways, ends.start, (i: number, j: number) => nearSealed(grid, mask, i, j));
 
-  if (opts.funnels === true || opts.relays === true) {
+  if (funnelsEnabled || opts.relays === true) {
     connectAll(grid, rng, repairKeepOut(grid, mask));
     // The repair OPENS stone, and `removeWallStubs`/`uncarveDeadEnds` do not
     // consult `repairKeepOut` — so a jaw can come out of it with a tile or two

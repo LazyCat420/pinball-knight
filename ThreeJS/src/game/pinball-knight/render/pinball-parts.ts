@@ -274,49 +274,113 @@ function buildBooster(dirX: number, dirZ: number): THREE.Group {
 function buildBoostCorner(d1x: number, d1z: number, d2x: number, d2z: number): THREE.Group {
   const gp = new THREE.Group();
   const R = 0.52; // sweep radius — sits inside a one-tile footprint
-  // ── Banked deck: a quarter annulus, tilted up on the outside edge ──
-  const deck = new THREE.Mesh(ringGeo(R - 0.3, R + 0.16, 14, 1, 0, Math.PI / 2), std(0x1a1f2b));
-  deck.rotation.x = -Math.PI / 2;
-  deck.position.y = 0.03;
+  // The two open legs are d1 (entry corridor, pointing back where ball came from)
+  // and d2 (exit corridor, pointing along outbound direction).
+  // The inner crook / center of turn arc is at C = (d1 + d2) * 0.5.
+  const Cx = (d1x + d2x) * 0.5;
+  const Cz = (d1z + d2z) * 0.5;
+  // Angle from C to the entry leg (d1 * 0.5) and exit leg (d2 * 0.5).
+  const a0 = Math.atan2(-d2z, -d2x);
+  const a1 = Math.atan2(-d1z, -d1x);
+  let da = a1 - a0;
+  while (da > Math.PI) da -= 2 * Math.PI;
+  while (da < -Math.PI) da += 2 * Math.PI;
+
+  const seg = 14;
+  const rIn = R - 0.22;
+  const rOut = R + 0.16;
+
+  // ── Banked deck: quarter-annulus between rIn and rOut, banked slightly on outer edge ──
+  const deckPos: number[] = [];
+  const deckNor: number[] = [];
+  const deckUv: number[] = [];
+  const deckIdx: number[] = [];
+  for (let s = 0; s <= seg; s++) {
+    const a = a0 + (da * s) / seg;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    deckPos.push(Cx + cos * rIn, 0.02, Cz + sin * rIn);
+    deckPos.push(Cx + cos * rOut, 0.045, Cz + sin * rOut);
+    deckNor.push(0, 1, 0, 0, 1, 0);
+    const u = s / seg;
+    deckUv.push(u, 0, u, 1);
+  }
+  for (let s = 0; s < seg; s++) {
+    const v = s * 2;
+    if (da > 0) {
+      deckIdx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+    } else {
+      deckIdx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+    }
+  }
+  const deckGeo = new THREE.BufferGeometry();
+  deckGeo.setAttribute("position", new THREE.Float32BufferAttribute(deckPos, 3));
+  deckGeo.setAttribute("normal", new THREE.Float32BufferAttribute(deckNor, 3));
+  deckGeo.setAttribute("uv", new THREE.Float32BufferAttribute(deckUv, 2));
+  deckGeo.setIndex(deckIdx);
+  const deck = new THREE.Mesh(deckGeo, std(0x1a1f2b));
   gp.add(deck);
-  // ── Outer guide rail, following the same arc: the wall you lean on ──
-  const rail = new THREE.Mesh(torusGeo(R + 0.14, 0.055, 8, 14, Math.PI / 2), std(C_STEEL_DK, C_ARCANE, 0.3));
-  rail.rotation.x = -Math.PI / 2;
-  rail.position.y = 0.13;
+
+  // ── Outer guide rail: vertical banked lip along rRail catching the turning ball ──
+  const rRail = R + 0.14;
+  const railPos: number[] = [];
+  const railNor: number[] = [];
+  const railUv: number[] = [];
+  const railIdx: number[] = [];
+  for (let s = 0; s <= seg; s++) {
+    const a = a0 + (da * s) / seg;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    railPos.push(Cx + cos * rRail, 0.03, Cz + sin * rRail);
+    railPos.push(Cx + cos * rRail, 0.14, Cz + sin * rRail);
+    railNor.push(-cos, 0, -sin, -cos, 0, -sin);
+    railUv.push(s / seg, 0, s / seg, 1);
+  }
+  for (let s = 0; s < seg; s++) {
+    const v = s * 2;
+    if (da > 0) {
+      railIdx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+    } else {
+      railIdx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+    }
+  }
+  const railGeo = new THREE.BufferGeometry();
+  railGeo.setAttribute("position", new THREE.Float32BufferAttribute(railPos, 3));
+  railGeo.setAttribute("normal", new THREE.Float32BufferAttribute(railNor, 3));
+  railGeo.setAttribute("uv", new THREE.Float32BufferAttribute(railUv, 2));
+  railGeo.setIndex(railIdx);
+  const rail = new THREE.Mesh(railGeo, std(C_STEEL_DK, C_ARCANE, 0.3));
   gp.add(rail);
-  // ── Chevrons ALONG the arc, each yawed to the local tangent ──
+
+  // ── Chevrons ALONG the arc, each yawed to the local tangent (entry → exit) ──
   const chevMats: THREE.MeshStandardMaterial[] = [];
   const N = 4;
   for (let k = 0; k < N; k++) {
-    const a = ((k + 0.5) / N) * (Math.PI / 2);
+    const t = (k + 0.5) / N;
+    const a = a0 + da * t;
     const m = stdOwn(C_GOLD, C_GOLD, 0.9);
     const chev = new THREE.Mesh(coneGeo(0.14, 0.3, 3), m);
-    // Cone points +y by default: lay it flat pointing +x, then yaw to the
-    // tangent of the arc at this angle (tangent of (cos a, sin a) is
-    // (−sin a, cos a) — travelling counter-clockwise, which is the direction
-    // the group's own yaw below is chosen to make correct).
+    const px = Cx + Math.cos(a) * R;
+    const pz = Cz + Math.sin(a) * R;
+    const tx = -Math.sin(a) * da;
+    const tz = Math.cos(a) * da;
     chev.rotation.z = -Math.PI / 2;
-    chev.position.set(Math.cos(a) * R, 0.09, Math.sin(a) * R);
-    chev.rotation.y = -a - Math.PI / 2;
+    chev.position.set(px, 0.09, pz);
+    chev.rotation.y = yawFor(tx, tz);
     chevMats.push(m);
     gp.add(chev);
   }
-  // ── Kicker lip on the exit, so the "you leave THIS way" reads even static ──
+
+  // ── Kicker lip on the exit, aligned with the outbound corridor ──
   const lipMat = stdOwn(C_SHOT, C_SHOT, 0.8);
-  const lip = new THREE.Mesh(boxGeo(0.1, 0.16, 0.5), lipMat);
-  lip.position.set(0, 0.1, R);
-  lip.rotation.y = Math.PI / 2;
+  const lip = new THREE.Mesh(boxGeo(0.1, 0.16, 0.46), lipMat);
+  lip.position.set(d2x * 0.46, 0.1, d2z * 0.46);
+  lip.rotation.y = yawFor(d2x, d2z) + Math.PI / 2;
   gp.add(lip);
-  // The arc runs +x → +z in local space, i.e. it enters travelling +x and exits
-  // travelling +z. Yaw so local +z lines up with the real exit leg. Using the
-  // EXIT rather than the bisector is what keeps the lip on the right side; a
-  // bisector yaw looks correct for the deck and puts the kicker in the wall.
-  gp.rotation.y = yawFor(d2x, d2z) - Math.PI / 2;
+
   gp.userData.chevMats = chevMats;
   gp.userData.lipMat = lipMat;
   gp.userData.phase = Math.random() * Math.PI * 2;
-  void d1x;
-  void d1z; // entry leg is physics-only (see the boostcorner handler)
   return gp;
 }
 

@@ -58,4 +58,30 @@ describe("single-tile corner placement", () => {
     assignCornerShapes(g);
     expect(g.t).toEqual(before);
   });
+
+  it("builds round corner wall shells with watertight top caps (no hollow tube holes)", async () => {
+    const { roundShellGeometry } = await import("./build");
+    const { SHAPE_ROUND_NE, SHAPE_ROUND_NW, SHAPE_ROUND_SE, SHAPE_ROUND_SW } = await import("../engine/tile-shape");
+    for (const shape of [SHAPE_ROUND_NE, SHAPE_ROUND_NW, SHAPE_ROUND_SE, SHAPE_ROUND_SW]) {
+      const geo = roundShellGeometry(shape, 1.2, 8);
+      expect(geo.groups.length).toBe(2);
+      expect(geo.groups[0].materialIndex).toBe(1); // caps -> capMat
+      expect(geo.groups[1].materialIndex).toBe(0); // sides -> wallFaceMat
+
+      const pos = geo.attributes.position;
+      const nor = geo.attributes.normal;
+      expect(pos.count).toBeGreaterThan(0);
+
+      // Verify at least one top cap vertex exists at y = 1.2 with normal (0, 1, 0)
+      let foundTopCap = false;
+      for (let v = 0; v < geo.groups[0].count; v++) {
+        if (Math.abs(pos.getY(v) - 1.2) < 1e-4 && Math.abs(nor.getY(v) - 1.0) < 1e-4) {
+          foundTopCap = true;
+          break;
+        }
+      }
+      expect(foundTopCap, `shape ${shape} must have top cap vertices at wall height`).toBe(true);
+    }
+  });
 });
+

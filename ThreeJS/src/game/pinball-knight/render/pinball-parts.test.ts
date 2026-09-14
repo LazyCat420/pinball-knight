@@ -148,4 +148,27 @@ describe("every kind actually renders", () => {
     }
     expect(pivot.rotation.z).toBeLessThan(-0.15);
   });
+
+  it("builds boostcorner with correct chirality and entry/exit positioning for right and left turns", () => {
+    // Right turn: entry from West (-1, 0) -> exit to South (0, 1)
+    const rightMesh = PART_BUILDERS.boostcorner({ dirX: -1, dirZ: 0, dir2X: 0, dir2Z: 1 });
+    expect(rightMesh.children.length).toBeGreaterThanOrEqual(6);
+    expect(rightMesh.userData.chevMats).toBeDefined();
+    expect((rightMesh.userData.chevMats as any[]).length).toBe(4);
+
+    // Left turn: entry from East (1, 0) -> exit to South (0, 1)
+    const leftMesh = PART_BUILDERS.boostcorner({ dirX: 1, dirZ: 0, dir2X: 0, dir2Z: 1 });
+    expect(leftMesh.children.length).toBeGreaterThanOrEqual(6);
+
+    // The first chevron (entry) for right turn should have negative X (closer to West entrance)
+    const rightChevs = rightMesh.children.filter((c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.ConeGeometry);
+    expect(rightChevs.length).toBe(4);
+    expect(rightChevs[0].position.x).toBeLessThan(0);
+
+    // The first chevron (entry) for left turn should have positive X (closer to East entrance)
+    const leftChevs = leftMesh.children.filter((c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.ConeGeometry);
+    expect(leftChevs.length).toBe(4);
+    expect(leftChevs[0].position.x).toBeGreaterThan(0);
+  });
 });
+
