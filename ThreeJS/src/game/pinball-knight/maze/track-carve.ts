@@ -33,6 +33,8 @@
  *
  * DOM- and three-free.
  */
+import { connectAll } from "./connectivity";
+export { connectAll } from "./connectivity";
 import {
   type Grid,
   type TilePos,
@@ -644,144 +646,6 @@ export function widenMazeCorridors(g: Grid, mask: TrackMask, rng?: () => number,
   }
 }
 
-/**
- * GUARANTEE ONE COMPONENT. Non-negotiable, and it must run last.
- *
- * The probabilistic on-ramp pass above is a look-and-feel dial, not a
- * connectivity mechanism, and treating it as one is a trap: it only considers
- * walls that TOUCH the track, so a district two corridors deep can never be
- * reached however high `linkChance` goes. Measured on the version without this
- * pass: 83 components on a single 70×44 floor, the track holding 54.6% of the
- * floor tiles and every maze pocket sealed — i.e. 75/75 test floors fragmented.
- *
- * So the invariant is enforced directly rather than hoped for. Flood from the
- * largest component, find any floor tile that wasn't reached, and punch the
- * shortest wall run back to reached space. Repeat until nothing is unreached.
- * Carving wall→floor only ever ADDS connectivity, so this cannot break anything
- * upstream, and it terminates because every pass strictly grows the reached set.
- *
- * `avoid` marks walls the repair should route AROUND if it can — today the
- * launch chute's side walls (track-launch.chuteKeepOut), which a shortest-path
- * corridor otherwise loves to punch straight through. It is a preference, not a
- * prohibition: if the only route to a stranded pocket crosses an avoided wall,
- * the search retries without the mask. Connectivity always wins.
- */
-export function connectAll(g: Grid, rng: () => number, avoid?: Uint8Array): void {
-  const N = g.w * g.h;
-  const flood = (from: number): Uint8Array => {
-    const seen = new Uint8Array(N);
-    const st = [from];
-    seen[from] = 1;
-    while (st.length) {
-      const k = st.pop()!;
-      const i = k % g.w;
-      const j = (k - i) / g.w;
-      for (const [di, dj] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const) {
-        const x = i + di;
-        const y = j + dj;
-        if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
-        const kk = idx(g, x, y);
-        if (seen[kk] || !isWalkable(g, x, y)) continue;
-        seen[kk] = 1;
-        st.push(kk);
-      }
-    }
-    return seen;
-  };
-
-  // Anchor on the biggest component — that is the track, and we want everything
-  // else joined TO the circuit rather than to some stray pocket.
-  let anchor = -1;
-  let best = -1;
-  const visited = new Uint8Array(N);
-  for (let k = 0; k < N; k++) {
-    if (visited[k] || !isWalkable(g, k % g.w, (k - (k % g.w)) / g.w)) continue;
-    const seen = flood(k);
-    let n = 0;
-    for (let m = 0; m < N; m++)
-      if (seen[m]) {
-        n++;
-        visited[m] = 1;
-      }
-    if (n > best) {
-      best = n;
-      anchor = k;
-    }
-  }
-  if (anchor < 0) return;
-
-  for (let guard = 0; guard < 400; guard++) {
-    const seen = flood(anchor);
-    // Any unreached floor tile is a stranded pocket.
-    let target = -1;
-    for (let k = 0; k < N; k++) {
-      const i = k % g.w;
-      const j = (k - i) / g.w;
-      if (isWalkable(g, i, j) && !seen[k]) {
-        target = k;
-        break;
-      }
-    }
-    if (target < 0) return; // one component — done
-
-    // BFS through WALLS from the stranded tile until we touch reached space,
-    // then carve that corridor. Shortest-path so the opening is minimal and the
-    // circuit keeps its shape.
-    //
-    // Run once respecting `avoid`, and again ignoring it if that found nothing.
-    // Ordering the attempts this way (rather than weighting one search) keeps
-    // the guarantee crisp: pass 2 is exactly the search that shipped before, so
-    // the mask can change which corridor gets carved but never whether one does.
-    const search = (blocked: Uint8Array | undefined): { hit: number; prev: Int32Array } => {
-      const prev = new Int32Array(N).fill(-1);
-      const q: number[] = [target];
-      const mark = new Uint8Array(N);
-      mark[target] = 1;
-      let hit = -1;
-      while (q.length && hit < 0) {
-        const k = q.shift()!;
-        const i = k % g.w;
-        const j = (k - i) / g.w;
-        for (const [di, dj] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ] as const) {
-          const x = i + di;
-          const y = j + dj;
-          if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
-          const kk = idx(g, x, y);
-          if (mark[kk]) continue;
-          if (blocked && blocked[kk] && !seen[kk]) continue;
-          mark[kk] = 1;
-          prev[kk] = k;
-          if (seen[kk]) {
-            hit = kk;
-            break;
-          }
-          q.push(kk);
-        }
-      }
-      return { hit, prev };
-    };
-    let r = search(avoid);
-    if (r.hit < 0 && avoid) r = search(undefined);
-    if (r.hit < 0) return; // nothing reachable at all — leave it rather than loop
-    for (let k = r.hit; k !== -1 && k !== target; k = r.prev[k]) {
-      const cx = k % g.w;
-      const cy = (k - cx) / g.w;
-      setTile(g, cx, cy, T_FLOOR);
-    }
-  }
-}
-
-/** Every tile the circuit claimed — used to keep later passes off the track. */
 /** Every tile the circuit claimed — used to keep later passes off the track. */
 export function laneTiles(g: Grid, mask: TrackMask): TilePos[] {
   const out: TilePos[] = [];

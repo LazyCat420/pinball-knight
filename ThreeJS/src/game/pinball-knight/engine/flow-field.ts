@@ -42,8 +42,8 @@ let scratchQueue: Int32Array | null = null;
  *
  * Use this only when the field is consumed before anything else can run a BFS.
  * If the field is stored — on `state`, in a closure, or across generation
- * passes that themselves call BFS — use `bfsDistancesOwned`, which returns a
- * private copy. Getting this wrong is nasty: the field silently becomes some
+ * passes that themselves call BFS — use `bfsDistancesOwned`, which fills
+ * private storage. Getting this wrong is nasty: the field silently becomes some
  * other query's answer, so zombies path toward the wrong tile or a generator
  * scores against the wrong distances, with nothing to point at as the cause.
  */
@@ -53,7 +53,13 @@ export function bfsDistances(g: Grid, si: number, sj: number): Int32Array {
     scratchDist = new Int32Array(n);
     scratchQueue = new Int32Array(n);
   }
-  const dist = scratchDist;
+  return fillDistances(g, si, sj, scratchDist);
+}
+
+/** Fill a caller-owned field; only the traversal queue is shared. */
+function fillDistances(g: Grid, si: number, sj: number, dist: Int32Array): Int32Array {
+  const n = g.w * g.h;
+  if (!scratchQueue || scratchQueue.length !== n) scratchQueue = new Int32Array(n);
   dist.fill(-1);
   if (!isWalkable(g, si, sj)) return dist;
 
@@ -94,15 +100,15 @@ export function bfsDistances(g: Grid, si: number, sj: number): Int32Array {
 }
 
 /**
- * A distance field the caller OWNS — safe to keep for as long as you like.
- *
- * Costs one 210 KB copy on a cap floor, which is exactly what the scratch
- * buffer avoids, so use it only where the field genuinely outlives the call:
- * the per-frame flow field stored on `state`, and generation passes that hold
- * a field while running further BFS queries.
+ * A distance field the caller owns, safe across unrelated BFS queries.
+ * Pass the previous owned field to reuse its storage on simulation updates.
+ * A floor size change allocates a matching buffer. Shared scratch is never
+ * accepted as owned storage, even when accidentally passed by a caller.
  */
-export function bfsDistancesOwned(g: Grid, si: number, sj: number): Int32Array {
-  return bfsDistances(g, si, sj).slice();
+export function bfsDistancesOwned(g: Grid, si: number, sj: number, reuse?: Int32Array | null): Int32Array {
+  const n = g.w * g.h;
+  const dist = reuse && reuse.length === n && reuse !== scratchDist ? reuse : new Int32Array(n);
+  return fillDistances(g, si, sj, dist);
 }
 
 /**
@@ -122,8 +128,8 @@ export function bfsDistancesOwned(g: Grid, si: number, sj: number): Int32Array {
  * Snapping to the nearest open tile costs one small ring scan on the frames it
  * is needed and nothing on the frames it is not.
  */
-export function hordeFlowField(g: Grid, si: number, sj: number): Int32Array {
-  if (isWalkable(g, si, sj)) return bfsDistancesOwned(g, si, sj);
+export function hordeFlowField(g: Grid, si: number, sj: number, reuse?: Int32Array | null): Int32Array {
+  if (isWalkable(g, si, sj)) return bfsDistancesOwned(g, si, sj, reuse);
   // A local ring scan rather than maze/nearest-open-tile: engine/ does not
   // import maze/ anywhere, and a shaped tile is always adjacent to the floor
   // it was carved from, so r <= 2 finds it.
@@ -131,11 +137,11 @@ export function hordeFlowField(g: Grid, si: number, sj: number): Int32Array {
     for (let dj = -r; dj <= r; dj++) {
       for (let di = -r; di <= r; di++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; // ring shell only
-        if (isWalkable(g, si + di, sj + dj)) return bfsDistancesOwned(g, si + di, sj + dj);
+        if (isWalkable(g, si + di, sj + dj)) return bfsDistancesOwned(g, si + di, sj + dj, reuse);
       }
     }
   }
-  return bfsDistancesOwned(g, si, sj); // genuinely walled in — nothing to snap to
+  return bfsDistancesOwned(g, si, sj, reuse); // genuinely walled in — nothing to snap to
 }
 
 const STEPS: ReadonlyArray<readonly [number, number]> = [

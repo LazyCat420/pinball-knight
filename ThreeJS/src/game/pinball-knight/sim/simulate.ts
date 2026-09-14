@@ -82,7 +82,7 @@ export function simulate(dt: number): void {
   if (state.flowTimer <= 0) {
     state.flowTimer = FLOW_INTERVAL;
     const pt = worldToTile(g, p.x, p.z);
-    state.flowField = hordeFlowField(g, pt.i, pt.j); // snapped seed; RETAINED across frames
+    state.flowField = hordeFlowField(g, pt.i, pt.j, state.flowField); // reuse owned storage across frames
   }
 
   // ── Buff timers tick down; HUD refreshes each whole second so the
