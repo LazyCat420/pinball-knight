@@ -716,3 +716,9 @@ Feature validation: 406 files passed / 5 skipped; 4,627 tests passed / 12
 skipped, zero failures. Production build passed. TypeScript matches the 60
 existing diagnostics with no additions. Large-map generation through 419,105
 tiles retained full connectivity. Completed batch is ready for integration.
+
+Integrated feature commit `4b05793c` with zombie baseline `2e852602` as
+`c2e4e9c1`. Post-merge validation: 406 test files passed / 5 skipped;
+4,668 tests passed / 12 skipped, zero failures. The integrated production build
+passed. The generated sprite-forge report remains excluded. Ready to
+fast-forward and push primary; deployment remains on hold.
