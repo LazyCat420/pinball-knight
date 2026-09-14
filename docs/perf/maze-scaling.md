@@ -16,9 +16,19 @@ space, so the complete generator is not claimed to be linear.
 
 The original `track-carve` export remains compatible. One hundred seeded masked
 and unmasked fixtures match the old tiles byte for byte, as do all five existing
-full-author fingerprints, including population RNG. Oversized floors that reached
-the old 400-repair limit intentionally change as their remaining pockets join.
-The ordinary level-size table is unchanged.
+full-author fingerprints, including population RNG. Floors that reached the old 400-repair limit intentionally change as their
+remaining pockets join. The ordinary level-size table is unchanged.
+
+The complete suite identified one such floor in the existing census: L25/seed 1,
+a 193×145 grid. A baseline-code probe still had 1,423 unreached tiles immediately
+before its last permitted repair. Isolating the changes confirms the horde-field
+rewrite preserves this fixture; uncapped connectivity changes it. The new finished
+floor has zero unreachable tiles, zero piece violations, the same endpoints and
+201-tile stairs route. Its ordinary floor count rises from 12,292 to 12,521;
+99 arc tiles remain, and decoration changes from 333 to 331 parts. Only this
+fixture's JSON/SVG was refreshed after the geometry gates passed. All twelve
+census cases then passed. This is a reviewed layout correction, not a weakened
+constraint or an unexplained snapshot reset.
 
 ## Measured generation time
 
