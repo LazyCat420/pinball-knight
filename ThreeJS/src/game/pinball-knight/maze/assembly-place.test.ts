@@ -275,3 +275,14 @@ describe("placeAssemblies — on the floors that actually ship", () => {
     }
   });
 });
+
+it('can place an independent room activity away from all route anchors', () => {
+  const g = openRoom(41, 41), start = { i: 1, j: 1 }, stairs = { i: 39, j: 39 };
+  const result = placeAssemblies(g, buildFlowField(g, stairs), {
+    rng: mulberry32(1), routes: [], roomSites: [{ i: 20, j: 20 }],
+    start, stairs, occupied: () => false, budget: 1,
+    machines: MACHINES.filter(m => m.name === 'target-bank'),
+  });
+  expect(result.placed).toHaveLength(1);
+  expect(partsOf(result.placed[0]).every(p => p.asm?.name === 'target-bank')).toBe(true);
+});

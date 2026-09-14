@@ -29,6 +29,8 @@
  * DOM- and three-free.
  */
 import { thickenDiagonalWalls } from './diagonal-walls';
+import { authorRoomIslands, roomActivitySites } from './room-islands';
+import { repairNarrowGaps } from './gap-clearance';
 import { clearPassageMouths } from './passage-mouths';
 import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
@@ -88,6 +90,8 @@ function repairKeepOut(g: Grid, mask: TrackMask): Uint8Array {
 }
 
 export interface TrackFloor {
+  /** Activity sites covering large rooms, including independent wall islands. */
+  playSpaces?: TilePos[];
   grid: Grid;
   graph: TrackGraph;
   path: TrackPath;
@@ -1028,6 +1032,20 @@ export function buildTrackFloor(
   }
   thickenDiagonalWalls(grid, (i, j) => !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i] || nearSealed(grid, mask, i, j));
 
+  const roomIslands = authorRoomIslands(grid, (i, j) =>
+    !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i] || inBossRoom(i, j) || nearSealed(grid, mask, i, j));
+  const gapArcSpans = arcSpanMask(grid);
+  repairNarrowGaps(grid, (i, j) => !!gapArcSpans[j * grid.w + i] || nearSealed(grid, mask, i, j),
+    (i, j) => !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i]);
+  for (let round = 0; round < 8; round++) {
+    enforceWallJoins(grid);
+    compactArcs(grid);
+    if (removeWallStubs(grid, mask) === 0) break;
+  }
+
+  const playSpaces = roomActivitySites(grid, (i, j) =>
+    !!masonryProtected[j * grid.w + i] || inBossRoom(i, j) || nearSealed(grid, mask, i, j), roomIslands);
+
   let finalStairs = ends.stairs;
   const finalDist = bfsDistances(grid, routeFrom.i, routeFrom.j);
   const finalLen = finalDist[idx(grid, finalStairs.i, finalStairs.j)];
@@ -1157,6 +1175,7 @@ export function buildTrackFloor(
     doorways: doors.doorways,
     bossRoom,
     chambers,
+    playSpaces,
   };
 }
 

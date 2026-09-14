@@ -129,6 +129,8 @@ export interface PlaceOpts {
   budget: number;
   /** Tiles between candidate origins along a route. */
   stride?: number;
+  /** Additional independent activity sites inside large rooms. */
+  roomSites?: readonly TilePos[];
 }
 
 function open(g: Grid, i: number, j: number): boolean {
@@ -309,9 +311,11 @@ export function placeAssemblies(g: Grid, phi: Int32Array, opts: PlaceOpts): Plac
     const orientations = orientationsOf(machine);
 
     let best: { a: Assembly; i0: number; j0: number; score: number } | null = null;
-    for (let r = 0; r < opts.routes.length; r++) {
-      const route = opts.routes[r];
-      for (let k = 0; k < route.length; k += stride) {
+    const routes = opts.roomSites?.length ? [...opts.routes, opts.roomSites] : opts.routes;
+    for (let r = 0; r < routes.length; r++) {
+      const roomSite = r === opts.routes.length;
+      const route = routes[r];
+      for (let k = 0; k < route.length; k += roomSite ? 1 : stride) {
         const anchor = route[k];
         // A machine's own body should not sit on top of the start.
         if (Math.abs(anchor.i - opts.start.i) + Math.abs(anchor.j - opts.start.j) < 4) continue;
@@ -327,8 +331,9 @@ export function placeAssemblies(g: Grid, phi: Int32Array, opts: PlaceOpts): Plac
             report.rejectFit++;
             continue;
           }
-          const score = scoreAt(g, phi, a, i0, j0, r === 0, report);
+          let score = scoreAt(g, phi, a, i0, j0, r === 0, report);
           if (score === null) continue;
+          if (roomSite) score += 6; // Give empty room activities a fair share beside the main route.
           if (!best || score > best.score) best = { a, i0, j0, score };
         }
       }

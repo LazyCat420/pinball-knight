@@ -1,3 +1,6 @@
+import { analyzePatternGrammar, isLegalSlotForPart } from './pattern-grammar';
+import { placeRoomActivity } from './room-activities';
+import { finishClearance } from './clearance-finish';
 import { enforceLaunchExits } from './launch-exits';
 import { enforceWallJoins } from "./wall-junctions";
 /**
@@ -13,7 +16,7 @@ import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
 import { type PrefabAnchor, decorateMaze, pickEndpoints, widenMainArtery } from "./decorate";
 import { walkableCount } from "./floor-metrics";
 import { repairFloorDensity } from "./floor-density-repair";
-import { carveRooms, crackSecretWalls, generateMaze, thickenWalls, tileCenter } from "./generator";
+import { at, T_FLOOR, carveRooms, crackSecretWalls, generateMaze, thickenWalls, tileCenter } from "./generator";
 import { authorLampPuzzle, lampCountFor } from "./lamp-puzzle";
 import { nearestOpenTile } from "./nearest-open-tile";
 import { rollModifier } from "./modifiers";
@@ -97,7 +100,7 @@ export function authorMaze(opts: FloorAuthorOptions) {
     });
   }
   // Budgets use actual area. Diagnostic mega floors may scale flat terms.
-  const walkable = walkableCount(grid);
+  let walkable = walkableCount(grid);
   const budget = floorBudgets(level, walkable);
   const areaRatio = walkable / Math.max(1, cfg.floorTiles);
   const levelTerm = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
@@ -132,6 +135,7 @@ export function authorMaze(opts: FloorAuthorOptions) {
       wallGrammar: opts.wallGrammar ?? true,
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
       doorways: track?.doorways,
+      playSpaces: track?.playSpaces,
     },
   );
 
@@ -140,6 +144,11 @@ export function authorMaze(opts: FloorAuthorOptions) {
   pruneSealedBands(grid, plan.secrets);
   // Secret pruning can change a shaped wall's exposed straight terminals.
   enforceWallJoins(grid);
+
+  // Final geometry audit must observe secret bands and decoration, not only
+  // the planned doorways. Only open stone here, never occupy furnished floor.
+  const clearanceAudit = track ? finishClearance(grid, track.mask) : null;
+  walkable = walkableCount(grid);
 
   // Lamps share the floor RNG and reserve all existing content.
   const puzzleOccupied = new Set<string>();
@@ -175,9 +184,32 @@ export function authorMaze(opts: FloorAuthorOptions) {
 
   const densityRepair = track ? repairFloorDensity(plan, walkable, anchors.filter(a => a.kind === "spawn")) : null;
 
+  // Finished open-room pockets get a compact slalom activity when the normal
+  // corridor placer could not fit one. Spend only actual remaining capacity.
+  if (track?.playSpaces?.length && !plan.parts.some(p => p.pattern === 'chicane')) {
+    const roomGrammar = analyzePatternGrammar(grid, track.doorways, rooms);
+    const activityReserved = new Set([...plan.items, ...plan.props, ...plan.spawns, ...plan.torches].map(p => `${p.i},${p.j}`));
+    if (lampPuzzlePlan) activityReserved.add(`${lampPuzzlePlan.vault.i},${lampPuzzlePlan.vault.j}`);
+    const activityCandidates: TilePos[] = [];
+    // Irregular rooms need more than their square-window centres: inspect
+    // actual open pockets, still requiring clear floor around every part.
+    for (let j = 2; j < grid.h - 2; j += 2) for (let i = 2; i < grid.w - 2; i += 2)
+      if (at(grid, i, j) === T_FLOOR) activityCandidates.push({ i, j });
+    placeRoomActivity(grid, plan.parts, activityCandidates, {
+      budget: Math.max(partBudget, Math.floor(walkable * 31 / 1000)),
+      allowed: p => {
+        if (activityReserved.has(`${p.i},${p.j}`) || nearSealed(grid, track.mask, p.i, p.j) ||
+            Math.abs(p.i - plan.start.i) + Math.abs(p.j - plan.start.j) < 5 ||
+            Math.abs(p.i - plan.stairs.i) + Math.abs(p.j - plan.stairs.j) < 5) return false;
+        return isLegalSlotForPart(p.kind, roomGrammar.getSlot(p.i, p.j).slotType);
+      },
+    });
+    plan.parts.forEach(markOcc);
+  }
+
   enforceLaunchExits(grid, plan.parts);
 
   return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, bonusRoom,
-    track, grid, plan, lampPuzzlePlan, theme, walkable, budget, partBudget, areaRatio, densityRepair,
+    track, grid, plan, lampPuzzlePlan, clearanceAudit, theme, walkable, budget, partBudget, areaRatio, densityRepair,
     doorways: track?.doorways ?? [], timing: { track: trackMs, decorate: decorateMs } };
 }

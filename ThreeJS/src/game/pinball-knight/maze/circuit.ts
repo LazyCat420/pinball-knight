@@ -356,12 +356,25 @@ export function authorCircuits(
   for (const route of routes) {
     if (circuits.length >= opts.maxCircuits || spent >= opts.budget) break;
     const rings = findRings(g, route, usedDetour);
-
-    for (const ring of rings) {
+    const routeTiles = new Set(route.map(t => idx(g, t.i, t.j)));
+    let rankInterchanges = true;
+    for (let ri = 0; ri < rings.length; ri++) {
+      // Longer loops alone can fill the budget with disconnected activities.
+      // After each accepted loop, prefer candidates sharing an actual ring
+      // tile. Keep the original length order within each group.
+      if (rankInterchanges && ringTiles.size) {
+        const shared: TilePos[][] = [], separate: TilePos[][] = [];
+        for (const ring of rings.slice(ri))
+          (ring.some(t => ringTiles.has(idx(g, t.i, t.j))) ? shared : separate).push(ring);
+        rings.splice(ri, rings.length - ri, ...shared, ...separate);
+      }
+      rankInterchanges = false;
+      const ring = rings[ri];
       if (circuits.length >= opts.maxCircuits || spent >= opts.budget) break;
       const c = layCircuit(g, phi, ring, nextId, ringTiles, opts, opts.budget - spent, stride);
       if (!c) continue;
       circuits.push(c);
+      rankInterchanges = true;
       nextId++;
       spent += c.links.length;
       for (const t of c.ring) {
@@ -370,7 +383,7 @@ export function authorCircuits(
         // Only the DETOUR is consumed: later circuits are meant to re-use the
         // artery, because a shared artery IS the interchange. Excluding it
         // would produce disjoint loops — the opposite of intertwined.
-        if (!route.some((r) => r.i === t.i && r.j === t.j)) usedDetour.add(key);
+        if (!routeTiles.has(key)) usedDetour.add(key);
       }
     }
   }
