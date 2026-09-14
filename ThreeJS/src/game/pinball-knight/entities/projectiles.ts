@@ -157,6 +157,20 @@ import { aggregateCards } from "../cards";
 import { sfxGun } from "../sfx/weapons";
 import { sfxTarget } from "../sfx/pinball";
 import type { WeaponDef } from "../items";
+import {
+  buildProjectileBundle,
+  getProjectileVfxConfig,
+  triggerMuzzleVfx,
+  triggerImpactVfx,
+  updateProjectileVfx,
+  disposeProjectileFactoryCache,
+} from "../fx/projectiles";
+
+export function createProjectileMesh(kind: string): THREE.Object3D {
+  const config = getProjectileVfxConfig(kind);
+  const bundle = buildProjectileBundle(config);
+  return bundle.root;
+}
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
 
@@ -490,6 +504,7 @@ export function falconFireBombAssets(): { geo: THREE.CylinderGeometry; mat: THRE
 }
 
 export function disposeProjectileAssets(): void {
+  disposeProjectileFactoryCache();
   _ornamentGeo?.dispose(); _ornamentGeo = null; _ornamentMat?.dispose(); _ornamentMat = null;
   _corvidBombGeo?.dispose(); _corvidBombGeo = null; _corvidBombMat?.dispose(); _corvidBombMat = null;
   _vultureSludgeGeo?.dispose(); _vultureSludgeGeo = null; _vultureSludgeMat?.dispose(); _vultureSludgeMat = null;
@@ -574,18 +589,19 @@ export function spawnShardBurst(
   opts: { count: number; speed: number; damage: number; life: number; baseAngle?: number; fan?: number; crystal?: boolean },
 ): void {
   if (!state.scene) return;
-  const { geo, mat } = opts.crystal ? crystalAssets() : shardAssets();
+  const kind = opts.crystal ? "ice_shard" : "shard";
   const { count, speed, damage, life, baseAngle, fan } = opts;
   for (let n = 0; n < count; n++) {
     // Aimed fan around baseAngle, or an even radial ring when no fan is given.
     const a = fan !== undefined && baseAngle !== undefined
       ? baseAngle + (count > 1 ? (n / (count - 1) - 0.5) * 2 * fan : 0)
       : (n / count) * Math.PI * 2 + Math.random() * 0.4;
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh(kind);
     mesh.position.set(x, PROJECTILE_Y, z);
+    mesh.rotation.y = a;
     state.scene.add(mesh);
     state.projectiles.push({
-      kind: "shard",
+      kind,
       x,
       z,
       vx: Math.cos(a) * speed,
@@ -605,11 +621,12 @@ export function spawnShardBurst(
  */
 export function spitGlob(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = globAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "glob");
+  const mesh = createProjectileMesh("glob");
   mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
   state.projectiles.push({
     kind: "glob",
@@ -622,7 +639,7 @@ export function spitGlob(x: number, z: number, dx: number, dz: number): void {
     damage: SPITTER_DAMAGE,
     hostile: true,
     mesh,
-    dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
+    dispose: () => {},
   });
 }
 
@@ -632,11 +649,12 @@ export function spitGlob(x: number, z: number, dx: number, dz: number): void {
  */
 export function spitWeb(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = webAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "web");
+  const mesh = createProjectileMesh("web");
   mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
   state.projectiles.push({
     kind: "web",
@@ -665,11 +683,12 @@ export function spitWeb(x: number, z: number, dx: number, dz: number): void {
  */
 export function flingPlate(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = discAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "disc");
+  const mesh = createProjectileMesh("disc");
   mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
   state.projectiles.push({
     kind: "disc",
@@ -702,10 +721,10 @@ export function flingPlate(x: number, z: number, dx: number, dz: number): void {
  */
 export function hurlTimber(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = timberAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "timber");
+  const mesh = createProjectileMesh("timber");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   // Cylinder's axis is +Y: tip it flat, then yaw it ACROSS the flight line so
   // the long side faces the way it is travelling — a thrown log tumbles broadside.
@@ -740,10 +759,10 @@ export function hurlTimber(x: number, z: number, dx: number, dz: number): void {
  */
 export function slingBomb(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = bombAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "bomb");
+  const mesh = createProjectileMesh("bomb");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -841,8 +860,7 @@ export function detonate(x: number, z: number): void {
  */
 export function dropCorvidBomb(x: number, z: number, dx = 0, dz = 0): void {
   if (!state.scene) return;
-  const { geo, mat } = corvidBombAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("corvid_bomb");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -896,8 +914,7 @@ export function detonateCorvidBomb(x: number, z: number): void {
  */
 export function dropVultureBomb(x: number, z: number): void {
   if (!state.scene) return;
-  const { geo, mat } = vultureSludgeAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("vulture_sludge_bomb");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -955,8 +972,7 @@ export function detonateVultureSludge(x: number, z: number): void {
  */
 export function dropGullClusterBomb(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = gullEggAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("gull_egg_bomb");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -977,8 +993,7 @@ export function dropGullClusterBomb(x: number, z: number, dx: number, dz: number
 
 export function dropGullMiniBomb(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = gullMiniAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("gull_mini_bomb");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -1040,8 +1055,7 @@ export function detonateGullMini(x: number, z: number): void {
  */
 export function dropFalconFireBomb(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = falconFireBombAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("falcon_fire_bomb");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -1109,14 +1123,14 @@ export function detonateFalconFire(x: number, z: number): void {
  */
 export function fireEyeBeams(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = beamAssets();
+  triggerMuzzleVfx(x, z, dx, dz, "beam");
   const life = CROAKER_FIRE_RANGE / CROAKER_BEAM_SPEED;
   for (const ang of [-CROAKER_BEAM_SPREAD, CROAKER_BEAM_SPREAD]) {
     const c = Math.cos(ang);
     const s = Math.sin(ang);
     const bx = dx * c - dz * s;
     const bz = dx * s + dz * c;
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("beam");
     const sx = x + bx * MUZZLE_OFFSET;
     const sz = z + bz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1148,16 +1162,12 @@ export function fireEyeBeams(x: number, z: number, dx: number, dz: number): void
  */
 export function fireCopBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = copBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("cop_bullet");
   mesh.position.set(x, PROJECTILE_Y, z);
   mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
 
-  // Muzzle flash + sparks + smoke puff at gunpoint
-  state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, PALETTE_HEX[18], 5, 2.5);
-  state.vfx?.sparks(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, dx, dz, 4);
-  state.vfx?.smoke(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 1, 0.2);
+  triggerMuzzleVfx(x, z, dx, dz, "cop_bullet");
   sfxGun();
 
   const life = 3.5;
@@ -1190,12 +1200,11 @@ export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: 
   const baseAngle = Math.atan2(dx, dz);
 
   // Deconstruct burst VFX
-  state.vfx?.burst(x + dx * 0.3, PROJECTILE_Y, z + dz * 0.3, 0xf59e0b, 8, 1.8);
+  triggerMuzzleVfx(x, z, dx, dz, "burger_sauce");
 
   // 1. Tomato slice (center)
   {
-    const { geo, mat } = tomatoAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("burger_tomato");
     const sx = x + dx * MUZZLE_OFFSET;
     const sz = z + dz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1221,8 +1230,7 @@ export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: 
     const angle = baseAngle - 0.28;
     const ldx = Math.sin(angle);
     const ldz = Math.cos(angle);
-    const { geo, mat } = lettuceAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("burger_lettuce");
     const sx = x + ldx * MUZZLE_OFFSET;
     const sz = z + ldz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1248,8 +1256,7 @@ export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: 
     const angle = baseAngle + 0.28;
     const rdx = Math.sin(angle);
     const rdz = Math.cos(angle);
-    const { geo, mat } = sauceAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("burger_sauce");
     const sx = x + rdx * MUZZLE_OFFSET;
     const sz = z + rdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1277,17 +1284,14 @@ export function flingBurgerDeconstruction(x: number, z: number, dx: number, dz: 
 export function launchFryBarrage(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
-
-  // Sizzling steam & spark VFX at head carton muzzle
-  state.vfx?.sparks(x + dx * 0.2, PROJECTILE_Y + 0.2, z + dz * 0.2, dx * 1.5, dz * 1.5, 6);
+  triggerMuzzleVfx(x, z, dx, dz, "fry_dart");
 
   // 3 crinkle-cut fries in a spread (-0.18, 0, +0.18 rad)
   for (const offset of [-0.18, 0, 0.18]) {
     const angle = baseAngle + offset;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = fryDartAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("fry_dart");
     const sx = x + fdx * MUZZLE_OFFSET;
     const sz = z + fdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1312,17 +1316,14 @@ export function launchFryBarrage(x: number, z: number, dx: number, dz: number): 
 export function launchMilkshakeSpray(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
-
-  // Sizzling green toxic vapor puff at straw nozzle
-  state.vfx?.sparks(x + dx * 0.2, PROJECTILE_Y + 0.15, z + dz * 0.2, dx * 1.2, dz * 1.2, 5);
+  triggerMuzzleVfx(x, z, dx, dz, "shake_spray");
 
   // 4 sizzling toxic globules in a spray fan (-0.20, -0.06, +0.06, +0.20 rad)
   for (const offset of [-0.20, -0.06, 0.06, 0.20]) {
     const angle = baseAngle + offset;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = shakeSprayAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("shake_spray");
     const sx = x + fdx * MUZZLE_OFFSET;
     const sz = z + fdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1347,14 +1348,14 @@ export function launchMilkshakeSpray(x: number, z: number, dx: number, dz: numbe
 export function launchMustardStream(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
+  triggerMuzzleVfx(x, z, dx, dz, "mustard_glob");
   // Squirts 3 streaming mustard globs in a high-pressure burst
   for (let i = 0; i < 3; i++) {
     const spread = (i - 1) * 0.08;
     const angle = baseAngle + spread;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = mustardGlobAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("mustard_glob");
     const offset = MUZZLE_OFFSET + i * 0.12;
     const sx = x + fdx * offset;
     const sz = z + fdz * offset;
@@ -1380,14 +1381,14 @@ export function launchMustardStream(x: number, z: number, dx: number, dz: number
 export function launchKetchupSquirts(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
+  triggerMuzzleVfx(x, z, dx, dz, "ketchup_glob");
   // Baron von Ketchup fires a fan burst of 3 sticky tomato globs
   for (let i = 0; i < 3; i++) {
     const spread = (i - 1) * 0.12;
     const angle = baseAngle + spread;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = ketchupGlobAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("ketchup_glob");
     const offset = MUZZLE_OFFSET + (i % 2) * 0.1;
     const sx = x + fdx * offset;
     const sz = z + fdz * offset;
@@ -1413,13 +1414,13 @@ export function launchKetchupSquirts(x: number, z: number, dx: number, dz: numbe
 export function launchMustardJets(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
+  triggerMuzzleVfx(x, z, dx, dz, "mustard_glob");
   // Colonel Dijon fires high-pressure twin mustard jets
   for (const offset of [-0.07, 0.07]) {
     const angle = baseAngle + offset;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = mustardGlobAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("mustard_glob");
     const sx = x + fdx * MUZZLE_OFFSET;
     const sz = z + fdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1444,17 +1445,14 @@ export function launchMustardJets(x: number, z: number, dx: number, dz: number):
 export function launchShuriken(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
-
-  // Metallic glint sparks at throw release
-  state.vfx?.sparks(x + dx * 0.25, PROJECTILE_Y + 0.1, z + dz * 0.25, dx * 1.5, dz * 1.5, 6);
+  triggerMuzzleVfx(x, z, dx, dz, "shuriken");
 
   // Stumbling sumo flings 2 spinning stars with slight drunken spread (-0.12, +0.12 rad)
   for (const offset of [-0.12, 0.12]) {
     const angle = baseAngle + offset;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = shurikenAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("shuriken");
     const sx = x + fdx * MUZZLE_OFFSET;
     const sz = z + fdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1479,18 +1477,14 @@ export function launchShuriken(x: number, z: number, dx: number, dz: number): vo
 export function launchZippoFlameBreath(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
   const baseAngle = Math.atan2(dx, dz);
-
-  // Fiery sparks & smoke puff at lighter mouth
-  state.vfx?.sparks(x + dx * 0.25, PROJECTILE_Y + 0.1, z + dz * 0.25, dx * 1.5, dz * 1.5, 6);
-  state.vfx?.smoke(x + dx * 0.2, PROJECTILE_Y + 0.05, z + dz * 0.2, 0.5);
+  triggerMuzzleVfx(x, z, dx, dz, "zippo_flame");
 
   // Expanding 5-shot fire breath fan (-0.22, -0.10, 0, 0.10, 0.22 rad)
   for (const offset of [-0.22, -0.10, 0, 0.10, 0.22]) {
     const angle = baseAngle + offset;
     const fdx = Math.sin(angle);
     const fdz = Math.cos(angle);
-    const { geo, mat } = zippoFlameAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("zippo_flame");
     const sx = x + fdx * MUZZLE_OFFSET;
     const sz = z + fdz * MUZZLE_OFFSET;
     mesh.position.set(sx, PROJECTILE_Y, sz);
@@ -1520,10 +1514,10 @@ export function launchZippoFlameBreath(x: number, z: number, dx: number, dz: num
  */
 export function spitPearl(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = pearlAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "pearl");
+  const mesh = createProjectileMesh("pearl");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -1545,10 +1539,10 @@ export function spitPearl(x: number, z: number, dx: number, dz: number): void {
 /** Shark Trapper's fishing hook */
 export function launchFishingHook(x: number, z: number, dx: number, dz: number, ownerNid?: string): void {
   if (!state.scene) return;
-  const { geo, mat } = hookAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "fishing_hook");
+  const mesh = createProjectileMesh("fishing_hook");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   mesh.rotation.x = Math.PI / 2;
   state.scene.add(mesh);
@@ -1571,10 +1565,10 @@ export function launchFishingHook(x: number, z: number, dx: number, dz: number, 
 /** Octopus Mob Boss 8-way bullet */
 export function shootOctoBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = octoBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "octo_bullet");
+  const mesh = createProjectileMesh("octo_bullet");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -1595,10 +1589,10 @@ export function shootOctoBullet(x: number, z: number, dx: number, dz: number): v
 /** Clownfish Mobster tommy gun bullet */
 export function shootFishBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = fishBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "fish_bullet");
+  const mesh = createProjectileMesh("fish_bullet");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
@@ -1620,10 +1614,10 @@ export function shootFishBullet(x: number, z: number, dx: number, dz: number): v
 /** Lionfish Mob Enforcer venom spine */
 export function shootLionSpine(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = lionSpineAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "lion_spine");
+  const mesh = createProjectileMesh("lion_spine");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   mesh.rotation.x = Math.PI / 2;
   mesh.rotation.z = -Math.atan2(dx, dz);
@@ -1646,10 +1640,10 @@ export function shootLionSpine(x: number, z: number, dx: number, dz: number): vo
 /** Anglerfish Hitman sniper slug */
 export function shootMagnumBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = magnumBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "magnum_bullet");
+  const mesh = createProjectileMesh("magnum_bullet");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
@@ -1671,10 +1665,10 @@ export function shootMagnumBullet(x: number, z: number, dx: number, dz: number):
 /** Pufferfish Capo blunderbuss slug */
 export function shootPufferSlug(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = pufferSlugAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "puffer_slug");
+  const mesh = createProjectileMesh("puffer_slug");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -1695,12 +1689,11 @@ export function shootPufferSlug(x: number, z: number, dx: number, dz: number): v
 /** Pufferfish Capo 8-way death spike explosion */
 export function burstPufferSpikes(x: number, z: number): void {
   if (!state.scene) return;
-  const { geo, mat } = pufferSpikeAssets();
   for (let i = 0; i < 8; i++) {
     const angle = (i / 8) * Math.PI * 2;
     const dx = Math.cos(angle);
     const dz = Math.sin(angle);
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("puffer_spike");
     mesh.position.set(x, PROJECTILE_Y, z);
     mesh.rotation.y = angle;
     state.scene.add(mesh);
@@ -1737,12 +1730,11 @@ function iceShardAssets(): { geo: THREE.BufferGeometry; mat: THREE.Material } {
 /** Frost Slime 8-way ricocheting ice shard death shatter */
 export function burstIceShards(x: number, z: number): void {
   if (!state.scene) return;
-  const { geo, mat } = iceShardAssets();
   for (let i = 0; i < FROST_SLIME_SHARDS; i++) {
     const angle = (i / FROST_SLIME_SHARDS) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
     const dx = Math.cos(angle);
     const dz = Math.sin(angle);
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("ice_shard");
     mesh.position.set(x, PROJECTILE_Y, z);
     mesh.rotation.y = angle;
     state.scene.add(mesh);
@@ -1816,8 +1808,7 @@ export function dropSpikeStrip(x: number, z: number): void {
 /** Noir Detective throws an arcing flashbang canister */
 export function throwFlashbang(x: number, z: number, tx: number, tz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = flashbangAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("flashbang");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
 
@@ -1872,14 +1863,12 @@ export function detonateFlashbang(x: number, z: number): void {
 /** Noir Detective fires high-caliber .44 magnum slug */
 export function fireMagnumBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = magnumBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("magnum_bullet");
   mesh.position.set(x, PROJECTILE_Y, z);
   mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
 
-  state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 0xf59e0b, 8, 2.5);
-  state.vfx?.smoke(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 2, 0.4);
+  triggerMuzzleVfx(x, z, dx, dz, "magnum_bullet");
   sfxGun();
 
   state.projectiles.push({
@@ -1901,18 +1890,17 @@ export function fireMagnumBullet(x: number, z: number, dx: number, dz: number): 
 /** Cyber Robo-Cop fires 3-round rapid Auto-9 burst */
 export function fireAuto9Burst(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = auto9BulletAssets();
 
   for (let i = 0; i < 3; i++) {
     const delay = i * 0.08;
     setTimeout(() => {
       if (!state.scene) return;
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = createProjectileMesh("auto9_bullet");
       mesh.position.set(x, PROJECTILE_Y, z);
       mesh.rotation.y = Math.atan2(dx, dz);
       state.scene.add(mesh);
 
-      state.vfx?.burst(x + dx * 0.4, PROJECTILE_Y, z + dz * 0.4, 0x38bdf8, 5, 2.0);
+      triggerMuzzleVfx(x, z, dx, dz, "auto9_bullet");
       sfxGun();
 
       state.projectiles.push({
@@ -1966,10 +1954,10 @@ export function detonateEmpOverload(x: number, z: number): void {
 /** Swordfish Mobster harpoon speargun bolt */
 export function shootSpearBolt(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = spearBoltAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "spear_bolt");
+  const mesh = createProjectileMesh("spear_bolt");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   mesh.rotation.y = Math.atan2(dx, dz);
   state.scene.add(mesh);
@@ -1991,10 +1979,10 @@ export function shootSpearBolt(x: number, z: number, dx: number, dz: number): vo
 /** Moray Eel Mobster electric shock orb */
 export function shootElectricBullet(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = electricBulletAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "electric_bullet");
+  const mesh = createProjectileMesh("electric_bullet");
   mesh.position.set(sx, PROJECTILE_Y, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -2015,8 +2003,7 @@ export function shootElectricBullet(x: number, z: number, dx: number, dz: number
 /** Seahorse Mobster arcing water mortar */
 export function launchWaterMortar(x: number, z: number, targetX: number, targetZ: number): void {
   if (!state.scene) return;
-  const { geo, mat } = waterMortarAssets();
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = createProjectileMesh("water_mortar");
   mesh.position.set(x, PROJECTILE_Y, z);
   state.scene.add(mesh);
   const dx = targetX - x;
@@ -2045,10 +2032,10 @@ export function launchWaterMortar(x: number, z: number, targetX: number, targetZ
 /** Christmas Tree thrown festive ornament projectile */
 export function launchOrnament(x: number, z: number, dx: number, dz: number): void {
   if (!state.scene) return;
-  const { geo, mat } = ornamentAssets();
-  const mesh = new THREE.Mesh(geo, mat);
   const sx = x + dx * MUZZLE_OFFSET;
   const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "ornament");
+  const mesh = createProjectileMesh("ornament");
   mesh.position.set(sx, PROJECTILE_Y + 0.1, sz);
   state.scene.add(mesh);
   state.projectiles.push({
@@ -2065,7 +2052,6 @@ export function launchOrnament(x: number, z: number, dx: number, dz: number): vo
     mesh,
     dispose: () => {},
   });
-  state.vfx?.sparks(sx, PROJECTILE_Y + 0.1, sz, dx, dz, 4);
 }
 
 /**
@@ -2078,9 +2064,7 @@ export function launchSkyVolley(x: number, z: number, targetX: number, targetZ: 
 
   // Overhead muzzle flash and loud gunshot
   sfxGun();
-  state.vfx?.burst(x, PROJECTILE_Y + 0.8, z, 0xf59e0b, 12, 2.5);
-  state.vfx?.sparks(x, PROJECTILE_Y + 0.8, z, 0, 1.5, 6);
-  state.vfx?.smoke(x, PROJECTILE_Y + 0.8, z, 1.0, 0.4);
+  triggerMuzzleVfx(x, z, 0, -1, "cop_bullet");
 
   const bulletCount = 3;
   for (let b = 0; b < bulletCount; b++) {
@@ -2089,8 +2073,7 @@ export function launchSkyVolley(x: number, z: number, targetX: number, targetZ: 
     const tx = targetX + Math.cos(spreadAngle) * spreadDist;
     const tz = targetZ + Math.sin(spreadAngle) * spreadDist;
 
-    const { geo, mat } = copBulletAssets();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("cop_bullet");
     mesh.position.set(x, PROJECTILE_Y + 0.5, z);
     state.scene.add(mesh);
 
@@ -2135,11 +2118,11 @@ export function fireWildBullet(x: number, z: number, angle: number): void {
  */
 export function golemShards(x: number, z: number): void {
   if (!state.scene) return;
-  const { geo, mat } = shardAssets();
   for (let n = 0; n < GOLEM_SHARDS; n++) {
     const a = (n / GOLEM_SHARDS) * Math.PI * 2 + Math.random() * 0.5;
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createProjectileMesh("shard");
     mesh.position.set(x, PROJECTILE_Y, z);
+    mesh.rotation.y = a;
     state.scene.add(mesh);
     state.projectiles.push({
       kind: "shard",
@@ -2301,6 +2284,7 @@ export function updateProjectiles(dt: number): void {
         if (pr.bounces !== undefined) {
           pr.bounces--;
           pr.bounced = true;
+          triggerImpactVfx(pr.x, pr.z, pr, "wall");
           state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 6);
           sfxTarget();
         }
@@ -2314,6 +2298,7 @@ export function updateProjectiles(dt: number): void {
         if (pr.bounces !== undefined) {
           pr.bounces--;
           pr.bounced = true;
+          triggerImpactVfx(pr.x, pr.z, pr, "wall");
           state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 6);
           sfxTarget();
         }
@@ -2388,6 +2373,7 @@ export function updateProjectiles(dt: number): void {
       } else {
         const t = worldToTile(g, pr.x, pr.z);
         if (!isWalkable(g, t.i, t.j)) {
+          triggerImpactVfx(pr.x, pr.z, pr, "wall");
           // Arrows/bullets spit a spark off the masonry they bury into.
           if (pr.kind === "arrow" || pr.kind === "bullet") {
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
@@ -2486,6 +2472,9 @@ export function updateProjectiles(dt: number): void {
       }
     }
 
+    // Advance dynamic in-flight visual effects (rotation, pulsing, fuse burns, trails)
+    updateProjectileVfx(pr, dt);
+
     // ── Hostile shots hit the PLAYER, not zombies (acid hurts, silk webs) ──
     if (pr.hostile) {
       // Bouncing bullets (Warden cop shot): initial direct shot always misses
@@ -2497,6 +2486,7 @@ export function updateProjectiles(dt: number): void {
         const dx = p.x - pr.x;
         const dz = p.z - pr.z;
         if (dx * dx + dz * dz <= (PLAYER_R + HIT_R) * (PLAYER_R + HIT_R)) {
+          triggerImpactVfx(pr.x, pr.z, pr, "entity");
           if (pr.kind === "web") {
             if (p.iframes <= 0) webPlayer();
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
@@ -2687,6 +2677,7 @@ export function updateProjectiles(dt: number): void {
           if (pr.kind === "arrow") state.vfx?.dust(z.x, 0.1, z.z);
         } else {
           consumed = true;
+          triggerImpactVfx(z.x, z.z, pr, "entity");
           if (pr.kind === "bullet") {
             state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 8);
             state.vfx?.burst(z.x, PROJECTILE_Y, z.z, PALETTE_HEX[18], 4, 2.8);
