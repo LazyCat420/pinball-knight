@@ -1,3 +1,4 @@
+import { enforceLaunchExits } from './launch-exits';
 import { enforceWallJoins } from "./wall-junctions";
 /**
  * Shared deterministic floor authoring. No live state, lighting, or spawning.
@@ -50,12 +51,12 @@ export function authorFloorTopology(opts: FloorAuthorOptions) {
   const modifier = rollModifier(level, rng);
   const windiness = windinessFor(level, arch, rng);
   const trackDensity = opts.trackDensity ?? Math.max(0.35, Math.min(0.85, windiness));
-  const started = Date.now();
+  const started = performance.now();
   const track = TRACK_FIRST ? buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
     profile: arch.track, density: trackDensity, funnels: opts.funnels,
     funnelTune: opts.funnelTune, relays: opts.relays,
   }) : null;
-  return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, track, trackMs: Date.now() - started };
+  return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, track, trackMs: performance.now() - started };
 }
 
 /** Finished floor, including the live legacy fallback if track growth declines. */
@@ -104,7 +105,7 @@ export function authorMaze(opts: FloorAuthorOptions) {
   const baseBudget = (scaled ? Math.round(levelTerm * areaRatio) : levelTerm) + budget.partsArea;
   const partBudget = Math.max(4, Math.round(baseBudget * modifier.partMult));
   const scaleCount = (n: number): number => scaled ? Math.max(1, Math.round(n * areaRatio)) : n;
-  const decorateStart = Date.now();
+  const decorateStart = performance.now();
   const plan = decorateMaze(
     grid,
     rng,
@@ -134,7 +135,7 @@ export function authorMaze(opts: FloorAuthorOptions) {
     },
   );
 
-  const decorateMs = Date.now() - decorateStart;
+  const decorateMs = performance.now() - decorateStart;
 
   pruneSealedBands(grid, plan.secrets);
   // Secret pruning can change a shaped wall's exposed straight terminals.
@@ -173,6 +174,8 @@ export function authorMaze(opts: FloorAuthorOptions) {
   }
 
   const densityRepair = track ? repairFloorDensity(plan, walkable, anchors.filter(a => a.kind === "spawn")) : null;
+
+  enforceLaunchExits(grid, plan.parts);
 
   return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, bonusRoom,
     track, grid, plan, lampPuzzlePlan, theme, walkable, budget, partBudget, areaRatio, densityRepair,

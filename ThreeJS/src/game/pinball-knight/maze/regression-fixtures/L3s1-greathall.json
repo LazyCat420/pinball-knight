@@ -9,14 +9,14 @@
   "gridDigest": {
     "w": 87,
     "h": 61,
-    "floors": 2199,
-    "walls": 3083,
+    "floors": 2184,
+    "walls": 3098,
     "stairs": 1,
     "cracked": 24,
-    "boxes": 2988,
-    "bevels": 20,
+    "boxes": 3001,
+    "bevels": 22,
     "arcs": 75,
-    "tileHash": "72c79f55"
+    "tileHash": "78f6365a"
   },
   "endpoints": {
     "start": {
@@ -30,37 +30,32 @@
     "routeDistance": 64
   },
   "clusteringMetrics": {
-    "totalParts": 72,
+    "totalParts": 71,
     "partsByKind": {
-      "bumper": 23,
+      "bumper": 25,
       "deflector": 4,
-      "booster": 11,
+      "booster": 14,
       "boostcorner": 1,
-      "pit": 3,
+      "pit": 1,
       "trapdoor": 1,
       "flipper": 1,
-      "spinpad": 1,
-      "mirror": 1,
       "jumppad": 3,
       "rollover": 6,
-      "firevent": 1,
-      "electric": 1,
       "swingarm": 1,
-      "flywheel": 1,
+      "flywheel": 2,
       "magpost": 4,
-      "seesaw": 1,
       "catapult": 2,
       "cannon": 2,
       "lamp": 4
     },
-    "partsInCorners": 8,
-    "partsInCloseClusters": 34
+    "partsInCorners": 6,
+    "partsInCloseClusters": 33
   },
   "wallRunMetrics": {
-    "totalRuns": 253,
+    "totalRuns": 254,
     "meanLength": 2.45,
-    "runsLength1or2": 185,
-    "shapedEndsOnShortRuns": 17
+    "runsLength1or2": 183,
+    "shapedEndsOnShortRuns": 22
   },
   "assemblies": {
     "chuteAccessPorts": [
@@ -359,143 +354,38 @@
       "spine": true
     },
     {
-      "kind": "pit",
+      "kind": "booster",
       "i": 26,
-      "j": 4,
-      "dirI": 0,
+      "j": 45,
+      "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
-      "dir2J": 0
+      "dir2J": 0,
+      "chain": true
     },
     {
-      "kind": "trapdoor",
-      "i": 60,
-      "j": 14,
-      "dirI": 0,
+      "kind": "booster",
+      "i": 30,
+      "j": 45,
+      "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
-      "dir2J": 0
+      "dir2J": 0,
+      "chain": true
     },
     {
-      "kind": "flipper",
-      "i": 67,
-      "j": 4,
-      "dirI": -1,
+      "kind": "booster",
+      "i": 34,
+      "j": 45,
+      "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "spinpad",
-      "i": 62,
-      "j": 3,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "mirror",
-      "i": 16,
-      "j": 8,
-      "dirI": -1,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
+      "dir2J": 0,
+      "chain": true
     },
     {
       "kind": "pit",
-      "i": 48,
-      "j": 9,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "jumppad",
-      "i": 19,
-      "j": 23,
-      "dirI": 0,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "jumppad",
-      "i": 66,
-      "j": 25,
-      "dirI": 0,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "jumppad",
-      "i": 63,
-      "j": 25,
-      "dirI": 0,
-      "dirJ": -1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 77,
-      "j": 8,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 78,
-      "j": 8,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 79,
-      "j": 8,
-      "dirI": 0,
-      "dirJ": 1,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 53,
-      "j": 1,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 53,
-      "j": 2,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "rollover",
-      "i": 53,
-      "j": 3,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "pit",
-      "i": 54,
+      "i": 49,
       "j": 10,
       "dirI": 0,
       "dirJ": 0,
@@ -503,62 +393,107 @@
       "dir2J": 0
     },
     {
-      "kind": "firevent",
-      "i": 20,
+      "kind": "trapdoor",
+      "i": 81,
+      "j": 12,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "flipper",
+      "i": 80,
+      "j": 16,
+      "dirI": 0,
+      "dirJ": -1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "jumppad",
+      "i": 65,
+      "j": 17,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "jumppad",
+      "i": 64,
+      "j": 25,
+      "dirI": 0,
+      "dirJ": -1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "jumppad",
+      "i": 68,
+      "j": 25,
+      "dirI": 0,
+      "dirJ": -1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
+      "i": 17,
       "j": 23,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
+      "i": 17,
+      "j": 24,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
+      "i": 17,
+      "j": 25,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
+      "i": 83,
+      "j": 14,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
       "dir2J": 0
     },
     {
-      "kind": "electric",
-      "i": 60,
-      "j": 42,
+      "kind": "rollover",
+      "i": 84,
+      "j": 14,
       "dirI": 0,
-      "dirJ": 0,
+      "dirJ": 1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "rollover",
+      "i": 85,
+      "j": 14,
+      "dirI": 0,
+      "dirJ": 1,
       "dir2I": 0,
       "dir2J": 0
     },
     {
       "kind": "bumper",
-      "i": 41,
-      "j": 35,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
-      "i": 37,
-      "j": 35,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
-      "i": 39,
-      "j": 37,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
-      "i": 39,
-      "j": 33,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "bumper",
-      "i": 41,
+      "i": 49,
       "j": 27,
       "dirI": 0,
       "dirJ": 0,
@@ -567,8 +502,8 @@
     },
     {
       "kind": "bumper",
-      "i": 37,
-      "j": 27,
+      "i": 49,
+      "j": 35,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -576,8 +511,8 @@
     },
     {
       "kind": "bumper",
-      "i": 39,
-      "j": 29,
+      "i": 45,
+      "j": 23,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -585,8 +520,62 @@
     },
     {
       "kind": "bumper",
-      "i": 39,
+      "i": 41,
+      "j": 23,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 43,
       "j": 25,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 43,
+      "j": 21,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 41,
+      "j": 15,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 37,
+      "j": 15,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 39,
+      "j": 17,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "bumper",
+      "i": 39,
+      "j": 13,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -594,8 +583,8 @@
     },
     {
       "kind": "swingarm",
-      "i": 52,
-      "j": 18,
+      "i": 43,
+      "j": 38,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -603,8 +592,17 @@
     },
     {
       "kind": "flywheel",
-      "i": 44,
-      "j": 15,
+      "i": 26,
+      "j": 26,
+      "dirI": 0,
+      "dirJ": 1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "flywheel",
+      "i": 39,
+      "j": 34,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
@@ -612,8 +610,8 @@
     },
     {
       "kind": "bumper",
-      "i": 32,
-      "j": 27,
+      "i": 43,
+      "j": 31,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -621,8 +619,8 @@
     },
     {
       "kind": "magpost",
-      "i": 29,
-      "j": 28,
+      "i": 41,
+      "j": 33,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -630,8 +628,8 @@
     },
     {
       "kind": "magpost",
-      "i": 28,
-      "j": 25,
+      "i": 40,
+      "j": 32,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -639,8 +637,8 @@
     },
     {
       "kind": "magpost",
-      "i": 32,
-      "j": 25,
+      "i": 42,
+      "j": 32,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -648,26 +646,17 @@
     },
     {
       "kind": "magpost",
-      "i": 31,
-      "j": 26,
+      "i": 43,
+      "j": 33,
       "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "seesaw",
-      "i": 67,
-      "j": 16,
-      "dirI": -1,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
     },
     {
       "kind": "catapult",
-      "i": 73,
-      "j": 3,
+      "i": 80,
+      "j": 7,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -675,8 +664,8 @@
     },
     {
       "kind": "catapult",
-      "i": 81,
-      "j": 12,
+      "i": 14,
+      "j": 7,
       "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
@@ -684,17 +673,17 @@
     },
     {
       "kind": "cannon",
-      "i": 60,
-      "j": 27,
-      "dirI": -1,
+      "i": 24,
+      "j": 2,
+      "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
     },
     {
       "kind": "cannon",
-      "i": 64,
-      "j": 12,
+      "i": 62,
+      "j": 44,
       "dirI": 0,
       "dirJ": -1,
       "dir2I": 0,
@@ -702,8 +691,8 @@
     },
     {
       "kind": "lamp",
-      "i": 53,
-      "j": 23,
+      "i": 59,
+      "j": 21,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -711,8 +700,8 @@
     },
     {
       "kind": "lamp",
-      "i": 84,
-      "j": 18,
+      "i": 63,
+      "j": 7,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -720,8 +709,8 @@
     },
     {
       "kind": "lamp",
-      "i": 66,
-      "j": 5,
+      "i": 32,
+      "j": 27,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -729,8 +718,8 @@
     },
     {
       "kind": "lamp",
-      "i": 27,
-      "j": 49,
+      "i": 35,
+      "j": 2,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -830,11 +819,39 @@
       "kind": "booster"
     },
     {
-      "fromI": 53,
-      "fromJ": 3,
-      "toI": 62,
-      "toJ": 3,
-      "kind": "rollover"
+      "fromI": 26,
+      "fromJ": 45,
+      "toI": 30,
+      "toJ": 45,
+      "kind": "booster"
+    },
+    {
+      "fromI": 30,
+      "fromJ": 45,
+      "toI": 34,
+      "toJ": 45,
+      "kind": "booster"
+    },
+    {
+      "fromI": 80,
+      "fromJ": 16,
+      "toI": 80,
+      "toJ": 7,
+      "kind": "flipper"
+    },
+    {
+      "fromI": 39,
+      "fromJ": 34,
+      "toI": 39,
+      "toJ": 42,
+      "kind": "flywheel"
+    },
+    {
+      "fromI": 24,
+      "fromJ": 2,
+      "toI": 35,
+      "toJ": 2,
+      "kind": "cannon"
     }
   ],
   "violations": []

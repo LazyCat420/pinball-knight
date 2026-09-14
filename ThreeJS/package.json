@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "sprites": "FORGE_PUBLISH=1 vitest run src/game/pinball-knight/tools/sprite-forge",
     "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs",
+    "maze:parts-bench": "node scripts/part-spacing-benchmark.mjs",
     "maze:scale": "node scripts/maze-scaling.mjs",
     "maze:census": "vitest run src/game/pinball-knight/maze/regression-census.test.ts",
     "test:maze:smoke": "vitest run src/game/pinball-knight/maze/maze-smoke.test.ts"

@@ -10,6 +10,8 @@
  *
  * DOM- and three-free: tested alongside the generator.
  */
+import { appendOnlyPartOccupancy } from './part-occupancy';
+import { placeBoosterPatterns } from './booster-patterns';
 import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, shapeAt } from "./generator";
 import { SHAPE_ARC } from "../engine/tile-shape";
@@ -111,6 +113,9 @@ export type PartSpotKind =
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
+  pattern?: string;
+  patternId?: string;
+  patternSize?: number;
   dirI: number;
   dirJ: number;
   dir2I: number;
@@ -2808,7 +2813,15 @@ export function decorateMaze(
     !grammar.getSlot(c.i, c.j).isClearway &&
     !parts.some((q) => q.i === c.i && q.j === c.j);
 
-  for (let chain = 0; chain < chainCount && parts.length < corridorBudget; chain++) {
+  const patternItems = new Set(items.map(p => p.j * g.w + p.i));
+  const patternsPlaced = placeBoosterPatterns(g, parts, shuffled(floors, mulberry32((assemblySeed ^ 0xb0057) >>> 0)), {
+    count: chainCount, budget: corridorBudget, offset: (extras.floor ?? 1) % 3,
+    allowed: p => Math.abs(p.i - start.i) + Math.abs(p.j - start.j) >= 5 &&
+      !(p.i === stairs.i && p.j === stairs.j) && !onSpine(p.i, p.j) &&
+      !inCircuit(p.i, p.j) && !inAssembly(p.i, p.j) &&
+      !patternItems.has(p.j * g.w + p.i) && isLegalSlotForPart(p.kind, grammar.getSlot(p.i, p.j).slotType),
+  });
+  for (let chain = patternsPlaced; chain < chainCount && parts.length < corridorBudget; chain++) {
     // Seed on a straight run with genuine runway — the chain's opening shot.
     let cur: TilePos | null = null;
     let dir: { di: number; dj: number } | null = null;
@@ -3602,15 +3615,17 @@ export function decorateMaze(
     return true;
   };
 
+  // No removals or moves between here and the final density clamp.
+  const latePartNear = appendOnlyPartOccupancy(g, parts);
+  const lateReserved = new Set([...items, ...torches].map(p => p.j * g.w + p.i));
   /** Free floor: not the ends, not the plunger lane, nothing already placed. */
   const freeFor = (i: number, j: number, clearance: number): boolean => {
     if (at(g, i, j) !== T_FLOOR) return false;
     if (i === stairs.i && j === stairs.j) return false;
     if (i === start.i && j === start.j) return false;
     if (inChute(i, j)) return false;
-    if (items.some((it) => it.i === i && it.j === j)) return false;
-    if (torches.some((t) => t.i === i && t.j === j)) return false;
-    return !parts.some((q) => Math.max(Math.abs(q.i - i), Math.abs(q.j - j)) <= clearance);
+    if (lateReserved.has(j * g.w + i)) return false;
+    return !latePartNear(i, j, clearance);
   };
 
   // -- SWINGARMS -- a bar with a hand on the end, sweeping a circle.
@@ -3759,7 +3774,7 @@ export function decorateMaze(
       if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 4) continue;
       if (c.i === stairs.i && c.j === stairs.j) continue;
       if (inRoom(c)) continue;
-      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 4)) continue;
+      if (latePartNear(c.i, c.j, 3, true)) continue;
 
       const dirs = shuffled([...CARDINALS] as Array<readonly [number, number]>, sRng);
       let aimed: { di: number; dj: number; span: number } | null = null;
@@ -3771,7 +3786,7 @@ export function decorateMaze(
           const landI = c.i + di * span;
           const landJ = c.j + dj * span;
           if (at(g, landI, landJ) === T_FLOOR) {
-            if (!parts.some((q) => Math.abs(q.i - landI) + Math.abs(q.j - landJ) < 3)) {
+            if (!latePartNear(landI, landJ, 2, true)) {
               aimed = { di, dj, span };
               break;
             }
@@ -3809,7 +3824,7 @@ export function decorateMaze(
       if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
       if (c.i === stairs.i && c.j === stairs.j) continue;
       if (inRoom(c)) continue;
-      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+      if (latePartNear(c.i, c.j, 4, true)) continue;
 
       let openDir: { di: number; dj: number } | null = null;
       for (const [di, dj] of CARDINALS) {
@@ -3844,7 +3859,7 @@ export function decorateMaze(
       if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 6) continue;
       if (c.i === stairs.i && c.j === stairs.j) continue;
       if (inRoom(c)) continue;
-      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 5)) continue;
+      if (latePartNear(c.i, c.j, 4, true)) continue;
 
       let bestDir: { di: number; dj: number } | null = null;
       let maxRun = 0;

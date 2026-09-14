@@ -542,7 +542,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // approach. No jam guard needed because the loop cannot start.
     const along = p.momX * part.dir2X + p.momZ * part.dir2Z;
     const speed = p.momSpeed;
-    if (speed > 0.5 && along > 0.7) return; // already heading out — nothing to redirect
+    if (speed > 0.5 && Math.abs(along) > 0.7) return; // exit traffic or its returning wall rebound
     p.momX = part.dir2X;
     p.momZ = part.dir2Z;
     // A graze walks round the corner; a real run gets the speed floor. Without
@@ -1107,6 +1107,8 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.cooldownT = ROLLOVER_COOLDOWN;
     part.hitT = 0;
     hitRollover(part);
+    // A safety-downgraded machine step remains completable on foot.
+    if (part.asm) advanceMachineShot(part);
     trySkillShot(part);
     state.vfx?.sparks(part.x, 0.3, part.z, 0, 0, 4);
   },
