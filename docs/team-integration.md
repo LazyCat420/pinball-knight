@@ -739,3 +739,9 @@ zero unreachable tiles and a reachable exit. Production build passed; compiler
 diagnostics match baseline (65 existing, no additions). Full post-merge suite
 will run in `wt-room-play-spaces-integration`. Generated sprite-forge reports
 are excluded. NAS deployment remains on hold.
+
+Integrated feature commit `c237d6c4` as `b51b81da`. Post-merge validation:
+410 test files passed / 5 skipped; 4,681 tests passed / 12 skipped; zero
+failures. Integrated production build passed. Generated sprite-forge reports
+remain excluded. Primary is ready to fast-forward and push; NAS deployment
+remains on hold.
