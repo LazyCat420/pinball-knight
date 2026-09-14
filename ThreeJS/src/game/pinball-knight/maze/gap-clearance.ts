@@ -14,15 +14,17 @@ export function narrowGaps(g: Grid): number[] {
         if (isNarrowGap(g, i, j)) out.push(j * g.w + i);
     return out;
 }
-/** Widen to a 3x3 turning pocket. If masonry is protected, close a redundant
- * slit only when its neighbours still connect locally. The queue revisits
+/** Prefer a backed closure when the room entrance policy allows it; otherwise
+ * widen to a 3x3 turning pocket. Protected masonry can also use the original
+ * redundant-slit fallback. Every closure proves local connectivity. The queue revisits
  * changed neighbourhoods; opened floor and closed stone are never reversed. */
 export function repairNarrowGaps(g: Grid, protectedWall: (i: number, j: number) => boolean,
-    protectedFloor: (i: number, j: number) => boolean = () => true) {
+    protectedFloor: (i: number, j: number) => boolean = () => true,
+    preferClose: (i: number, j: number) => boolean = () => false) {
     const initial = narrowGaps(g), queue = [...initial];
     const queued = new Uint8Array(g.t.length), opened = new Uint8Array(g.t.length), closed = new Uint8Array(g.t.length);
     for (const k of queue) queued[k] = 1;
-    let widened = 0, sealed = 0;
+    let widened = 0, sealed = 0, preferredClosed = 0;
     const changed = (k: number) => {
         const i = k % g.w, j = Math.floor(k / g.w);
         for (let y = Math.max(1, j - 2); y <= Math.min(g.h - 2, j + 2); y++)
@@ -35,6 +37,50 @@ export function repairNarrowGaps(g: Grid, protectedWall: (i: number, j: number) 
         const k = queue[h], i = k % g.w, j = Math.floor(k / g.w);
         queued[k] = 0;
         if (!isNarrowGap(g, i, j)) continue;
+        if (preferClose(i, j)) {
+            // A diagonal aperture needs a connected stair-step bridge, not an
+            // isolated square. Try either handedness as an atomic proposal.
+            const proposals: number[][] = [[k]];
+            for (const dy of [-1, 1]) if (at(g, i - 1, j - dy) === T_WALL && at(g, i + 1, j + dy) === T_WALL) {
+                proposals.push([k, k - 1, k + 1], [k, k - dy * g.w, k + dy * g.w]);
+            }
+            let filled = false;
+            for (const proposal of proposals) {
+                const tiles = new Set(proposal);
+                if (proposal.some(n => opened[n] || g.t[n] !== T_FLOOR || protectedFloor(n % g.w, Math.floor(n / g.w)))) continue;
+                const wall = (x: number, y: number) => tiles.has(y * g.w + x) || at(g, x, y) === T_WALL;
+                if (proposal.some(n => SIDES.filter(([dx, dy]) => wall(n % g.w + dx, Math.floor(n / g.w) + dy)).length < 2)) continue;
+                const boundary = new Set<number>();
+                for (const n of proposal) for (const [dx, dy] of SIDES) {
+                    const x = n % g.w + dx, y = Math.floor(n / g.w) + dy, next = y * g.w + x;
+                    if (!tiles.has(next) && isWalkable(g, x, y)) boundary.add(next);
+                }
+                if (!boundary.size) continue;
+                const visit = [boundary.values().next().value!], seen = new Set(visit);
+                // A bounded proof is conservative: if the alternate route is
+                // farther away, widen instead of risking a disconnected room.
+                for (let head = 0; head < visit.length; head++) {
+                    const n = visit[head], x = n % g.w, y = Math.floor(n / g.w);
+                    for (const [dx, dy] of SIDES) {
+                        const nx = x + dx, ny = y + dy, next = ny * g.w + nx;
+                        if (Math.abs(nx - i) > 12 || Math.abs(ny - j) > 12 || tiles.has(next) || seen.has(next) || !isWalkable(g, nx, ny)) continue;
+                        seen.add(next); visit.push(next);
+                    }
+                }
+                if ([...boundary].some(n => !seen.has(n))) continue;
+                const existing = new Set<number>();
+                for (let y = j - 3; y <= j + 3; y++) for (let x = i - 3; x <= i + 3; x++)
+                    if (isNarrowGap(g, x, y)) existing.add(y * g.w + x);
+                for (const n of proposal) g.t[n] = T_WALL;
+                let newGap = false;
+                for (let y = j - 3; y <= j + 3; y++) for (let x = i - 3; x <= i + 3; x++)
+                    if (isNarrowGap(g, x, y) && !existing.has(y * g.w + x)) newGap = true;
+                if (newGap) { for (const n of proposal) g.t[n] = T_FLOOR; continue; }
+                for (const n of proposal) { g.shapes[n] = SHAPE_FULL; if (g.arcIdx) g.arcIdx[n] = -1; closed[n] = 1; changed(n); }
+                sealed++; preferredClosed++; filled = true; break;
+            }
+            if (filled) continue;
+        }
         let carve: number[] | null = null;
         // Shift the pocket when the centered one meets the map rim or protected
         // stone. This widens an edge corridor inward instead of accepting it.
@@ -74,5 +120,5 @@ export function repairNarrowGaps(g: Grid, protectedWall: (i: number, j: number) 
         }
         if (seen.has(neighbours[1])) { setTile(g, i, j, T_WALL); closed[k] = 1; sealed++; changed(k); }
     }
-    return { detected: initial.length, widened, closed: sealed, unresolved: narrowGaps(g).length };
+    return { detected: initial.length, widened, closed: sealed, preferredClosed, unresolved: narrowGaps(g).length };
 }

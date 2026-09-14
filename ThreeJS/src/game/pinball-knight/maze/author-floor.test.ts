@@ -14,8 +14,8 @@ afterEach(() => vi.restoreAllMocks());
 const BASELINES = [
   [1, 1, false, false, "21ea8d3f6b9bffbc0e0f8a992735607c534385ca9dc475338e2a677dd6079ea7"],
   [3, 424242, true, false, "30e6dd65d763b20ca68c155070ff7fa3dc448403cde3b066f370db89ff5cddc6"],
-  [5, 12345, false, false, "7a17cc2300bc1e0054e6d3c596a5ccf1cbe83f44938e2cedd253930ce77563c8"],
-  [24, 1, true, false, "9bd56c58e08c2eb14bd317307b697e23d38215119e5969380f7806f4a1dde686"],
+  [5, 12345, false, false, "0d808daf2fa075081aad8ee242162a9b0d612e1509436acb8c773e8f848f7042"],
+  [24, 1, true, false, "fb7dc862a86adf11b4c16193240f63947a0aacb73bf2dd79640131f0194b2513"],
   [6, 424242, true, true, "9ba54a871e6a300f33d3425406236d43e05b1232929ecd7fbf9c5ecdfc190b81"],
 ] as const;
 

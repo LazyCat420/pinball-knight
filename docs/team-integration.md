@@ -745,3 +745,20 @@ Integrated feature commit `c237d6c4` as `b51b81da`. Post-merge validation:
 failures. Integrated production build passed. Generated sprite-forge reports
 remain excluded. Primary is ready to fast-forward and push; NAS deployment
 remains on hold.
+
+## Room entrance balancing — 2026-09-14
+
+Branch: `feat/room-exit-balance`, based on `f7b53116` (includes projectile VFX).
+Scope: snapshot distinct usable room entrances; prefer connected closure of
+redundant cardinal/diagonal gaps with two alternate wide entrances per affected
+room; preserve protected routes and prove floor connectivity; reject new nearby
+chokes. Search skipped room-activity offsets to retain chicane variety after
+geometry changes. Reviewed fixture changes and diagnostic example are included.
+
+Validation before handoff: focused gap/room policy and 15 finished-map checks,
+launch safety/variety and exact pattern tests passed; deterministic fixtures
+refreshed after gameplay checks. Production build passed. Scale 1/2/4/8 audits
+(up to 419,105 tiles) found zero narrow gaps and unreachable tiles. The initial
+full sweep exposed expected fixture changes and a chicane-search regression;
+both were corrected. A fresh full suite is required in the integration checkout.
+Generated sprite-forge reports are excluded. NAS deployment remains on hold.

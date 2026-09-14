@@ -195,6 +195,10 @@ export function authorMaze(opts: FloorAuthorOptions) {
     // actual open pockets, still requiring clear floor around every part.
     for (let j = 2; j < grid.h - 2; j += 2) for (let i = 2; i < grid.w - 2; i += 2)
       if (at(grid, i, j) === T_FLOOR) activityCandidates.push({ i, j });
+    // Preserve the coarse search order, then inspect the skipped offsets.
+    // Closing a diagonal aperture can shift a valid small pattern by one tile.
+    for (let j = 2; j < grid.h - 2; j++) for (let i = 2; i < grid.w - 2; i++)
+      if ((i % 2 || j % 2) && at(grid, i, j) === T_FLOOR) activityCandidates.push({ i, j });
     placeRoomActivity(grid, plan.parts, activityCandidates, {
       budget: Math.max(partBudget, Math.floor(walkable * 31 / 1000)),
       allowed: p => {

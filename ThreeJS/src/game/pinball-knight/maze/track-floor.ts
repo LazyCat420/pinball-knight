@@ -1,3 +1,4 @@
+import { roomGapPolicy } from './room-gap-policy';
 /**
  * TRACK FLOOR — the track-first generator, packaged as a drop-in base grid.
  *
@@ -1036,7 +1037,7 @@ export function buildTrackFloor(
     !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i] || inBossRoom(i, j) || nearSealed(grid, mask, i, j));
   const gapArcSpans = arcSpanMask(grid);
   repairNarrowGaps(grid, (i, j) => !!gapArcSpans[j * grid.w + i] || nearSealed(grid, mask, i, j),
-    (i, j) => !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i]);
+    (i, j) => !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i], roomGapPolicy(grid));
   for (let round = 0; round < 8; round++) {
     enforceWallJoins(grid);
     compactArcs(grid);
