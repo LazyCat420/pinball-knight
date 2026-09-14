@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "sprites": "FORGE_PUBLISH=1 vitest run src/game/pinball-knight/tools/sprite-forge",
     "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs",
-    "maze:census": "vitest run src/game/pinball-knight/maze/regression-census.test.ts"
+    "maze:census": "vitest run src/game/pinball-knight/maze/regression-census.test.ts",
+    "test:maze:smoke": "vitest run src/game/pinball-knight/maze/maze-smoke.test.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
