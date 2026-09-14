@@ -94,7 +94,6 @@ import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
 import { wallLook } from "./dev/wall-look";
-import { hordeFlowField } from "./engine/flow-field";
 import { updatePlayer } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
