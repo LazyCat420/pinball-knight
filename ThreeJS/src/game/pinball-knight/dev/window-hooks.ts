@@ -774,6 +774,9 @@ export function installDevHooks(deps: DevHookDeps): void {
       });
       return { placed: out.length, requested: ZOMBIE_TYPE_IDS.length, types: out };
     };
+    (window as unknown as { __dungeonSpawnAllZombies?: () => void }).__dungeonSpawnAllZombies = () => {
+      import("./debug-actions").then((m) => m.debugSpawnAllZombies());
+    };
     // Dev: the live input picture — which keys are down, what the touch overlay
     // and the pad are reporting, and whether the poller is seeing a controller
     // at all. Controllers and touch have no other read-back headlessly.

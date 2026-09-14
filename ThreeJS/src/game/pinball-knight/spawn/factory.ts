@@ -970,12 +970,13 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   // co-op peers each build the horde locally from the shared pool seed, so a
   // random draw here would disagree about who is a hulk.
   const ztype = resolveZombieType(pickZombieType(hash, level), x, z);
+  const typeSheet = ztype ? (state.zombieTypeSheets[ztype] ?? state.sheets[`zombie_${ztype}` as any]) : undefined;
   const variantSheets = state.zombieVariantSheets;
   // The silhouette must agree with the stat story: a crawler wearing two good
   // legs is a lie the player notices immediately.
   const allowed = variantIndicesFor(ztype, ZOMBIE_VARIANTS);
   const vi = allowed[hash % allowed.length];
-  const sheet = variantSheets[vi] ?? variantSheets[0] ?? state.sheets.zombie!;
+  const sheet = typeSheet ?? variantSheets[vi] ?? variantSheets[0] ?? state.sheets.zombie!;
   return makeZombie(sheet, x, z, baseSpeed, { ztype });
 }
 

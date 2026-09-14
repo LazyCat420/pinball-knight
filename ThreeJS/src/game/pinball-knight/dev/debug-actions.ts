@@ -120,11 +120,11 @@ export function debugSpawnRing(): void {
 export function makeDebugEnemy(kind: EnemyKind, x: number, z: number, ztype?: ZombieType): Zombie | null {
   const speed = levelConfig(state.level).zombieSpeed;
   if (kind === "zombie") {
-    // A sub-typed debug spawn must wear the matching SILHOUETTE, or the headless
-    // art check is looking at a shambler with a hulk's stats and passes for the
-    // wrong reason.
+    // A sub-typed debug spawn uses its dedicated type sheet if available,
+    // falling back to the matching SILHOUETTE variant or base sheet.
+    const typeSheet = ztype ? (state.zombieTypeSheets[ztype] ?? state.sheets[`zombie_${ztype}` as any]) : undefined;
     const allowed = ztype ? variantIndicesFor(ztype, ZOMBIE_VARIANTS) : [0];
-    const sheet = state.zombieVariantSheets[allowed[0]] ?? state.zombieVariantSheets[0] ?? state.sheets.zombie;
+    const sheet = typeSheet ?? state.zombieVariantSheets[allowed[0]] ?? state.zombieVariantSheets[0] ?? state.sheets.zombie;
     return sheet ? makeZombie(sheet, x, z, speed, { kind: "zombie", ztype }) : null;
   }
   if (KIND_SKIN[kind]) return makeSkinned(kind, x, z, speed);
@@ -157,6 +157,11 @@ export async function preloadSpawnArt(kind: EnemyKind): Promise<void> {
   // will actually construct as well as what was asked for.
   const kinds: EnemyKind[] = kind === "ascii_human" ? ["computer_screen", "ascii_human"] : [kind];
   const keys = kinds.map((k) => sheetKeyForKind(k)).filter((k): k is NonNullable<typeof k> => Boolean(k));
+  if (kind === "zombie") {
+    for (const ztype of ZOMBIE_TYPE_IDS) {
+      keys.push(`zombie_${ztype}` as any);
+    }
+  }
   await Promise.all(keys.map((key) => loadMonsterSheet(key).catch(() => false)));
 }
 
@@ -170,6 +175,16 @@ export function debugSpawnAllZombies(): void {
   if (!p || !g || !state.scene) return;
   const pt = worldToTile(g, p.x, p.z);
   ZOMBIE_TYPE_IDS.forEach((ztype, i) => {
+    const key = `zombie_${ztype}` as any;
+    if (!state.zombieTypeSheets[ztype] && !state.sheets[key]) {
+      void loadMonsterSheet(key).then(() => {
+        const zz = state.zombies.find((z) => z.ztype === ztype);
+        if (zz && state.sheets[key]) {
+          zz.sprite.setSheet(state.sheets[key]!);
+          zz.anim.reapply();
+        }
+      });
+    }
     const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
     const c = tileCenter(g, spot.i, spot.j);
     const zz = makeDebugEnemy("zombie", c.x, c.z, ztype);
