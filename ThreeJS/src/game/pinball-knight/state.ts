@@ -965,7 +965,7 @@ export interface Projectile {
   startZ?: number;
   targetX?: number;
   targetZ?: number;
-  mesh: THREE.Mesh;
+  mesh: THREE.Mesh | THREE.Group;
   dispose(): void;
 }
 
