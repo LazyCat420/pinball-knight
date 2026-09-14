@@ -5,9 +5,9 @@ import * as gaps from './gap-clearance';
 it('detects and repairs the reported depth-6 seed-1 diagonal corner before shipping', () => {
     const original = gaps.repairNarrowGaps;
     let detected = false;
-    const spy = vi.spyOn(gaps, 'repairNarrowGaps').mockImplementation((g, wall, floor) => {
+    const spy = vi.spyOn(gaps, 'repairNarrowGaps').mockImplementation((g, wall, floor, preferClose) => {
         detected ||= gaps.isNarrowGap(g, 55, 30);
-        return original(g, wall, floor);
+        return original(g, wall, floor, preferClose);
     });
     try {
         const f = authorMaze({ level: 6, runSeed: 1 });

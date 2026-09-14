@@ -22,3 +22,26 @@ it('reports protected essential gaps instead of disconnecting the only route', (
     const result = repairNarrowGaps(g, () => true, () => false);
     expect(result.closed).toBe(0); expect(result.unresolved).toBeGreaterThan(0);
 });
+it('prefers backed closure when redundant even if widening is possible', () => {
+    const g = room(); g.t[8 * g.w + 7] = g.t[8 * g.w + 9] = 0;
+    const result = repairNarrowGaps(g, () => false, () => false, () => true);
+    expect(result.closed).toBe(1); expect(result.widened).toBe(0);
+});
+it('backs a diagonal closure with connected masonry', () => {
+    const g = room(); g.t[7 * g.w + 7] = g.t[9 * g.w + 9] = 0;
+    const result = repairNarrowGaps(g, () => false, () => false, () => true);
+    expect(result.closed).toBe(1); expect(result.unresolved).toBe(0);
+    expect(g.t[8 * g.w + 8]).toBe(0);
+    for (const k of [8 * g.w + 7, 8 * g.w + 8, 8 * g.w + 9]) expect(g.t[k]).toBe(0);
+});
+it('widens the only route even when closure is preferred', () => {
+    const g = room(); for (let x = 1; x < g.w - 1; x++) if (x !== 8) g.t[8 * g.w + x] = 0;
+    const result = repairNarrowGaps(g, () => false, () => false, () => true);
+    expect(result.closed).toBe(0); expect(result.widened).toBeGreaterThan(0);
+});
+it('preserves a protected route even when its room has spare entrances', () => {
+    const g = room(); g.t[7 * g.w + 7] = g.t[9 * g.w + 9] = 0;
+    const result = repairNarrowGaps(g, () => false, (i, j) => i === 8 && j === 8, () => true);
+    expect(result.preferredClosed).toBe(0);
+    expect(result.widened).toBeGreaterThan(0); expect(g.t[8 * g.w + 8]).toBe(1);
+});
