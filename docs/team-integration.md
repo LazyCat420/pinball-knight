@@ -767,3 +767,21 @@ Follow-up on `feat/room-exit-balance`: activity replacement prefilter avoids
 rebuilding full part occupancy for candidates blocked by immutable furniture or
 invalid pad geometry. The 23 focused activity, launch, full-author hash and census
 fixture tests pass unchanged; this optimization does not alter generated output.
+
+### Room entrance integration validation
+
+Completed batches: `2897e5fb` (geometry/activity search) and `f469e90c`
+(output-preserving prefilter), integrated through `2211f04e` on
+`integrate/room-exit-balance`, retaining primary baseline `f7b53116`.
+The fresh full post-merge suite passed 413 files / 4,710 tests, with 5 files /
+12 tests skipped and no failures. After the prefilter batch, all 38 targeted
+post-merge gap, room, launcher and exact-layout regression tests passed, and the
+final production build passed. The geometry batch added no TypeScript diagnostics
+against its starting baseline (107 pre-existing diagnostics).
+
+Final prefilter scale checks: 105,105 and 419,105 tiles, zero narrow gaps, zero
+unreachable floor tiles, and reachable stairs. The larger sample took 19.1 s
+versus 45.4 s before the prefilter; these shared-machine samples are not an FPS
+benchmark. The 15-floor sample selected 47 room-aware closures. Both task and
+integration sprite-forge generated reports remain excluded and untouched.
+NAS deployment remains on hold.
