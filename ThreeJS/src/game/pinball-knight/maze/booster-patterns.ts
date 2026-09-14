@@ -79,3 +79,15 @@ export function placeBoosterPatterns(g: Grid, parts: PinballPartSpot[], candidat
     }
     return placed;
 }
+
+/** Later wall authoring can invalidate a previously safe pattern. Remove the
+ * complete pattern and repeat because another pattern may have fed into it. */
+export function pruneUnsafeBoosterPatterns(g: Grid, parts: PinballPartSpot[]): void {
+    while (parts.some(p => p.patternId)) {
+        const inspect = launchExitInspector(g, parts);
+        const rejected = new Set(parts.filter(p => p.patternId && !inspect(p).safe).map(p => p.patternId));
+        if (rejected.size === 0) return;
+        for (let k = parts.length - 1; k >= 0; k--)
+            if (parts[k].patternId && rejected.has(parts[k].patternId)) parts.splice(k, 1);
+    }
+}

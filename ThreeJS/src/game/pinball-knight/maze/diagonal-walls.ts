@@ -3,6 +3,7 @@
 import { type Grid, at, isWalkable, T_FLOOR, T_WALL, setTile } from './generator';
 import { SHAPE_FULL } from '../engine/tile-shape';
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+const CLEARANCE_DIRS = [...DIRS, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 export function thickenDiagonalWalls(g: Grid, protectedTile: (i: number, j: number) => boolean = () => false): number {
     let filled = 0;
     // Classify the original boundary: newly added backing must never seed
@@ -43,7 +44,9 @@ export function thickenDiagonalWalls(g: Grid, protectedTile: (i: number, j: numb
             const open = (x: number, y: number) => isWalkable(g, x, y) && !blocked.has(y * g.w + x);
             let pinched = false;
             for (const [x, y] of fill)
-                for (const [dx, dy] of DIRS) {
+                for (const [dx, dy] of CLEARANCE_DIRS) {
+                    // Diagonal wall corners can oppose each other without a
+                    // cardinal slit. Keep three samples clear on these axes too.
                     let gap = 0;
                     for (let d = 1; d <= 3; d++) {
                         if (!open(x + dx * d, y + dy * d))

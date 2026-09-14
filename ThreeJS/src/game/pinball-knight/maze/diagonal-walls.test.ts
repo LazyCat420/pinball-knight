@@ -42,3 +42,11 @@ it('leaves isolated L-shaped bends alone', () => {
     g.t[7 * g.w + 7] = g.t[7 * g.w + 8] = g.t[8 * g.w + 8] = 0;
     expect(thickenDiagonalWalls(g)).toBe(0);
 });
+
+it('preserves oblique clearance when the opposing wall misses cardinal rays', () => {
+    const g = room();
+    for (const [x, y] of [[7, 7], [8, 7], [8, 8], [9, 8], [9, 9], [4, 5]])
+        g.t[y * g.w + x] = 0;
+    thickenDiagonalWalls(g);
+    expect(g.t[8 * g.w + 7]).toBe(1);
+});

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { BOOSTER_PATTERNS, patternParts, placeBoosterPatterns } from './booster-patterns';
+import { BOOSTER_PATTERNS, patternParts, placeBoosterPatterns, pruneUnsafeBoosterPatterns } from './booster-patterns';
 import { type Grid } from './generator';
 import type { PinballPartSpot } from './decorate';
 import { enforceLaunchExits, unsafeLaunchers } from './launch-exits';
@@ -33,4 +33,14 @@ it('removes the whole pattern if a later pass removes a required member', () => 
     parts.splice(1, 1);
     expect(enforceLaunchExits(g, parts)).toBe(3);
     expect(parts).toEqual([]);
+});
+
+it('removes a complete pattern invalidated by a later wall pass', () => {
+    const g = room(), parts = patternParts('acceleration', { i: 10, j: 10 });
+    expect(unsafeLaunchers(g, parts)).toEqual([]);
+    g.t[10 * g.w + 20] = 0;
+    const loose: PinballPartSpot = { kind: 'bumper', i: 30, j: 30, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
+    parts.push(loose);
+    pruneUnsafeBoosterPatterns(g, parts);
+    expect(parts).toEqual([loose]);
 });

@@ -699,3 +699,20 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
 - Status: integrated and validated for primary-branch publication. NAS deployment
   remains held. Existing generated reports and unrelated developers' worktrees
   were preserved; no sprite-forge work files are included in the commits.
+
+## Hallway approach clearance — 2026-09-14
+
+Task branch: `feat/hallway-flow`, isolated in `wt-hallway-flow`, based on
+`6c23c01b`. Adds bounded doorway approach widening, eight-direction diagonal
+backing clearance, and final atomic rejection of booster patterns invalidated
+by later wall authoring. Updates deterministic fixtures after geometry and
+launcher gates pass. See `docs/perf/hallway-clearance.md` and its grid diagnostic.
+
+Handoff excludes generated sprite-forge reports. Integration is being validated
+against `2e852602` (including the separately completed zombie overhaul) in
+`wt-hallway-flow-integration`. NAS deployment remains on hold.
+
+Feature validation: 406 files passed / 5 skipped; 4,627 tests passed / 12
+skipped, zero failures. Production build passed. TypeScript matches the 60
+existing diagnostics with no additions. Large-map generation through 419,105
+tiles retained full connectivity. Completed batch is ready for integration.
