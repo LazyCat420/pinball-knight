@@ -182,4 +182,40 @@ describe("20 Zombie Variations - Comprehensive Suite", () => {
     }
     expect(allSeen.size).toBe(20);
   });
+
+  it("verifies all 20 distinct zombie sub-types have published sprite sheets and 16-frame animations", async () => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const pubDir = join(process.cwd(), "public/sprites");
+
+    for (const id of ZOMBIE_TYPE_IDS) {
+      const jsonPath = join(pubDir, `zombie_${id}-S.json`);
+      const pngPath = join(pubDir, `zombie_${id}-S.png`);
+
+      expect(existsSync(jsonPath), `Missing JSON for ${id} at ${jsonPath}`).toBe(true);
+      expect(existsSync(pngPath), `Missing PNG for ${id} at ${pngPath}`).toBe(true);
+
+      const data = JSON.parse(readFileSync(jsonPath, "utf-8"));
+      expect(data.name).toBe(`zombie_${id}`);
+      expect(data.dir).toBe("S");
+      expect(Array.isArray(data.rows)).toBe(true);
+      expect(data.rows.length).toBe(4);
+
+      const clips = data.rows.map((r: any) => r.clip);
+      expect(clips).toEqual(["idle", "walk", "attack", "death"]);
+
+      let totalCells = 0;
+      for (const row of data.rows) {
+        expect(row.cells.length).toBe(4);
+        totalCells += row.cells.length;
+        for (const cell of row.cells) {
+          expect(cell.length).toBe(4);
+          const [x1, y1, x2, y2] = cell;
+          expect(x2).toBeGreaterThan(x1);
+          expect(y2).toBeGreaterThan(y1);
+        }
+      }
+      expect(totalCells).toBe(16);
+    }
+  });
 });

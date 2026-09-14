@@ -1371,6 +1371,8 @@ export const state = {
   sheets: {} as Partial<Record<SheetKey, SpriteSheet>>,
   /** A small pool of cosmetic zombie-variant sheets; each spawn picks one by seed. */
   zombieVariantSheets: [] as SpriteSheet[],
+  /** Distinct prebuilt or imported sheets for each of the 20 Zombie variations. */
+  zombieTypeSheets: {} as Partial<Record<string, SpriteSheet>>,
   /** Baked TINTED atlases for the expansion roster (spawn/factory.ts
    * makeExpansion): borrowed sheet × tint, re-snapped to the palette so the
    * monster is palette-exact instead of a GPU multiply the quantizer mangles.
@@ -1767,6 +1769,7 @@ export function resetState(): void {
   // never mentioned. See the `sheets` docblock.
   state.sheets = {};
   state.zombieVariantSheets = [];
+  state.zombieTypeSheets = {};
   state.flowField = null;
   state.flowTimer = 0;
   state.camX = 0;
