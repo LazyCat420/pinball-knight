@@ -922,7 +922,7 @@ export function buildTrackFloor(
   // It both carves and FILLS — a funnel's arm is wall the corridor did not have
   // — so it carries the same collective BFS strand guard with revert that the
   // concave fillets do, taking `ends.start` as the root.
-  const funnelsEnabled = opts.funnels ?? true;
+  const funnelsEnabled = opts.funnels === true;
   if (funnelsEnabled)
     authorDoorwayFunnels(
       grid,
