@@ -667,3 +667,35 @@ Follow-up batch on `feat/selective-pixel-filter`, worktree
   remains under the existing hold; no release or GPU gameplay check is claimed.
   Test-owned processes finish before temporary worktrees are removed. Unrelated
   developers' worktrees and the shared checkout's unfinished report are preserved.
+
+## Safe part layouts and diagonal masonry — 2026-09-14
+
+- Feature branch/worktree: `feat/part-layouts`, `.worktrees/wt-part-layouts`.
+  Completed batches: `116eeba4`, `9af77c76`, `0b5172f6`, based on primary
+  `10534cd6`. Dedicated integration: `integrate/part-layouts`,
+  `.worktrees/wt-part-layouts-integration`; final merge `1bd98f19`.
+- Indexed append-only spacing queries for late furniture placement, with
+  equivalence tests and `pnpm maze:parts-bench`. A 10,000-part/30,000-query
+  integrated sample returned identical hits: scans 943 ms, index 11.4 ms.
+  This measures spacing queries, not overall generation speed or frame rate.
+- Added acceleration, jump-relay and compact chicane templates with rotations,
+  atomic budgets and final heading/shape regressions. Final physical launch
+  checks follow receivers, verify steering-lock clearance at maximum speed,
+  validate wall-hop/breakthrough landings, and reject wall traps and cycles.
+  Structural failures become explicit passive rollovers; machine hits still
+  advance. Runtime corner pads refuse their returning wall rebound.
+- Continuing diagonal runs gain 2x2 backing without filling ordinary L bends,
+  pinching three-wide passages or changing protected geometry. The preview
+  L6/777 gains 19 backing tiles. Existing shape-veto neutrality, shared-circuit
+  junction, width, connectivity and density gates pass. Full-author fingerprints
+  and 12 census JSON/SVG fixtures were refreshed after those gates.
+- Integrated scale checks at 6,693, 26,441, 105,105 and 419,105 tiles had zero
+  unreachable walkable tiles and reachable stairs. This does not certify GPU
+  gameplay at those sizes. The muted geometry-preview browser was closed.
+- TypeScript comparison: exactly 60 existing diagnostics, no additions/removals.
+- Full-suite/build validation: **404 files passed, five skipped; 4,620 tests passed,
+  12 skipped; zero failures**. Integrated production build passed.
+- Review and reproducible commands: [part layout audit](perf/part-layouts.md).
+- Status: integrated and validated for primary-branch publication. NAS deployment
+  remains held. Existing generated reports and unrelated developers' worktrees
+  were preserved; no sprite-forge work files are included in the commits.
