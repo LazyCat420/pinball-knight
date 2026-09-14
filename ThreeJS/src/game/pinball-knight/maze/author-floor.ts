@@ -1,3 +1,4 @@
+import { enforceLaunchExits } from './launch-exits';
 import { enforceWallJoins } from "./wall-junctions";
 /**
  * Shared deterministic floor authoring. No live state, lighting, or spawning.
@@ -173,6 +174,8 @@ export function authorMaze(opts: FloorAuthorOptions) {
   }
 
   const densityRepair = track ? repairFloorDensity(plan, walkable, anchors.filter(a => a.kind === "spawn")) : null;
+
+  enforceLaunchExits(grid, plan.parts);
 
   return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, bonusRoom,
     track, grid, plan, lampPuzzlePlan, theme, walkable, budget, partBudget, areaRatio, densityRepair,

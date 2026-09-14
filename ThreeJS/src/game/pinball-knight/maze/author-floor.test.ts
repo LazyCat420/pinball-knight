@@ -8,15 +8,15 @@ import { liveFloor } from "../testkit/live-floor";
 
 afterEach(() => vi.restoreAllMocks());
 
-// Reviewed after straight-terminal corner rules passed the piece/floor gates (2026-09-13). Include full
+// Reviewed after final launch exits and diagonal backing passed geometry/population gates (2026-09-14). Include full
 // geometry, surfaces, content, lamps and population RNG, not just piece counts.
 // Intentional layout changes must refresh these only after the piece/floor gates.
 const BASELINES = [
-  [1, 1, false, false, "94c8672d2764bdf1b54c4f75343871bcbef3bfa2187ff136b7208845da6fb478"],
-  [3, 424242, true, false, "e92522d4f943079d354fb5e34743c0a7d3b435779c223659d0f242a483aa74e3"],
-  [5, 12345, false, false, "978e66d37d1d8918f194fcd4f4cfd384a3688bffec82167e5ff439db73d15537"],
-  [24, 1, true, false, "1da295d878749b4ca5e6bf4906cabd719283becdebb1c0e6ea0c2ff00a629f02"],
-  [6, 424242, true, true, "43a9e98505155f0704b66b2eafb0efc35ca018f8ba0601155e22cfe1f321fe50"],
+  [1, 1, false, false, "0995b93289746197109282e7902acb83d81e88b860a6fda3b1be5be0c1af71a6"],
+  [3, 424242, true, false, "443f7c38d58e67cdb9846a153853e46615698e6c9c0e49ea8da141f412720f76"],
+  [5, 12345, false, false, "c7d34cb49d86f343fd3bd6dfe1c63aa0e89acc25e6d82c56adfe4e60806520c6"],
+  [24, 1, true, false, "89c7ead57ad196e7bdf85f51617a63aee0c650b8a54be2d23c7d468678ccc78d"],
+  [6, 424242, true, true, "bedf553b60c72e2ed9203c010b9e5ff08494259a7c30a8cd3ce56e7c8645b970"],
 ] as const;
 
 describe("shared floor author", () => {

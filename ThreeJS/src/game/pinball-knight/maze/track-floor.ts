@@ -28,6 +28,7 @@
  *
  * DOM- and three-free.
  */
+import { thickenDiagonalWalls } from './diagonal-walls';
 import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
@@ -593,6 +594,7 @@ export function buildTrackFloor(
     density: opts.density,
   });
 
+
   // ── PLUMBING REPAIR (track-socket.ts) ───────────────────────────────────
   //
   // The growth model makes an interesting layout but not a legible one. Before
@@ -1006,6 +1008,15 @@ export function buildTrackFloor(
   uncarveDeadEnds(grid, mask, protectedWithDoors);
   compactArcs(grid);
   healRoadTerminations(grid, mask, protectedWithDoors, { reach: 0 });
+
+  // Back diagonal masonry only after corridor and doorway shaping has settled.
+  const masonryProtected = new Uint8Array(grid.w * grid.h);
+  for (const p of protectedWithDoors) for (let y = p.j - 3; y <= p.j + 3; y++) {
+    for (let x = p.i - 3; x <= p.i + 3; x++) {
+      if (x >= 0 && y >= 0 && x < grid.w && y < grid.h) masonryProtected[y * grid.w + x] = 1;
+    }
+  }
+  thickenDiagonalWalls(grid, (i, j) => !!masonryProtected[j * grid.w + i] || !!mask.lane[j * grid.w + i] || nearSealed(grid, mask, i, j));
 
   let finalStairs = ends.stairs;
   const finalDist = bfsDistances(grid, routeFrom.i, routeFrom.j);

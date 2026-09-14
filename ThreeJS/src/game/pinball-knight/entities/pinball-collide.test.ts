@@ -838,3 +838,19 @@ describe("cannon — aimable corridor blaster", () => {
   });
 });
 
+
+it('corner boosters decline their returning wall rebound but catch a real corner entry', () => {
+  const corner = part('boostcorner', { dirX: -1, dirZ: 0, dir2X: 0, dir2Z: 1 });
+  state.pinballParts = [corner];
+  const p = state.player!;
+  p.momSpeed = 10; p.momX = 0; p.momZ = -1;
+  touchPinballParts(true, 10, deps);
+  expect(p.momZ).toBe(-1);
+  expect(corner.cooldownT).toBe(0);
+  expect(steerLock).toBe(0);
+  p.momX = 1; p.momZ = 0;
+  touchPinballParts(true, 10, deps);
+  expect(p.momX).toBe(0);
+  expect(p.momZ).toBe(1);
+  expect(corner.cooldownT).toBeGreaterThan(0);
+});
