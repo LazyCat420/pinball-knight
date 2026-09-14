@@ -360,7 +360,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     landmarks: ["tilttable", "pachinko"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
-    enemies: { zombie: 3, ghost: 2, bat: 2, wisp: 2, mimic: 1 },
+    enemies: { zombie: 10, ghost: 1, bat: 1, wisp: 1, mimic: 1 },
   },
   {
     // The Rotting Warren — everything is slick and nothing brakes.

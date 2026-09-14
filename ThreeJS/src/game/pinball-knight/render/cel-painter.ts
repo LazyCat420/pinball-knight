@@ -2286,6 +2286,19 @@ export interface ZVariant {
   tatter: number;
   /** Per-variant jitter seed for splatter placement. */
   seed: number;
+  /** Optional variation feature markers for sub-types: */
+  pustules?: boolean;
+  helmet?: boolean;
+  bloated?: boolean;
+  frost?: boolean;
+  charred?: boolean;
+  screamer?: boolean;
+  claws?: boolean;
+  twoheaded?: boolean;
+  shovel?: boolean;
+  linens?: boolean;
+  censer?: boolean;
+  chains?: boolean;
 }
 
 /** Deterministic 0..1 from an integer step — no Math.random (breaks resume). */
@@ -2323,6 +2336,19 @@ export const ZOMBIE_VARIANTS: ZVariant[] = [
   { skin: 6, rag: 27, gore: 3, stump: null, legStump: "R", bandage: false, spur: "L", bone: "spine", tatter: 18, seed: 7 },
   { skin: 7, rag: 28, gore: 3, stump: null, legStump: "both", bandage: false, spur: "L", bone: "ribs", tatter: 6, seed: 8 },
   { skin: 9, rag: 28, gore: 3, stump: "both", legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 26, seed: 9 },
+  // ── 20 Variations visual markers ──
+  { skin: 7, rag: 27, gore: 3, stump: null, legStump: null, bandage: false, spur: "R", bone: "ribs", tatter: 24, seed: 10, pustules: true },
+  { skin: 6, rag: 26, gore: 1, stump: null, legStump: null, bandage: true, spur: "L", bone: "ribs", tatter: 16, seed: 11, helmet: true },
+  { skin: 9, rag: 28, gore: 2, stump: null, legStump: null, bandage: false, spur: null, bone: "ribs", tatter: 12, seed: 12, bloated: true },
+  { skin: 8, rag: 26, gore: 1, stump: null, legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 20, seed: 13, frost: true },
+  { skin: 6, rag: 27, gore: 2, stump: null, legStump: null, bandage: false, spur: "L", bone: "spine", tatter: 8, seed: 14, charred: true },
+  { skin: 8, rag: 28, gore: 2, stump: null, legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 32, seed: 15, screamer: true },
+  { skin: 7, rag: 26, gore: 3, stump: null, legStump: null, bandage: true, spur: "R", bone: "spine", tatter: 28, seed: 16, claws: true },
+  { skin: 6, rag: 28, gore: 3, stump: null, legStump: null, bandage: true, spur: "L", bone: "ribs", tatter: 36, seed: 17, twoheaded: true },
+  { skin: 9, rag: 27, gore: 1, stump: null, legStump: null, bandage: false, spur: "R", bone: "ribs", tatter: 14, seed: 18, shovel: true },
+  { skin: 7, rag: 26, gore: 0, stump: null, legStump: null, bandage: true, spur: null, bone: "skull", tatter: 38, seed: 19, linens: true },
+  { skin: 8, rag: 28, gore: 2, stump: null, legStump: null, bandage: false, spur: "L", bone: "spine", tatter: 22, seed: 20, censer: true },
+  { skin: 6, rag: 26, gore: 2, stump: null, legStump: null, bandage: true, spur: "R", bone: "ribs", tatter: 18, seed: 21, chains: true },
 ];
 
 /** Caked-blood splatter for a gorier variant — post-fill, pre-shade. */

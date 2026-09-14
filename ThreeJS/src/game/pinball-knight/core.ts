@@ -136,7 +136,7 @@ import { frenzyIntensity, momentumT } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { captureFloorCensus } from "./dev/floor-census";
-import { debugTeleportToStairs, debugSpawnRing, debugSpawnEnemy, debugKillAll, debugClearEnemies } from "./dev/debug-actions";
+import { debugTeleportToStairs, debugSpawnRing, debugSpawnAllZombies, debugSpawnEnemy, debugKillAll, debugClearEnemies } from "./dev/debug-actions";
 import { clearLights } from "./boot/lighting";
 import { stopSheetBackfill } from "./boot/sheets";
 import { beginRunLedger } from "./run/ledger";

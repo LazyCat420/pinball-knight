@@ -83,7 +83,7 @@ export const IMPORTED_FACINGS: Record<string, readonly Dir[]> = {
   swordfish_mob: ["S"],
   moray_mob: ["S"],
   seahorse_mob: ["S"],
-  zombie: ["E"],
+  zombie: ["S", "E"],
   maze_merchant: ["S"],
   tavern_smith: ["S"],
   tavern_alchemist: ["S"],

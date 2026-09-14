@@ -24,7 +24,7 @@ import { createStaticSprite, type SpriteSheet } from "../engine/render/sprite";
 import { makeSkinned, makeZombie, queueAsciiHuman, skinSheet, spawnKind } from "../spawn/factory";
 import { KIND_SKIN } from "../spawn/kind-skin";
 import { state, type EnemyKind, type Zombie } from "../state";
-import { variantIndicesFor, type ZombieType } from "../zombie-types";
+import { variantIndicesFor, ZOMBIE_TYPE_IDS, type ZombieType } from "../zombie-types";
 import { adoptBoss, bossActive, disposeBoss } from "../boss";
 import { BOSSES } from "../boss-kinds";
 
@@ -128,6 +128,28 @@ export function makeDebugEnemy(kind: EnemyKind, x: number, z: number, ztype?: Zo
   }
   if (KIND_SKIN[kind]) return makeSkinned(kind, x, z, speed);
   return spawnKind(kind, x, z, speed, 99); // level 99 clears every FROM_LEVEL gate
+}
+
+/**
+ * Dev-only: drop all 20 Zombie variations in an open ring around the player
+ * for instant live visual and behavioral inspection in god-mode.
+ */
+export function debugSpawnAllZombies(): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || !state.scene) return;
+  const pt = worldToTile(g, p.x, p.z);
+  ZOMBIE_TYPE_IDS.forEach((ztype, i) => {
+    const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
+    const c = tileCenter(g, spot.i, spot.j);
+    const zz = makeDebugEnemy("zombie", c.x, c.z, ztype);
+    if (zz) {
+      zz.aggro = true;
+      zz.anim.setFacing("S");
+      zz.anim.play("walk", { force: true });
+      state.zombies.push(zz);
+    }
+  });
 }
 
 /** What a scripted spawn can ask for beyond "one of these, next to me". */
