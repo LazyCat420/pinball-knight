@@ -29,6 +29,7 @@
  * DOM- and three-free.
  */
 import { thickenDiagonalWalls } from './diagonal-walls';
+import { clearPassageMouths } from './passage-mouths';
 import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type Room, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
@@ -1008,6 +1009,15 @@ export function buildTrackFloor(
   uncarveDeadEnds(grid, mask, protectedWithDoors);
   compactArcs(grid);
   healRoadTerminations(grid, mask, protectedWithDoors, { reach: 0 });
+
+  // Clear short entrance noses without cutting through structural arc backing.
+  const mouthArcSpans = arcSpanMask(grid);
+  const openedMouths = clearPassageMouths(grid, doors.doorways, (i, j) =>
+    !!mouthArcSpans[j * grid.w + i] || nearSealed(grid, mask, i, j));
+  if (openedMouths > 0) {
+    removeWallStubs(grid, mask);
+    compactArcs(grid);
+  }
 
   // Back diagonal masonry only after corridor and doorway shaping has settled.
   const masonryProtected = new Uint8Array(grid.w * grid.h);

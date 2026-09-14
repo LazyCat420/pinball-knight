@@ -11,7 +11,7 @@
  * DOM- and three-free: tested alongside the generator.
  */
 import { appendOnlyPartOccupancy } from './part-occupancy';
-import { placeBoosterPatterns } from './booster-patterns';
+import { placeBoosterPatterns, pruneUnsafeBoosterPatterns } from './booster-patterns';
 import { enforceWallJoins } from "./wall-junctions";
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, shapeAt } from "./generator";
 import { SHAPE_ARC } from "../engine/tile-shape";
@@ -3950,5 +3950,6 @@ export function decorateMaze(
     }
   }
 
+  pruneUnsafeBoosterPatterns(g, parts);
   return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas, circuits: committed };
 }
