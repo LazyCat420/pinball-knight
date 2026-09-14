@@ -13,7 +13,7 @@ it('backs a thin staircase with solid 2x2 steps', () => {
 });
 it('preserves protected routes and authored shapes', () => {
     const g = room();
-    g.t[7 * g.w + 7] = g.t[7 * g.w + 8] = g.t[8 * g.w + 8] = 0;
+    g.t[7 * g.w + 7] = g.t[8 * g.w + 8] = 0;
     const before = g.t.slice();
     expect(thickenDiagonalWalls(g, () => true)).toBe(0);
     expect(g.t).toEqual(before);
@@ -24,7 +24,7 @@ it('does not pinch a three-tile corridor', () => {
     const g = room();
     for (let y = 1; y < 18; y++)
         g.t[y * g.w + 4] = 0;
-    g.t[7 * g.w + 8] = g.t[8 * g.w + 8] = g.t[7 * g.w + 7] = 0;
+    g.t[7 * g.w + 8] = g.t[8 * g.w + 8] = g.t[7 * g.w + 7] = g.t[9 * g.w + 9] = 0;
     thickenDiagonalWalls(g);
     expect(g.t[8 * g.w + 7]).toBe(1);
 });
@@ -35,4 +35,10 @@ it('does not fill ordinary room corners or grow repairs into more repairs', () =
     const before = g.t.slice();
     expect(thickenDiagonalWalls(g)).toBe(0);
     expect(g.t).toEqual(before);
+});
+
+it('leaves isolated L-shaped bends alone', () => {
+    const g = room();
+    g.t[7 * g.w + 7] = g.t[7 * g.w + 8] = g.t[8 * g.w + 8] = 0;
+    expect(thickenDiagonalWalls(g)).toBe(0);
 });

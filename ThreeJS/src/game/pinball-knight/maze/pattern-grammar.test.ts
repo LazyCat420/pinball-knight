@@ -10,6 +10,7 @@ describe("pattern-grammar — Architectural Wall & Floor Slots", () => {
     expect(isLegalSlotForPart("boostcorner", "straight_3wide")).toBe(false);
     expect(isLegalSlotForPart("deflector", "corner_inner")).toBe(true);
     expect(isLegalSlotForPart("boostcorner", "corner_inner")).toBe(true);
+    expect(isLegalSlotForPart("boostcorner", "open_arena")).toBe(true);
   });
 
   it("enforces that threshold clearways reject all obstructive furniture", () => {

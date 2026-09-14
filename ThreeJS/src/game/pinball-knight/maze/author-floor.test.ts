@@ -12,11 +12,11 @@ afterEach(() => vi.restoreAllMocks());
 // geometry, surfaces, content, lamps and population RNG, not just piece counts.
 // Intentional layout changes must refresh these only after the piece/floor gates.
 const BASELINES = [
-  [1, 1, false, false, "0995b93289746197109282e7902acb83d81e88b860a6fda3b1be5be0c1af71a6"],
-  [3, 424242, true, false, "443f7c38d58e67cdb9846a153853e46615698e6c9c0e49ea8da141f412720f76"],
-  [5, 12345, false, false, "c7d34cb49d86f343fd3bd6dfe1c63aa0e89acc25e6d82c56adfe4e60806520c6"],
-  [24, 1, true, false, "89c7ead57ad196e7bdf85f51617a63aee0c650b8a54be2d23c7d468678ccc78d"],
-  [6, 424242, true, true, "bedf553b60c72e2ed9203c010b9e5ff08494259a7c30a8cd3ce56e7c8645b970"],
+  [1, 1, false, false, "ee4dedcbe0a41ffcb8f6bd2ca47016aa9daad0820caa0bde0bccbeb3114f4af8"],
+  [3, 424242, true, false, "0589b661eaa83589663f321cb3603257d2bfd0fe4430cb72b5f172fff075445e"],
+  [5, 12345, false, false, "40b24e1631756c669808609d99a8abf3284627694f5f801e4cba8343b81eee56"],
+  [24, 1, true, false, "53ad2eed1e69181d9c9f4eb3da1969d160d2bac72c6a8629e7f8978814747935"],
+  [6, 424242, true, true, "9ba54a871e6a300f33d3425406236d43e05b1232929ecd7fbf9c5ecdfc190b81"],
 ] as const;
 
 describe("shared floor author", () => {
