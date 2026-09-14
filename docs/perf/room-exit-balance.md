@@ -25,3 +25,8 @@ room-aware closures. The attached example is depth 1, seed 777; coral is connect
 wall backing added at a redundant diagonal gap and retained after final cleanup.
 
 ![Actual generated closure](room-exit-balance.png)
+
+The activity search retains its coarse order, then checks the skipped tile
+parities. A fixed-obstacle occupancy index and cheap pad-fit check reject
+impossible replacements before copying the full furniture array. Existing
+layout fixtures and launch-safety checks remain identical with this prefilter.
