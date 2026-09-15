@@ -35,7 +35,7 @@
  * and the tests all read.
  */
 import type { SheetKey } from "./boot/sheets";
-import { passFor, themeFor } from "./maze/prefabs";
+import { passFor, themeFor, CYCLE_FLOORS } from "./maze/prefabs";
 
 export type BossKind = "reaper_king" | "broodmother" | "overlord" | "archivist" | "dragon" | "trex" | "jade_buddha" | "six_armed_god" | "cerberus" | "pinball_boss" | "doppelganger";
 
@@ -930,6 +930,56 @@ export function bossForBiome(biome: string, pass = 0): BossSpec {
 }
 
 /**
+ * Designated boss encounter floors.
+ * Paced as Mid-Bosses (3, 8, 13, 17, 18, 23) and Biome Apex Bosses (5, 10, 15, 20, 25).
+ */
+export const BOSS_FLOORS: readonly number[] = [3, 5, 8, 10, 13, 15, 17, 19, 20, 23, 25];
+
+/** Check if a level is a designated boss encounter floor. */
+export function isBossFloor(level: number): boolean {
+  const f = ((Math.max(1, Math.floor(level)) - 1) % CYCLE_FLOORS) + 1;
+  return BOSS_FLOORS.includes(f);
+}
+
+/**
+ * Floor-level boss assignments for the standard 25-floor cycle.
+ * Guarantees that all 11 bosses are reached within the primary 25-floor run
+ * and no two consecutive boss encounters repeat.
+ */
+export const FLOOR_BOSS_MAP: Record<number, BossKind> = {
+  // Crypt (1-5): Cerberus mid-boss (F3), Reaper King apex (F5)
+  1: "reaper_king",
+  2: "reaper_king",
+  3: "cerberus",
+  4: "reaper_king",
+  5: "reaper_king",
+  // Warren (6-10): Tilt Titan mid-boss (F8), Broodmother apex (F10)
+  6: "broodmother",
+  7: "broodmother",
+  8: "pinball_boss",
+  9: "broodmother",
+  10: "broodmother",
+  // Bloodworks (11-15): T-Rex mid-boss (F13), Overlord apex (F15)
+  11: "overlord",
+  12: "overlord",
+  13: "trex",
+  14: "overlord",
+  15: "overlord",
+  // Arcane (16-20): Jade Buddha mid-boss (F17), Doppelgänger mid-boss (F19), Archivist apex (F20)
+  16: "archivist",
+  17: "jade_buddha",
+  18: "archivist",
+  19: "doppelganger",
+  20: "archivist",
+  // Magma (21-25): Six-Armed God mid-boss (F23), Ancient Dragon climax (F25)
+  21: "dragon",
+  22: "dragon",
+  23: "six_armed_god",
+  24: "dragon",
+  25: "dragon",
+};
+
+/**
  * Which boss guards a FLOOR — the form the spawner, the screen and the descent
  * card all want, and the only one that can be checked for reachability.
  *
@@ -938,7 +988,18 @@ export function bossForBiome(biome: string, pass = 0): BossSpec {
  * drifts. Depth in, guardian out.
  */
 export function guardianFor(level: number): BossSpec {
-  return bossForBiome(themeFor(level).name, passFor(level));
+  const f = Math.max(1, Math.floor(level));
+  const pass = passFor(f);
+  const cycleFloor = ((f - 1) % CYCLE_FLOORS) + 1;
+
+  // On pass 0 (the primary 25-floor descent), use the curated floor map
+  // so every single boss has a unique dedicated encounter without repetition.
+  if (pass === 0) {
+    const kind = FLOOR_BOSS_MAP[cycleFloor];
+    if (kind && BOSSES[kind]) return BOSSES[kind];
+  }
+
+  return bossForBiome(themeFor(f).name, pass);
 }
 
 /** The moveset in force at a given HP fraction — phase 2 merged over phase 1. */

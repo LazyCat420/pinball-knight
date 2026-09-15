@@ -15,7 +15,7 @@ import { invalidateMeterBlocks } from "../hud-meter";
 import type { AuthoredFloor } from "./floor-authoring";
 import { playerSheetFor, sheetFor } from "../boot/sheets";
 import { spawnBoss } from "../boss";
-import { guardianFor } from "../boss-kinds";
+import { guardianFor, isBossFloor } from "../boss-kinds";
 import { BOSS_EVERY, BOSS_SPEED_FACTOR, BRUTE_SPEED_FACTOR, KING_HP_BASE, KING_HP_PER_FLOOR, MERCHANT_FROM_LEVEL, MERCHANT_SPAWN_MIN_RING, PIN_FROM_LEVEL, PLUNGER_SKILL_RANGE } from "../constants";
 import { isReplica } from "../coop";
 import { nextItemNid } from "../economy/ground-items";
@@ -169,8 +169,7 @@ export function populateFloor(f: AuthoredFloor): void {
   // While it lives `state.exitLocked` holds the stairs shut, and its death
   // blooms the exit PORTAL. HP scales with the floor and then by the boss's own
   // multiplier; every BOSS_EVERY-th floor is a MEGA at double HP. Only spawns
-  // for the floor authority — a replica renders the streamed boss.
-  if (state.stairs && scene && state.player && !isReplica()) {
+  if (state.stairs && scene && state.player && !isReplica() && isBossFloor(level)) {
     const mega = level % BOSS_EVERY === 0;
     const bhp = Math.round((KING_HP_BASE + KING_HP_PER_FLOOR * (level - 1)) * (mega ? 2 : 1));
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;

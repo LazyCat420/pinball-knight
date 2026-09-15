@@ -32,7 +32,7 @@ import { mulberry32 } from "../../../utils/rng";
 import { breakFlowLoops, findFlowCycles, type FlowPart } from "./flow-loops";
 import type { AssemblyRef } from "./assembly";
 import { authorCircuits, type Circuit } from "./circuit";
-import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
+import { PICKUP_WEAPONS, rollItemRarity, weaponsForFloor, potionsForFloor, type ItemRarity } from "../items";
 import { analyzePatternGrammar, isLegalSlotForPart, type PatternGrammarGrid } from "./pattern-grammar";
 import type { Doorway } from "./doorways";
 import { findDeadEnds, furnishDeadEndMechanisms } from "./dead-end-mechanisms";
@@ -312,11 +312,13 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
 export const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetcore", "laser"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
-function rollLevelItems(rng: () => number): RolledItem[] {
-  const buffs = shuffled(POTION_POOL, rng).slice(0, 3);
+function rollLevelItems(rng: () => number, floor?: number): RolledItem[] {
+  const weaponPool = floor !== undefined ? weaponsForFloor(floor) : WEAPON_POOL;
+  const potionPool = floor !== undefined ? potionsForFloor(floor) : POTION_POOL;
+  const buffs = shuffled(potionPool, rng).slice(0, 3);
   return [
-    ...shuffled(WEAPON_POOL, rng)
-      .slice(0, WEAPONS_PER_LEVEL)
+    ...shuffled(weaponPool, rng)
+      .slice(0, Math.min(WEAPONS_PER_LEVEL, weaponPool.length))
       .map((id): RolledItem => ({ kind: "weapon", id })),
     ...GEAR_ITEMS.map((id): RolledItem => ({ kind: "gear", id })),
     // one guaranteed heal + two random power-ups
@@ -2514,14 +2516,15 @@ export function decorateMaze(
   // A modifier can fatten the armoury (Blackout pays for the dark, Gilded is a
   // treasure floor): extra rolls appended to this level's normal set.
   const bonusRolls: RolledItem[] = [];
+  const bonusPotionPool = extras.floor !== undefined ? potionsForFloor(extras.floor) : POTION_POOL;
   for (let k = 0; k < (extras.bonusItems ?? 0); k++) {
-    bonusRolls.push({ kind: "potion", id: shuffled(POTION_POOL, rng)[0] });
+    bonusRolls.push({ kind: "potion", id: shuffled(bonusPotionPool, rng)[0] });
   }
   // Separation floors at 5 — the pairwise-spread invariant (decorate.test)
   // holds even on the relax pass. Euclidean ≥5 ⇒ Manhattan ≥5.
   const sepPasses = [Math.max(5, Math.floor(maxDist * 0.12)), 5];
   let itemRing = 0;
-  for (const def of [...rollLevelItems(rng), ...bonusRolls]) {
+  for (const def of [...rollLevelItems(rng, extras.floor), ...bonusRolls]) {
     let spot: TilePos | undefined;
     for (const sep of sepPasses) {
       for (let k = 0; k < 4 && !spot; k++) {

@@ -172,6 +172,49 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 /** The weapons that spawn as maze pickups (you start with the sword). */
 export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "greatsword", "warhammer", "wreckingball", "gun", "bow", "flamethrower"];
 
+/**
+ * WEAPON TIERS — progression gating so deeper floors unlock distinct armaments
+ * instead of having all weapons spawn uniformly at level 1.
+ */
+export const WEAPON_TIERS: Record<number, readonly WeaponId[]> = {
+  1: ["stick", "chair", "bow"],
+  2: ["stick", "chair", "bow", "mace", "gun"],
+  3: ["stick", "chair", "bow", "mace", "gun", "greatsword", "flamethrower"],
+  4: ["stick", "chair", "bow", "mace", "gun", "greatsword", "flamethrower", "warhammer"],
+  5: ["stick", "chair", "bow", "mace", "gun", "greatsword", "flamethrower", "warhammer", "wreckingball"],
+};
+
+/**
+ * POTION TIERS — power-ups unlocked progressively as the player delves deeper.
+ */
+export const POTION_TIERS: Record<number, readonly PotionId[]> = {
+  1: ["gold", "haste"],
+  2: ["gold", "haste", "rage", "freeze", "curveshot"],
+  3: ["gold", "haste", "rage", "freeze", "curveshot", "shield", "magnetcore"],
+  4: ["gold", "haste", "rage", "freeze", "curveshot", "shield", "magnetcore", "ballform", "multiball"],
+  5: ["gold", "haste", "rage", "freeze", "curveshot", "shield", "magnetcore", "ballform", "multiball", "laser"],
+};
+
+/** Determine the progression tier (1..5) for a given floor. */
+export function tierForFloor(floor: number): number {
+  const f = Math.max(1, Math.floor(floor));
+  if (f <= 5) return 1;
+  if (f <= 10) return 2;
+  if (f <= 15) return 3;
+  if (f <= 20) return 4;
+  return 5;
+}
+
+/** Get the unlocked weapon pool for a given floor depth. */
+export function weaponsForFloor(floor: number): WeaponId[] {
+  return [...(WEAPON_TIERS[tierForFloor(floor)] ?? WEAPON_TIERS[5])];
+}
+
+/** Get the unlocked potion pool for a given floor depth. */
+export function potionsForFloor(floor: number): PotionId[] {
+  return [...(POTION_TIERS[tierForFloor(floor)] ?? POTION_TIERS[5])];
+}
+
 export interface WeaponState {
   id: WeaponId;
   durability: number;

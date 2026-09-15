@@ -658,7 +658,7 @@ function isKindAvailableAtLevel(kind: EnemyKind, level: number): boolean {
  */
 export function previewHordeKind(hash: number, level: number): EnemyKind {
   const theme = themeFor(level);
-  if (theme.enemies && hash % 100 < THEME_HORDE_BIAS) {
+  if (theme.enemies) {
     const kinds = Object.keys(theme.enemies) as EnemyKind[];
     let total = 0;
     for (const k of kinds) total += theme.enemies[k]!;
@@ -670,6 +670,9 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
           if (isKindAvailableAtLevel(k, level)) return k;
           break;
         }
+      }
+      for (const k of kinds) {
+        if (isKindAvailableAtLevel(k, level)) return k;
       }
     }
   }
@@ -739,7 +742,7 @@ export function previewHordeKind(hash: number, level: number): EnemyKind {
 /** Weighted-pick a themed kind from the hash, or null if the biome sets none. */
 function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
   const theme = themeFor(level);
-  if (!theme.enemies || hash % 100 >= THEME_HORDE_BIAS) return null;
+  if (!theme.enemies) return null;
   const kinds = Object.keys(theme.enemies) as EnemyKind[];
   let total = 0;
   for (const k of kinds) total += theme.enemies[k]!;
@@ -747,7 +750,17 @@ function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, 
   let r = (hash >>> 8) % total;
   for (const k of kinds) {
     r -= theme.enemies[k]!;
-    if (r < 0) return spawnKind(k, x, z, baseSpeed, level);
+    if (r < 0) {
+      if (isKindAvailableAtLevel(k, level)) {
+        return spawnKind(k, x, z, baseSpeed, level);
+      }
+      break;
+    }
+  }
+  for (const k of kinds) {
+    if (isKindAvailableAtLevel(k, level)) {
+      return spawnKind(k, x, z, baseSpeed, level);
+    }
   }
   return null;
 }
@@ -970,7 +983,7 @@ export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: 
   // co-op peers each build the horde locally from the shared pool seed, so a
   // random draw here would disagree about who is a hulk.
   const ztype = resolveZombieType(pickZombieType(hash, level), x, z);
-  const typeSheet = ztype ? (state.zombieTypeSheets[ztype] ?? state.sheets[`zombie_${ztype}` as any]) : undefined;
+  const typeSheet = ztype ? (state.zombieTypeSheets[ztype] ?? state.sheets[`zombie_${ztype}` as SheetKey]) : undefined;
   const variantSheets = state.zombieVariantSheets;
   // The silhouette must agree with the stat story: a crawler wearing two good
   // legs is a lie the player notices immediately.
