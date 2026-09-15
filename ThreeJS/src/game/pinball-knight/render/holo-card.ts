@@ -239,6 +239,11 @@ export function _clearFaceCache(): void {
   _faceCache.clear();
 }
 
+/** Returns the formatted type text for a card face. */
+export function cardTypeText(c: CardDef): string {
+  return (c.typeLine ?? (c.source ? (c.subType ?? KIND_INFO[c.source].label) : "Unbound Relic")).toUpperCase();
+}
+
 /**
  * Paint a card face from scratch. Deterministic from the card id.
  *
@@ -490,7 +495,7 @@ function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   // line on the card saying the same nothing five times.
   // A sourced card names its monster; a sourceless chase card names its own
   // nature, which cards.ts authors alongside its label (`typeLine`).
-  const typeText = (c.typeLine ?? (c.source ? (c.subType ?? KIND_INFO[c.source].label) : "Unbound Relic")).toUpperCase();
+  const typeText = cardTypeText(c);
   ctx.fillStyle = "rgba(0,0,0,0.4)";
   rr(ctx, PAD, TYPE_Y, W - PAD * 2, TYPE_H, 6);
   ctx.fill();

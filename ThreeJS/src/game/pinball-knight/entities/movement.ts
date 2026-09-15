@@ -68,6 +68,7 @@ import {
   PACK_STALK_MULT,
   PACK_RUSH_MULT,
 } from "../constants";
+import { clamp01 } from "../../../utils/math";
 
 /**
  * The movement vocabulary. Intents, not families: a policy is shared by every
@@ -257,10 +258,6 @@ function unit(vx: number, vz: number): { vx: number; vz: number } {
 /** −1 or +1, deterministically, from the actor's seeded phase. */
 function side(a: MoveActor): number {
   return (a.movePhase ?? 0) < 0.5 ? -1 : 1;
-}
-
-function clamp01(x: number): number {
-  return x < 0 ? 0 : x > 1 ? 1 : x;
 }
 
 /**

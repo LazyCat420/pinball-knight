@@ -34,8 +34,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { KNOWN_CLIPS } from "./labels";
-import { CLIP_NAMES } from "../../../../../components/forge/types";
-import type { ClipName } from "../../engine/render/paint-types";
+import { CLIP_NAMES, type ClipName } from "../../engine/render/paint-types";
 
 /**
  * `PLAYABLE` is not exported — it is an implementation detail of

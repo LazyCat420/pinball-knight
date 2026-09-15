@@ -26,7 +26,6 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
-import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, type EnemyKind } from "./state";
 import { createPixelPass } from "./engine/render/pixel-pass";
 import { createVfx } from "./fx/system";
@@ -180,7 +179,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   // without it each run builds a different floor and a visual diff is noise.
   // Used by the renderer-migration baselines; harmless in normal play.
   state.runSeed = readSeedParam() ?? (Math.random() * 0x7fffffff) | 0;
-  setInputOwner("dungeon-game");
   // Persisted player settings (menu → Settings) land on state BEFORE the pixel
   // pass is built, so createPixelPass below reads the saved look directly.
   applySettingsLive();
@@ -583,7 +581,6 @@ export function exitDungeonGame(): void {
 
   disposeAll();
   clearLights(); // the lights themselves are freed with the scene by disposeAll
-  clearInputOwner();
 
   resetState();
   // resetState() zeroes state.accumulator; the loop owns the real one, so it

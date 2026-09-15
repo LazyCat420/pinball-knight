@@ -79,6 +79,20 @@ export type ClipName =
   /** Stagger: rocked back off the blow, then held. */
   | "stumble";
 
+export const CLIP_NAMES = [
+  "idle",
+  "walk",
+  "run",
+  "attack",
+  "stumble",
+  "death",
+  "roll",
+  "ball",
+  "crouch",
+  "wait",
+  "wake",
+] as const satisfies readonly ClipName[];
+
 /** An actor's full art table: per direction, per clip, a list of frames. */
 export interface ActorPaints extends Record<Dir, Partial<Record<ClipName, FramePaint[]>>> {
   /**

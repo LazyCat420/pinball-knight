@@ -16,18 +16,11 @@ import { pickZombieType, ZOMBIE_TYPES, ZOMBIE_TYPE_IDS } from "./zombie-types";
 import { accrue, painChance, PAIN_BY_KIND, type EntropyHolder } from "./entities/stagger";
 import { PINBALL_MAX_SPEED } from "./constants";
 import { floorSeed } from "./maze/floor-seed";
+import { mulberry32 } from "../../utils/rng";
 
 /** The hash `spawnHordeMember` derives per spawn tile, reproduced faithfully. */
 function spawnHashes(runSeed: number, level: number, n: number): number[] {
-  // mulberry32, the generator core.ts seeds each floor with.
-  let a = floorSeed(runSeed, level);
-  const rng = (): number => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const rng = mulberry32(floorSeed(runSeed, level));
   return Array.from({ length: n }, () => (rng() * 0xffffffff) | 0);
 }
 
@@ -104,17 +97,7 @@ describe("co-op: two peers agree on every stagger", () => {
 
   /** A plausible fight: impacts at wildly varying speeds against one monster. */
   function fight(seed: number, n: number): number[] {
-    // Speeds from a mulberry32 so the SEQUENCE is fixed but not uniform —
-    // an accumulator that only worked for a constant chance would pass a
-    // constant-rate test and fail here.
-    let a = seed >>> 0;
-    const rng = (): number => {
-      a = (a + 0x6d2b79f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+    const rng = mulberry32(seed);
     return Array.from({ length: n }, () => painChance(PAIN_BY_KIND.zombie, rng() * PINBALL_MAX_SPEED));
   }
 

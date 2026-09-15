@@ -785,3 +785,18 @@ versus 45.4 s before the prefilter; these shared-machine samples are not an FPS
 benchmark. The 15-floor sample selected 47 room-aware closures. Both task and
 integration sprite-forge generated reports remain excluded and untouched.
 NAS deployment remains on hold.
+
+## Code cleanup and logic deduplication handoff (Phase 1)
+
+Branch: `chore/code-cleanup-dedup`, based on `88a5d9dd`.
+Scope:
+- Dead code deletion: removed orphan `ThreeJS/src/services/youtube-service.ts`, non-functional `ThreeJS/src/utils/input-manager.ts`, and vestigial `ThreeJS/components/forge/types.ts`.
+- Deduplication: unified scalar `clamp01` in `pinball-steering.ts` and `movement.ts` using `@/utils/math`; unified PRNG `mulberry32` in `roulette-physics.ts` and `coop-determinism.test.ts` using `@/utils/rng`.
+- Monster loop deduplication: consolidated repetitive corpse fade and mesh disposal blocks in `zombie.ts` (`POOF_CORPSE_DURATIONS` map + `disposeZombieMesh`).
+- Test hygiene: removed standalone detached test mockups in `card-face.test.ts`, wiring direct assertions to `cardTypeText` exported from `holo-card.ts`.
+- Workspace hygiene: purged ~72MB of stale `.death-*` diagnostic directories and cleaned obsolete 60GB root build cache.
+
+Validation before handoff:
+- Vitest suite passed for all touched areas: `movement.test.ts`, `pinball-steering.test.ts`, `roulette.test.ts` (32/32), `coop-determinism.test.ts` (10/10), `all-monsters-4stage-death.test.ts` (32/32), `zombie-types.test.ts` (24/24), `card-face.test.ts` (7/7), `clip-names.test.ts` (4/4).
+- Production build passed (`pnpm run build` in 11.99s, 0 errors).
+- Zero secrets detected.

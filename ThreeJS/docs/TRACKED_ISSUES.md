@@ -27,3 +27,9 @@ Per external review checklist (`[github_mcp_direct]`), the following items have 
 ### Issue 4: Co-op Multi-Floor Replication Bounds
 - **Status**: **Tracked**
 - **Details**: `coop/pool.ts` isolates players by `dungeon:<floor>` room keys. Continue monitoring multi-client room sync during live co-op playtests.
+
+---
+
+### Issue 5: Codebase Cleanup and Logic Deduplication (Phase 1)
+- **Status**: **Resolved & Pinned**
+- **Details**: Removed orphan `youtube-service.ts`, removed vestigial `input-manager.ts` and `components/forge/types.ts`. Deduplicated `clamp01` and `mulberry32` across movement, steering, and casino roulette physics. Consolidated repetitive corpse fade and disposal loops in `zombie.ts`. Pinned card face type line verification directly to `cardTypeText` in `holo-card.ts`.

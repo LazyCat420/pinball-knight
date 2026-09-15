@@ -16,6 +16,7 @@ import {
   PINBALL_COUNTER_BRAKE_DOT,
   PINBALL_TURN_MAX_DELTA,
 } from "../constants";
+import { clamp01 } from "../../../utils/math";
 
 export interface PinballSteeringInput {
   momX: number;
@@ -35,10 +36,6 @@ export interface PinballSteeringResult {
   opposition: number;
   /** Heading vs Aim dot product in -1..1 */
   dot: number;
-}
-
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 function wrapAngle(rad: number): number {

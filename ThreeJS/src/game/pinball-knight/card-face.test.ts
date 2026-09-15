@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { CARDS, CARD_IDS } from "./cards";
 import { KIND_INFO } from "./bestiary";
+import { cardTypeText } from "./render/holo-card";
 
 /** Mirrors the plaque line built in render/holo-card.ts. */
 function plaqueFor(id: string): string {
@@ -29,6 +30,17 @@ function headlineFor(id: string): string | null {
 }
 
 describe("the card names its monster", () => {
+  it("generates the authoritative card type text using cardTypeText", () => {
+    expect(cardTypeText(CARDS["hulkknuckle"])).toBe("HULK");
+    expect(cardTypeText(CARDS["midgetclaw"])).toBe("MIDGET");
+    expect(cardTypeText(CARDS["spidersilk"])).toBe("SPIDER");
+    for (const id of CARD_IDS) {
+      const c = CARDS[id];
+      const text = cardTypeText(c);
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).toBe(text.toUpperCase());
+    }
+  });
   it("puts SLAIN: <monster> on every monster card", () => {
     for (const id of CARD_IDS) {
       const c = CARDS[id];

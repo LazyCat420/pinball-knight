@@ -752,11 +752,18 @@ function wardenPulse(z: Zombie): void {
   if (shielded > 0) state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 8);
 }
 
-function detonateCroakerCorpse(z: Zombie, index: number): void {
-  state.zombies.splice(index, 1);
+function disposeZombieMesh(z: Zombie): void {
   if (z.sprite?.mesh?.parent) {
     z.sprite.mesh.parent.remove(z.sprite.mesh);
+  } else if (state.scene && z.sprite?.mesh) {
+    state.scene.remove(z.sprite.mesh);
   }
+  z.sprite?.mesh?.geometry?.dispose();
+}
+
+function detonateCroakerCorpse(z: Zombie, index: number): void {
+  state.zombies.splice(index, 1);
+  disposeZombieMesh(z);
   state.shakeT = Math.max(state.shakeT, 0.35);
   state.vfx?.ring(z.x, z.z, 0x22c55e, 1.8, 0.35);
   state.vfx?.burst(z.x, 0.5, z.z, 0x22c55e, 24, 8);
@@ -1067,6 +1074,15 @@ export function updateAsciiMerge(dt: number): void {
   }
 }
 
+/** Corpse fade-out / poof durations for monsters that dissolve rather than leaving permanent corpses. */
+const POOF_CORPSE_DURATIONS: Partial<Record<EnemyKind, number>> = {
+  gnome: 0.55,
+  cigarette: 0.55,
+  toucan: 0.55,
+  computer_screen: 1.2,
+  ascii_human: 0.6,
+};
+
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
@@ -1082,67 +1098,10 @@ export function updateZombies(dt: number): void {
     }
     if (z.mode === "dead" || (z.anim as any).isDying?.() || (z.anim as any).isDead?.()) {
       z.corpseT = (z.corpseT ?? 0) + dt;
-      if (z.kind === "gnome") {
-        // Poofs into nothing with smoke animation, then splice out cleanly
-        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
-          if (z.sprite?.mesh?.parent) {
-            z.sprite.mesh.parent.remove(z.sprite.mesh);
-          } else if (state.scene) {
-            state.scene.remove(z.sprite.mesh);
-          }
-          z.sprite?.mesh?.geometry?.dispose();
-          state.zombies.splice(i, 1);
-        }
-        continue;
-      }
-      if (z.kind === "cigarette") {
-        // Stubbed out into crushed butt & ash pile, then splice out cleanly
-        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
-          if (z.sprite?.mesh?.parent) {
-            z.sprite.mesh.parent.remove(z.sprite.mesh);
-          } else if (state.scene) {
-            state.scene.remove(z.sprite.mesh);
-          }
-          z.sprite?.mesh?.geometry?.dispose();
-          state.zombies.splice(i, 1);
-        }
-        continue;
-      }
-      if (z.kind === "toucan") {
-        // Feather burst and clean splice out
-        if (z.corpseT > 0.55 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
-          if (z.sprite?.mesh?.parent) {
-            z.sprite.mesh.parent.remove(z.sprite.mesh);
-          } else if (state.scene) {
-            state.scene.remove(z.sprite.mesh);
-          }
-          z.sprite?.mesh?.geometry?.dispose();
-          state.zombies.splice(i, 1);
-        }
-        continue;
-      }
-      if (z.kind === "computer_screen") {
-        // Shattered CRT frame fades out after 1.2s
-        if (z.corpseT > 1.2 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
-          if (z.sprite?.mesh?.parent) {
-            z.sprite.mesh.parent.remove(z.sprite.mesh);
-          } else if (state.scene) {
-            state.scene.remove(z.sprite.mesh);
-          }
-          z.sprite?.mesh?.geometry?.dispose();
-          state.zombies.splice(i, 1);
-        }
-        continue;
-      }
-      if (z.kind === "ascii_human") {
-        // Dissolves quickly as digital matrix code (0.6s)
-        if (z.corpseT > 0.6 || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
-          if (z.sprite?.mesh?.parent) {
-            z.sprite.mesh.parent.remove(z.sprite.mesh);
-          } else if (state.scene) {
-            state.scene.remove(z.sprite.mesh);
-          }
-          z.sprite?.mesh?.geometry?.dispose();
+      const poofDur = POOF_CORPSE_DURATIONS[z.kind];
+      if (poofDur !== undefined) {
+        if (z.corpseT > poofDur || (typeof (z.anim as any).isFinished === "function" && (z.anim as any).isFinished())) {
+          disposeZombieMesh(z);
           state.zombies.splice(i, 1);
         }
         continue;
