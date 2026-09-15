@@ -355,54 +355,53 @@ export interface FloorTheme {
 export const THEMES: FloorTheme[] = [
   {
     // The Cold Crypt — the classic table: bumpers, lanes, a flipper or two.
+    // Themed to Cerberus (F3) and Reaper King (F5): undead, spectres, underworld hounds.
     name: "crypt",
     from: 1,
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     landmarks: ["tilttable", "pachinko"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
-    enemies: { zombie: 10, ghost: 1, bat: 1, wisp: 1, mimic: 1 },
+    enemies: { zombie: 8, ghost: 3, bat: 3, hound: 3, wisp: 2, crawling_hand: 2, dracula: 1, mimic: 1 },
   },
   {
     // The Rotting Warren — everything is slick and nothing brakes.
+    // Themed to Tilt Titan (F8) and Broodmother (F10): arachnids, slimes, and pinball hazards.
     name: "warren",
     from: 6,
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     landmarks: ["nest", "grinder"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
-    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2, hound: 2, sapper: 1, croaker: 2, fish_feet: 2 },
+    enemies: { spider: 6, webspinner: 4, slime: 4, toxic_slime: 3, sporeling: 3, croaker: 2, chomper: 2, pin: 2, spinning_top: 2 },
   },
   {
     // The Bloodworks — the punch factory.
+    // Themed to T-Rex (F13) and The Overlord (F15): gladiatorial beasts, brutes, and carnivores.
     name: "bloodworks",
     from: 11,
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     landmarks: ["grinder", "pachinko"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
-    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2, bloater: 2, hound: 2, jester: 2, rotortail: 2, stiltneck: 2 },
+    enemies: { brute: 5, goblin: 4, bloater: 3, chomper: 3, hound: 3, rotortail: 2, stiltneck: 2, sapper: 2 },
   },
   {
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
+    // Themed to Jade Buddha (F17), Doppelgänger (F19), Archivist (F20): mystic constructs and illusions.
     name: "arcane",
     from: 16,
     pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
     landmarks: ["observatory", "tilttable"],
     deal: ["spinpad", "bumper", "mirror", "spring", "oil", "glove", "flipper", "slingshot", "mirror"],
-    enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2, necromancer: 2, warden: 1, crystalback: 1 },
+    enemies: { ghost: 4, golem: 3, crystalback: 3, spitter: 3, necromancer: 2, warden: 2, void_slime: 2, frost_slime: 2, jester: 2, sumo_ninja: 1 },
   },
   {
-    // The Magma Abyss — the deepest band, and the one the depth-select screen
-    // has been promising since it was written. Pits and squeezes over a floor
-    // that wants to launch you: the Ancient Dragon's own arena.
-    //
-    // Its horde is the burning half of the roster — the bloater's death puddle
-    // is fire, the golem and crystalback are the rock, and the mimic is what a
-    // glowing thing on the ground down here turns out to be.
+    // The Magma Abyss — the deepest band: pits and squeezes over a floor that launches you.
+    // Themed to Six-Armed God (F23) and Ancient Dragon (F25): magma constructs, fire beasts, and drakes.
     name: "magma",
     from: 21,
     pool: ["pitroom", "squeeze", "gauntlet", "bullring", "pitstop", "sbend"],
     landmarks: ["grinder", "pachinko"],
     deal: ["spring", "bumper", "ramp", "glove", "spring", "flipper", "slingshot", "bumper", "spinpad"],
-    enemies: { bloater: 3, golem: 3, brute: 2, spitter: 2, hound: 2, chomper: 2, crystalback: 2, mimic: 1 },
+    enemies: { golem: 4, crystalback: 3, magma_slime: 4, bloater: 3, brute: 3, spitter: 3, hound: 2, mimic: 1 },
   },
 ];
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import * as THREE from "three";
-import { BOSSES, BOSS_KINDS, bossForBiome, guardianFor, guardiansOf, movesAt, type BossKind } from "./boss-kinds";
+import { BOSSES, BOSS_KINDS, BOSS_FLOORS, isBossFloor, FLOOR_BOSS_MAP, bossForBiome, guardianFor, guardiansOf, movesAt, type BossKind } from "./boss-kinds";
 import { CYCLE_FLOORS, THEMES, themeFor } from "./maze/prefabs";
 import { IMPORTED_ART, sheetFor, type SheetKey } from "./boot/sheets";
 import { SHEET_PAINTERS } from "./render/sheet-painters";
@@ -143,6 +143,29 @@ describe("Boss Roster and Modular Boss Art Verification", () => {
       // ship a floor whose stairs never unlock.
       expect(bossForBiome("unknown_biome").kind).toBe("reaper_king");
       expect(bossForBiome("unknown_biome", 3).kind).toBe("reaper_king");
+    });
+
+    it("schedules all 11 unique bosses across designated boss floors without consecutive duplicates", () => {
+      expect(BOSS_FLOORS.length).toBe(11);
+      const scheduledBosses: BossKind[] = [];
+
+      for (const floor of BOSS_FLOORS) {
+        expect(isBossFloor(floor)).toBe(true);
+        const spec = guardianFor(floor);
+        scheduledBosses.push(spec.kind);
+      }
+
+      // Check all 11 unique bosses appear
+      const uniqueBosses = new Set(scheduledBosses);
+      expect(uniqueBosses.size).toBe(11);
+      for (const kind of BOSS_KINDS) {
+        expect(uniqueBosses.has(kind), `Boss ${kind} must be encountered in 25-floor descent`).toBe(true);
+      }
+
+      // Verify no two consecutive boss encounters are the same boss
+      for (let i = 1; i < scheduledBosses.length; i++) {
+        expect(scheduledBosses[i]).not.toBe(scheduledBosses[i - 1]);
+      }
     });
   });
 
