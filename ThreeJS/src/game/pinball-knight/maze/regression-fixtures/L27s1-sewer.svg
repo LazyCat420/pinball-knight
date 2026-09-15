@@ -28021,7 +28021,6 @@
 <line x1="870" y1="1194" x2="918" y2="1194" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="918" y1="1194" x2="978" y2="1194" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="1122" y1="1458" x2="1122" y2="1410" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
-<line x1="1290" y1="1302" x2="1290" y2="1278" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="258" y1="870" x2="270" y2="870" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="270" y1="870" x2="282" y2="870" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="582" y1="918" x2="594" y2="918" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
@@ -28506,11 +28505,13 @@
 <line x1="1350" y1="474" x2="1344.6" y2="474" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="1566" cy="594" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="1566" y1="594" x2="1560.6" y2="594" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="1014" cy="438" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="2010" cy="1050" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="246" cy="1254" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="1926" cy="354" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="1290" cy="1278" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="1746" cy="366" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="1746" y1="366" x2="1746" y2="371.4" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="30" cy="882" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="2286" cy="978" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="1734" cy="666" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="882" cy="42" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="1026" cy="1110" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="246" cy="1002" r="4.800000000000001" fill="#98c379" stroke="#ffffff" stroke-width="1" />
 <rect x="1717.8" y="721.8" width="8.399999999999999" height="8.399999999999999" fill="#e5c07b" stroke="#ffffff" stroke-width="1" />
 </svg>

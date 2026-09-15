@@ -57,7 +57,7 @@
       "lamp": 3
     },
     "partsInCorners": 6,
-    "partsInCloseClusters": 37
+    "partsInCloseClusters": 39
   },
   "wallRunMetrics": {
     "totalRuns": 269,
@@ -528,17 +528,8 @@
     },
     {
       "kind": "target",
-      "i": 77,
-      "j": 19,
-      "dirI": -1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "target",
-      "i": 47,
-      "j": 43,
+      "i": 43,
+      "j": 18,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
@@ -546,7 +537,16 @@
     },
     {
       "kind": "target",
-      "i": 43,
+      "i": 44,
+      "j": 18,
+      "dirI": 0,
+      "dirJ": 1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "target",
+      "i": 45,
       "j": 18,
       "dirI": 0,
       "dirJ": 1,
@@ -717,7 +717,7 @@
     },
     {
       "kind": "lamp",
-      "i": 50,
+      "i": 51,
       "j": 42,
       "dirI": 0,
       "dirJ": 0,
@@ -726,7 +726,7 @@
     },
     {
       "kind": "lamp",
-      "i": 9,
+      "i": 10,
       "j": 28,
       "dirI": 0,
       "dirJ": 0,
@@ -881,13 +881,6 @@
       "toI": 52,
       "toJ": 40,
       "kind": "rollover"
-    },
-    {
-      "fromI": 38,
-      "fromJ": 42,
-      "toI": 50,
-      "toJ": 42,
-      "kind": "catapult"
     }
   ],
   "violations": []

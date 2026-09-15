@@ -30,7 +30,7 @@
     "routeDistance": 191
   },
   "clusteringMetrics": {
-    "totalParts": 319,
+    "totalParts": 320,
     "partsByKind": {
       "bumper": 128,
       "booster": 33,
@@ -44,7 +44,7 @@
       "maw": 1,
       "boostcurve": 3,
       "pit": 8,
-      "trapdoor": 3,
+      "trapdoor": 4,
       "flipper": 3,
       "mirror": 2,
       "jumppad": 3,
@@ -59,7 +59,7 @@
       "cannon": 2,
       "lamp": 5
     },
-    "partsInCorners": 17,
+    "partsInCorners": 18,
     "partsInCloseClusters": 159
   },
   "wallRunMetrics": {
@@ -2945,10 +2945,10 @@
       "dir2J": 0
     },
     {
-      "kind": "lamp",
-      "i": 43,
-      "j": 47,
-      "dirI": 0,
+      "kind": "trapdoor",
+      "i": 39,
+      "j": 25,
+      "dirI": 1,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
@@ -2956,7 +2956,7 @@
     {
       "kind": "lamp",
       "i": 185,
-      "j": 27,
+      "j": 33,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -2964,7 +2964,25 @@
     },
     {
       "kind": "lamp",
-      "i": 159,
+      "i": 56,
+      "j": 67,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "lamp",
+      "i": 136,
+      "j": 61,
+      "dirI": 0,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "lamp",
+      "i": 15,
       "j": 90,
       "dirI": 0,
       "dirJ": 0,
@@ -2973,17 +2991,8 @@
     },
     {
       "kind": "lamp",
-      "i": 84,
-      "j": 21,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "lamp",
-      "i": 107,
-      "j": 53,
+      "i": 160,
+      "j": 89,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,

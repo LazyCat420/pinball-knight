@@ -4638,7 +4638,6 @@
 <line x1="726" y1="186" x2="738" y2="186" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="738" y1="186" x2="750" y2="186" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="510" y1="486" x2="630" y2="486" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
-<line x1="462" y1="510" x2="606" y2="510" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <circle cx="762" cy="222" r="3.5999999999999996" fill="#e06c75" />
 <circle cx="762" cy="366" r="3.5999999999999996" fill="#e06c75" />
 <circle cx="738" cy="390" r="3.5999999999999996" fill="#e5c07b" />
@@ -4730,12 +4729,12 @@
 <line x1="198" y1="174" x2="198" y2="168.6" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="750" cy="282" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="750" y1="282" x2="744.6" y2="282" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="930" cy="234" r="3.5999999999999996" fill="#abb2bf" />
-<line x1="930" y1="234" x2="924.6" y2="234" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="570" cy="522" r="3.5999999999999996" fill="#abb2bf" />
-<line x1="570" y1="522" x2="570" y2="527.4" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="522" cy="222" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="522" y1="222" x2="522" y2="227.4" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="534" cy="222" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="534" y1="222" x2="534" y2="227.4" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="546" cy="222" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="546" y1="222" x2="546" y2="227.4" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="510" cy="78" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="486" cy="258" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="486" y1="258" x2="486" y2="263.4" stroke="#ffffff" stroke-width="1.5" />
@@ -4761,8 +4760,8 @@
 <circle cx="942" cy="30" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="942" y1="30" x2="936.6" y2="30" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="834" cy="42" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="606" cy="510" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="114" cy="342" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="618" cy="510" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="126" cy="342" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="390" cy="222" r="4.800000000000001" fill="#98c379" stroke="#ffffff" stroke-width="1" />
 <rect x="793.8" y="217.8" width="8.399999999999999" height="8.399999999999999" fill="#e5c07b" stroke="#ffffff" stroke-width="1" />
 </svg>

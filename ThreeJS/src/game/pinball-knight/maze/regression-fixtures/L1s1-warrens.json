@@ -34,7 +34,7 @@
     "partsByKind": {
       "bumper": 7,
       "deflector": 3,
-      "target": 3,
+      "target": 6,
       "spinpad": 1,
       "booster": 12,
       "rollover": 9,
@@ -42,16 +42,13 @@
       "boostcorner": 1,
       "jumppad": 4,
       "pit": 1,
-      "firevent": 1,
-      "electric": 1,
-      "swingarm": 1,
       "magpost": 4,
       "catapult": 2,
       "cannon": 2,
       "lamp": 3
     },
     "partsInCorners": 5,
-    "partsInCloseClusters": 34
+    "partsInCloseClusters": 35
   },
   "wallRunMetrics": {
     "totalRuns": 270,
@@ -459,36 +456,36 @@
       "dir2J": 0
     },
     {
-      "kind": "pit",
-      "i": 72,
-      "j": 8,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "firevent",
-      "i": 68,
-      "j": 12,
+      "kind": "target",
+      "i": 40,
+      "j": 33,
       "dirI": 0,
       "dirJ": 1,
       "dir2I": 0,
       "dir2J": 0
     },
     {
-      "kind": "electric",
-      "i": 60,
-      "j": 32,
+      "kind": "target",
+      "i": 41,
+      "j": 33,
       "dirI": 0,
-      "dirJ": 0,
+      "dirJ": 1,
       "dir2I": 0,
       "dir2J": 0
     },
     {
-      "kind": "swingarm",
-      "i": 40,
-      "j": 4,
+      "kind": "target",
+      "i": 42,
+      "j": 33,
+      "dirI": 0,
+      "dirJ": 1,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "pit",
+      "i": 72,
+      "j": 8,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -577,8 +574,8 @@
     },
     {
       "kind": "lamp",
-      "i": 25,
-      "j": 11,
+      "i": 54,
+      "j": 3,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -586,8 +583,8 @@
     },
     {
       "kind": "lamp",
-      "i": 11,
-      "j": 23,
+      "i": 39,
+      "j": 25,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -595,8 +592,8 @@
     },
     {
       "kind": "lamp",
-      "i": 40,
-      "j": 21,
+      "i": 72,
+      "j": 13,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -631,6 +628,13 @@
       "toI": 67,
       "toJ": 13,
       "kind": "spinpad"
+    },
+    {
+      "fromI": 67,
+      "fromJ": 13,
+      "toI": 72,
+      "toJ": 13,
+      "kind": "booster"
     },
     {
       "fromI": 47,
@@ -677,7 +681,7 @@
     {
       "fromI": 27,
       "fromJ": 11,
-      "toI": 25,
+      "toI": 24,
       "toJ": 11,
       "kind": "booster"
     },
