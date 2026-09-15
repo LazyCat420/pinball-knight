@@ -16,7 +16,6 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json vite.config.ts index.html ./
 COPY public ./public
 COPY src ./src
-COPY components ./components
 
 # Build production bundle to dist/
 RUN pnpm run build
