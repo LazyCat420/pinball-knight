@@ -28480,11 +28480,13 @@
 <line x1="2118" y1="318" x2="2118" y2="312.6" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="978" cy="1110" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="978" y1="1110" x2="983.4" y2="1110" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="522" cy="570" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="2226" cy="330" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="1914" cy="1086" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="1014" cy="258" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="1290" cy="642" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="474" cy="306" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="474" y1="306" x2="479.4" y2="306" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="2226" cy="402" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="678" cy="810" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="1638" cy="738" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="186" cy="1086" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="1926" cy="1074" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="222" cy="1014" r="4.800000000000001" fill="#98c379" stroke="#ffffff" stroke-width="1" />
 <rect x="1861.8" y="433.8" width="8.399999999999999" height="8.399999999999999" fill="#e5c07b" stroke="#ffffff" stroke-width="1" />
 </svg>

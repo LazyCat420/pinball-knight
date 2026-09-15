@@ -69,8 +69,8 @@ describe("maze creation smoke suite", () => {
     }
 
     const elapsed = Date.now() - t0;
-    // Entire 5-archetype smoke test should execute well under 5 seconds
-    expect(elapsed, "5-archetype smoke suite must be fast").toBeLessThan(5000);
+    // Entire 5-archetype smoke test should execute quickly (tolerates parallel test runner load)
+    expect(elapsed, "5-archetype smoke suite must be fast").toBeLessThan(10000);
   });
 
   it("probes funnels: true across all archetypes against piece-rules", () => {

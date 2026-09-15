@@ -1665,6 +1665,8 @@ export function buildMaze(
 
   // Clutter: crates and barrels hugging walls in corners and dead ends.
   const torchTiles = new Set(plan.torches.map((t) => `${t.i},${t.j}`));
+  const partTiles = new Set(plan.parts.map((p) => `${p.i},${p.j}`));
+  if (plan.frog) partTiles.add(`${plan.frog.i},${plan.frog.j}`);
   const crates: THREE.Matrix4[] = [];
   const barrels: THREE.Matrix4[] = [];
   for (let j = 0; j < grid.h; j++) {
@@ -1672,6 +1674,7 @@ export function buildMaze(
       if (!isWalkable(grid, i, j)) continue;
       if (i === plan.stairs.i && j === plan.stairs.j) continue;
       if (torchTiles.has(`${i},${j}`)) continue;
+      if (partTiles.has(`${i},${j}`)) continue;
       const wE = !isWalkable(grid, i + 1, j);
       const wW = !isWalkable(grid, i - 1, j);
       const wN = !isWalkable(grid, i, j - 1);

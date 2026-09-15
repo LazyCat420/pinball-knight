@@ -33,7 +33,7 @@
     "totalParts": 85,
     "partsByKind": {
       "bumper": 7,
-      "booster": 22,
+      "booster": 21,
       "deflector": 8,
       "spring": 4,
       "rollover": 10,
@@ -42,7 +42,7 @@
       "jumppad": 4,
       "flipper": 1,
       "spinpad": 1,
-      "target": 2,
+      "target": 3,
       "pit": 2,
       "firevent": 1,
       "electric": 2,
@@ -55,8 +55,8 @@
       "cannon": 2,
       "lamp": 4
     },
-    "partsInCorners": 8,
-    "partsInCloseClusters": 51
+    "partsInCorners": 9,
+    "partsInCloseClusters": 54
   },
   "wallRunMetrics": {
     "totalRuns": 489,
@@ -538,15 +538,6 @@
       "dir2J": 0
     },
     {
-      "kind": "booster",
-      "i": 48,
-      "j": 48,
-      "dirI": 1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
       "kind": "rollover",
       "i": 20,
       "j": 4,
@@ -602,18 +593,27 @@
     },
     {
       "kind": "target",
-      "i": 37,
-      "j": 41,
-      "dirI": 0,
-      "dirJ": 1,
+      "i": 5,
+      "j": 21,
+      "dirI": -1,
+      "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
     },
     {
       "kind": "target",
-      "i": 85,
-      "j": 30,
-      "dirI": 1,
+      "i": 5,
+      "j": 22,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "target",
+      "i": 5,
+      "j": 23,
+      "dirI": -1,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
@@ -827,7 +827,7 @@
     },
     {
       "kind": "lamp",
-      "i": 15,
+      "i": 17,
       "j": 33,
       "dirI": 0,
       "dirJ": 0,
@@ -836,7 +836,7 @@
     },
     {
       "kind": "lamp",
-      "i": 52,
+      "i": 55,
       "j": 45,
       "dirI": 0,
       "dirJ": 0,
@@ -845,7 +845,7 @@
     },
     {
       "kind": "lamp",
-      "i": 36,
+      "i": 38,
       "j": 22,
       "dirI": 0,
       "dirJ": 0,
@@ -854,7 +854,7 @@
     },
     {
       "kind": "lamp",
-      "i": 67,
+      "i": 69,
       "j": 37,
       "dirI": 0,
       "dirJ": 0,
@@ -927,6 +927,13 @@
       "kind": "booster"
     },
     {
+      "fromI": 38,
+      "fromJ": 24,
+      "toI": 38,
+      "toJ": 22,
+      "kind": "booster"
+    },
+    {
       "fromI": 85,
       "fromJ": 54,
       "toI": 82,
@@ -993,13 +1000,6 @@
       "fromI": 46,
       "fromJ": 48,
       "toI": 47,
-      "toJ": 48,
-      "kind": "booster"
-    },
-    {
-      "fromI": 47,
-      "fromJ": 48,
-      "toI": 48,
       "toJ": 48,
       "kind": "booster"
     },

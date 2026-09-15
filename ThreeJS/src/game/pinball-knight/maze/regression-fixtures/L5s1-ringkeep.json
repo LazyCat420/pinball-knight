@@ -33,10 +33,10 @@
     "totalParts": 95,
     "partsByKind": {
       "deflector": 12,
-      "bumper": 11,
-      "target": 3,
+      "bumper": 10,
+      "target": 6,
       "rollover": 10,
-      "booster": 19,
+      "booster": 17,
       "boostcurve": 1,
       "boostcorner": 3,
       "flipper": 2,
@@ -57,7 +57,7 @@
       "lamp": 4
     },
     "partsInCorners": 14,
-    "partsInCloseClusters": 41
+    "partsInCloseClusters": 43
   },
   "wallRunMetrics": {
     "totalRuns": 383,
@@ -588,15 +588,6 @@
       "dir2J": 0
     },
     {
-      "kind": "bumper",
-      "i": 26,
-      "j": 2,
-      "dirI": 0,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
       "kind": "flipper",
       "i": 39,
       "j": 20,
@@ -651,24 +642,6 @@
       "dir2J": 0
     },
     {
-      "kind": "booster",
-      "i": 35,
-      "j": 59,
-      "dirI": -1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "booster",
-      "i": 36,
-      "j": 59,
-      "dirI": -1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
       "kind": "rollover",
       "i": 54,
       "j": 21,
@@ -718,6 +691,33 @@
       "i": 56,
       "j": 11,
       "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "target",
+      "i": 93,
+      "j": 35,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "target",
+      "i": 93,
+      "j": 36,
+      "dirI": -1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
+      "kind": "target",
+      "i": 93,
+      "j": 37,
+      "dirI": -1,
       "dirJ": 0,
       "dir2I": 0,
       "dir2J": 0
@@ -940,7 +940,7 @@
     },
     {
       "kind": "lamp",
-      "i": 2,
+      "i": 1,
       "j": 33,
       "dirI": 0,
       "dirJ": 0,
@@ -949,7 +949,7 @@
     },
     {
       "kind": "lamp",
-      "i": 81,
+      "i": 80,
       "j": 34,
       "dirI": 0,
       "dirJ": 0,
@@ -958,8 +958,8 @@
     },
     {
       "kind": "lamp",
-      "i": 26,
-      "j": 50,
+      "i": 20,
+      "j": 39,
       "dirI": 0,
       "dirJ": 0,
       "dir2I": 0,
@@ -967,7 +967,7 @@
     },
     {
       "kind": "lamp",
-      "i": 61,
+      "i": 59,
       "j": 3,
       "dirI": 0,
       "dirJ": 0,
@@ -1128,13 +1128,6 @@
       "fromJ": 16,
       "toI": 78,
       "toJ": 13,
-      "kind": "booster"
-    },
-    {
-      "fromI": 36,
-      "fromJ": 59,
-      "toI": 35,
-      "toJ": 59,
       "kind": "booster"
     },
     {

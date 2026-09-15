@@ -35,6 +35,7 @@ import { authorCircuits, type Circuit } from "./circuit";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 import { analyzePatternGrammar, isLegalSlotForPart, type PatternGrammarGrid } from "./pattern-grammar";
 import type { Doorway } from "./doorways";
+import { findDeadEnds, furnishDeadEndMechanisms } from "./dead-end-mechanisms";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -214,6 +215,8 @@ export interface PinballPartSpot extends TilePos {
    * no machine. See `maze/circuit.ts` for what a circuit guarantees.
    */
   circuit?: number;
+  /** DEAD-END MECHANISM: placed to satisfy the interactive dead-end guarantee. */
+  deadEnd?: boolean;
 }
 
 /**
@@ -3228,19 +3231,19 @@ export function decorateMaze(
     }
   }
 
-  // ── Dead-end economics: the leftovers of the deadend pool (springs took
-  // theirs) get trapdoors — the coaster hatches — and one Oracle Frog perch,
-  // so poking into a dead end always pays SOMETHING. ──
+  // ── Dead-end economics: the leftovers of the deadend pool get trapdoors
+  // and the Oracle Frog perch. Remaining unassigned dead ends will be
+  // furnished by the interactive dead-end guarantee pass before the density clamp. ──
   const deadEnds = byTopo.deadend.filter(
     (d) => !parts.some((q) => q.i === d.i && q.j === d.j) && Math.abs(d.i - start.i) + Math.abs(d.j - start.j) >= 8,
   );
   const trapdoorBudget = extras.trapdoors ?? 2;
   for (let k = 0; k < Math.min(trapdoorBudget, deadEnds.length); k++) {
     const d = deadEnds[k];
-    parts.push({ i: d.i, j: d.j, kind: "trapdoor", dirI: d.dirI, dirJ: d.dirJ, dir2I: 0, dir2J: 0 });
+    parts.push({ i: d.i, j: d.j, kind: "trapdoor", dirI: d.dirI, dirJ: d.dirJ, dir2I: 0, dir2J: 0, deadEnd: true });
   }
   const frogSpot = deadEnds[trapdoorBudget] ?? null;
-  const frog: TilePos | null = frogSpot ? { i: frogSpot.i, j: frogSpot.j } : null;
+  let frog: TilePos | null = frogSpot ? { i: frogSpot.i, j: frogSpot.j } : null;
 
   // ── Floor HAZARDS (pit / electric / fire vent / magnet strip) — their own
   // layer over the part budget, dealt round-robin onto suitable topology:
@@ -3895,6 +3898,25 @@ export function decorateMaze(
     }
   }
 
+  // ── DEAD-END INTERACTIVE GUARANTEE ──────────────────────────────────────
+  //
+  // Every dead end on the floor must carry an interactive mechanism (secret
+  // door, catapult, cannon, spring, trapdoor, or frog). Any dead ends left
+  // unassigned after all earlier passes are furnished here and protected.
+  const allGridDeadEnds = findDeadEnds(g, start, stairs);
+  const deadEndReport = furnishDeadEndMechanisms(
+    g,
+    allGridDeadEnds,
+    parts,
+    secrets,
+    frog,
+    rng,
+    { start, stairs, items, floor: extras.floor, frogAvailable: !frog },
+  );
+  if (!frog && deadEndReport.frog) {
+    frog = deadEndReport.frog;
+  }
+
   // ── FINAL DENSITY CLAMP: strictly enforce PARTS_PER_1K_CAP across all layers ──
   //
   // WHAT IS PROTECTED, AND WHY IT IS ONE LIST.
@@ -3930,7 +3952,7 @@ export function decorateMaze(
   // Prefab signatures remain anchored when added wall shortcuts consume the
   // loose-furniture budget. Removing them breaks the authored prefab.
   const prefabTiles = new Set((extras.anchors ?? []).map(a => a.j * g.w + a.i));
-  const clampMayRemove = (p: PinballPartSpot): boolean => !prefabTiles.has(p.j * g.w + p.i) && !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p);
+  const clampMayRemove = (p: PinballPartSpot): boolean => !prefabTiles.has(p.j * g.w + p.i) && !inRoom({ i: p.i, j: p.j }) && !isStructuralPart(p) && !p.deadEnd && p.bank === undefined;
   let walkableTotal = 0;
   for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) walkableTotal++;
   const maxPartsAllowed = Math.max(partBudget, Math.floor((walkableTotal * PARTS_PER_1K_CAP) / 1000));

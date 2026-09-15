@@ -8,15 +8,15 @@ import { liveFloor } from "../testkit/live-floor";
 
 afterEach(() => vi.restoreAllMocks());
 
-// Reviewed after whole-map clearance, room activities and junction routing passed geometry/population gates (2026-09-14). Include full
+// Reviewed after dead-end interactive mechanisms (doors, catapults, cannons, trapdoors, frog) passed geometry/population gates (2026-09-15). Include full
 // geometry, surfaces, content, lamps and population RNG, not just piece counts.
 // Intentional layout changes must refresh these only after the piece/floor gates.
 const BASELINES = [
-  [1, 1, false, false, "21ea8d3f6b9bffbc0e0f8a992735607c534385ca9dc475338e2a677dd6079ea7"],
-  [3, 424242, true, false, "30e6dd65d763b20ca68c155070ff7fa3dc448403cde3b066f370db89ff5cddc6"],
-  [5, 12345, false, false, "0d808daf2fa075081aad8ee242162a9b0d612e1509436acb8c773e8f848f7042"],
-  [24, 1, true, false, "fb7dc862a86adf11b4c16193240f63947a0aacb73bf2dd79640131f0194b2513"],
-  [6, 424242, true, true, "9ba54a871e6a300f33d3425406236d43e05b1232929ecd7fbf9c5ecdfc190b81"],
+  [1, 1, false, false, "69ed1eaacf56e2a7162b2adbdaffe552f9058ef1dd9e48bdaa23bad021a74e65"],
+  [3, 424242, true, false, "3ae2078469c924a67022d20c0e6f69535b35c3c14b48eba0dfe84d669c0fb487"],
+  [5, 12345, false, false, "2f96c202af87a0b177dd943bcbb549e0ed4a964d902122c2e934eaf05080359f"],
+  [24, 1, true, false, "c679803be66c8489654ac21c6f4e723c91bd3d82687415371a1e579a49f619bb"],
+  [6, 424242, true, true, "439ba1aa2605ca110f367def3f39f0f796b87dc4b1b982789bfe68f23c56e9c9"],
 ] as const;
 
 describe("shared floor author", () => {
