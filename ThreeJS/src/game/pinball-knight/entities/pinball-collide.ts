@@ -1227,27 +1227,46 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     let bestX = p.x;
     let bestZ = p.z;
     let bestDist = 0;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const ti = 1 + Math.floor(Math.random() * (g.w - 2));
-      const tj = 1 + Math.floor(Math.random() * (g.h - 2));
-      if (!isWalkable(g, ti, tj)) continue;
-      const c = tileCenter(g, ti, tj);
-      const dist = Math.hypot(c.x - part.x, c.z - part.z);
-      if (dist < 10) continue;
-      if (state.pinballParts.some((q) => (q.kind === "pit" || q.kind === "gravepit" || q.kind === "trapdoor") && Math.hypot(q.x - c.x, q.z - c.z) < 1.5)) continue;
+
+    // 1. If part has precomputed destination coordinates (from landing pad registry or authoring), use directly
+    if (part.destI !== undefined && part.destJ !== undefined && isWalkable(g, part.destI, part.destJ)) {
+      const c = tileCenter(g, part.destI, part.destJ);
       bestX = c.x;
       bestZ = c.z;
-      bestDist = dist;
-      if (dist >= 14) break;
+      bestDist = Math.hypot(bestX - part.x, bestZ - part.z);
     }
 
+    // 2. Otherwise search for a valid landing tile bounded by catapult tier reach and anti-skip rules
+    if (bestDist < 6) {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const ti = 1 + Math.floor(Math.random() * (g.w - 2));
+        const tj = 1 + Math.floor(Math.random() * (g.h - 2));
+        if (!isWalkable(g, ti, tj)) continue;
+
+        // Anti-skip protection: never land inside stairs / boss encounter perimeter
+        if (state.stairs && Math.hypot(ti - state.stairs.i, tj - state.stairs.j) < 18) continue;
+
+        const c = tileCenter(g, ti, tj);
+        const dist = Math.hypot(c.x - part.x, c.z - part.z);
+        if (dist < 10 || dist > 26) continue; // within catapult reach tier
+        if (state.pinballParts.some((q) => (q.kind === "pit" || q.kind === "gravepit" || q.kind === "trapdoor") && Math.hypot(q.x - c.x, q.z - c.z) < 1.5)) continue;
+        bestX = c.x;
+        bestZ = c.z;
+        bestDist = dist;
+        if (dist >= 14) break;
+      }
+    }
+
+    // 3. Fallback to local safe tile if constrained search was blocked
     if (bestDist < 6) {
       for (let attempt = 0; attempt < 30; attempt++) {
         const ti = 1 + Math.floor(Math.random() * (g.w - 2));
         const tj = 1 + Math.floor(Math.random() * (g.h - 2));
         if (!isWalkable(g, ti, tj)) continue;
+        if (state.stairs && Math.hypot(ti - state.stairs.i, tj - state.stairs.j) < 12) continue;
         const c = tileCenter(g, ti, tj);
-        if (Math.hypot(c.x - part.x, c.z - part.z) >= 4) {
+        const dist = Math.hypot(c.x - part.x, c.z - part.z);
+        if (dist >= 4 && dist <= 26) {
           bestX = c.x;
           bestZ = c.z;
           break;

@@ -38,6 +38,11 @@ Read in this order:
 
 ## Recent work
 
+- `sector-10x-scale-traversal.md` — **2026-09-16.** Sector-based macro graph
+  architecture scaling maps up to 10× walkable area (304 × 228 macro cells),
+  introducing precomputed landing pad registries, traversal mechanism tiers
+  with explicit reach ceilings, anti-skip boss exclusion zones, and traversal-aware
+  dual-path route metrics.
 - `death-animation-audit.md` — **2026-09-04.** The monster death pipeline was
   never broken; three broken *measurements* made it look that way. What was
   measured against the deployed build, the probe defects that produced 26 false

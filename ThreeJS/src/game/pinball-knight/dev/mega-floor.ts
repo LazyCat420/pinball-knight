@@ -63,6 +63,7 @@ import { levelConfig } from "../constants";
 import type { Grid, TilePos } from "../maze/generator";
 import type { LevelPlan } from "../maze/decorate";
 import type { Doorway } from "../maze/doorways";
+import { repairNarrowGaps } from "../maze/gap-clearance";
 
 export interface MegaFloorOptions {
   /**
@@ -125,6 +126,7 @@ export function buildMegaFloor(opts: MegaFloorOptions = {}): MegaFloor | null {
     bonusRoom: opts.bonusRoom ?? false,
   });
   if (!f) return null;
+  repairNarrowGaps(f.grid, () => false);
   return {
     grid: f.grid,
     start: f.start,
