@@ -293,6 +293,23 @@ export function furnishDeadEndMechanisms(
 
     // ── 6. HIGH-BALLISTIC CATAPULT (GUARANTEED FALLBACK)
     // Flings the player up and over walls into open territory, ideal for short runways
+    // Select validated landing destination avoiding stairs/boss
+    let destI: number | undefined;
+    let destJ: number | undefined;
+    const launchDist = 14 + Math.floor(rng() * 8); // 14..21 tiles (within catapult tier reach)
+    for (let step = 0; step < 12; step++) {
+      const angle = (step * Math.PI) / 6;
+      const ti = Math.round(d.i + Math.cos(angle) * launchDist);
+      const tj = Math.round(d.j + Math.sin(angle) * launchDist);
+      if (ti >= 2 && ti < g.w - 2 && tj >= 2 && tj < g.h - 2 && isWalkable(g, ti, tj)) {
+        if (!opts.stairs || Math.hypot(ti - opts.stairs.i, tj - opts.stairs.j) >= 18) {
+          destI = ti;
+          destJ = tj;
+          break;
+        }
+      }
+    }
+
     parts.push({
       i: d.i,
       j: d.j,
@@ -302,6 +319,8 @@ export function furnishDeadEndMechanisms(
       dir2I: 0,
       dir2J: 0,
       deadEnd: true,
+      destI,
+      destJ,
     });
     placedKinds.catapult = (placedKinds.catapult ?? 0) + 1;
     furnishedCount++;

@@ -111,22 +111,73 @@ export interface LevelConfig {
  * zombies and L8+ torches come out bit-identical; everything shallower comes
  * down, which is where the "jumbled mess" was.
  */
-export function floorBudgets(level: number, walkable: number): { zombies: number; torches: number; partsArea: number } {
+export type FloorScaleTier = "baseline" | "phase1_1.9x" | "phase2_4.0x" | "final_10x";
+
+export interface FloorScaleConfig {
+  tier: FloorScaleTier;
+  cellsW: number;
+  cellsH: number;
+  areaMultiplier: number;
+  maxZombies: number;
+  maxTorches: number;
+}
+
+export const FLOOR_SCALE_TIERS: Record<FloorScaleTier, FloorScaleConfig> = {
+  baseline: {
+    tier: "baseline",
+    cellsW: 96,
+    cellsH: 72,
+    areaMultiplier: 1.0,
+    maxZombies: 135,
+    maxTorches: 80,
+  },
+  "phase1_1.9x": {
+    tier: "phase1_1.9x",
+    cellsW: 132,
+    cellsH: 100,
+    areaMultiplier: 1.91,
+    maxZombies: 260,
+    maxTorches: 160,
+  },
+  "phase2_4.0x": {
+    tier: "phase2_4.0x",
+    cellsW: 192,
+    cellsH: 144,
+    areaMultiplier: 4.0,
+    maxZombies: 500,
+    maxTorches: 320,
+  },
+  final_10x: {
+    tier: "final_10x",
+    cellsW: 304,
+    cellsH: 228,
+    areaMultiplier: 10.02,
+    maxZombies: 1200,
+    maxTorches: 800,
+  },
+};
+
+export function floorBudgets(
+  level: number,
+  walkable: number,
+  tier: FloorScaleTier = "baseline",
+): { zombies: number; torches: number; partsArea: number } {
   const l = Math.max(1, level);
+  const scale = FLOOR_SCALE_TIERS[tier] ?? FLOOR_SCALE_TIERS.baseline;
   return {
     // /50 with a +2/level ramp. The old `/26` against a 3.2x-inflated area was
     // effectively one zombie per 8 walkable tiles, which is why it pinned the
     // cap on every floor. These numbers put the cap back to being the DRAW-CALL
     // budget its comment claims it is: it first binds at L10.
     //   L1  135 -> 50   L5  135 -> 87   L8  135 -> 121   L10+ unchanged
-    zombies: Math.min(Math.round(walkable / 50) + 2 * (l - 1), 135),
+    zombies: Math.min(Math.round(walkable / 50) + 2 * (l - 1), scale.maxZombies),
     // /70 + 6. Derivation rather than taste: only TORCH_LIGHT_POOL (6) torches
     // are ever live lights and each is a radius-6 PointLight, so for N torches
     // over A walkable tiles the mean nearest-torch distance ~ 0.5*sqrt(A/N);
     // requiring that inside one light radius gives N ~ A/144 ~ 7 per 1k. /70
     // lands at ~16 per 1k — a 2x margin, which is what pays for corridors being
     // 1-D where the estimate is 2-D. Cap first binds at L8.
-    torches: Math.min(Math.round(walkable / 70) + 6, 80),
+    torches: Math.min(Math.round(walkable / 70) + 6, scale.maxTorches),
     // WAS `walkable / 600`, at near-parity with the old `floorTiles/2000`, and
     // the comment justifying it said: "The corridor deal is not the density
     // problem — censused at 19-26 parts per 1k walkable and already falling
@@ -245,3 +296,30 @@ export function levelConfig(level: number): LevelConfig {
     launchBreaks: Math.min(8 + Math.floor((l - 1) / 2), 16),
   };
 }
+
+/**
+ * Returns level configuration for scaled floor tiers (1.9x, 4.0x, 10.0x).
+ * Preserves baseline behavior completely when tier is "baseline".
+ */
+export function scaledLevelConfig(level: number, tier: FloorScaleTier = "baseline"): LevelConfig {
+  const l = Math.max(1, level);
+  const scale = FLOOR_SCALE_TIERS[tier] ?? FLOOR_SCALE_TIERS.baseline;
+  const baseCfg = levelConfig(l);
+  if (tier === "baseline") return baseCfg;
+
+  const mult = Math.sqrt(scale.areaMultiplier);
+  const cellsW = Math.min(Math.round(baseCfg.cellsW * mult), scale.cellsW);
+  const cellsH = Math.min(Math.round(baseCfg.cellsH * mult), scale.cellsH);
+  const floorTiles = Math.round(cellsW * cellsH * 2.5);
+  const budgets = floorBudgets(l, floorTiles, tier);
+
+  return {
+    ...baseCfg,
+    cellsW,
+    cellsH,
+    floorTiles,
+    zombies: budgets.zombies,
+    torches: budgets.torches,
+  };
+}
+
