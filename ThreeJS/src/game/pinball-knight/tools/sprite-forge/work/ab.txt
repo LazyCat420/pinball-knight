@@ -1,6 +1,6 @@
-── brute (idle, walk) — 6 frames each
-   IMPORTED  entries 24.2  isolated 16.8%  runLen 1.74
-   PAINTED   entries 23.3  isolated 8.9%  runLen 2.85
+── brute (idle, walk, death) — 10 frames each
+   IMPORTED  entries 18.3  isolated 22.7%  runLen 1.63
+   PAINTED   entries 18.1  isolated 9.1%  runLen 2.79
 ── jester (idle, walk, attack, stumble, death) — 17 frames each
    IMPORTED  entries 25.1  isolated 28.3%  runLen 1.68
    PAINTED   entries 29.8  isolated 27.3%  runLen 1.72

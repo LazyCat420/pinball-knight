@@ -36,6 +36,11 @@ import {
   ROTORTAIL_TIMBER_SPEED,
   ROTORTAIL_TIMBER_DAMAGE,
   ROTORTAIL_FIRE_RANGE,
+  BRUTE_THROW_RANGE,
+  BRUTE_DUMBBELL_SPEED,
+  BRUTE_DUMBBELL_DAMAGE,
+  BRUTE_DUMBBELL_BOUNCES,
+  BRUTE_DUMBBELL_DEFLECT,
   STILTNECK_BOMB_SPEED,
   STILTNECK_BOMB_FUSE,
   STILTNECK_BLAST_RADIUS,
@@ -742,6 +747,40 @@ export function hurlTimber(x: number, z: number, dx: number, dz: number): void {
     hostile: true,
     mesh,
     dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
+  });
+}
+
+/**
+ * The BRUTE's dumbbell heave: a heavy cast-iron dumbbell hurled with immense force.
+ *
+ * Flies down the line tumbling end-over-end. If it strikes masonry, it ricochets
+ * with metallic sparks and an iron clang up to BRUTE_DUMBBELL_BOUNCES times before
+ * expiring. If it connects with the player, it deals heavy blunt damage, flings the
+ * knight backward along the trajectory, and triggers screen shake.
+ */
+export function hurlDumbbell(x: number, z: number, dx: number, dz: number, speedMult = 1.0): void {
+  if (!state.scene) return;
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  triggerMuzzleVfx(sx, sz, dx, dz, "dumbbell");
+  const mesh = createProjectileMesh("dumbbell");
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  mesh.rotation.set(0, Math.atan2(dx, dz), 0);
+  state.scene.add(mesh);
+  const speed = BRUTE_DUMBBELL_SPEED * speedMult;
+  state.projectiles.push({
+    kind: "dumbbell",
+    x: sx,
+    z: sz,
+    vx: dx * speed,
+    vz: dz * speed,
+    life: BRUTE_THROW_RANGE / speed,
+    maxLife: BRUTE_THROW_RANGE / speed,
+    damage: BRUTE_DUMBBELL_DAMAGE,
+    hostile: true,
+    bounces: BRUTE_DUMBBELL_BOUNCES,
+    mesh,
+    dispose: () => {},
   });
 }
 
@@ -2317,6 +2356,12 @@ export function updateProjectiles(dt: number): void {
         }
       } else if (pr.kind === "shard" || pr.kind === "ice_shard") {
         pr.mesh.rotation.y += dt * 12;
+      } else if (pr.kind === "dumbbell") {
+        pr.mesh.rotation.x += dt * 16;
+        if (hitX || hitZ) {
+          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 8);
+          state.shakeT = Math.max(state.shakeT, 0.14);
+        }
       }
     } else {
       // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
@@ -2419,6 +2464,7 @@ export function updateProjectiles(dt: number): void {
       // motion cue on a projectile this slow — without it the log reads as a
       // static prop sliding across the floor.
       if (pr.kind === "timber") pr.mesh.rotation.y += dt * 7;
+      if (pr.kind === "dumbbell") pr.mesh.rotation.x += dt * 16;
       if (pr.kind === "burger_tomato") pr.mesh.rotation.y += dt * 20;
       if (pr.kind === "burger_lettuce") {
         pr.mesh.rotation.y += dt * 8;
@@ -2479,8 +2525,8 @@ export function updateProjectiles(dt: number): void {
     if (pr.hostile) {
       // Bouncing bullets (Warden cop shot): initial direct shot always misses
       // and only damages the player AFTER bouncing off a wall.
-      // Pearls and ornaments can hit directly or after ricocheting off walls.
-      const canHitPlayer = pr.kind === "pearl" || pr.kind === "ornament" || pr.bounces === undefined || pr.bounced;
+      // Pearls, ornaments, and dumbbells can hit directly or after ricocheting off walls.
+      const canHitPlayer = pr.kind === "pearl" || pr.kind === "ornament" || pr.kind === "dumbbell" || pr.bounces === undefined || pr.bounced;
       const p = state.player;
       if (canHitPlayer && p && p.hp > 0) {
         const dx = p.x - pr.x;
@@ -2575,6 +2621,19 @@ export function updateProjectiles(dt: number): void {
             p.bounceCombo = (p.bounceCombo || 0) + 1;
             p.iframes = Math.max(p.iframes || 0, 0.2);
             state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0xf1f5f9, 14, 1.8);
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, nx * 2, nz * 2, 8);
+            sfxTarget();
+          } else if (pr.kind === "dumbbell") {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            // Deflect player momentum: fling the knight backward along dumbbell trajectory
+            const dist = Math.hypot(pr.vx, pr.vz) || 1;
+            const nx = pr.vx / dist;
+            const nz = pr.vz / dist;
+            p.momX = nx;
+            p.momZ = nz;
+            p.momSpeed = Math.max(p.momSpeed || 0, BRUTE_DUMBBELL_DEFLECT);
+            state.shakeT = Math.max(state.shakeT, 0.28);
+            state.vfx?.burst(pr.x, PROJECTILE_Y, pr.z, 0x94a3b8, 14, 1.8);
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, nx * 2, nz * 2, 8);
             sfxTarget();
           } else if (pr.kind === "fishing_hook") {
@@ -2702,7 +2761,7 @@ export function updateProjectiles(dt: number): void {
       const age = 1 - pr.life / pr.maxLife;
       pr.mesh.scale.setScalar(0.6 + age * 2.6);
       pr.mesh.position.y = PROJECTILE_Y + age * 0.25; // fire drifts up
-      const mat = pr.mesh.material as THREE.MeshBasicMaterial;
+      const mat = (pr.mesh as THREE.Mesh).material as THREE.MeshBasicMaterial;
       mat.color.setHex(FLAME_RAMP[Math.min(FLAME_RAMP.length - 1, Math.floor(age * FLAME_RAMP.length))]);
     }
   }

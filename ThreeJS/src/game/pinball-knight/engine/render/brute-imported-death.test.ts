@@ -19,7 +19,7 @@ describe("Brute Imported Art Death Fallback Assertions", () => {
     restore = null;
   });
 
-  it("proves brute-S.json lacks death row but paintsFor('brute') safely falls back to procedural death cels", () => {
+  it("verifies brute-S.json ships with full moveset including 4 death frames and animator plays them", () => {
     const jsonPath = resolve(__dirname, "../../../../../public/sprites/brute-S.json");
     const manifest = JSON.parse(readFileSync(jsonPath, "utf-8"));
 
@@ -32,22 +32,23 @@ describe("Brute Imported Art Death Fallback Assertions", () => {
       image: canvas as any,
     };
 
-    // 1. Verify brute manifest specifically lacks death row
+    // 1. Verify brute manifest now authors death row with 4 frames
     const artPaints = importedPaints([importedSheet]);
     expect(artPaints).not.toBeNull();
-    expect(artPaints!.S.death, "brute-S imported sheet must have undefined death").toBeUndefined();
+    expect(artPaints!.S.death, "brute-S imported sheet must have authored death").toBeDefined();
+    expect(artPaints!.S.death!.length, "brute-S imported sheet has 4 death frames").toBe(4);
 
-    // 2. Register imported art and verify paintsFor merges procedural death cels
+    // 2. Register imported art and verify paintsFor uses the imported death cels
     imported.set("brute", artPaints!);
     const merged = paintsFor("brute");
-    expect(merged.S.death, "merged S:death must exist from procedural painter").toBeDefined();
-    expect(merged.S.death!.length, "merged S:death must have frames").toBeGreaterThanOrEqual(2);
+    expect(merged.S.death, "merged S:death must exist").toBeDefined();
+    expect(merged.S.death!.length, "merged S:death must have frames").toBe(4);
 
     // 3. Build sheet and test MonsterAnimator playback across all facings
     const sheet = buildSpriteSheet(merged);
     const deathIndices = sheet.clips.get("S:death");
     expect(deathIndices, "S:death clip must exist in built sheet").toBeDefined();
-    expect(deathIndices!.length, "S:death indices count").toBeGreaterThanOrEqual(2);
+    expect(deathIndices!.length, "S:death indices count").toBe(4);
 
     for (const facing of ["S", "N", "E", "W"] as const) {
       const sprite = createActorSprite(sheet, false);

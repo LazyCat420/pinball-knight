@@ -1084,6 +1084,12 @@ export const BRUTE_DAMAGE = 2;
 export const BRUTE_KNOCKBACK = 0.9; // shoves the player back hard
 export const BRUTE_RATIO = 7; // ~1 brute per this many horde slots
 export const BRUTE_FROM_LEVEL = 3;
+export const BRUTE_THROW_RANGE = 6.2; // heave distance for thrown dumbbells
+export const BRUTE_DUMBBELL_SPEED = 5.2; // weighty dodgeable projectile speed
+export const BRUTE_DUMBBELL_DAMAGE = 2;
+export const BRUTE_DUMBBELL_BOUNCES = 2; // wall ricochets before expiration
+export const BRUTE_DUMBBELL_DEFLECT = 5.5; // player knockback impulse on direct hit
+
 
 /**
  * How much of a floor's horde is drawn from its BIOME's favoured families

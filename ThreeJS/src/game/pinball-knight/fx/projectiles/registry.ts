@@ -381,6 +381,15 @@ export const PROJECTILE_VFX_CONFIGS: Record<string, ProjectileVfxConfig> = {
     launch: { muzzleFlash: false },
     impact: { wallType: "sparks", color: 0x92400e, count: 6 },
   },
+  dumbbell: {
+    kind: "dumbbell",
+    archetype: "dumbbell",
+    dimensions: { radius: 0.16, length: 0.44, glowScale: 1.2 },
+    colors: { core: 0x1f242d, glow: 0x334155, accent: 0x94a3b8 },
+    flight: { orientToHeading: false, spinAxis: "x", spinSpeed: 16 },
+    launch: { muzzleFlash: false, smokePuff: true },
+    impact: { wallType: "sparks", color: 0x94a3b8, count: 8, screenShake: 0.25 },
+  },
 };
 
 /**

@@ -35,7 +35,7 @@ import type { EnemyKind } from "./state";
 export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: string }> = {
   zombie: { label: "Zombie", icon: "🧟", blurb: "shambles in a drag-limp, aggressive sprint, red claw slash attacks, and blood-splatter collapse" },
   spider: { label: "Spider", icon: "🕷️", blurb: "wolf spider swinging dual nunchucks in fast flurries" },
-  brute: { label: "Brute", icon: "🦍", blurb: "thick hide, heavy swing, enrages when hurt" },
+  brute: { label: "Brute", icon: "🏋️", blurb: "gym behemoth with iron dumbbells; heaves heavy weights, slams the ground, and enrages when hurt" },
   spitter: { label: "Demon", icon: "👹", blurb: "floating split-face ghost demon with Jekyll-Hyde / Two-Face visage shooting magic lasers" },
   ghost: { label: "Ghost", icon: "👻", blurb: "drifts through walls; untouchable until it strikes" },
   bat: { label: "Bat", icon: "🦇", blurb: "wobbles in on a drunken line — hard to swat" },

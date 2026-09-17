@@ -40,6 +40,7 @@ import {
   SPIDER_ATTACK_COOLDOWN,
   BRUTE_R,
   BRUTE_CONTACT_RANGE,
+  BRUTE_THROW_RANGE,
   BRUTE_ATTACK_WINDUP,
   BRUTE_ATTACK_COOLDOWN,
   SPITTER_R,
@@ -216,7 +217,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
 import { donQuixoteWallCrash } from "./don-quixote";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, hurlDumbbell, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -230,7 +231,7 @@ export interface EnemyStats {
 export const STATS: Record<EnemyKind, EnemyStats> = {
   zombie: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   spider: { bodyR: SPIDER_R, contactRange: SPIDER_CONTACT_RANGE, windup: SPIDER_ATTACK_WINDUP, cooldown: SPIDER_ATTACK_COOLDOWN, ranged: false },
-  brute: { bodyR: BRUTE_R, contactRange: BRUTE_CONTACT_RANGE, windup: BRUTE_ATTACK_WINDUP, cooldown: BRUTE_ATTACK_COOLDOWN, ranged: false },
+  brute: { bodyR: BRUTE_R, contactRange: BRUTE_THROW_RANGE, windup: BRUTE_ATTACK_WINDUP, cooldown: BRUTE_ATTACK_COOLDOWN, ranged: true },
   spitter: { bodyR: SPITTER_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
   ghost: { bodyR: GHOST_R, contactRange: GHOST_CONTACT_RANGE, windup: GHOST_ATTACK_WINDUP, cooldown: GHOST_ATTACK_COOLDOWN, ranged: false },
   bat: { bodyR: BAT_R, contactRange: BAT_CONTACT_RANGE, windup: BAT_ATTACK_WINDUP, cooldown: BAT_ATTACK_COOLDOWN, ranged: false },
@@ -459,16 +460,18 @@ function startCharge(z: Zombie, pdx: number, pdz: number, pdist: number): void {
   z.chargeDirZ = pdz / d;
 }
 
-/** BRUTE ground-slam: a radial haymaker with wider reach than a point bite. */
-function bruteSlam(z: Zombie, pdist: number, contactRange: number): void {
+/** BRUTE ground-slam: double-dumbbell ground smash with radial shockwave and dust. */
+function bruteSlam(z: Zombie, pdist: number): void {
   const p = state.player;
   if (!p || p.hp <= 0) return;
-  if (pdist <= contactRange * 1.7) hitPlayer(z);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    state.vfx?.dust(z.x + Math.cos(a) * 0.6, 0.05, z.z + Math.sin(a) * 0.6);
+  if (pdist <= BRUTE_CONTACT_RANGE * 1.8) hitPlayer(z);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    state.vfx?.dust(z.x + Math.cos(a) * 0.7, 0.05, z.z + Math.sin(a) * 0.7);
   }
-  state.shakeT = Math.max(state.shakeT, 0.2);
+  state.vfx?.sparks(z.x, 0.1, z.z, 0, 0, 8);
+  sfxHeavy();
+  state.shakeT = Math.max(state.shakeT, 0.35);
 }
 
 /** CROAKER: Showman dancing cane flourish — spins cane in a 360-degree propeller attack with paddle deflection. */
@@ -1759,7 +1762,20 @@ export function updateZombies(dt: number): void {
             startCharge(z, pdx, pdz, pdist); // the windup ends in a DASH, not a bite
             continue;
           } else if (z.kind === "brute") {
-            bruteSlam(z, pdist, contactRange); // a radial haymaker, not a point bite
+            if (pdist <= BRUTE_CONTACT_RANGE * 1.8) {
+              bruteSlam(z, pdist); // close quarters: double dumbbell ground smash
+            } else if (pdist > 1e-4) {
+              const ux = pdx / pdist;
+              const uz = pdz / pdist;
+              hurlDumbbell(z.x, z.z, ux, uz);
+              if (z.enraged) {
+                // Enraged brute (< 40% HP) throws twin dumbbells in a V-spread!
+                const spread = 0.22;
+                const cos = Math.cos(spread);
+                const sin = Math.sin(spread);
+                hurlDumbbell(z.x, z.z, ux * cos - uz * sin, ux * sin + uz * cos, 1.08);
+              }
+            }
           } else if (z.kind === "croaker") {
             croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
           } else if (z.kind === "platypus") {

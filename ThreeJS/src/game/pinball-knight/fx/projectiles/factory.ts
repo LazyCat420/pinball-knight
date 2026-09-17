@@ -301,6 +301,54 @@ export function createBombBundle(config: ProjectileVfxConfig): ProjectileMeshBun
 }
 
 /**
+ * Creates a heavy iron dumbbell projectile (dual hexagonal weight plates + central chrome handle bar).
+ */
+export function createDumbbellBundle(config: ProjectileVfxConfig): ProjectileMeshBundle {
+  const r = config.dimensions.radius;
+  const len = config.dimensions.length ?? r * 2.8;
+
+  const plateGeoKey = `dumbbell_plate_${r.toFixed(3)}`;
+  const plateGeo = getCachedGeo(plateGeoKey, () => {
+    const geo = new THREE.CylinderGeometry(r, r, len * 0.26, 6);
+    geo.rotateZ(Math.PI / 2);
+    return geo;
+  });
+
+  const barGeoKey = `dumbbell_bar_${(r * 0.28).toFixed(3)}_${(len * 0.85).toFixed(3)}`;
+  const barGeo = getCachedGeo(barGeoKey, () => {
+    const geo = new THREE.CylinderGeometry(r * 0.28, r * 0.28, len * 0.85, 8);
+    geo.rotateZ(Math.PI / 2);
+    return geo;
+  });
+
+  const coreMat = getCachedMat(config.colors.core);
+  const accentMat = getCachedMat(config.colors.accent ?? 0x94a3b8);
+  const glowMat = getCachedMat(config.colors.glow ?? config.colors.core, {
+    additive: true,
+    opacity: 0.35,
+    transparent: true,
+  });
+
+  const leftPlate = new THREE.Mesh(plateGeo, coreMat);
+  leftPlate.position.set(-len * 0.38, 0, 0);
+
+  const rightPlate = new THREE.Mesh(plateGeo, coreMat);
+  rightPlate.position.set(len * 0.38, 0, 0);
+
+  const barMesh = new THREE.Mesh(barGeo, accentMat);
+
+  const glowMesh = new THREE.Mesh(plateGeo, glowMat);
+  glowMesh.scale.set(1.15, 1.15, 1.15);
+
+  const root = new THREE.Group();
+  root.add(barMesh);
+  root.add(leftPlate);
+  root.add(rightPlate);
+
+  return { root, coreMesh: leftPlate, glowMesh, accentMesh: barMesh };
+}
+
+/**
  * Master dispatcher to assemble any configured projectile mesh bundle.
  */
 export function buildProjectileBundle(config: ProjectileVfxConfig): ProjectileMeshBundle {
@@ -317,6 +365,8 @@ export function buildProjectileBundle(config: ProjectileVfxConfig): ProjectileMe
       return createBladeBundle(config);
     case "bomb":
       return createBombBundle(config);
+    case "dumbbell":
+      return createDumbbellBundle(config);
     case "condiment":
     default:
       return createGlobBundle(config);

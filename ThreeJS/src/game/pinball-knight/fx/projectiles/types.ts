@@ -14,7 +14,8 @@ export type ProjectileArchetype =
   | "beam"
   | "blade"
   | "bomb"
-  | "condiment";
+  | "condiment"
+  | "dumbbell";
 
 export interface ProjectileMeshBundle {
   root: THREE.Object3D;
