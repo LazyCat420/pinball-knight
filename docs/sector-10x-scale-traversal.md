@@ -74,3 +74,27 @@ We measure two graph distances from spawn to stairs:
    - **Scale 1.9× (132 × 100)**: 329.5ms gen time, 5,865 walkable tiles, 0 unreachable, 0 narrow gaps.
    - **Scale 4.0× (192 × 144)**: 641.6ms gen time, 11,689 walkable tiles, 0 unreachable, 0 narrow gaps.
    - **Scale 10.0× (304 × 228)**: 1,743.7ms gen time, 29,274 walkable tiles, 0 unreachable, 0 narrow gaps.
+
+---
+
+## 6. Canonical FloorSpec & Progressive Per-Level Scaling
+
+To ensure the maze grows smoothly and progressively for every single floor in live gameplay rather than jumping abruptly or remaining an unwired prototype:
+
+1. **`resolveFloorSpec(opts)` (`maze/spec/floor-spec.ts`)**:
+   - Single canonical authority for floor dimensions, area budgets, sector partitions, and generator revisions.
+   - Computes continuous monotonic growth:
+     - Level 1: $37 \times 26$ cells ($75 \times 53$ tiles).
+     - Level 20: $90 \times 64$ cells ($181 \times 129$ tiles).
+     - Level 25: $114 \times 86$ cells ($229 \times 173$ tiles).
+     - Level 30: $192 \times 144$ cells ($385 \times 289$ tiles, 4.0× area).
+     - Level 34+: $304 \times 228$ cells ($609 \times 457$ tiles, 10.0× area).
+2. **Shipping Integration (`spawn/floor-authoring.ts` & `core.ts`)**:
+   - `authorFloor(level)` now passes `resolveFloorSpec` options directly into `authorMaze()`.
+   - In live gameplay, each descending level smoothly expands the dungeon grid and sector graph.
+   - Baseline regression suites preserve byte-for-byte SHA-256 fixture parity via `tier: "baseline"` defaults.
+3. **Dev & QA Controls (`window-hooks.ts`)**:
+   - `window.__dungeonScale("phase1" | "phase2" | "final_10x" | number)`: Dynamically rescales the current floor in-place for live testing.
+   - `window.__dungeonLevel(level, { tier, scaleMultiplier })`: Direct jump to any level with scale options.
+   - `window.__dungeonStats()`: Reports active `gridW`, `gridH`, `cellsW`, `cellsH`, `scaleTier`, and `scaleMultiplier`.
+

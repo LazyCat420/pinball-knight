@@ -111,7 +111,7 @@ export interface LevelConfig {
  * zombies and L8+ torches come out bit-identical; everything shallower comes
  * down, which is where the "jumbled mess" was.
  */
-export type FloorScaleTier = "baseline" | "phase1_1.9x" | "phase2_4.0x" | "final_10x";
+export type FloorScaleTier = "baseline" | "phase1" | "phase1_1.9x" | "phase2" | "phase2_4.0x" | "final_10x";
 
 export interface FloorScaleConfig {
   tier: FloorScaleTier;
@@ -122,39 +122,49 @@ export interface FloorScaleConfig {
   maxTorches: number;
 }
 
+const BASELINE_CONFIG: FloorScaleConfig = {
+  tier: "baseline",
+  cellsW: 96,
+  cellsH: 72,
+  areaMultiplier: 1.0,
+  maxZombies: 135,
+  maxTorches: 80,
+};
+
+const PHASE1_CONFIG: FloorScaleConfig = {
+  tier: "phase1",
+  cellsW: 132,
+  cellsH: 100,
+  areaMultiplier: 1.91,
+  maxZombies: 260,
+  maxTorches: 160,
+};
+
+const PHASE2_CONFIG: FloorScaleConfig = {
+  tier: "phase2",
+  cellsW: 192,
+  cellsH: 144,
+  areaMultiplier: 4.0,
+  maxZombies: 500,
+  maxTorches: 320,
+};
+
+const FINAL10X_CONFIG: FloorScaleConfig = {
+  tier: "final_10x",
+  cellsW: 304,
+  cellsH: 228,
+  areaMultiplier: 10.02,
+  maxZombies: 1200,
+  maxTorches: 800,
+};
+
 export const FLOOR_SCALE_TIERS: Record<FloorScaleTier, FloorScaleConfig> = {
-  baseline: {
-    tier: "baseline",
-    cellsW: 96,
-    cellsH: 72,
-    areaMultiplier: 1.0,
-    maxZombies: 135,
-    maxTorches: 80,
-  },
-  "phase1_1.9x": {
-    tier: "phase1_1.9x",
-    cellsW: 132,
-    cellsH: 100,
-    areaMultiplier: 1.91,
-    maxZombies: 260,
-    maxTorches: 160,
-  },
-  "phase2_4.0x": {
-    tier: "phase2_4.0x",
-    cellsW: 192,
-    cellsH: 144,
-    areaMultiplier: 4.0,
-    maxZombies: 500,
-    maxTorches: 320,
-  },
-  final_10x: {
-    tier: "final_10x",
-    cellsW: 304,
-    cellsH: 228,
-    areaMultiplier: 10.02,
-    maxZombies: 1200,
-    maxTorches: 800,
-  },
+  baseline: BASELINE_CONFIG,
+  phase1: PHASE1_CONFIG,
+  "phase1_1.9x": PHASE1_CONFIG,
+  phase2: PHASE2_CONFIG,
+  "phase2_4.0x": PHASE2_CONFIG,
+  final_10x: FINAL10X_CONFIG,
 };
 
 export function floorBudgets(

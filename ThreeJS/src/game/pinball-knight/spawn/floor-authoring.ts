@@ -9,12 +9,12 @@ import { resetPickupSweep } from "../economy/pickups";
 import { setMazeBiome } from "../maze/build";
 import { themeIndexFor } from "../maze/prefabs";
 import { resetZombieNid } from "../spawn/factory";
-import { authorMaze } from "../maze/author-floor";
+import { authorMaze, type FloorAuthorOptions } from "../maze/author-floor";
 
 export type AuthoredFloor = ReturnType<typeof authorMaze> & { biome: Biome };
 
 /** Apply run bookkeeping and lighting, then invoke the shared floor author. */
-export function authorFloor(level: number): AuthoredFloor {
+export function authorFloor(level: number, options?: Partial<FloorAuthorOptions>): AuthoredFloor {
   // ── Co-op: adopt the SHARED POOL SEED so every player generates the identical
   // floor/enemy/boss layout. Set before the maze RNG below. No-op solo/offline. ──
   const cs = coopSeed();
@@ -39,7 +39,18 @@ export function authorFloor(level: number): AuthoredFloor {
 
   const bonusRoom = state.bonusRoomNext;
   state.bonusRoomNext = false;
-  const authored = authorMaze({ level, runSeed: state.runSeed, bonusRoom });
+  const tier = options?.tier ?? state.floorScaleOverrideTier;
+  const scaleMultiplier = options?.scaleMultiplier ?? state.floorScaleOverrideMultiplier;
+  const progressive = options?.progressive ?? (tier === undefined && scaleMultiplier === undefined);
+  const authored = authorMaze({
+    level,
+    runSeed: state.runSeed,
+    bonusRoom,
+    tier,
+    scaleMultiplier,
+    progressive,
+    ...options,
+  });
   state.doorways = authored.doorways;
   return { ...authored, biome };
 }
