@@ -182,4 +182,28 @@ describe("Brute Combat AI & Dumbbell Throwing Mechanics", () => {
     // The second dumbbell has angled trajectory (non-zero vz)
     expect(state.projectiles[1].vz).not.toBe(0);
   });
+
+  it("exposes modular lego functions: checkBruteEnrage, bruteSlam, executeBruteAttack", async () => {
+    const { checkBruteEnrage, executeBruteAttack, bruteSlam } = await import("./brute");
+    expect(typeof checkBruteEnrage).toBe("function");
+    expect(typeof executeBruteAttack).toBe("function");
+    expect(typeof bruteSlam).toBe("function");
+
+    const brute: Zombie = {
+      kind: "brute",
+      x: 5,
+      z: 5,
+      hp: 3,
+      maxHp: BRUTE_HP,
+      mode: "chase",
+      speed: 1.0,
+      sprite: { mesh: new THREE.Object3D() } as any,
+    } as any;
+
+    const triggered = checkBruteEnrage(brute);
+    expect(triggered).toBe(true);
+    expect(brute.enraged).toBe(true);
+    expect(brute.speed).toBeCloseTo(1.4, 2);
+  });
 });
+

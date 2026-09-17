@@ -217,7 +217,8 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie, resolvePlayerAttack, deflectOffHamsterBall } from "./combat";
 import { donQuixoteWallCrash } from "./don-quixote";
-import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, hurlDumbbell, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
+import { executeBruteAttack, checkBruteEnrage } from "./brute";
+import { fireCopBullet, fireEyeBeams, flingPlate, flingBurgerDeconstruction, launchFryBarrage, launchMilkshakeSpray, launchMustardStream, launchKetchupSquirts, launchMustardJets, launchShuriken, launchZippoFlameBreath, launchOrnament, spitPearl, hurlTimber, slingBomb, spitGlob, spitWeb, launchSkyVolley, fireWildBullet, dropCorvidBomb, dropVultureBomb, dropGullClusterBomb, dropFalconFireBomb, dropSpikeStrip, throwFlashbang, fireMagnumBullet, fireAuto9Burst } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin, sfxSpin, sfxSwing, sfxHeavy } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -460,19 +461,8 @@ function startCharge(z: Zombie, pdx: number, pdz: number, pdist: number): void {
   z.chargeDirZ = pdz / d;
 }
 
-/** BRUTE ground-slam: double-dumbbell ground smash with radial shockwave and dust. */
-function bruteSlam(z: Zombie, pdist: number): void {
-  const p = state.player;
-  if (!p || p.hp <= 0) return;
-  if (pdist <= BRUTE_CONTACT_RANGE * 1.8) hitPlayer(z);
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    state.vfx?.dust(z.x + Math.cos(a) * 0.7, 0.05, z.z + Math.sin(a) * 0.7);
-  }
-  state.vfx?.sparks(z.x, 0.1, z.z, 0, 0, 8);
-  sfxHeavy();
-  state.shakeT = Math.max(state.shakeT, 0.35);
-}
+/** BRUTE ground-slam: double-dumbbell ground smash with radial shockwave and dust (modularized in entities/brute.ts). */
+export { bruteSlam } from "./brute";
 
 /** CROAKER: Showman dancing cane flourish — spins cane in a 360-degree propeller attack with paddle deflection. */
 function croakerCaneSpin(z: Zombie, pdist: number, contactRange: number): void {
@@ -1265,11 +1255,8 @@ export function updateZombies(dt: number): void {
     }
 
     // ── BRUTE ENRAGE ── below 40% HP it flies into a faster, angrier rage.
-    if (z.kind === "brute" && !z.enraged && z.hp <= BRUTE_HP * 0.4) {
-      z.enraged = true;
-      z.speed *= 1.4;
-      state.vfx?.sparks(z.x, 0.75, z.z, 0, 1, 12);
-      state.vfx?.blood(z.x, 0.6, z.z, "red", 6);
+    if (z.kind === "brute") {
+      checkBruteEnrage(z);
     }
 
     // ── SLIME ACID TRAIL ── it oozes a hostile burning puddle behind it on a
@@ -1762,20 +1749,7 @@ export function updateZombies(dt: number): void {
             startCharge(z, pdx, pdz, pdist); // the windup ends in a DASH, not a bite
             continue;
           } else if (z.kind === "brute") {
-            if (pdist <= BRUTE_CONTACT_RANGE * 1.8) {
-              bruteSlam(z, pdist); // close quarters: double dumbbell ground smash
-            } else if (pdist > 1e-4) {
-              const ux = pdx / pdist;
-              const uz = pdz / pdist;
-              hurlDumbbell(z.x, z.z, ux, uz);
-              if (z.enraged) {
-                // Enraged brute (< 40% HP) throws twin dumbbells in a V-spread!
-                const spread = 0.22;
-                const cos = Math.cos(spread);
-                const sin = Math.sin(spread);
-                hurlDumbbell(z.x, z.z, ux * cos - uz * sin, ux * sin + uz * cos, 1.08);
-              }
-            }
+            executeBruteAttack(z, pdx, pdz, pdist);
           } else if (z.kind === "croaker") {
             croakerCaneSpin(z, pdist, contactRange); // showman spinning cane propeller attack
           } else if (z.kind === "platypus") {
