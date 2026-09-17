@@ -90,7 +90,7 @@ describe("Monster Projectile VFX System", () => {
       for (const kind of kinds) {
         const config = getProjectileVfxConfig(kind);
         expect(config.kind).toBeDefined();
-        expect(["bullet", "flame", "glob", "beam", "blade", "bomb", "condiment"]).toContain(config.archetype);
+        expect(["bullet", "flame", "glob", "beam", "blade", "bomb", "condiment", "dumbbell"]).toContain(config.archetype);
         expect(config.colors.core).toBeGreaterThan(0);
         expect(config.dimensions.radius).toBeGreaterThan(0);
         expect(config.flight).toBeDefined();
@@ -151,6 +151,16 @@ describe("Monster Projectile VFX System", () => {
       expect(bundle.root).toBeInstanceOf(THREE.Group);
       expect(bundle.coreMesh).toBeDefined();
       expect(bundle.accentMesh).toBeDefined();
+    });
+
+    it("builds dumbbell bundle with chrome handle bar and dual hexagonal plates", () => {
+      const config = getProjectileVfxConfig("dumbbell");
+      const bundle = buildProjectileBundle(config);
+
+      expect(bundle.root).toBeInstanceOf(THREE.Group);
+      expect(bundle.coreMesh).toBeDefined();
+      expect(bundle.glowMesh).toBeDefined();
+      expect(bundle.root.children.length).toBeGreaterThanOrEqual(3);
     });
   });
 
