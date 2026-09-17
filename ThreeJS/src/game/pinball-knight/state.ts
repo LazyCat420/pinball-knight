@@ -1313,6 +1313,8 @@ export const state = {
   floorScaleOverrideTier: undefined as "baseline" | "phase1" | "phase2" | "final_10x" | undefined,
   /** Dev/runtime continuous scale multiplier override (e.g. 1.9, 4.0, 10.0) */
   floorScaleOverrideMultiplier: undefined as number | undefined,
+  /** Global flag to enable progressive floor scaling ramp */
+  progressiveFloorScaling: false as boolean,
   groundItems: [] as GroundItem[],
 
   /**

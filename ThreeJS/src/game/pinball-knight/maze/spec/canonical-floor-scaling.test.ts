@@ -62,18 +62,18 @@ describe("Canonical FloorSpec & Progressive Scaling (P0 Integration)", () => {
     state.floorScaleOverrideMultiplier = undefined;
 
     // Level 1: roomy onboarding room (129x97 tiles)
-    const f1 = authorFloor(1);
+    const f1 = authorFloor(1, { progressive: true });
     expect(f1.grid.w).toBe(129);
     expect(f1.grid.h).toBe(97);
 
     // Level 10: expands into vast multi-sector labyrinth (385x289 tiles, >12,000 walkable)
-    const f10 = authorFloor(10);
+    const f10 = authorFloor(10, { progressive: true });
     expect(f10.grid.w).toBe(385);
     expect(f10.grid.h).toBe(289);
     expect(f10.walkable).toBeGreaterThan(10000);
 
     // Level 25: expands into 10x ceiling (609x457 tiles)
-    const f25 = authorFloor(25);
+    const f25 = authorFloor(25, { progressive: true });
     expect(f25.grid.w).toBe(609);
     expect(f25.grid.h).toBe(457);
     expect(f25.walkable).toBeGreaterThan(f10.walkable * 1.5);

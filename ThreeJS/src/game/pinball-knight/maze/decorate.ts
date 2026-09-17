@@ -2435,7 +2435,7 @@ export function decorateMaze(
     rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
 
   // ── Zombie spawns: far-ish floor tiles, spread out, never near the start ──
-  const minSpawnDist = Math.max(5, Math.floor(maxDist * 0.3));
+  const minSpawnDist = Math.min(18, Math.max(5, Math.floor(maxDist * 0.3)));
   const spawns: TilePos[] = [...furnished.spawns];
   const candidates = shuffled(
     floors.filter((p) => {

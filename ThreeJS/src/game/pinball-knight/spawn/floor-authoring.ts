@@ -41,7 +41,7 @@ export function authorFloor(level: number, options?: Partial<FloorAuthorOptions>
   state.bonusRoomNext = false;
   const tier = options?.tier ?? state.floorScaleOverrideTier;
   const scaleMultiplier = options?.scaleMultiplier ?? state.floorScaleOverrideMultiplier;
-  const progressive = options?.progressive ?? (tier === undefined && scaleMultiplier === undefined);
+  const progressive = options?.progressive ?? (tier !== undefined || scaleMultiplier !== undefined || (state.progressiveFloorScaling ?? false));
   const authored = authorMaze({
     level,
     runSeed: state.runSeed,

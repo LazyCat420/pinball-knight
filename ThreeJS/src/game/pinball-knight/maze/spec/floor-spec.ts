@@ -116,7 +116,7 @@ export function calculateProgressiveCells(
   level: number,
   tier?: FloorScaleTier,
   scaleMultiplier?: number,
-  legacyMode = false,
+  progressive = false,
 ): { cellsW: number; cellsH: number; tier: FloorScaleTier; mult: number } {
   // Explicit tier overrides
   if (tier && tier !== "baseline") {
@@ -144,14 +144,16 @@ export function calculateProgressiveCells(
     };
   }
 
-  // Baseline tier override or legacyMode clamp
-  if (tier === "baseline" || legacyMode) {
+  // If progressive scaling is NOT enabled (or tier is explicitly "baseline"):
+  // use standard baseline dimensions for unit tests and unscaled authorMaze calls.
+  if (!progressive || tier === "baseline") {
     const l = Math.max(1, level);
     const cellsW = Math.min(34 + Math.ceil(l * 2.8), 96);
     const cellsH = Math.min(24 + 2 * l, 72);
     return { cellsW, cellsH, tier: "baseline", mult: 1.0 };
   }
 
+  // When progressive === true (e.g. live game authorFloor, or progressive tests):
   // Option A Aggressive Progressive Growth per level:
   // - Level 1: 64x48 cells (129x97 tiles, 0.44x area)
   // - Level 5: 121x91 cells (243x183 tiles, 1.59x area, exceeds old 96x72 baseline)
@@ -202,7 +204,7 @@ export function resolveFloorSpec(opts: FloorSpecOptions): FloorSpec {
     tier = opts.tier ?? "baseline";
     scaleMultiplier = opts.scaleMultiplier ?? (cellsW * cellsH) / (96 * 72);
   } else {
-    const resolved = calculateProgressiveCells(level, opts.tier, opts.scaleMultiplier, false);
+    const resolved = calculateProgressiveCells(level, opts.tier, opts.scaleMultiplier, opts.progressive ?? false);
     cellsW = resolved.cellsW;
     cellsH = resolved.cellsH;
     tier = resolved.tier;

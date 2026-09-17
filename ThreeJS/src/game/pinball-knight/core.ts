@@ -433,7 +433,7 @@ function buildLevel(level: number): void {
   unlockDepth(level);
   // Decide the floor — spawn/floor-authoring.ts. Everything up to here is
   // local; the commit below is where it becomes the world.
-  const f = authorFloor(level);
+  const f = authorFloor(level, { progressive: true });
   const { cfg, biome, rng, arch, modifier, bonusRoom, track, grid, plan, lampPuzzlePlan } = f;
 
   state.grid = grid;

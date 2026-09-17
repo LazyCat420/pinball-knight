@@ -118,7 +118,7 @@ export function authorMaze(opts: FloorAuthorOptions) {
   }
   // Budgets use actual area. Diagnostic mega floors may scale flat terms.
   let walkable = walkableCount(grid);
-  const budget = floorBudgets(level, walkable);
+  const budget = floorBudgets(level, walkable, spec.tier);
   const areaRatio = walkable / Math.max(1, cfg.floorTiles);
   const levelTerm = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
   const scaled = opts.density === "shipped";
