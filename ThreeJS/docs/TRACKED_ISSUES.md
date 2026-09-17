@@ -33,3 +33,11 @@ Per external review checklist (`[github_mcp_direct]`), the following items have 
 ### Issue 5: Codebase Cleanup and Logic Deduplication (Phase 1)
 - **Status**: **Resolved & Pinned**
 - **Details**: Removed orphan `youtube-service.ts`, removed vestigial `input-manager.ts` and `components/forge/types.ts`. Deduplicated `clamp01` and `mulberry32` across movement, steering, and casino roulette physics. Consolidated repetitive corpse fade and disposal loops in `zombie.ts`. Pinned card face type line verification directly to `cardTypeText` in `holo-card.ts`.
+
+---
+
+### Issue 6: Canonical Hierarchical Floor Scaling (10x Area Progression & Traversal)
+- **Status**: **Resolved & Pinned**
+- **Details**: Resolved runtime floor scaling decoupling where `authorFloor(level)` was pegged to legacy 96x72 geometry. Implemented canonical `FloorSpec` architecture with progressive per-level scaling up to 10x area target (304x228 macro cells / 609x457 tiles), precomputed landing pads, sector mission graph, narrow gap topology repair, and DevTools console hooks (`window.__dungeonScale()`, `window.__dungeonLevel()`, `window.__dungeonStats()`). Full test coverage across unit, boundary, and regression tests.
+- **Reference**: `docs/sector-10x-scale-traversal.md`, `ThreeJS/src/game/pinball-knight/maze/spec/floor-spec.ts`.
+
