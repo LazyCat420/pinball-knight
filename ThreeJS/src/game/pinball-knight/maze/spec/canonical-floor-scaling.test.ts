@@ -61,16 +61,22 @@ describe("Canonical FloorSpec & Progressive Scaling (P0 Integration)", () => {
     state.floorScaleOverrideTier = undefined;
     state.floorScaleOverrideMultiplier = undefined;
 
-    // Level 1: compact onboarding baseline
+    // Level 1: roomy onboarding room (129x97 tiles)
     const f1 = authorFloor(1);
-    expect(f1.grid.w).toBe(75);
-    expect(f1.grid.h).toBe(53);
+    expect(f1.grid.w).toBe(129);
+    expect(f1.grid.h).toBe(97);
 
-    // Level 25: expands into deep territory past the old 96x72 ceiling (which was 193x145 tiles)
+    // Level 10: expands into vast multi-sector labyrinth (385x289 tiles, >12,000 walkable)
+    const f10 = authorFloor(10);
+    expect(f10.grid.w).toBe(385);
+    expect(f10.grid.h).toBe(289);
+    expect(f10.walkable).toBeGreaterThan(10000);
+
+    // Level 25: expands into 10x ceiling (609x457 tiles)
     const f25 = authorFloor(25);
-    expect(f25.grid.w).toBeGreaterThan(193);
-    expect(f25.grid.h).toBeGreaterThan(145);
-    expect(f25.walkable).toBeGreaterThan(f1.walkable * 2);
+    expect(f25.grid.w).toBe(609);
+    expect(f25.grid.h).toBe(457);
+    expect(f25.walkable).toBeGreaterThan(f10.walkable * 1.5);
 
     // Start and stairs are mutually connected in the shipping floor
     const walkDist = bfsDistances(f25.grid, f25.plan.start.i, f25.plan.start.j);

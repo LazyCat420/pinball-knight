@@ -29,7 +29,8 @@ import { pruneSealedBands, stampSecretBands } from "../secrets";
 import { resolveFloorSpec, type FloorSpec } from "./spec/floor-spec";
 import type { FloorScaleTier } from "../constants/level";
 import { buildSectorGraph } from "./sectors/sector-graph";
-import type { SectorGraph } from "./sectors/sector-types";
+import type { SectorGraph, SectorPlan } from "./sectors/sector-types";
+import { generateSectorPlan } from "./sectors/sector-plan";
 import { buildLandingPadRegistry, type LandingPadRegistry } from "./traversal/landing-pad-registry";
 import { computeTraversalRouteMetrics, type RouteMetricsReport } from "./traversal/route-graph-metrics";
 import { repairNarrowGaps } from "./gap-clearance";
@@ -70,12 +71,13 @@ export function authorFloorTopology(opts: FloorAuthorOptions) {
     profile: arch.track, density: trackDensity, funnels: opts.funnels,
     funnelTune: opts.funnelTune, relays: opts.relays,
   }) : null;
-  return { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, track, trackMs: performance.now() - started };
+  const sectorPlan = generateSectorPlan(spec);
+  return { level, runSeed, cfg, spec, sectorPlan, rng, arch, modifier, windiness, trackDensity, track, trackMs: performance.now() - started };
 }
 
 /** Finished floor, including the live legacy fallback if track growth declines. */
 export function authorMaze(opts: FloorAuthorOptions) {
-  const { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, track, trackMs } = authorFloorTopology(opts);
+  const { level, runSeed, cfg, spec, sectorPlan, rng, arch, modifier, windiness, trackDensity, track, trackMs } = authorFloorTopology(opts);
   const bonusRoom = opts.bonusRoom ?? false;
   const theme = themeFor(level);
   let grid: Grid;
@@ -123,6 +125,11 @@ export function authorMaze(opts: FloorAuthorOptions) {
   const baseBudget = (scaled ? Math.round(levelTerm * areaRatio) : levelTerm) + budget.partsArea;
   const partBudget = Math.max(4, Math.round(baseBudget * modifier.partMult));
   const scaleCount = (n: number): number => scaled ? Math.max(1, Math.round(n * areaRatio)) : n;
+  const sectorGraph = buildSectorGraph(grid, { start: endpoints?.start, stairs: endpoints?.stairs });
+  const landingPads = buildLandingPadRegistry(grid, sectorGraph, {
+    stairs: endpoints?.stairs,
+  });
+
   const decorateStart = performance.now();
   const plan = decorateMaze(
     grid,
@@ -151,6 +158,10 @@ export function authorMaze(opts: FloorAuthorOptions) {
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
       doorways: track?.doorways,
       playSpaces: track?.playSpaces,
+      sectorPlan,
+      sectorGraph,
+      landingPadRegistry: landingPads,
+      floorSpec: spec,
     },
   );
 
@@ -228,23 +239,25 @@ export function authorMaze(opts: FloorAuthorOptions) {
 
   enforceLaunchExits(grid, plan.parts);
 
-  const sectorGraph = buildSectorGraph(grid, { start: plan.start, stairs: plan.stairs });
-  const landingPads = buildLandingPadRegistry(grid, sectorGraph, {
-    stairs: plan.stairs,
-    existingParts: plan.parts,
-  });
   const shortcuts = plan.parts
-    .filter((p) => (p.kind === "catapult" || p.kind === "spring") && p.destI !== undefined && p.destJ !== undefined)
+    .filter((p) => (p.kind === "catapult" || p.kind === "cannon" || p.kind === "spring") && p.destI !== undefined && p.destJ !== undefined)
     .map((p, idx) => ({
       id: `shortcut_${idx}`,
       kind: p.kind,
       from: { i: p.i, j: p.j },
       to: { i: p.destI!, j: p.destJ! },
-      costTiles: 5,
+      costTiles: p.kind === "cannon" ? 8 : 5,
     }));
-  const routeMetrics = computeTraversalRouteMetrics(grid, plan.start, plan.stairs, shortcuts, sectorGraph);
+  const routeMetrics = computeTraversalRouteMetrics(
+    grid,
+    plan.start,
+    plan.stairs,
+    shortcuts,
+    sectorGraph,
+    { minTraversalRatio: spec.traversalPolicy.minimumTraversalRatio },
+  );
 
-  return { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, bonusRoom,
+  return { level, runSeed, cfg, spec, sectorPlan, rng, arch, modifier, windiness, trackDensity, bonusRoom,
     track, grid, plan, lampPuzzlePlan, clearanceAudit, theme, walkable, budget, partBudget, areaRatio, densityRepair,
     doorways: track?.doorways ?? [], timing: { track: trackMs, decorate: decorateMs },
     sectorGraph, landingPads, routeMetrics };
