@@ -193,6 +193,12 @@ export function installDevHooks(deps: DevHookDeps): void {
       enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp, x: z.x, z: z.z })),
       playerHp: state.player?.hp,
       floorFx: state.floorFx.map((f) => f.kind),
+      gridW: state.grid?.w ?? 0,
+      gridH: state.grid?.h ?? 0,
+      cellsW: state.grid ? Math.floor((state.grid.w - 1) / 2) : 0,
+      cellsH: state.grid ? Math.floor((state.grid.h - 1) / 2) : 0,
+      scaleTier: state.floorScaleOverrideTier,
+      scaleMultiplier: state.floorScaleOverrideMultiplier,
     });
     // Dev: force a weapon into the active slot (QA the bow/gun/etc. without hunting
     // for a pickup). `__dungeonGive('bow')`.
@@ -691,10 +697,36 @@ export function installDevHooks(deps: DevHookDeps): void {
       return true;
     };
 
-    (window as unknown as { __dungeonLevel?: (n: number) => boolean }).__dungeonLevel = (n: number) => {
+    (window as unknown as { __dungeonLevel?: (n: number, opts?: { tier?: any; scaleMultiplier?: number }) => boolean }).__dungeonLevel = (n: number, opts?: { tier?: any; scaleMultiplier?: number }) => {
       if (state.gameOver || !Number.isFinite(n) || n < 1) return false;
+      if (opts?.tier !== undefined) state.floorScaleOverrideTier = opts.tier;
+      if (opts?.scaleMultiplier !== undefined) state.floorScaleOverrideMultiplier = opts.scaleMultiplier;
       startLevel(Math.floor(n));
       return true;
+    };
+
+    /**
+     * Dev hook: dynamically scale the current floor without changing depth.
+     * e.g. `__dungeonScale("phase1")`, `__dungeonScale("phase2")`, `__dungeonScale("final_10x")` or `__dungeonScale(3.16)`.
+     */
+    (window as unknown as { __dungeonScale?: (tierOrMult: string | number) => unknown }).__dungeonScale = (tierOrMult: string | number) => {
+      if (typeof tierOrMult === "string") {
+        state.floorScaleOverrideTier = tierOrMult as any;
+        state.floorScaleOverrideMultiplier = undefined;
+      } else if (typeof tierOrMult === "number") {
+        state.floorScaleOverrideMultiplier = tierOrMult;
+        state.floorScaleOverrideTier = undefined;
+      }
+      startLevel(state.level);
+      return {
+        level: state.level,
+        gridW: state.grid?.w,
+        gridH: state.grid?.h,
+        cellsW: state.grid ? Math.floor((state.grid.w - 1) / 2) : 0,
+        cellsH: state.grid ? Math.floor((state.grid.h - 1) / 2) : 0,
+        tier: state.floorScaleOverrideTier,
+        multiplier: state.floorScaleOverrideMultiplier,
+      };
     };
     // Dev: summon the Magician NOW (his visit clock is 45s ± 12 — far too long
     // to wait on to QA the room shuffle). He still bows before the trick.

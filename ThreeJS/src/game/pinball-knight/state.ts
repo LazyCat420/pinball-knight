@@ -1309,6 +1309,10 @@ export const state = {
    * to keep `state.ts` free of a dependency on the generator.
    */
   levelRooms: [] as Array<{ i0: number; j0: number; w: number; h: number; kind: string }>,
+  /** Dev/runtime scale tier override ("baseline" | "phase1" | "phase2" | "final_10x") */
+  floorScaleOverrideTier: undefined as "baseline" | "phase1" | "phase2" | "final_10x" | undefined,
+  /** Dev/runtime continuous scale multiplier override (e.g. 1.9, 4.0, 10.0) */
+  floorScaleOverrideMultiplier: undefined as number | undefined,
   groundItems: [] as GroundItem[],
 
   /**

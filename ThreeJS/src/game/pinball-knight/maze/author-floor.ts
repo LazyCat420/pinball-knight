@@ -26,10 +26,21 @@ import { buildTrackFloor } from "./track-floor";
 import { nearSealed } from "./track-socket";
 import { pruneSealedBands, stampSecretBands } from "../secrets";
 
+import { resolveFloorSpec, type FloorSpec } from "./spec/floor-spec";
+import type { FloorScaleTier } from "../constants/level";
+import { buildSectorGraph } from "./sectors/sector-graph";
+import type { SectorGraph } from "./sectors/sector-types";
+import { buildLandingPadRegistry, type LandingPadRegistry } from "./traversal/landing-pad-registry";
+import { computeTraversalRouteMetrics, type RouteMetricsReport } from "./traversal/route-graph-metrics";
+import { repairNarrowGaps } from "./gap-clearance";
+
 export interface FloorAuthorOptions {
   level: number;
   runSeed: number;
   bonusRoom?: boolean;
+  tier?: FloorScaleTier;
+  scaleMultiplier?: number;
+  progressive?: boolean;
   /** Diagnostic overrides; omitted in the live game. */
   cellsW?: number;
   cellsH?: number;
@@ -46,8 +57,8 @@ export interface FloorAuthorOptions {
 /** Raw topology for geometry-only probes; deliberately stops before content. */
 export function authorFloorTopology(opts: FloorAuthorOptions) {
   const { level, runSeed } = opts;
-  const reference = levelConfig(level);
-  const cfg = { ...reference, cellsW: opts.cellsW ?? reference.cellsW, cellsH: opts.cellsH ?? reference.cellsH };
+  const spec = resolveFloorSpec(opts);
+  const cfg = spec.cfg;
   const rng = floorRng(runSeed, level);
   const arch = opts.archIndex === undefined ? archetypeFor(level) : ARCHETYPES[opts.archIndex];
   if (!arch) throw new RangeError(`Unknown floor archetype index: ${opts.archIndex}`);
@@ -59,12 +70,12 @@ export function authorFloorTopology(opts: FloorAuthorOptions) {
     profile: arch.track, density: trackDensity, funnels: opts.funnels,
     funnelTune: opts.funnelTune, relays: opts.relays,
   }) : null;
-  return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, track, trackMs: performance.now() - started };
+  return { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, track, trackMs: performance.now() - started };
 }
 
 /** Finished floor, including the live legacy fallback if track growth declines. */
 export function authorMaze(opts: FloorAuthorOptions) {
-  const { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, track, trackMs } = authorFloorTopology(opts);
+  const { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, track, trackMs } = authorFloorTopology(opts);
   const bonusRoom = opts.bonusRoom ?? false;
   const theme = themeFor(level);
   let grid: Grid;
@@ -98,6 +109,10 @@ export function authorMaze(opts: FloorAuthorOptions) {
     stampSecretBands(grid, rng, cfg.secrets, {
       avoid: (i, j) => nearSealed(grid, track.mask, i, j),
     });
+  }
+  // On scaled floors, repair any diagonal narrow gaps to ensure 0 narrow apertures
+  if (spec.cellsW > 96 || spec.cellsH > 72 || spec.tier !== "baseline") {
+    repairNarrowGaps(grid, () => false);
   }
   // Budgets use actual area. Diagnostic mega floors may scale flat terms.
   let walkable = walkableCount(grid);
@@ -213,7 +228,24 @@ export function authorMaze(opts: FloorAuthorOptions) {
 
   enforceLaunchExits(grid, plan.parts);
 
-  return { level, runSeed, cfg, rng, arch, modifier, windiness, trackDensity, bonusRoom,
+  const sectorGraph = buildSectorGraph(grid, { start: plan.start, stairs: plan.stairs });
+  const landingPads = buildLandingPadRegistry(grid, sectorGraph, {
+    stairs: plan.stairs,
+    existingParts: plan.parts,
+  });
+  const shortcuts = plan.parts
+    .filter((p) => (p.kind === "catapult" || p.kind === "spring") && p.destI !== undefined && p.destJ !== undefined)
+    .map((p, idx) => ({
+      id: `shortcut_${idx}`,
+      kind: p.kind,
+      from: { i: p.i, j: p.j },
+      to: { i: p.destI!, j: p.destJ! },
+      costTiles: 5,
+    }));
+  const routeMetrics = computeTraversalRouteMetrics(grid, plan.start, plan.stairs, shortcuts, sectorGraph);
+
+  return { level, runSeed, cfg, spec, rng, arch, modifier, windiness, trackDensity, bonusRoom,
     track, grid, plan, lampPuzzlePlan, clearanceAudit, theme, walkable, budget, partBudget, areaRatio, densityRepair,
-    doorways: track?.doorways ?? [], timing: { track: trackMs, decorate: decorateMs } };
+    doorways: track?.doorways ?? [], timing: { track: trackMs, decorate: decorateMs },
+    sectorGraph, landingPads, routeMetrics };
 }
