@@ -163,13 +163,15 @@ export function resolveFloorSpec(opts: FloorSpecOptions): FloorSpec {
   const sectorsX = Math.max(1, Math.ceil(gridW / sectorSize));
   const sectorsY = Math.max(1, Math.ceil(gridH / sectorSize));
 
-  // Compute parameterized LevelConfig for this scale
+  // Compute parameterized LevelConfig for this scale.
+  // floorTiles must be baseCfg.floorTiles (the reference floor) so that areaRatio = walkable / cfg.floorTiles
+  // correctly reflects the enlargement factor vs the reference floor (as required by decorate and mega-floor).
   const baseCfg = levelConfig(level);
   const cfg: LevelConfig = {
     ...baseCfg,
     cellsW,
     cellsH,
-    floorTiles: predictedWalkable,
+    floorTiles: baseCfg.floorTiles,
   };
 
   return {
