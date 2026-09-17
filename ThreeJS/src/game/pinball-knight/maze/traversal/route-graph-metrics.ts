@@ -49,6 +49,7 @@ export function computeTraversalRouteMetrics(
   stairs: TilePos,
   shortcuts: readonly TraversalShortcutEdge[],
   graph?: SectorGraph,
+  options: { minTraversalRatio?: number } = {},
 ): RouteMetricsReport {
   // 1. Compute standard walking distance via BFS
   const walkDist = bfsDistances(g, start.i, start.j);
@@ -204,9 +205,10 @@ export function computeTraversalRouteMetrics(
     sectorsSeen.add(sectorIdForTile(start.i, start.j, graph.cols, graph.sectorSize));
   }
 
-  // If shortcuts reduce total path by more than 55%, mark as invalid skip
-  if (ratio < 0.45 && rawWalkingDistance > 50) {
-    violations.push(`Traversal path ratio (${ratio.toFixed(2)}) excessively trivializes distance (< 0.45)`);
+  // If shortcuts reduce total path below the required threshold, mark as invalid skip
+  const minRatio = options.minTraversalRatio ?? 0.60;
+  if (ratio < minRatio && rawWalkingDistance > 50) {
+    violations.push(`Traversal path ratio (${ratio.toFixed(2)}) excessively trivializes distance (< ${minRatio.toFixed(2)})`);
   }
 
   return {

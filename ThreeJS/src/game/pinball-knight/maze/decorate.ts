@@ -36,6 +36,10 @@ import { PICKUP_WEAPONS, rollItemRarity, weaponsForFloor, potionsForFloor, type 
 import { analyzePatternGrammar, isLegalSlotForPart, type PatternGrammarGrid } from "./pattern-grammar";
 import type { Doorway } from "./doorways";
 import { findDeadEnds, furnishDeadEndMechanisms } from "./dead-end-mechanisms";
+import type { SectorGraph, SectorPlan } from "./sectors/sector-types";
+import { sectorIdForTile } from "./sectors/sector-graph";
+import { assignTraversalDestination, type LandingPadRegistry } from "./traversal/landing-pad-registry";
+import type { FloorSpec } from "./spec/floor-spec";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -2300,7 +2304,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { playSpaces?: readonly TilePos[]; anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; wallSprings?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[] } = {},
+  extras: { playSpaces?: readonly TilePos[]; anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; seesaws?: number; wallSprings?: number; catapults?: number; cannons?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; wallGrammar?: boolean; circuits?: number; circuitSeed?: number; assemblySeed?: number; assemblies?: number; swingarms?: number; flywheels?: number; magpostFields?: number; doorways?: Doorway[]; sectorPlan?: SectorPlan; sectorGraph?: SectorGraph; landingPadRegistry?: LandingPadRegistry; floorSpec?: FloorSpec } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -3799,6 +3803,18 @@ export function decorateMaze(
           const landI = c.i + di * span;
           const landJ = c.j + dj * span;
           if (at(g, landI, landJ) === T_FLOOR) {
+            if (extras.floorSpec && stairs) {
+              const distToStairs = Math.hypot(landI - stairs.i, landJ - stairs.j);
+              if (distToStairs < extras.floorSpec.traversalPolicy.bossExclusionRadius) {
+                continue;
+              }
+            }
+            if (extras.sectorGraph) {
+              const destSec = sectorIdForTile(landI, landJ, extras.sectorGraph.cols, extras.sectorGraph.sectorSize);
+              if (destSec === extras.sectorGraph.bossArenaSectorId || destSec === extras.sectorGraph.bossAntechamberSectorId) {
+                continue;
+              }
+            }
             if (!latePartNear(landI, landJ, 2, true)) {
               aimed = { di, dj, span };
               break;
@@ -3848,6 +3864,28 @@ export function decorateMaze(
       }
       if (!openDir) continue;
 
+      let destI: number | undefined;
+      let destJ: number | undefined;
+
+      if (extras.sectorGraph && extras.landingPadRegistry && extras.floorSpec) {
+        const dest = assignTraversalDestination({
+          mechanism: "catapult",
+          sourceTile: { i: c.i, j: c.j },
+          sectorPlan: extras.sectorPlan,
+          sectorGraph: extras.sectorGraph,
+          landingPadRegistry: extras.landingPadRegistry,
+          floorSpec: extras.floorSpec,
+          stairs,
+          start,
+          rng: catRng,
+        });
+        if (!dest.success || !dest.destTile) {
+          continue; // Fail closed if no verified safe pad exists
+        }
+        destI = dest.destTile.i;
+        destJ = dest.destTile.j;
+      }
+
       parts.push({
         kind: "catapult",
         i: c.i,
@@ -3856,6 +3894,8 @@ export function decorateMaze(
         dirJ: openDir.dj,
         dir2I: 0,
         dir2J: 0,
+        destI,
+        destJ,
       });
       placedCatapults++;
     }
@@ -3888,6 +3928,28 @@ export function decorateMaze(
       }
       if (!bestDir || maxRun < 2) continue;
 
+      let destI: number | undefined;
+      let destJ: number | undefined;
+
+      if (extras.sectorGraph && extras.landingPadRegistry && extras.floorSpec) {
+        const dest = assignTraversalDestination({
+          mechanism: "cannon",
+          sourceTile: { i: c.i, j: c.j },
+          sectorPlan: extras.sectorPlan,
+          sectorGraph: extras.sectorGraph,
+          landingPadRegistry: extras.landingPadRegistry,
+          floorSpec: extras.floorSpec,
+          stairs,
+          start,
+          rng: canRng,
+        });
+        if (!dest.success || !dest.destTile) {
+          continue; // Fail closed
+        }
+        destI = dest.destTile.i;
+        destJ = dest.destTile.j;
+      }
+
       parts.push({
         kind: "cannon",
         i: c.i,
@@ -3896,6 +3958,8 @@ export function decorateMaze(
         dirJ: bestDir.dj,
         dir2I: 0,
         dir2J: 0,
+        destI,
+        destJ,
       });
       placedCannons++;
     }

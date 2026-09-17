@@ -11,8 +11,9 @@ import {
   isWalkable,
   tileCenter,
 } from "../generator";
-import type { SectorGraph } from "../sectors/sector-types";
+import type { SectorGraph, SectorPlan } from "../sectors/sector-types";
 import { sectorIdForTile, isAntiSkipTile } from "../sectors/sector-graph";
+import type { FloorSpec } from "../spec/floor-spec";
 import {
   type TraversalMechanismKind,
   validateTraversalLink,
@@ -122,6 +123,7 @@ export function buildLandingPadRegistry(
 
 /**
  * Select the optimal landing pad for a launch mechanism based on tier constraints.
+ * Deterministic: uses seedRng or fallback PRNG, never global Math.random in production.
  */
 export function selectBestLandingPad(
   kind: TraversalMechanismKind,
@@ -135,7 +137,7 @@ export function selectBestLandingPad(
   } = {},
 ): LandingPad | null {
   const fromSectorId = sectorIdForTile(fromTile.i, fromTile.j, graph.cols, graph.sectorSize);
-  const rng = options.seedRng ?? Math.random;
+  const rng = options.seedRng ?? (() => 0.5);
 
   // Filter pads that strictly pass validation rules
   const validPads: LandingPad[] = [];
@@ -179,6 +181,129 @@ export function selectBestLandingPad(
     return chosen;
   }
 
-  // Random selection from valid pads
+  // Deterministic selection from valid pads
   return validPads[Math.floor(rng() * validPads.length)];
+}
+
+export interface TraversalDestinationAssignment {
+  success: boolean;
+  landingPad?: LandingPad;
+  destTile?: TilePos;
+  hopDistance?: number;
+  reason?: string;
+}
+
+/**
+ * Authoritative Traversal Destination Assignment (Phase 3).
+ *
+ * All placed launch mechanisms (catapult, cannon, rail, seesaw, portal) must
+ * route through this function to guarantee destination validity, anti-skip compliance,
+ * reservation on the landing pad registry, and deterministic reproduction.
+ */
+export function assignTraversalDestination(params: {
+  mechanism: TraversalMechanismKind;
+  sourceTile: TilePos;
+  sectorPlan?: SectorPlan;
+  sectorGraph: SectorGraph;
+  landingPadRegistry: LandingPadRegistry;
+  floorSpec: FloorSpec;
+  stairs?: TilePos;
+  start?: TilePos;
+  rng?: () => number;
+}): TraversalDestinationAssignment {
+  const {
+    mechanism,
+    sourceTile,
+    sectorGraph,
+    landingPadRegistry,
+    floorSpec,
+    stairs,
+    start,
+  } = params;
+  const rng = params.rng ?? (() => 0.5);
+
+  const fromSectorId = sectorIdForTile(
+    sourceTile.i,
+    sourceTile.j,
+    sectorGraph.cols,
+    sectorGraph.sectorSize,
+  );
+
+  const candidates: { pad: LandingPad; hopDiff: number; dist: number }[] = [];
+
+  for (const pad of landingPadRegistry.pads) {
+    if (pad.reservedBy) continue;
+    if (pad.clearance < 1.5) continue;
+
+    // Check boss exclusion zone (default 18 tiles)
+    if (stairs) {
+      const distToStairs = Math.hypot(pad.tile.i - stairs.i, pad.tile.j - stairs.j);
+      if (distToStairs < floorSpec.traversalPolicy.bossExclusionRadius) continue;
+    }
+
+    // Check start protection zone (default 12 tiles)
+    if (start) {
+      const distToStart = Math.hypot(pad.tile.i - start.i, pad.tile.j - start.j);
+      if (distToStart < floorSpec.traversalPolicy.minStartExclusionRadius) continue;
+    }
+
+    // Never land inside boss arena or boss antechamber
+    if (
+      pad.sectorId === sectorGraph.bossArenaSectorId ||
+      pad.sectorId === sectorGraph.bossAntechamberSectorId
+    ) {
+      continue;
+    }
+
+    // Validate reach bounds
+    const linkVal = validateTraversalLink(
+      mechanism,
+      sourceTile,
+      pad.tile,
+      fromSectorId,
+      pad.sectorId,
+      sectorGraph,
+      stairs,
+    );
+
+    if (linkVal.valid) {
+      const fromHop = sectorGraph.hopDistances[fromSectorId] ?? 0;
+      const toHop = sectorGraph.hopDistances[pad.sectorId] ?? 0;
+      const hopDiff = toHop - fromHop;
+      const dist = Math.hypot(pad.tile.i - sourceTile.i, pad.tile.j - sourceTile.j);
+
+      if (hopDiff <= floorSpec.traversalPolicy.maxForwardSectorSkip) {
+        candidates.push({ pad, hopDiff, dist });
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    return {
+      success: false,
+      reason: "No unreserved pad satisfied reach and anti-skip constraints",
+    };
+  }
+
+  // Sort: prioritize forward sector hops, then distance
+  candidates.sort((a, b) => {
+    if (b.hopDiff !== a.hopDiff) return b.hopDiff - a.hopDiff;
+    return b.dist - a.dist;
+  });
+
+  const pool = candidates.slice(0, Math.min(3, candidates.length));
+  const chosen = pool[Math.floor(rng() * pool.length)].pad;
+
+  // Reserve the pad
+  chosen.reservedBy = `${mechanism}_${sourceTile.i}_${sourceTile.j}`;
+
+  const fromHop = sectorGraph.hopDistances[fromSectorId] ?? 0;
+  const toHop = sectorGraph.hopDistances[chosen.sectorId] ?? 0;
+
+  return {
+    success: true,
+    landingPad: chosen,
+    destTile: chosen.tile,
+    hopDistance: Math.abs(toHop - fromHop),
+  };
 }
