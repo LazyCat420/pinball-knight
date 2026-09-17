@@ -77,22 +77,25 @@ We measure two graph distances from spawn to stairs:
 
 ---
 
-## 6. Canonical FloorSpec & Progressive Per-Level Scaling
+## 6. Canonical FloorSpec & Option A Aggressive Progressive Scaling
 
-To ensure the maze grows smoothly and progressively for every single floor in live gameplay rather than jumping abruptly or remaining an unwired prototype:
+To ensure the maze scales aggressively right from Level 1 and provides an expansive dungeon by Level 10:
 
 1. **`resolveFloorSpec(opts)` (`maze/spec/floor-spec.ts`)**:
-   - Single canonical authority for floor dimensions, area budgets, sector partitions, and generator revisions.
-   - Computes continuous monotonic growth:
-     - Level 1: $37 \times 26$ cells ($75 \times 53$ tiles).
-     - Level 20: $90 \times 64$ cells ($181 \times 129$ tiles).
-     - Level 25: $114 \times 86$ cells ($229 \times 173$ tiles).
-     - Level 30: $192 \times 144$ cells ($385 \times 289$ tiles, 4.0× area).
-     - Level 34+: $304 \times 228$ cells ($609 \times 457$ tiles, 10.0× area).
-2. **Shipping Integration (`spawn/floor-authoring.ts` & `core.ts`)**:
-   - `authorFloor(level)` now passes `resolveFloorSpec` options directly into `authorMaze()`.
-   - In live gameplay, each descending level smoothly expands the dungeon grid and sector graph.
-   - Baseline regression suites preserve byte-for-byte SHA-256 fixture parity via `tier: "baseline"` defaults.
+   - Single canonical authority for floor dimensions, area budgets, sector partitions, mission templates, and generator revisions.
+   - Computes aggressive monotonic growth (Option A):
+     - **Level 1**: $64 \times 48$ cells (**$129 \times 97$ tiles**, $0.44\times$ area) — roomy intro floor with launch areas and multiple chambers.
+     - **Level 3**: $84 \times 63$ cells (**$169 \times 127$ tiles**, $0.77\times$ area).
+     - **Level 5**: $104 \times 78$ cells (**$209 \times 157$ tiles**, $1.17\times$ area) — **exceeds the old deep-floor ceiling ($193 \times 145$)**.
+     - **Level 7**: $140 \times 105$ cells (**$281 \times 211$ tiles**, $2.13\times$ area) — Phase 1 tier.
+     - **Level 10**: $192 \times 144$ cells (**$385 \times 289$ tiles**, **$4.00\times$ area**, Phase 2 "Pretty Big" milestone, 6–10 macro sectors).
+     - **Level 15**: $240 \times 180$ cells (**$481 \times 361$ tiles**, $6.25\times$ area).
+     - **Level 20+**: $304 \times 228$ cells (**$609 \times 457$ tiles**, **$10.00\times$ area ceiling**).
+2. **Pre-Carve `SectorPlan` Architecture**:
+   - `generateSectorPlan(spec)` evaluates macro mission templates (`linear_descent`, `branching_hunt`, `locked_vault`, `mechanism_gauntlet`, `boss_approach`).
+   - Reserves gateways on sector boundaries with local deterministic seeds (`hash32`).
+   - Authoritative traversal destination assignment (`assignTraversalDestination`) with zero production `Math.random` fallbacks.
+   - Pinned minimum traversal ratio $D_{\text{traversal}} / D_{\text{walk}} \ge 0.60$ and strict anti-skip boundaries ($R \ge 18$ tiles from stairs/boss).
 3. **Dev & QA Controls (`window-hooks.ts`)**:
    - `window.__dungeonScale("phase1" | "phase2" | "final_10x" | number)`: Dynamically rescales the current floor in-place for live testing.
    - `window.__dungeonLevel(level, { tier, scaleMultiplier })`: Direct jump to any level with scale options.
