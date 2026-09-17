@@ -6066,6 +6066,7 @@
 <line x1="570" y1="462" x2="558" y2="462" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="582" y1="462" x2="570" y2="462" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="666" y1="594" x2="654" y2="594" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
+<line x1="678" y1="594" x2="666" y2="594" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <line x1="282" y1="330" x2="378" y2="330" stroke="#61afef" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8" />
 <circle cx="498" cy="270" r="3.5999999999999996" fill="#e06c75" />
 <circle cx="642" cy="270" r="3.5999999999999996" fill="#e06c75" />
@@ -6157,6 +6158,8 @@
 <line x1="654" y1="594" x2="648.6" y2="594" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="666" cy="594" r="3.5999999999999996" fill="#d19a66" />
 <line x1="666" y1="594" x2="660.6" y2="594" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="678" cy="594" r="3.5999999999999996" fill="#d19a66" />
+<line x1="678" y1="594" x2="672.6" y2="594" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="630" cy="558" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="630" y1="558" x2="635.4" y2="558" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="630" cy="570" r="3.5999999999999996" fill="#abb2bf" />
@@ -6169,6 +6172,10 @@
 <line x1="930" y1="294" x2="935.4" y2="294" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="930" cy="306" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="930" y1="306" x2="935.4" y2="306" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="678" cy="366" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="678" y1="366" x2="678" y2="360.6" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="174" cy="114" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="174" y1="114" x2="174" y2="108.6" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="426" cy="354" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="426" y1="354" x2="426" y2="359.4" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="438" cy="354" r="3.5999999999999996" fill="#abb2bf" />
@@ -6193,14 +6200,8 @@
 <circle cx="234" cy="222" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="258" cy="198" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="246" cy="234" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="462" cy="630" r="3.5999999999999996" fill="#abb2bf" />
-<line x1="462" y1="630" x2="462" y2="624.6" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="654" cy="210" r="3.5999999999999996" fill="#abb2bf" />
-<line x1="654" y1="210" x2="654" y2="215.4" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="618" cy="234" r="3.5999999999999996" fill="#98c379" />
-<line x1="618" y1="234" x2="618" y2="228.6" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="522" cy="330" r="3.5999999999999996" fill="#98c379" />
-<line x1="522" y1="330" x2="516.6" y2="330" stroke="#ffffff" stroke-width="1.5" />
+<circle cx="810" cy="474" r="3.5999999999999996" fill="#abb2bf" />
+<line x1="810" y1="474" x2="804.6" y2="474" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="186" cy="474" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="186" y1="474" x2="191.4" y2="474" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="846" cy="246" r="3.5999999999999996" fill="#abb2bf" />
@@ -6209,10 +6210,10 @@
 <line x1="978" y1="318" x2="978" y2="312.6" stroke="#ffffff" stroke-width="1.5" />
 <circle cx="630" cy="126" r="3.5999999999999996" fill="#abb2bf" />
 <line x1="630" y1="126" x2="635.4" y2="126" stroke="#ffffff" stroke-width="1.5" />
-<circle cx="102" cy="162" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="114" cy="162" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="294" cy="30" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="510" cy="210" r="3.5999999999999996" fill="#abb2bf" />
-<circle cx="750" cy="474" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="522" cy="210" r="3.5999999999999996" fill="#abb2bf" />
+<circle cx="738" cy="474" r="3.5999999999999996" fill="#abb2bf" />
 <circle cx="1062" cy="654" r="4.800000000000001" fill="#98c379" stroke="#ffffff" stroke-width="1" />
 <rect x="493.8" y="169.8" width="8.399999999999999" height="8.399999999999999" fill="#e5c07b" stroke="#ffffff" stroke-width="1" />
 </svg>

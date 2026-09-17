@@ -56,7 +56,7 @@
       "cannon": 2,
       "lamp": 3
     },
-    "partsInCorners": 6,
+    "partsInCorners": 5,
     "partsInCloseClusters": 31
   },
   "wallRunMetrics": {
@@ -690,15 +690,6 @@
     },
     {
       "kind": "cannon",
-      "i": 78,
-      "j": 2,
-      "dirI": -1,
-      "dirJ": 0,
-      "dir2I": 0,
-      "dir2J": 0
-    },
-    {
-      "kind": "cannon",
       "i": 77,
       "j": 30,
       "dirI": -1,
@@ -707,8 +698,17 @@
       "dir2J": 0
     },
     {
+      "kind": "cannon",
+      "i": 42,
+      "j": 21,
+      "dirI": 1,
+      "dirJ": 0,
+      "dir2I": 0,
+      "dir2J": 0
+    },
+    {
       "kind": "lamp",
-      "i": 54,
+      "i": 53,
       "j": 8,
       "dirI": 0,
       "dirJ": 0,
